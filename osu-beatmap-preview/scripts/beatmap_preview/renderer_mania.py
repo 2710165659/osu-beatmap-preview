@@ -128,7 +128,7 @@ def _build_layout(key_count: int, beatmap_duration: int, chart_end_time: int) ->
     total_column_height = TOP_BUFFER + column_height
     lane_area_width = key_count * LANE_WIDTH + (key_count - 1) * LANE_GAP
     column_width = LEFT_PANEL_WIDTH + lane_area_width
-    image_width = PAGE_MARGIN_X * 2 + column_count * column_width + (column_count - 1) * COLUMN_GAP
+    image_width = PAGE_MARGIN_X * 2 + column_count * column_width + column_count * COLUMN_GAP
     image_height = PAGE_MARGIN_Y * 2 + total_column_height
     return RenderLayout(
         column_count=column_count,
