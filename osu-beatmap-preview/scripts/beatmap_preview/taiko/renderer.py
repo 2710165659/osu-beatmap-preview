@@ -19,7 +19,9 @@ from .config import (
     CENTRE_NOTE_COLOR,
     DRAW_DRUM_EACH_ROW,
     IMAGE_BACKGROUND,
-    KIAI_TIME_LABEL_COLOR,
+    ACCENT_LABEL_COLOR,
+    BPM_FONT_SIZE,
+    BPM_TOP_GAP,
     LABEL_RIGHT_PADDING,
     MAX_SUPPORTED_DURATION_MS,
     MIN_BEAT_LINE_SPACING,
@@ -95,14 +97,17 @@ def render_taiko_grid(beatmap: Beatmap, hit_objects: list[TaikoHitObject]) -> Im
         chart_width=mapper.end_position,
         redline_sections=redline_sections,
     )
+    first_note_time = min(hit_object.start_time for hit_object in hit_objects) if hit_objects else 0
     timing_lines = build_timing_lines(
         redline_sections=redline_sections,
         mapper=mapper,
         min_beat_line_spacing=MIN_BEAT_LINE_SPACING,
         kiai_sections=kiai_sections,
+        first_note_time=first_note_time,
     )
     font_regular = ImageFont.load_default(size=TIME_LABEL_FONT_SIZE)
     font_note = ImageFont.load_default(size=TIME_LABEL_NOTE_FONT_SIZE)
+    font_bpm = ImageFont.load_default(size=BPM_FONT_SIZE)
     image = Image.new("RGBA", (layout.image_width, layout.image_height), IMAGE_BACKGROUND)
     draw = ImageDraw.Draw(image)
 
@@ -111,7 +116,7 @@ def render_taiko_grid(beatmap: Beatmap, hit_objects: list[TaikoHitObject]) -> Im
         _draw_row_background(image, skin, layout, row_index)
 
     for timing_line in timing_lines:
-        _draw_timing_line(image, draw, skin, timing_line, layout, font_regular, font_note)
+        _draw_timing_line(image, draw, skin, timing_line, layout, font_regular, font_note, font_bpm)
 
     for hit_object in reversed(hit_objects):
         _draw_hit_object(image, hit_object, mapper, skin, layout)
@@ -224,6 +229,7 @@ def _draw_timing_line(
     layout: RenderLayout,
     font: ImageFont.ImageFont,
     note_font: ImageFont.ImageFont,
+    bpm_font: ImageFont.ImageFont,
 ) -> None:
     # position 已经是整张谱面的绝对横向位置，这里只负责把它映射到具体行。
     row_index = min(layout.row_count - 1, int(timing_line.position // layout.max_row_width))
@@ -241,7 +247,7 @@ def _draw_timing_line(
         draw.line((line_x, line_y0, line_x, line_y1), fill=BEAT_LINE_COLOR, width=1)
 
     if timing_line.show_label:
-        _draw_time_label(draw, timing_line, line_x, line_y0, layout, font, note_font)
+        _draw_time_label(draw, timing_line, line_x, line_y0, layout, font, note_font, bpm_font)
 
 
 def _draw_time_label(
@@ -252,10 +258,11 @@ def _draw_time_label(
     layout: RenderLayout,
     font: ImageFont.ImageFont,
     note_font: ImageFont.ImageFont,
+    bpm_font: ImageFont.ImageFont,
 ) -> None:
     label = f"{timing_line.time / 1000:.1f}s"
     note = _build_time_label_note(timing_line)
-    label_color = KIAI_TIME_LABEL_COLOR if timing_line.is_kiai else RULER_TEXT_COLOR
+    label_color = ACCENT_LABEL_COLOR if timing_line.is_kiai else RULER_TEXT_COLOR
     label_box = draw.textbbox((0, 0), label, font=font)
     label_width = label_box[2] - label_box[0]
     label_height = label_box[3] - label_box[1]
@@ -264,16 +271,12 @@ def _draw_time_label(
         PAGE_MARGIN_X + layout.content_width - label_width - LABEL_RIGHT_PADDING,
     )
     label_x = max(PAGE_MARGIN_X, label_x)
-    label_y = row_top + ROW_HEIGHT + TIME_LABEL_TOP_GAP + max(0, (TIME_LABEL_HEIGHT - label_height) // 2)
-    if note is not None:
-        note_box = draw.textbbox((0, 0), note, font=note_font)
-        note_height = note_box[3] - note_box[1]
-        total_height = label_height + TIME_LABEL_NOTE_TOP_GAP + note_height
-        label_y = row_top + ROW_HEIGHT + TIME_LABEL_TOP_GAP + max(0, (TIME_LABEL_HEIGHT - total_height) // 2)
+    label_y = row_top + ROW_HEIGHT + TIME_LABEL_TOP_GAP
 
     # 时间标签固定绘制在该行轨道的下方，避免盖住 note 与小节线主体。
     draw.text((label_x, label_y), label, fill=label_color, font=font)
 
+    next_y = label_y + label_height
     if note is not None:
         note_box = draw.textbbox((0, 0), note, font=note_font)
         note_width = note_box[2] - note_box[0]
@@ -282,8 +285,23 @@ def _draw_time_label(
             PAGE_MARGIN_X + layout.content_width - note_width - LABEL_RIGHT_PADDING,
         )
         note_x = max(PAGE_MARGIN_X, note_x)
-        note_y = label_y + label_height + TIME_LABEL_NOTE_TOP_GAP
-        draw.text((note_x, note_y), note, fill=KIAI_TIME_LABEL_COLOR, font=note_font)
+        note_y = next_y + TIME_LABEL_NOTE_TOP_GAP
+        draw.text((note_x, note_y), note, fill=ACCENT_LABEL_COLOR, font=note_font)
+        note_box_full = draw.textbbox((0, 0), note, font=note_font)
+        next_y = note_y + (note_box_full[3] - note_box_full[1])
+
+    if timing_line.bpm is not None:
+        bpm_label = f"{timing_line.bpm:.0f}BPM"
+        bpm_box = draw.textbbox((0, 0), bpm_label, font=bpm_font)
+        bpm_width = bpm_box[2] - bpm_box[0]
+        bpm_x = min(
+            round(line_x - bpm_width / 2),
+            PAGE_MARGIN_X + layout.content_width - bpm_width - LABEL_RIGHT_PADDING,
+        )
+        bpm_x = max(PAGE_MARGIN_X, bpm_x)
+        bpm_y = next_y + BPM_TOP_GAP
+        bpm_color = ACCENT_LABEL_COLOR if timing_line.is_kiai else RULER_TEXT_COLOR
+        draw.text((bpm_x, bpm_y), bpm_label, fill=bpm_color, font=bpm_font)
 
 
 def _build_time_label_note(timing_line: TimingLine) -> str | None:
