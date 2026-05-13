@@ -457,7 +457,7 @@ def _build_visible_indexes_by_snapshot(
 
 def _build_render_settings(beatmap: Beatmap) -> RenderSettings:
     circle_size = float(beatmap.difficulty["CircleSize"])
-    approach_rate = float(beatmap.difficulty["ApproachRate"])
+    approach_rate = float(beatmap.difficulty.get("ApproachRate", beatmap.difficulty.get("OverallDifficulty", "5")))
     scale = (1.0 - 0.7 * ((circle_size - 5.0) / 5.0)) / 2.0 * BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE
     circle_radius = OBJECT_RADIUS * scale
     circle_diameter = max(1, round(circle_radius * 2))
