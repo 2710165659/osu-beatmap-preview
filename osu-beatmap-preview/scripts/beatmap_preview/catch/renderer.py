@@ -102,7 +102,7 @@ def render_catch_grid(beatmap: Beatmap, hit_objects: list[CatchHitObject]) -> Im
     for timing_line in timing_lines:
         _draw_timing_line(draw, timing_line, layout, font_regular)
 
-    for catch_object in sorted(render_objects, key=lambda item: (item.start_time, _object_order(item.object_type))):
+    for catch_object in sorted(render_objects, key=lambda item: (-item.start_time, _object_order(item.object_type))):
         _draw_catch_object(image, skin, catch_object, layout)
 
     return image

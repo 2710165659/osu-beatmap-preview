@@ -119,20 +119,16 @@ def _path_position_at_distance(path: SliderPath, target: float) -> tuple[float, 
 
 
 def _approximate_bezier_segments(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    path: list[tuple[float, float]] = []
-    segment = [points[0]]
-
+    # C# SliderPath.calculateSubPath：先去除连续重复控制点，再将整段作为一条 Bezier 逼近。
+    deduped = [points[0]]
     for point in points[1:]:
-        segment.append(point)
-        # osu! 用重复控制点切分多段 Bezier，这里遇到重复点就提交当前段。
-        if len(segment) > 2 and point == segment[-2]:
-            segment.pop()
-            path.extend(_approximate_bezier(segment))
-            segment = [point]
+        if point != deduped[-1]:
+            deduped.append(point)
 
-    if len(segment) > 1:
-        path.extend(_approximate_bezier(segment))
-    return _dedupe_points(path)
+    if len(deduped) < 2:
+        return deduped
+
+    return _approximate_bezier(deduped)
 
 
 def _approximate_bezier(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -212,8 +208,8 @@ def _approximate_catmull(points: list[tuple[float, float]]) -> list[tuple[float,
     extended = [points[0], *points, points[-1]]
     for index in range(1, len(extended) - 2):
         p0, p1, p2, p3 = extended[index - 1], extended[index], extended[index + 1], extended[index + 2]
-        for step in range(48):
-            path.append(_catmull_at(p0, p1, p2, p3, step / 48))
+        for step in range(50):
+            path.append(_catmull_at(p0, p1, p2, p3, step / 50))
     path.append(points[-1])
     return _dedupe_points(path)
 
@@ -246,32 +242,49 @@ def _fit_path_to_length(
     path: list[tuple[float, float]],
     expected_length: float,
 ) -> list[tuple[float, float]]:
+    """按 osu! C# SliderPath.calculateLength 算法调整路径长度。
+
+    C# 的做法（与 stable 行为一致）：
+    1. 计算全部累积距离
+    2. 从末尾移除超过 expected_length 的点
+    3. 将最后一个保留点沿其到来方向（P[n-2]→P[n-1]）调整到 expected_length
+    """
     if len(path) < 2 or expected_length <= 0:
         return path
 
-    fitted = [path[0]]
+    cumulative = [0.0]
     travelled = 0.0
     for index in range(1, len(path)):
-        previous = path[index - 1]
-        current = path[index]
-        segment_length = math.dist(previous, current)
-        if segment_length == 0:
-            continue
-        if travelled + segment_length >= expected_length:
-            # 在当前线段内插出终点，使近似路径长度贴合 .osu 文件记录的 pixelLength。
-            ratio = (expected_length - travelled) / segment_length
-            fitted.append((previous[0] + (current[0] - previous[0]) * ratio, previous[1] + (current[1] - previous[1]) * ratio))
-            return fitted
-        fitted.append(current)
-        travelled += segment_length
+        travelled += math.dist(path[index - 1], path[index])
+        cumulative.append(travelled)
 
-    previous = fitted[-2]
-    current = fitted[-1]
-    segment_length = math.dist(previous, current)
-    if segment_length > 0 and travelled < expected_length:
-        # 近似曲线短于期望长度时沿最后一段方向外推，匹配 osu! 对 slider 尾端的处理。
-        extra = (expected_length - travelled) / segment_length
-        fitted[-1] = (current[0] + (current[0] - previous[0]) * extra, current[1] + (current[1] - previous[1]) * extra)
+    actual_length = travelled
+    if actual_length <= 0:
+        return path
+
+    fitted = list(path)
+    while len(cumulative) > 1 and cumulative[-1] > expected_length + 0.001:
+        fitted.pop()
+        cumulative.pop()
+
+    if len(fitted) < 2:
+        return path[:2] if len(path) >= 2 else path
+
+    # C#：若最后两个路径点重合，不扩展（匹配 stable）
+    if fitted[-1] == fitted[-2]:
+        return fitted
+
+    last_cumulative = cumulative[-1]
+    remaining = expected_length - last_cumulative
+    direction = (fitted[-1][0] - fitted[-2][0], fitted[-1][1] - fitted[-2][1])
+    direction_length = math.hypot(direction[0], direction[1])
+
+    if direction_length > 0:
+        fitted[-1] = (
+            fitted[-1][0] + direction[0] / direction_length * remaining,
+            fitted[-1][1] + direction[1] / direction_length * remaining,
+        )
+
     return fitted
 
 
