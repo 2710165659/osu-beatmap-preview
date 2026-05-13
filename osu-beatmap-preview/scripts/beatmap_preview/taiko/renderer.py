@@ -157,7 +157,10 @@ def _build_layout(
     right_panel_width = ROW_INNER_PADDING_X * 2 + max_row_width
     content_width = left_panel_width + right_panel_width
     image_width = PAGE_MARGIN_X * 2 + content_width
-    image_height = PAGE_MARGIN_Y * 2 + row_count * ROW_HEIGHT + (row_count - 1) * ROW_GAP
+    if row_count == 1:
+        image_height = PAGE_MARGIN_Y * 2 + ROW_HEIGHT + ROW_GAP
+    else:
+        image_height = PAGE_MARGIN_Y * 2 + row_count * ROW_HEIGHT + (row_count - 1) * ROW_GAP
     normal_note_diameter = round(ROW_HEIGHT * NORMAL_NOTE_SIZE_RATIO)
     big_note_diameter = round(normal_note_diameter * BIG_NOTE_SCALE)
     return RenderLayout(
