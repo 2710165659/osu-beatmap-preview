@@ -94,6 +94,7 @@ class SliderRenderData:
     frame_path: SliderPath
     head_center: tuple[float, float]
     reverse_centers: tuple[tuple[float, float], ...]
+    reverse_angles: tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,7 @@ class RenderCache:
         ],
         Image.Image,
     ]
+    rotated_reverse_arrows: dict[int, Image.Image]
 
 
 @dataclass(frozen=True)
@@ -267,7 +269,7 @@ def _build_render_context(beatmap: Beatmap, hit_objects: list[StandardHitObject]
         slider_body_width=frame_circle_diameter,
         slider_border_width=max(1, round(SLIDER_BORDER_WIDTH * frame_layout.scale)),
         spinner_size=max(1, round(min(PLAYFIELD_WIDTH, PLAYFIELD_HEIGHT) * 0.95 * frame_layout.scale)),
-        reverse_arrow_size=max(1, round(settings.circle_diameter * 0.78 * frame_layout.scale)),
+        reverse_arrow_size=frame_circle_diameter,
         slider_follow_size=max(1, round(settings.circle_diameter * 2.4 * frame_layout.scale)),
         slider_ball_size=max(1, round(settings.circle_diameter * 1.15 * frame_layout.scale)),
         cache=RenderCache(
@@ -277,6 +279,7 @@ def _build_render_context(beatmap: Beatmap, hit_objects: list[StandardHitObject]
             slider_data={},
             slider_body_layers={},
             slider_body_alpha_layers={},
+            rotated_reverse_arrows={},
         ),
     )
 
@@ -507,7 +510,7 @@ def _draw_slider(
             alpha,
         )
 
-    _draw_slider_reverse_arrows(frame, context, slider_data, hit_object.slider_repeats, alpha)
+    _draw_slider_reverse_arrows(frame, context, slider_data, hit_object, snapshot_time, snaked_start, snaked_end, alpha)
     _draw_slider_ball(frame, context, slider_data, hit_object, snapshot_time, alpha)
     head_alpha = _slider_head_alpha(hit_object, snapshot_time, context.settings, snaked_start, snaked_end)
     if head_alpha > 0:
@@ -796,15 +799,27 @@ def _get_slider_render_data(hit_object: StandardHitObject, context: RenderContex
     world_path = build_slider_path(hit_object)
     frame_points = tuple(_to_frame_point(x, y, context.frame_layout) for x, y in world_path.points)
     frame_path = build_path(frame_points)
-    reverse_centers = tuple(
-        frame_path.points[-1] if repeat_index % 2 == 1 else frame_path.points[0]
-        for repeat_index in range(1, hit_object.slider_repeats)
-    )
+    reverse_centers: list[tuple[float, float]] = []
+    reverse_angles: list[float] = []
+    for repeat_index in range(1, hit_object.slider_repeats):
+        if repeat_index % 2 == 1:
+            center = frame_path.points[-1]
+            # 奇数折返位于滑条尾端，箭头指向滑条尾部切线反方向
+            dx = frame_path.points[-2][0] - center[0]
+            dy = frame_path.points[-2][1] - center[1]
+        else:
+            center = frame_path.points[0]
+            # 偶数折返位于滑条头端，箭头指向滑条头部切线方向
+            dx = frame_path.points[1][0] - center[0]
+            dy = frame_path.points[1][1] - center[1]
+        reverse_centers.append(center)
+        reverse_angles.append(math.atan2(dy, dx))
     slider_data = SliderRenderData(
         world_path=world_path,
         frame_path=frame_path,
         head_center=frame_path.points[0],
-        reverse_centers=reverse_centers,
+        reverse_centers=tuple(reverse_centers),
+        reverse_angles=tuple(reverse_angles),
     )
     context.cache.slider_data[hit_object] = slider_data
     return slider_data
@@ -847,14 +862,57 @@ def _draw_slider_reverse_arrows(
     frame: Image.Image,
     context: RenderContext,
     slider_data: SliderRenderData,
-    repeats: int,
+    hit_object: StandardHitObject,
+    snapshot_time: int,
+    snaked_start: float,
+    snaked_end: float,
     alpha: float,
 ) -> None:
-    if repeats <= 1:
+    if hit_object.slider_repeats <= 1:
         return
 
-    arrow = _resize_with_alpha(context.skin.reverse_arrow, context.reverse_arrow_size, alpha, context.cache)
-    for center in slider_data.reverse_centers:
+    span_count = max(1, hit_object.slider_repeats)
+    fade_out_ratio = min(300, (hit_object.end_time - hit_object.start_time) / span_count) / max(
+        1, hit_object.end_time - hit_object.start_time
+    )
+
+    for i, center in enumerate(slider_data.reverse_centers):
+        repeat_index = i + 1
+        position = 1.0 if repeat_index % 2 == 1 else 0.0
+
+        if not (snaked_start - 0.001 <= position <= snaked_end + 0.001):
+            continue
+
+        if snapshot_time < hit_object.start_time:
+            # 预出现阶段仅第一个折返箭头可能可见（由 snaking 控制位置）
+            if repeat_index > 1:
+                continue
+            repeat_alpha = 1.0
+        else:
+            completion = (snapshot_time - hit_object.start_time) / max(1, hit_object.end_time - hit_object.start_time)
+            traversal = completion * span_count
+            if traversal < repeat_index - 1:
+                continue
+            if traversal >= repeat_index:
+                continue
+            if traversal > repeat_index - fade_out_ratio:
+                repeat_alpha = max(0.0, (repeat_index - traversal) / fade_out_ratio)
+            else:
+                repeat_alpha = 1.0
+
+        effective_alpha = alpha * repeat_alpha
+        if effective_alpha <= 0:
+            continue
+
+        angle_deg = -math.degrees(slider_data.reverse_angles[i])
+        angle_key = round(angle_deg)
+        rotated = context.cache.rotated_reverse_arrows.get(angle_key)
+        if rotated is None:
+            rotated = context.skin.reverse_arrow.rotate(
+                angle_deg, expand=True, resample=Image.Resampling.BICUBIC
+            )
+            context.cache.rotated_reverse_arrows[angle_key] = rotated
+        arrow = _resize_with_alpha(rotated, context.reverse_arrow_size, effective_alpha, context.cache)
         frame.alpha_composite(arrow, (round(center[0] - arrow.width / 2), round(center[1] - arrow.height / 2)))
 
 
