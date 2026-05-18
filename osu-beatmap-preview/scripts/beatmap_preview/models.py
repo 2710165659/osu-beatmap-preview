@@ -22,19 +22,21 @@ class BreakPeriod:
 
 @dataclass(frozen=True)
 class StandardHitObject:
-    """standard 物件保留原始 hit_type 位标志，渲染阶段据此区分 circle、slider、spinner。"""
+    """standard 物件保留原始 hit_type 和 hitsound，渲染/转谱阶段据此区分物件与采样。"""
 
     x: int
     y: int
     start_time: int
     end_time: int
     hit_type: int
+    hitsound: int
     new_combo: bool
     combo_offset: int
     slider_type: str | None = None
     slider_points: tuple[tuple[int, int], ...] = ()
     slider_repeats: int = 1
     slider_pixel_length: float = 0.0
+    slider_edge_hitsounds: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

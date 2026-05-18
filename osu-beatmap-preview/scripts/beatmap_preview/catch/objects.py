@@ -483,12 +483,14 @@ def _to_standard_slider(hit_object: CatchHitObject) -> StandardHitObject:
         start_time=hit_object.start_time,
         end_time=hit_object.end_time,
         hit_type=hit_object.hit_type,
+        hitsound=0,
         new_combo=hit_object.new_combo,
         combo_offset=hit_object.combo_offset,
         slider_type=hit_object.slider_type,
         slider_points=hit_object.slider_points,
         slider_repeats=hit_object.slider_repeats,
         slider_pixel_length=hit_object.slider_pixel_length,
+        slider_edge_hitsounds=(),
     )
 
 

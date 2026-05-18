@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..errors import PreviewError
 from ..models import Beatmap, ManiaHitObject, TimingPoint
+from ..mods import ModSettings
 from .config import (
     BEAT_LINE,
     BOTTOM_PADDING_MS,
@@ -81,17 +82,35 @@ class RenderLayout:
     column_width: int
     image_width: int
     image_height: int
+    pixels_per_ms: float = PIXELS_PER_MS
 
 
-def render_mania_grid(beatmap: Beatmap, output_path: Path) -> Path:
+def render_mania_grid(
+    beatmap: Beatmap,
+    output_path: Path,
+    mods: ModSettings | None = None,
+) -> Path:
+    # ── key count 直接取自谱面 CS（mod 不改变原生 mania 列数）──
     key_count = int(float(beatmap.difficulty["CircleSize"]))
+    key_count = max(1, min(key_count, max(LANE_COLOR_PALETTES.keys())))
     palette = LANE_COLOR_PALETTES[key_count]
+
+    # ── IN / HO：修改 hit objects ──
+    hit_objects = list(beatmap.hit_objects)
+    if mods and mods.inverse:
+        hit_objects = _apply_inverse_mod(hit_objects, beatmap.timing_points)
+    if mods and mods.hold_off:
+        hit_objects = _apply_hold_off_mod(hit_objects)
+
+    # ── CS：关闭 SV 变化 ──
+    cs_mode = mods is not None and mods.cs_override
+
     font_regular = ImageFont.load_default(size=TIME_LABEL_FONT_SIZE)
     font_sv = ImageFont.load_default(size=SV_TEXT_FONT_SIZE)
-    beatmap_duration = max(hit_object.end_time for hit_object in beatmap.hit_objects)
+    beatmap_duration = max(ho.end_time for ho in hit_objects) if hit_objects else 0
     chart_end_time = beatmap_duration + BOTTOM_PADDING_MS
     timing_lines = _build_timing_lines(beatmap.timing_points, chart_end_time)
-    sv_changes = _build_sv_changes(beatmap.timing_points, chart_end_time)
+    sv_changes = [] if cs_mode else _build_sv_changes(beatmap.timing_points, chart_end_time)
     layout = _build_layout(key_count, beatmap_duration, chart_end_time)
     render_cache: dict[str, str] = {}
 
@@ -107,11 +126,69 @@ def render_mania_grid(beatmap: Beatmap, output_path: Path) -> Path:
     for sv_change in sv_changes:
         _draw_sv_indicator(draw, sv_change, layout, font_sv)
 
-    for hit_object in beatmap.hit_objects:
+    for hit_object in hit_objects:
         _draw_hit_object(draw, hit_object, palette, layout, render_cache)
 
     image.save(output_path, optimize=True)
     return output_path
+
+
+def _apply_inverse_mod(
+    hit_objects: list[ManiaHitObject],
+    timing_points: list[TimingPoint],
+) -> list[ManiaHitObject]:
+    """IN mod: 按 lane 将相邻物件之间改为 hold，末尾物件不保留。"""
+    if not hit_objects:
+        return []
+
+    by_lane: dict[int, list[ManiaHitObject]] = {}
+    for ho in hit_objects:
+        by_lane.setdefault(ho.lane, []).append(ho)
+
+    result: list[ManiaHitObject] = []
+    for lane, lane_objects in by_lane.items():
+        sorted_lane_objects = sorted(lane_objects, key=lambda ho: (ho.start_time, ho.end_time))
+        for current, next_object in zip(sorted_lane_objects, sorted_lane_objects[1:]):
+            gap = next_object.start_time - current.start_time
+            beat_length = _beat_length_at(next_object.start_time, timing_points)
+            duration = max(gap / 2, gap - beat_length / 4)
+            end_time = max(current.start_time, round(current.start_time + duration))
+            result.append(
+                ManiaHitObject(
+                    lane=lane,
+                    start_time=current.start_time,
+                    end_time=end_time,
+                    is_long_note=end_time > current.start_time,
+                )
+            )
+    return sorted(result, key=lambda ho: (ho.start_time, ho.end_time, ho.lane))
+
+
+def _apply_hold_off_mod(
+    hit_objects: list[ManiaHitObject],
+) -> list[ManiaHitObject]:
+    """HO mod: 长条只保留头部单点，普通 note 原样保留。"""
+    result: list[ManiaHitObject] = []
+    for ho in hit_objects:
+        result.append(
+            ManiaHitObject(
+                lane=ho.lane,
+                start_time=ho.start_time,
+                end_time=ho.start_time,
+                is_long_note=False,
+            )
+        )
+    return sorted(result, key=lambda ho: (ho.start_time, ho.end_time, ho.lane))
+
+
+def _beat_length_at(time: int, timing_points: list[TimingPoint]) -> float:
+    beat_length = timing_points[0].beat_length if timing_points else 500.0
+    for point in timing_points:
+        if point.time > time:
+            break
+        if point.uninherited:
+            beat_length = point.beat_length
+    return beat_length
 
 
 def _darken_hex(color: str, ratio: float, cache: dict[str, str]) -> str:
@@ -126,11 +203,16 @@ def _darken_hex(color: str, ratio: float, cache: dict[str, str]) -> str:
     return result
 
 
-def _build_layout(key_count: int, beatmap_duration: int, chart_end_time: int) -> RenderLayout:
-    total_chart_height = max(1, math.ceil(chart_end_time * PIXELS_PER_MS))
+def _build_layout(
+    key_count: int,
+    beatmap_duration: int,
+    chart_end_time: int,
+    pixels_per_ms: float = PIXELS_PER_MS,
+) -> RenderLayout:
+    total_chart_height = max(1, math.ceil(chart_end_time * pixels_per_ms))
     column_count = _calculate_column_count(beatmap_duration, total_chart_height)
     time_per_column = math.ceil(chart_end_time / column_count)
-    column_height = math.ceil(time_per_column * PIXELS_PER_MS)
+    column_height = math.ceil(time_per_column * pixels_per_ms)
     total_column_height = TOP_BUFFER + column_height
     lane_area_width = key_count * LANE_WIDTH + (key_count - 1) * LANE_GAP
     column_width = LEFT_PANEL_WIDTH + lane_area_width
@@ -145,6 +227,7 @@ def _build_layout(key_count: int, beatmap_duration: int, chart_end_time: int) ->
         column_width=column_width,
         image_width=image_width,
         image_height=image_height,
+        pixels_per_ms=pixels_per_ms,
     )
 
 
@@ -215,7 +298,7 @@ def _draw_timing_line(
     column_left = PAGE_MARGIN_X + column_index * (layout.column_width + COLUMN_GAP)
     lane_area_left = column_left + LEFT_PANEL_WIDTH
     chart_top = PAGE_MARGIN_Y + TOP_BUFFER
-    y = chart_top + layout.column_height - round(local_time * PIXELS_PER_MS)
+    y = chart_top + layout.column_height - round(local_time * layout.pixels_per_ms)
 
     draw.line(
         (lane_area_left, y, lane_area_left + layout.lane_area_width - 1, y),
@@ -265,10 +348,10 @@ def _draw_hit_object(
         segment_start = max(hit_object.start_time, column_index * layout.time_per_column)
         segment_end = min(hit_object.end_time, (column_index + 1) * layout.time_per_column)
         y_start = chart_axis_top + layout.column_height - round(
-            (segment_start - column_index * layout.time_per_column) * PIXELS_PER_MS
+            (segment_start - column_index * layout.time_per_column) * layout.pixels_per_ms
         )
         y_end = chart_axis_top + layout.column_height - round(
-            (segment_end - column_index * layout.time_per_column) * PIXELS_PER_MS
+            (segment_end - column_index * layout.time_per_column) * layout.pixels_per_ms
         )
 
         if hit_object.is_long_note:
@@ -297,7 +380,11 @@ def _draw_hit_object(
                 )
 
 
-def _build_timing_lines(timing_points: list[TimingPoint], chart_end_time: int) -> list[TimingLine]:
+def _build_timing_lines(
+    timing_points: list[TimingPoint],
+    chart_end_time: int,
+    pixels_per_ms: float = PIXELS_PER_MS,
+) -> list[TimingLine]:
     base_points = [point for point in timing_points if point.uninherited]
     if not base_points:
         return []
@@ -308,7 +395,7 @@ def _build_timing_lines(timing_points: list[TimingPoint], chart_end_time: int) -
         if index + 1 < len(base_points):
             segment_end = int(base_points[index + 1].time)
 
-        beat_pixels = point.beat_length * PIXELS_PER_MS
+        beat_pixels = point.beat_length * pixels_per_ms
         if beat_pixels >= 72:
             subdivision = 4
         elif beat_pixels >= 28:
@@ -369,7 +456,7 @@ def _draw_sv_indicator(
     local_time = time - column_index * layout.time_per_column
     column_left = PAGE_MARGIN_X + column_index * (layout.column_width + COLUMN_GAP)
     chart_top = PAGE_MARGIN_Y + TOP_BUFFER
-    y = chart_top + layout.column_height - round(local_time * PIXELS_PER_MS)
+    y = chart_top + layout.column_height - round(local_time * layout.pixels_per_ms)
 
     if sv == round(sv, 1):
         label = f"{sv:.1f}x"
