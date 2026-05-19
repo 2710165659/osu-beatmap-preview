@@ -21,6 +21,7 @@ class TaikoSkin:
     big_hit_circle_overlay: Image.Image
     roll_middle: Image.Image
     roll_end: Image.Image
+    spinner_warning: Image.Image
 
 
 def load_taiko_skin() -> TaikoSkin:
@@ -37,6 +38,7 @@ def load_taiko_skin() -> TaikoSkin:
         "big_hit_circle_overlay": "taikobigcircleoverlay-0@2x.png",
         "roll_middle": "taiko-roll-middle@2x.png",
         "roll_end": "taiko-roll-end@2x.png",
+        "spinner_warning": "spinner-warning@2x.png",
     }
     images: dict[str, Image.Image] = {}
     for key, filename in required_assets.items():

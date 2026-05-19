@@ -356,10 +356,32 @@ def _draw_hit_object(
     cache: dict,
 ) -> None:
     if hit_object.hit_type & SWELL_FLAG:
-        _draw_span_object(image, hit_object, mapper, skin, layout, cache, is_swell=True)
+        _draw_span_object(
+            image,
+            hit_object,
+            mapper,
+            skin,
+            layout,
+            cache,
+            is_swell=True,
+            span_color=SWELL_COLOR,
+            draw_spinner_warning=True,
+        )
         return
     if hit_object.hit_type & DRUMROLL_FLAG:
-        _draw_span_object(image, hit_object, mapper, skin, layout, cache, is_swell=False)
+        is_big_roll = bool(hit_object.hitsound & HIT_SOUNDS_STRONG)
+        # 大鼓滑条使用 swell 的外观；普通小鼓滑条保持 roll 外观不变。
+        _draw_span_object(
+            image,
+            hit_object,
+            mapper,
+            skin,
+            layout,
+            cache,
+            is_swell=is_big_roll,
+            span_color=ROLL_COLOR,
+            draw_spinner_warning=False,
+        )
         return
     _draw_circle_object(image, hit_object, mapper, skin, layout, cache)
 
@@ -396,6 +418,8 @@ def _draw_span_object(
     layout: RenderLayout,
     cache: dict,
     is_swell: bool,
+    span_color: tuple[int, int, int],
+    draw_spinner_warning: bool,
 ) -> None:
     absolute_start = mapper.position_at(hit_object.start_time)
     absolute_end = max(absolute_start, mapper.position_at(hit_object.end_time))
@@ -403,7 +427,6 @@ def _draw_span_object(
     row_start = int(absolute_start // layout.max_row_width)
     row_end = int(absolute_end // layout.max_row_width)
     head_diameter = layout.big_note_diameter if is_swell else layout.normal_note_diameter
-    span_color = SWELL_COLOR if is_swell else ROLL_COLOR
     body_height = round(head_diameter * (SWELL_BODY_HEIGHT_RATIO if is_swell else SPAN_BODY_HEIGHT_RATIO))
 
     for row_index in range(row_start, row_end + 1):
@@ -415,7 +438,17 @@ def _draw_span_object(
 
     head_center_x = round(_row_chart_left(layout, row_start) + (absolute_start - row_start * layout.max_row_width))
     tail_join_x = round(_row_chart_left(layout, row_end) + (absolute_end - row_end * layout.max_row_width))
-    _draw_span_head(image, skin, span_color, head_center_x, _row_center_y(row_start), head_diameter, cache, is_swell)
+    _draw_span_head(
+        image,
+        skin,
+        span_color,
+        head_center_x,
+        _row_center_y(row_start),
+        head_diameter,
+        cache,
+        is_swell,
+        draw_spinner_warning,
+    )
     _draw_span_tail(image, span_color, tail_join_x, _row_center_y(row_end), body_height, cache)
 
 
@@ -445,10 +478,30 @@ def _draw_span_head(
     diameter: int,
     cache: dict,
     is_swell: bool,
+    draw_spinner_warning: bool,
 ) -> None:
     base_sprite = skin.big_hit_circle if is_swell else skin.hit_circle
     overlay_sprite = skin.big_hit_circle_overlay if is_swell else skin.hit_circle_overlay
     _draw_note_sprite(image, base_sprite, overlay_sprite, color, diameter, center_x, center_y, cache)
+    if draw_spinner_warning:
+        _draw_spinner_warning(image, skin, diameter, center_x, center_y, cache)
+
+
+def _draw_spinner_warning(
+    image: Image.Image,
+    skin: TaikoSkin,
+    diameter: int,
+    center_x: int,
+    center_y: int,
+    cache: dict,
+) -> None:
+    warning_key = (id(skin.spinner_warning), diameter)
+    warning = cache.get(warning_key)
+    if warning is None:
+        warning = _resize_sprite(skin.spinner_warning, (diameter, diameter))
+        cache[warning_key] = warning
+    position = (round(center_x - diameter / 2), round(center_y - diameter / 2))
+    image.paste(warning, position, warning)
 
 
 def _draw_span_tail(
