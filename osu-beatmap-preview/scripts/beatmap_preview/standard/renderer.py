@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..errors import PreviewError
 from ..models import Beatmap, BreakPeriod, StandardHitObject
+from ..mods import ModSettings
 from .config import (
     CANVAS_BACKGROUND_COLOR,
     GIF_DURATION_MS,
@@ -97,6 +98,7 @@ class RenderSettings:
     circle_diameter: int
     preempt_ms: int
     fade_in_ms: float
+    hidden: bool
 
 
 @dataclass(frozen=True)
@@ -153,13 +155,19 @@ class RenderContext:
 
 # ——— public API ———
 
-def render_standard(beatmap: Beatmap, hit_objects: list[StandardHitObject], fmt: str) -> Image.Image | tuple:
+def render_standard(
+    beatmap: Beatmap,
+    hit_objects: list[StandardHitObject],
+    fmt: str,
+    mods: ModSettings | None = None,
+    times: list[float] | None = None,
+) -> Image.Image | tuple:
     _build_slider_path_cached.cache_clear()
     try:
         if fmt == "png":
-            return _render_png_grid(beatmap, hit_objects)
+            return _render_png_grid(beatmap, hit_objects, mods)
         if fmt == "gif":
-            return _render_gif(beatmap, hit_objects)
+            return _render_gif(beatmap, hit_objects, mods, times)
         raise PreviewError(f"unsupported standard output format: {fmt}")
     finally:
         _build_slider_path_cached.cache_clear()
@@ -167,8 +175,9 @@ def render_standard(beatmap: Beatmap, hit_objects: list[StandardHitObject], fmt:
 
 # ——— PNG grid ———
 
-def _render_png_grid(beatmap: Beatmap, hit_objects: list[StandardHitObject]) -> Image.Image:
-    context = _build_render_context(beatmap, hit_objects)
+def _render_png_grid(beatmap: Beatmap, hit_objects: list[StandardHitObject], mods: ModSettings | None) -> Image.Image:
+    hit_objects = _apply_standard_object_mods(hit_objects, mods)
+    context = _build_render_context(beatmap, hit_objects, mods)
     row_timings = _choose_row_start_times(
         beatmap=beatmap,
         hit_objects=hit_objects,
@@ -208,14 +217,21 @@ def _render_png_grid(beatmap: Beatmap, hit_objects: list[StandardHitObject]) -> 
 
 # ——— GIF ———
 
-def _render_gif(beatmap: Beatmap, hit_objects: list[StandardHitObject]):
-    context = _build_render_context(beatmap, hit_objects)
+def _render_gif(beatmap: Beatmap, hit_objects: list[StandardHitObject], mods: ModSettings | None, times: list[float] | None):
+    if times is not None and len(times) > GIF_ROW_COUNT * GIF_IMAGES_PER_ROW:
+        raise PreviewError("--times accepts at most 4 time points")
+
+    hit_objects = _apply_standard_object_mods(hit_objects, mods)
+    context = _build_render_context(beatmap, hit_objects, mods)
+    speed_multiplier = mods.speed_multiplier if mods is not None else 1.0
+    gameplay_segment_duration = round(GIF_DURATION_MS * speed_multiplier)
     row_timings = _choose_row_start_times(
         beatmap=beatmap,
         hit_objects=hit_objects,
         row_count=GIF_ROW_COUNT * GIF_IMAGES_PER_ROW,
         images_per_row=2,
-        ms_per_row_duration=GIF_DURATION_MS,
+        ms_per_row_duration=gameplay_segment_duration,
+        requested_start_times=_times_to_milliseconds(times),
     )
     font_regular = ImageFont.load_default(size=TIME_LABEL_FONT_SIZE)
     font_note = ImageFont.load_default(size=TIME_LABEL_NOTE_FONT_SIZE)
@@ -223,7 +239,7 @@ def _render_gif(beatmap: Beatmap, hit_objects: list[StandardHitObject]):
     frame_count = max(1, round(GIF_DURATION_MS * GIF_FPS / 1000))
     frame_duration_ms = max(1, round(1000 / GIF_FPS))
     segment_snapshot_times = [
-        tuple(row_timing.start_time + round(frame_index * 1000 / GIF_FPS) for frame_index in range(frame_count))
+        tuple(row_timing.start_time + round(frame_index * 1000 * speed_multiplier / GIF_FPS) for frame_index in range(frame_count))
         for row_timing in row_timings
     ]
     segment_visible_indexes = [
@@ -242,14 +258,14 @@ def _render_gif(beatmap: Beatmap, hit_objects: list[StandardHitObject]):
                 frame = _render_frame(
                     context=context,
                     snapshot_time=snapshot_time,
-                    break_periods=row_timing.break_periods if row_timing.is_preview else (),
+                    break_periods=row_timing.break_periods,
                     visible_indexes=segment_visible_indexes[segment_index][frame_index],
                 )
                 canvas.alpha_composite(frame, (x, y))
                 note = _build_time_label_note(row_timing)
                 is_preview_label = row_timing.is_preview
                 _draw_time_label(
-                    draw, _build_gif_time_label(row_timing.start_time),
+                    draw, _build_gif_time_label(row_timing.start_time, gameplay_segment_duration),
                     x, y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP,
                     font_regular, font_note, note,
                     PREVIEW_TIME_LABEL_COLOR if is_preview_label else TIME_LABEL_COLOR,
@@ -269,34 +285,45 @@ def _choose_row_start_times(
     row_count: int,
     images_per_row: int,
     ms_per_row_duration: int,
+    requested_start_times: list[int] | None = None,
 ) -> list[RowTiming]:
     row_duration = (images_per_row - 1) * ms_per_row_duration
     valid_intervals = _build_valid_row_start_intervals(hit_objects, beatmap.break_periods, row_duration)
-    if not valid_intervals:
-        raise PreviewError("not enough playable time to render standard preview rows")
 
     preview_time = int(beatmap.general["PreviewTime"])
     if preview_time < 0:
         preview_time = hit_objects[0].start_time
 
-    chosen = [preview_time]
+    requested_start_times = requested_start_times or []
+    for start_time in requested_start_times:
+        if start_time < 0:
+            raise PreviewError(f"requested time must be non-negative, got {start_time}")
+
+    chosen: list[int] = []
+    if len(requested_start_times) < row_count:
+        chosen.append(preview_time)
+
+    for requested_time in requested_start_times:
+        if requested_time == preview_time or requested_time not in chosen:
+            chosen.append(requested_time)
+
+    if len(chosen) > row_count:
+        chosen = chosen[:row_count]
+
     random_source = random.Random()
     attempts = 0
-    while len(chosen) < row_count and attempts < 3000:
+    while valid_intervals and len(chosen) < row_count and attempts < 3000:
         attempts += 1
         candidate = _random_start_from_intervals(valid_intervals, random_source)
         if _does_not_overlap_existing(candidate, row_duration, chosen):
             chosen.append(candidate)
 
-    if len(chosen) < row_count:
+    if valid_intervals and len(chosen) < row_count:
         for candidate in _fallback_start_candidates(valid_intervals, hit_objects):
             if _does_not_overlap_existing(candidate, row_duration, chosen):
                 chosen.append(candidate)
             if len(chosen) == row_count:
                 break
-
-    if len(chosen) < row_count:
-        raise PreviewError("could not find enough non-overlapping standard preview rows")
 
     return [
         RowTiming(
@@ -402,11 +429,87 @@ def _break_periods_overlapping_row(break_periods: list[BreakPeriod], row_start_t
     return [period for period in break_periods if period.start_time < row_end_time and period.end_time > row_start_time]
 
 
+# ——— mod helpers ———
+
+def _times_to_milliseconds(times: list[float] | None) -> list[int] | None:
+    if times is None:
+        return None
+    return [round(time * 1000) for time in times]
+
+
+def _apply_standard_object_mods(
+    hit_objects: list[StandardHitObject],
+    mods: ModSettings | None,
+) -> list[StandardHitObject]:
+    if mods is None or not mods.hard_rock:
+        return hit_objects
+
+    reflected: list[StandardHitObject] = []
+    for hit_object in hit_objects:
+        reflected.append(
+            StandardHitObject(
+                x=hit_object.x,
+                y=PLAYFIELD_HEIGHT - hit_object.y,
+                start_time=hit_object.start_time,
+                end_time=hit_object.end_time,
+                hit_type=hit_object.hit_type,
+                hitsound=hit_object.hitsound,
+                new_combo=hit_object.new_combo,
+                combo_offset=hit_object.combo_offset,
+                slider_type=hit_object.slider_type,
+                slider_points=tuple((x, PLAYFIELD_HEIGHT - y) for x, y in hit_object.slider_points),
+                slider_repeats=hit_object.slider_repeats,
+                slider_pixel_length=hit_object.slider_pixel_length,
+                slider_edge_hitsounds=hit_object.slider_edge_hitsounds,
+            )
+        )
+    return reflected
+
+
+def _effective_difficulty(beatmap: Beatmap, mods: ModSettings | None) -> dict[str, float]:
+    difficulty = {
+        "CircleSize": float(beatmap.difficulty.get("CircleSize", "5")),
+        "ApproachRate": float(beatmap.difficulty.get("ApproachRate", beatmap.difficulty.get("OverallDifficulty", "5"))),
+        "OverallDifficulty": float(beatmap.difficulty.get("OverallDifficulty", "5")),
+        "HPDrainRate": float(beatmap.difficulty.get("HPDrainRate", "5")),
+    }
+    if mods is None:
+        return difficulty
+
+    if mods.easy:
+        difficulty["CircleSize"] *= 0.5
+        difficulty["ApproachRate"] *= 0.5
+        difficulty["OverallDifficulty"] *= 0.5
+        difficulty["HPDrainRate"] *= 0.5
+
+    if mods.hard_rock:
+        difficulty["CircleSize"] = min(difficulty["CircleSize"] * 1.3, 10.0)
+        difficulty["ApproachRate"] = min(difficulty["ApproachRate"] * 1.4, 10.0)
+        difficulty["OverallDifficulty"] = min(difficulty["OverallDifficulty"] * 1.4, 10.0)
+        difficulty["HPDrainRate"] = min(difficulty["HPDrainRate"] * 1.4, 10.0)
+
+    if mods.has_da():
+        if mods.da_cs is not None:
+            difficulty["CircleSize"] = mods.da_cs
+        if mods.da_ar is not None:
+            difficulty["ApproachRate"] = mods.da_ar
+        if mods.da_od is not None:
+            difficulty["OverallDifficulty"] = mods.da_od
+        if mods.da_hp is not None:
+            difficulty["HPDrainRate"] = mods.da_hp
+
+    return difficulty
+
+
 # ——— render context ———
 
-def _build_render_context(beatmap: Beatmap, hit_objects: list[StandardHitObject]) -> RenderContext:
+def _build_render_context(
+    beatmap: Beatmap,
+    hit_objects: list[StandardHitObject],
+    mods: ModSettings | None,
+) -> RenderContext:
     skin = load_standard_skin()
-    settings = _build_render_settings(beatmap)
+    settings = _build_render_settings(beatmap, mods)
     frame_layout = _build_frame_layout()
     combo_info = _build_combo_info(hit_objects, skin.combo_colors)
     frame_circle_diameter = max(1, round(settings.circle_diameter * frame_layout.scale))
@@ -459,17 +562,21 @@ def _build_visible_indexes_by_snapshot(
     return tuple(visible_groups)
 
 
-def _build_render_settings(beatmap: Beatmap) -> RenderSettings:
-    circle_size = float(beatmap.difficulty["CircleSize"])
-    approach_rate = float(beatmap.difficulty.get("ApproachRate", beatmap.difficulty.get("OverallDifficulty", "5")))
+def _build_render_settings(beatmap: Beatmap, mods: ModSettings | None) -> RenderSettings:
+    difficulty = _effective_difficulty(beatmap, mods)
+    circle_size = difficulty["CircleSize"]
+    approach_rate = difficulty["ApproachRate"]
     scale = (1.0 - 0.7 * ((circle_size - 5.0) / 5.0)) / 2.0 * BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE
     circle_radius = OBJECT_RADIUS * scale
     circle_diameter = max(1, round(circle_radius * 2))
     preempt_ms = _difficulty_range_int(approach_rate, 1800, 1200, 450)
     fade_in_ms = 400 * min(1, preempt_ms / 450)
+    hidden = mods is not None and mods.hidden
+    if hidden:
+        fade_in_ms = preempt_ms * 0.4
     return RenderSettings(
         circle_radius=circle_radius, circle_diameter=circle_diameter,
-        preempt_ms=preempt_ms, fade_in_ms=fade_in_ms,
+        preempt_ms=preempt_ms, fade_in_ms=fade_in_ms, hidden=hidden,
     )
 
 
@@ -597,7 +704,8 @@ def _draw_slider(
     frame: Image.Image, context: RenderContext,
     hit_object: StandardHitObject, combo: ComboInfo, snapshot_time: int,
 ) -> None:
-    alpha = _object_alpha(hit_object.start_time, hit_object.end_time, snapshot_time, context.settings)
+    alpha = _slider_body_alpha(hit_object, snapshot_time, context.settings)
+    overlay_alpha = _normal_object_alpha(hit_object.start_time, hit_object.end_time, snapshot_time, context.settings)
     slider_data = _get_slider_render_data(hit_object, context)
     snaked_start, snaked_end = _slider_snaked_range(hit_object, snapshot_time, context.settings)
     if _is_full_slider_body(snaked_start, snaked_end):
@@ -608,8 +716,8 @@ def _draw_slider(
         _draw_slider_body(frame, visible_path, context.slider_body_width, context.slider_border_width,
                           context.skin.slider_border, context.skin.slider_track, alpha)
 
-    _draw_slider_reverse_arrows(frame, context, slider_data, hit_object, snapshot_time, snaked_start, snaked_end, alpha)
-    _draw_slider_ball(frame, context, slider_data, hit_object, snapshot_time, alpha)
+    _draw_slider_reverse_arrows(frame, context, slider_data, hit_object, snapshot_time, snaked_start, snaked_end, overlay_alpha)
+    _draw_slider_ball(frame, context, slider_data, hit_object, snapshot_time, overlay_alpha)
     head_alpha = _slider_head_alpha(hit_object, snapshot_time, context.settings, snaked_start, snaked_end)
     if head_alpha > 0:
         _draw_circle_piece(frame, context, slider_data.head_center, combo.color, head_alpha, str(combo.number))
@@ -643,7 +751,7 @@ def _slider_snaked_range(hit_object: StandardHitObject, snapshot_time: int, sett
 # ——— spinner ———
 
 def _draw_spinner(frame: Image.Image, context: RenderContext, hit_object: StandardHitObject, snapshot_time: int) -> None:
-    alpha = _object_alpha(hit_object.start_time, hit_object.end_time, snapshot_time, context.settings)
+    alpha = _spinner_alpha(hit_object, snapshot_time, context.settings)
     center = _to_frame_point(PLAYFIELD_WIDTH / 2, PLAYFIELD_HEIGHT / 2, context.frame_layout)
     sprite = _resize_with_alpha(context.skin.spinner_circle, context.spinner_size, alpha, context.cache)
     frame.alpha_composite(sprite, (round(center[0] - sprite.width / 2), round(center[1] - sprite.height / 2)))
@@ -655,6 +763,8 @@ def _draw_approach_circle(
     frame: Image.Image, context: RenderContext,
     hit_object: StandardHitObject, color: tuple[int, int, int], snapshot_time: int,
 ) -> None:
+    if context.settings.hidden:
+        return
     if snapshot_time >= hit_object.start_time:
         return
 
@@ -671,12 +781,64 @@ def _draw_approach_circle(
 # ——— alpha / timing helpers ———
 
 def _object_alpha(start_time: int, end_time: int, snapshot_time: int, settings: RenderSettings) -> float:
+    if settings.hidden:
+        return _hidden_object_alpha(start_time, end_time, snapshot_time, settings)
+    return _normal_object_alpha(start_time, end_time, snapshot_time, settings)
+
+
+def _normal_object_alpha(start_time: int, end_time: int, snapshot_time: int, settings: RenderSettings) -> float:
     if snapshot_time < start_time:
         fade_start = start_time - settings.preempt_ms
         return max(0.0, min(1.0, (snapshot_time - fade_start) / settings.fade_in_ms))
     if snapshot_time <= end_time:
         return 1.0
     return max(0.0, 1.0 - (snapshot_time - end_time) / SLIDER_FADE_OUT_MS)
+
+
+def _hidden_object_alpha(start_time: int, end_time: int, snapshot_time: int, settings: RenderSettings) -> float:
+    if end_time > start_time:
+        return _hidden_slider_body_alpha(start_time, end_time, snapshot_time, settings)
+
+    fade_start = start_time - settings.preempt_ms
+    fade_in_end = fade_start + settings.fade_in_ms
+    if snapshot_time < start_time:
+        fade_in_alpha = max(0.0, min(1.0, (snapshot_time - fade_start) / max(1.0, settings.fade_in_ms)))
+        fade_out_end = fade_in_end + settings.preempt_ms * 0.3
+        fade_out_alpha = max(0.0, min(1.0, 1.0 - (snapshot_time - fade_in_end) / max(1.0, fade_out_end - fade_in_end)))
+        return min(fade_in_alpha, fade_out_alpha)
+
+    if snapshot_time <= end_time:
+        return 0.0
+
+    return 0.0
+
+
+def _slider_body_alpha(hit_object: StandardHitObject, snapshot_time: int, settings: RenderSettings) -> float:
+    if settings.hidden:
+        return _hidden_slider_body_alpha(hit_object.start_time, hit_object.end_time, snapshot_time, settings)
+    return _normal_object_alpha(hit_object.start_time, hit_object.end_time, snapshot_time, settings)
+
+
+def _hidden_slider_body_alpha(start_time: int, end_time: int, snapshot_time: int, settings: RenderSettings) -> float:
+    fade_start = start_time - settings.preempt_ms
+    fade_in_end = fade_start + settings.fade_in_ms
+    if snapshot_time < fade_in_end:
+        return max(0.0, min(1.0, (snapshot_time - fade_start) / max(1.0, settings.fade_in_ms)))
+    if snapshot_time <= end_time:
+        return max(0.0, min(1.0, 1.0 - (snapshot_time - fade_in_end) / max(1.0, end_time - fade_in_end)))
+    return max(0.0, 1.0 - (snapshot_time - end_time) / SLIDER_FADE_OUT_MS)
+
+
+def _spinner_alpha(hit_object: StandardHitObject, snapshot_time: int, settings: RenderSettings) -> float:
+    if not settings.hidden:
+        return _normal_object_alpha(hit_object.start_time, hit_object.end_time, snapshot_time, settings)
+
+    fade_start = hit_object.start_time - settings.fade_in_ms
+    if snapshot_time < hit_object.start_time:
+        return max(0.0, min(1.0, (snapshot_time - fade_start) / max(1.0, settings.fade_in_ms)))
+    if snapshot_time <= hit_object.end_time:
+        return 1.0
+    return max(0.0, 1.0 - (snapshot_time - hit_object.end_time) / max(1.0, settings.preempt_ms * 0.3))
 
 
 def _slider_head_alpha(
@@ -687,6 +849,8 @@ def _slider_head_alpha(
         return 0.0
     if snapshot_time < hit_object.start_time:
         return _object_alpha(hit_object.start_time, hit_object.start_time, snapshot_time, settings)
+    if settings.hidden:
+        return 0.0
     if snapshot_time <= hit_object.start_time + POST_HIT_FADE_MS:
         return 1.0 - (snapshot_time - hit_object.start_time) / POST_HIT_FADE_MS
     return 0.0
@@ -1027,8 +1191,8 @@ def _build_time_label_note(row_timing: RowTiming) -> str | None:
     return "Preview Time"
 
 
-def _build_gif_time_label(start_time: int) -> str:
-    end_time = start_time + GIF_DURATION_MS
+def _build_gif_time_label(start_time: int, duration_ms: int = GIF_DURATION_MS) -> str:
+    end_time = start_time + duration_ms
     return f"{_format_time(start_time)} - {_format_time(end_time)}"
 
 

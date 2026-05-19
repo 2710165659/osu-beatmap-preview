@@ -40,6 +40,8 @@ def generate_preview(
     # ── 解析 fmt 默认值 ──
     if fmt is None:
         fmt = "gif" if target_mode == 0 else "png"
+    if times is not None and fmt != "gif":
+        raise PreviewError("--times is only valid for GIF output")
 
     # ── mod 校验 ──
     if mods is not None and mods.has_any_mod():
@@ -86,7 +88,7 @@ def _format_mod_suffix(mods: ModSettings) -> str:
     tokens = [token.strip().lower() for token in mods.tokens if token.strip()]
     if not tokens:
         return "mod"
-    return "mod-" + "-".join(re.sub(r"[^a-z0-9]+", "", token) for token in tokens if token)
+    return "mod-" + "-".join(re.sub(r"[^a-z0-9.-]+", "", token) for token in tokens if token)
 
 
 def _render_preview_for_mode(
@@ -97,15 +99,12 @@ def _render_preview_for_mode(
     mods: ModSettings | None,
     times: list[float] | None,
 ) -> Path:
-    # TODO: 后续实现 mod 对渲染参数的实际影响
-    # TODO: 后续实现 times 指定 GIF 起始帧
-
     if target_mode == 0:
         from .models import StandardHitObject
         hit_objects = [ho for ho in beatmap.hit_objects if isinstance(ho, StandardHitObject)]
         if not hit_objects:
             raise PreviewError("standard beatmap has no hit objects")
-        result = render_standard(beatmap, hit_objects, fmt)
+        result = render_standard(beatmap, hit_objects, fmt, mods=mods, times=times)
         if fmt == "gif":
             frames, frame_duration_ms, loop = result
             save_animated_gif(frames, output_path, frame_duration_ms, loop)

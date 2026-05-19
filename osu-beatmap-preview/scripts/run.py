@@ -50,6 +50,9 @@ def _build_parser() -> argparse.ArgumentParser:
 def _parse_times(raw: str) -> list[float]:
     """将 ``"10+20+30"`` 解析为 ``[10.0, 20.0, 30.0]``。"""
     parts = [p.strip() for p in raw.split("+") if p.strip()]
+    if len(parts) > 4:
+        raise PreviewError("--times accepts at most 4 time points")
+
     result: list[float] = []
     for p in parts:
         try:
@@ -59,7 +62,7 @@ def _parse_times(raw: str) -> list[float]:
         if val < 0:
             raise PreviewError(f"time must be non-negative, got {val}")
         result.append(val)
-    return sorted(result)
+    return result
 
 
 def main() -> int:
