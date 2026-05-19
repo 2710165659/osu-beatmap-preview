@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import random
 from dataclasses import dataclass
 
 from PIL import Image, ImageDraw, ImageFont
@@ -9,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ..errors import PreviewError
 from ..models import Beatmap, BreakPeriod, StandardHitObject
 from ..mods import ModSettings
+from ..time_selection import PreviewTimeSelector, times_to_milliseconds
 from .config import (
     CANVAS_BACKGROUND_COLOR,
     GIF_DURATION_MS,
@@ -51,7 +51,6 @@ BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE = 1.00041  # osu!stable 历史圆大小修�
 POST_HIT_FADE_MS = 120  # 普通 hit circle 命中后的短暂残留时间
 SLIDER_FADE_OUT_MS = 240  # slider 结束后的淡出时间
 SPINNER_FADE_OUT_MS = 240  # spinner 结束后的淡出时间
-BREAK_GAP_MS = 2200  # 未声明 break 时，将长于此值的无 note 间隔视为 break
 BREAK_MIN_DURATION_MS = 650  # osu! BreakPeriod.MIN_BREAK_DURATION，短于此值不产生 break overlay
 BREAK_FADE_DURATION_MS = BREAK_MIN_DURATION_MS // 2  # osu! BreakOverlay.BREAK_FADE_DURATION
 BREAK_OVERLAY_BAR_WIDTH_RATIO = 0.3  # osu! break 剩余时间条最大宽度占屏幕比例
@@ -231,7 +230,7 @@ def _render_gif(beatmap: Beatmap, hit_objects: list[StandardHitObject], mods: Mo
         row_count=GIF_ROW_COUNT * GIF_IMAGES_PER_ROW,
         images_per_row=2,
         ms_per_row_duration=gameplay_segment_duration,
-        requested_start_times=_times_to_milliseconds(times),
+        requested_start_times=times_to_milliseconds(times),
     )
     font_regular = ImageFont.load_default(size=TIME_LABEL_FONT_SIZE)
     font_note = ImageFont.load_default(size=TIME_LABEL_NOTE_FONT_SIZE)
@@ -288,153 +287,21 @@ def _choose_row_start_times(
     requested_start_times: list[int] | None = None,
 ) -> list[RowTiming]:
     row_duration = (images_per_row - 1) * ms_per_row_duration
-    valid_intervals = _build_valid_row_start_intervals(hit_objects, beatmap.break_periods, row_duration)
-
-    preview_time = int(beatmap.general["PreviewTime"])
-    if preview_time < 0:
-        preview_time = hit_objects[0].start_time
-
-    requested_start_times = requested_start_times or []
-    for start_time in requested_start_times:
-        if start_time < 0:
-            raise PreviewError(f"requested time must be non-negative, got {start_time}")
-
-    chosen: list[int] = []
-    if len(requested_start_times) < row_count:
-        chosen.append(preview_time)
-
-    for requested_time in requested_start_times:
-        if requested_time == preview_time or requested_time not in chosen:
-            chosen.append(requested_time)
-
-    if len(chosen) > row_count:
-        chosen = chosen[:row_count]
-
-    random_source = random.Random()
-    attempts = 0
-    while valid_intervals and len(chosen) < row_count and attempts < 3000:
-        attempts += 1
-        candidate = _random_start_from_intervals(valid_intervals, random_source)
-        if _does_not_overlap_existing(candidate, row_duration, chosen):
-            chosen.append(candidate)
-
-    if valid_intervals and len(chosen) < row_count:
-        for candidate in _fallback_start_candidates(valid_intervals, hit_objects):
-            if _does_not_overlap_existing(candidate, row_duration, chosen):
-                chosen.append(candidate)
-            if len(chosen) == row_count:
-                break
-
+    chosen = PreviewTimeSelector(
+        beatmap=beatmap,
+        hit_objects=hit_objects,
+        segment_count=row_count,
+        segment_duration=row_duration,
+        requested_start_times=requested_start_times,
+    ).choose()
     return [
         RowTiming(
-            start_time=start_time,
-            is_preview=start_time == preview_time,
-            break_periods=tuple(_break_periods_overlapping_row(beatmap.break_periods, start_time, row_duration)),
+            start_time=timing.start_time,
+            is_preview=timing.is_preview,
+            break_periods=timing.break_periods,
         )
-        for start_time in sorted(chosen)
+        for timing in chosen
     ]
-
-
-def _build_valid_row_start_intervals(
-    hit_objects: list[StandardHitObject],
-    break_periods: list[BreakPeriod],
-    row_duration: int,
-) -> list[tuple[int, int]]:
-    chart_start = hit_objects[0].start_time
-    chart_end = max(hit_object.end_time for hit_object in hit_objects)
-    forbidden = _merge_periods([*break_periods, *_infer_break_periods(hit_objects)])
-    playable_segments = _subtract_periods(chart_start, chart_end, forbidden)
-    intervals = []
-    for start, end in playable_segments:
-        latest_start = end - row_duration
-        if latest_start >= start:
-            intervals.append((start, latest_start))
-    return intervals
-
-
-def _infer_break_periods(hit_objects: list[StandardHitObject]) -> list[BreakPeriod]:
-    periods: list[BreakPeriod] = []
-    previous_end = hit_objects[0].end_time
-    for hit_object in hit_objects[1:]:
-        if hit_object.start_time - previous_end >= BREAK_GAP_MS:
-            periods.append(BreakPeriod(start_time=previous_end, end_time=hit_object.start_time))
-        previous_end = max(previous_end, hit_object.end_time)
-    return periods
-
-
-def _merge_periods(periods: list[BreakPeriod]) -> list[BreakPeriod]:
-    ordered = sorted(periods, key=lambda period: (period.start_time, period.end_time))
-    merged: list[BreakPeriod] = []
-    for period in ordered:
-        if not merged or period.start_time > merged[-1].end_time:
-            merged.append(period)
-            continue
-        previous = merged[-1]
-        merged[-1] = BreakPeriod(previous.start_time, max(previous.end_time, period.end_time))
-    return merged
-
-
-def _subtract_periods(start_time: int, end_time: int, forbidden_periods: list[BreakPeriod]) -> list[tuple[int, int]]:
-    segments: list[tuple[int, int]] = []
-    cursor = start_time
-    for period in forbidden_periods:
-        if period.end_time <= cursor:
-            continue
-        if period.start_time > cursor:
-            segments.append((cursor, min(period.start_time, end_time)))
-        cursor = max(cursor, period.end_time)
-        if cursor >= end_time:
-            break
-    if cursor < end_time:
-        segments.append((cursor, end_time))
-    return [(start, end) for start, end in segments if end > start]
-
-
-def _nearest_valid_start(time: int, intervals: list[tuple[int, int]]) -> int:
-    if any(start <= time <= end for start, end in intervals):
-        return time
-    return min(
-        (start if time < start else end for start, end in intervals),
-        key=lambda candidate: abs(candidate - time),
-    )
-
-
-def _random_start_from_intervals(intervals: list[tuple[int, int]], random_source: random.Random) -> int:
-    total = sum(end - start + 1 for start, end in intervals)
-    pick = random_source.randrange(total)
-    for start, end in intervals:
-        length = end - start + 1
-        if pick < length:
-            return start + pick
-        pick -= length
-    return intervals[-1][1]
-
-
-def _does_not_overlap_existing(candidate: int, row_duration: int, chosen: list[int]) -> bool:
-    candidate_end = candidate + row_duration
-    for existing in chosen:
-        existing_end = existing + row_duration
-        if candidate < existing_end and candidate_end > existing:
-            return False
-    return True
-
-
-def _fallback_start_candidates(intervals: list[tuple[int, int]], hit_objects: list[StandardHitObject]) -> list[int]:
-    candidates = [_nearest_valid_start(hit_object.start_time, intervals) for hit_object in hit_objects]
-    return sorted(set(candidates))
-
-
-def _break_periods_overlapping_row(break_periods: list[BreakPeriod], row_start_time: int, row_duration: int) -> list[BreakPeriod]:
-    row_end_time = row_start_time + row_duration
-    return [period for period in break_periods if period.start_time < row_end_time and period.end_time > row_start_time]
-
-
-# ——— mod helpers ———
-
-def _times_to_milliseconds(times: list[float] | None) -> list[int] | None:
-    if times is None:
-        return None
-    return [round(time * 1000) for time in times]
 
 
 def _apply_standard_object_mods(

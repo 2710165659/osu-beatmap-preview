@@ -128,6 +128,12 @@ def _render_preview_for_mode(
         if beatmap.mode != 3:
             from .convert import convert_beatmap
             beatmap = convert_beatmap(beatmap, target_mode, mods)
+        if fmt == "gif":
+            from .mania.gif_renderer import render_mania_gif
+
+            frames, frame_duration_ms, loop = render_mania_gif(beatmap, mods=mods, times=times)
+            save_animated_gif(frames, output_path, frame_duration_ms, loop)
+            return output_path
         return render_mania_grid(beatmap, output_path, mods=mods)
 
     raise PreviewError(f"unsupported beatmap mode: {target_mode}")
