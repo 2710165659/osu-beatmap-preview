@@ -116,12 +116,24 @@ def _render_preview_for_mode(
         if beatmap.mode != 1:
             from .convert import convert_beatmap
             beatmap = convert_beatmap(beatmap, target_mode, mods)
+        if fmt == "gif":
+            from .taiko.gif_renderer import render_taiko_gif
+
+            frames, frame_duration_ms, loop = render_taiko_gif(beatmap, mods=mods, times=times)
+            save_animated_gif(frames, output_path, frame_duration_ms, loop)
+            return output_path
         return render_taiko_grid(beatmap, output_path, mods=mods)
 
     if target_mode == 2:
         if beatmap.mode != 2:
             from .convert import convert_beatmap
             beatmap = convert_beatmap(beatmap, target_mode, mods)
+        if fmt == "gif":
+            from .catch.gif_renderer import render_catch_gif
+
+            frames, frame_duration_ms, loop = render_catch_gif(beatmap, mods=mods, times=times)
+            save_animated_gif(frames, output_path, frame_duration_ms, loop)
+            return output_path
         return render_catch_grid(beatmap, output_path, mods=mods)
 
     if target_mode == 3:

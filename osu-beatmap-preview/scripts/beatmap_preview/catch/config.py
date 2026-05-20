@@ -55,3 +55,24 @@ BANANA_COLORS = (
     (255, 192, 0),
     (214, 221, 28),
 )
+
+# GIF 相关配置（2x2 宫格布局，与 std 一致）
+GIF_ROW_COUNT = 2           # GIF 行数
+GIF_IMAGES_PER_ROW = 2      # GIF 每行格数
+GIF_SEGMENT_COUNT = GIF_ROW_COUNT * GIF_IMAGES_PER_ROW  # 总格数 = 4
+GIF_DURATION_MS = 5000     # 每段播放时长(ms)
+GIF_FPS = 15                # GIF 帧率
+GIF_LOOP = 0                # GIF 循环次数，0 表示无限循环
+GIF_IMAGE_WIDTH = 512       # 每格宽度（与 osu! catch playfield 一致）
+GIF_IMAGE_HEIGHT = 384      # 每格高度（与 osu! catch playfield 一致）
+GIF_GRID_GAP = 20           # 格间距（与 std 一致）
+GIF_LEFT_PANEL_WIDTH = 12   # 每格左侧灰色区域宽度（与 std 一致）
+GIF_LEFT_PANEL_BACKGROUND = (112, 112, 112, 255)  # 每格左侧区域颜色
+GIF_TIME_LABEL_FONT_SIZE = 30        # GIF 时间标签字号
+GIF_TIME_LABEL_NOTE_FONT_SIZE = 22   # GIF PreviewTime 备注字号
+GIF_TIME_LABEL_HEIGHT = 76           # GIF 时间标签预留高度
+GIF_TIME_LABEL_TOP_GAP = 8           # 格与时间标签之间间距
+GIF_TIME_LABEL_NOTE_TOP_GAP = 9      # 主时间与备注间距
+GIF_TIME_LABEL_COLOR = (232, 232, 232, 255)
+GIF_TIME_LABEL_NOTE_COLOR = (170, 170, 170, 255)
+GIF_PREVIEW_TIME_LABEL_COLOR = (95, 221, 108, 255)
