@@ -49,6 +49,7 @@ from .config import (
 )
 from .objects import CatchRenderObject, build_catch_render_objects
 from .skin import CatchSkin, load_catch_skin
+from .slider_path import _build_slider_path_cached
 
 
 @dataclass(frozen=True)
@@ -90,35 +91,39 @@ def render_catch_grid(
     mods: ModSettings | None = None,
 ) -> Path:
     """把 osu!catch 谱面渲染为纵向多列预览图。"""
-    hit_objects = [ho for ho in beatmap.hit_objects if isinstance(ho, CatchHitObject)]
-    if not hit_objects:
-        raise PreviewError("catch beatmap has no hit objects")
+    _build_slider_path_cached.cache_clear()
+    try:
+        hit_objects = [ho for ho in beatmap.hit_objects if isinstance(ho, CatchHitObject)]
+        if not hit_objects:
+            raise PreviewError("catch beatmap has no hit objects")
 
-    skin = load_catch_skin()
-    render_cache: dict = {}
-    effective_difficulty = _effective_difficulty(beatmap, mods)
-    render_objects = build_catch_render_objects(beatmap, hit_objects, skin.combo_colors, mods=mods, difficulty=effective_difficulty)
-    chart_end_time = max(1, max(hit_object.end_time for hit_object in hit_objects))
-    timing_lines = _build_timing_lines(beatmap.timing_points, chart_end_time)
-    layout = _build_layout(chart_end_time, effective_difficulty["CircleSize"], effective_difficulty["ApproachRate"], skin)
-    font_regular = ImageFont.load_default(size=TIME_LABEL_FONT_SIZE)
+        skin = load_catch_skin()
+        render_cache: dict = {}
+        effective_difficulty = _effective_difficulty(beatmap, mods)
+        render_objects = build_catch_render_objects(beatmap, hit_objects, skin.combo_colors, mods=mods, difficulty=effective_difficulty)
+        chart_end_time = max(1, max(hit_object.end_time for hit_object in hit_objects))
+        timing_lines = _build_timing_lines(beatmap.timing_points, chart_end_time)
+        layout = _build_layout(chart_end_time, effective_difficulty["CircleSize"], effective_difficulty["ApproachRate"], skin)
+        font_regular = ImageFont.load_default(size=TIME_LABEL_FONT_SIZE)
 
-    image = Image.new("RGB", (layout.image_width, layout.image_height), IMAGE_BACKGROUND[:3])
-    draw = ImageDraw.Draw(image)
+        image = Image.new("RGB", (layout.image_width, layout.image_height), IMAGE_BACKGROUND[:3])
+        draw = ImageDraw.Draw(image)
 
-    for column_index in range(layout.column_count):
-        _draw_column_background(draw, layout, column_index)
-        if DRAW_CATCHER_EACH_COLUMN or column_index == 0:
-            _draw_catcher(image, skin, layout, column_index, render_cache)
+        for column_index in range(layout.column_count):
+            _draw_column_background(draw, layout, column_index)
+            if DRAW_CATCHER_EACH_COLUMN or column_index == 0:
+                _draw_catcher(image, skin, layout, column_index, render_cache)
 
-    for timing_line in timing_lines:
-        _draw_timing_line(draw, timing_line, layout, font_regular)
+        for timing_line in timing_lines:
+            _draw_timing_line(draw, timing_line, layout, font_regular)
 
-    for catch_object in sorted(render_objects, key=lambda item: (-item.start_time, _object_order(item.object_type))):
-        _draw_catch_object(image, skin, catch_object, layout, render_cache)
+        for catch_object in sorted(render_objects, key=lambda item: (-item.start_time, _object_order(item.object_type))):
+            _draw_catch_object(image, skin, catch_object, layout, render_cache)
 
-    image.save(output_path, optimize=True)
-    return output_path
+        image.save(output_path, optimize=True)
+        return output_path
+    finally:
+        _build_slider_path_cached.cache_clear()
 
 
 def _build_layout(

@@ -45,6 +45,7 @@ from .config import (
 )
 from .objects import CatchRenderObject, build_catch_render_objects
 from .skin import CatchSkin, load_catch_skin
+from .slider_path import _build_slider_path_cached
 
 
 @dataclass(frozen=True)
@@ -66,74 +67,82 @@ def render_catch_gif(
     mods: ModSettings | None = None,
     times: list[float] | None = None,
 ):
-    hit_objects = [ho for ho in beatmap.hit_objects if isinstance(ho, CatchHitObject)]
-    if not hit_objects:
-        raise PreviewError("catch beatmap has no hit objects")
+    _build_slider_path_cached.cache_clear()
+    try:
+        hit_objects = [ho for ho in beatmap.hit_objects if isinstance(ho, CatchHitObject)]
+        if not hit_objects:
+            raise PreviewError("catch beatmap has no hit objects")
 
-    skin = load_catch_skin()
-    effective_difficulty = _effective_difficulty(beatmap, mods)
-    render_objects = build_catch_render_objects(
-        beatmap, hit_objects, skin.combo_colors, mods=mods, difficulty=effective_difficulty
-    )
-
-    speed_multiplier = mods.speed_multiplier if mods is not None else 1.0
-    gameplay_segment_duration = round(GIF_DURATION_MS * speed_multiplier)
-    segment_timings = PreviewTimeSelector(
-        beatmap=beatmap,
-        hit_objects=hit_objects,
-        segment_count=GIF_SEGMENT_COUNT,
-        segment_duration=gameplay_segment_duration,
-        requested_start_times=times_to_milliseconds(times),
-    ).choose()
-
-    layout = _build_layout(effective_difficulty["CircleSize"], effective_difficulty["ApproachRate"])
-
-    font_regular = ImageFont.load_default(size=GIF_TIME_LABEL_FONT_SIZE)
-    font_note = ImageFont.load_default(size=GIF_TIME_LABEL_NOTE_FONT_SIZE)
-    frame_count = max(1, round(GIF_DURATION_MS * GIF_FPS / 1000))
-    frame_duration_ms = max(1, round(1000 / GIF_FPS))
-
-    segment_snapshot_times = [
-        tuple(
-            timing.start_time + round(frame_index * 1000 * speed_multiplier / GIF_FPS)
-            for frame_index in range(frame_count)
+        skin = load_catch_skin()
+        effective_difficulty = _effective_difficulty(beatmap, mods)
+        render_objects = build_catch_render_objects(
+            beatmap, hit_objects, skin.combo_colors, mods=mods, difficulty=effective_difficulty
         )
-        for timing in segment_timings
-    ]
 
-    render_cache: dict = {}
+        speed_multiplier = mods.speed_multiplier if mods is not None else 1.0
+        gameplay_segment_duration = round(GIF_DURATION_MS * speed_multiplier)
+        segment_timings = PreviewTimeSelector(
+            beatmap=beatmap,
+            hit_objects=hit_objects,
+            segment_count=GIF_SEGMENT_COUNT,
+            segment_duration=gameplay_segment_duration,
+            requested_start_times=times_to_milliseconds(times),
+        ).choose()
 
-    def frame_generator():
-        for frame_index in range(frame_count):
-            canvas = Image.new("RGBA", (layout.canvas_width, layout.canvas_height), IMAGE_BACKGROUND)
-            draw = ImageDraw.Draw(canvas)
+        layout = _build_layout(effective_difficulty["CircleSize"], effective_difficulty["ApproachRate"])
 
-            for segment_index, segment_timing in enumerate(segment_timings):
-                snapshot_time = segment_snapshot_times[segment_index][frame_index]
-                frame_x, frame_y = _frame_origin(segment_index)
-                frame = _render_frame(
-                    skin=skin,
-                    render_objects=render_objects,
-                    snapshot_time=snapshot_time,
-                    layout=layout,
-                    cache=render_cache,
-                )
-                canvas.alpha_composite(frame, (frame_x, frame_y))
-                _draw_time_label(
-                    draw=draw,
-                    start_time=segment_timing.start_time,
-                    duration_ms=gameplay_segment_duration,
-                    frame_x=frame_x,
-                    frame_y=frame_y,
-                    layout=layout,
-                    font_regular=font_regular,
-                    font_note=font_note,
-                    is_preview=segment_timing.is_preview,
-                )
+        font_regular = ImageFont.load_default(size=GIF_TIME_LABEL_FONT_SIZE)
+        font_note = ImageFont.load_default(size=GIF_TIME_LABEL_NOTE_FONT_SIZE)
+        frame_count = max(1, round(GIF_DURATION_MS * GIF_FPS / 1000))
+        frame_duration_ms = max(1, round(1000 / GIF_FPS))
 
-            yield canvas
+        segment_snapshot_times = [
+            tuple(
+                timing.start_time + round(frame_index * 1000 * speed_multiplier / GIF_FPS)
+                for frame_index in range(frame_count)
+            )
+            for timing in segment_timings
+        ]
 
-    return frame_generator(), frame_duration_ms, GIF_LOOP
+        render_cache: dict = {}
+
+        def frame_generator():
+            try:
+                for frame_index in range(frame_count):
+                    canvas = Image.new("RGBA", (layout.canvas_width, layout.canvas_height), IMAGE_BACKGROUND)
+                    draw = ImageDraw.Draw(canvas)
+
+                    for segment_index, segment_timing in enumerate(segment_timings):
+                        snapshot_time = segment_snapshot_times[segment_index][frame_index]
+                        frame_x, frame_y = _frame_origin(segment_index)
+                        frame = _render_frame(
+                            skin=skin,
+                            render_objects=render_objects,
+                            snapshot_time=snapshot_time,
+                            layout=layout,
+                            cache=render_cache,
+                        )
+                        canvas.alpha_composite(frame, (frame_x, frame_y))
+                        _draw_time_label(
+                            draw=draw,
+                            start_time=segment_timing.start_time,
+                            duration_ms=gameplay_segment_duration,
+                            frame_x=frame_x,
+                            frame_y=frame_y,
+                            layout=layout,
+                            font_regular=font_regular,
+                            font_note=font_note,
+                            is_preview=segment_timing.is_preview,
+                        )
+
+                    yield canvas
+            finally:
+                _build_slider_path_cached.cache_clear()
+
+        return frame_generator(), frame_duration_ms, GIF_LOOP
+    except Exception:
+        _build_slider_path_cached.cache_clear()
+        raise
 
 
 def _build_layout(circle_size: float, approach_rate: float) -> GifLayout:
