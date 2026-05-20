@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ..errors import PreviewError
 from ..models import Beatmap, ManiaHitObject, TimingPoint
 from ..mods import ModSettings
+from .convert import SOURCE_MODE_KEY
 from .config import (
     BEAT_LINE,
     BOTTOM_PADDING_MS,
@@ -104,13 +105,15 @@ def render_mania_grid(
 
     # ── CS：关闭 SV 变化 ──
     cs_mode = mods is not None and mods.cs_override
+    source_mode = beatmap.general.get(SOURCE_MODE_KEY, beatmap.general.get("Mode", "3"))
+    is_native_mania = source_mode == "3"
 
     font_regular = ImageFont.load_default(size=TIME_LABEL_FONT_SIZE)
     font_sv = ImageFont.load_default(size=SV_TEXT_FONT_SIZE)
     beatmap_duration = max(ho.end_time for ho in hit_objects) if hit_objects else 0
     chart_end_time = beatmap_duration + BOTTOM_PADDING_MS
     timing_lines = _build_timing_lines(beatmap.timing_points, chart_end_time)
-    sv_changes = [] if cs_mode else _build_sv_changes(beatmap.timing_points, chart_end_time)
+    sv_changes = [] if cs_mode or not is_native_mania else _build_sv_changes(beatmap.timing_points, chart_end_time)
     layout = _build_layout(key_count, beatmap_duration, chart_end_time)
     render_cache: dict[str, str] = {}
 

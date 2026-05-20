@@ -44,6 +44,7 @@ from .config import (
     SV_TEXT_FONT_SIZE,
 )
 from .renderer import LANE_COLOR_PALETTES, _apply_hold_off_mod, _apply_inverse_mod, _darken_hex
+from .convert import SOURCE_MODE_KEY
 from .skin import ManiaSkinConfig, load_mania_skin_config
 
 
@@ -104,15 +105,17 @@ def render_mania_gif(
 
     skin_config = load_mania_skin_config(key_count)
     layout = _build_layout(skin_config)
+    source_mode = beatmap.general.get(SOURCE_MODE_KEY, beatmap.general.get("Mode", "3"))
+    is_native_mania = source_mode == "3"
     # CS 是 Constant Scroll：保留 33 速时间窗，但不叠加 SV 变速。
-    scroll_map = _build_scroll_map(beatmap.timing_points, constant=cs_mode)
+    scroll_map = _build_scroll_map(beatmap, constant=cs_mode, allow_sv=is_native_mania)
     # time_range 表示 33 速下从判定线到顶部可容纳的谱面时间。
     time_range = _compute_time_range(speed_multiplier, skin_config.hit_position)
     pixels_per_scroll_unit = layout.scroll_length / time_range
     frame_count = max(1, round(GIF_DURATION_MS * GIF_FPS / 1000))
     frame_duration_ms = max(1, round(1000 / GIF_FPS))
     max_segment_end = max(timing.start_time + gameplay_segment_duration for timing in segment_timings)
-    sv_changes = [] if cs_mode else _build_sv_changes(beatmap.timing_points, max_segment_end + round(time_range))
+    sv_changes = [] if cs_mode or not is_native_mania else _build_sv_changes(beatmap.timing_points, max_segment_end + round(time_range))
 
     font_regular = ImageFont.load_default(size=GIF_TIME_LABEL_FONT_SIZE)
     font_note = ImageFont.load_default(size=GIF_TIME_LABEL_NOTE_FONT_SIZE)
@@ -235,24 +238,25 @@ def _compute_time_range(speed_multiplier: float, hit_position: float) -> float:
     return max(1.0, GIF_MAX_TIME_RANGE / GIF_SCROLL_SPEED * hit_position_scale * speed_multiplier)
 
 
-def _build_scroll_map(timing_points: list[TimingPoint], constant: bool) -> ScrollMap:
+def _build_scroll_map(beatmap: Beatmap, constant: bool, allow_sv: bool) -> ScrollMap:
     if constant:
         # CS mod 下所有时间按匀速滚动，不使用谱面的绿线 SV。
         return ScrollMap(starts=(0.0,), positions=(0.0,), multipliers=(1.0,))
 
     # 顺序滚动距离需要累积红线 BPM 和绿线 SV，绘制时再从距离差换成像素。
+    timing_points = beatmap.timing_points
     starts: list[float] = []
     multipliers: list[float] = []
-    current_beat_length = _most_common_beat_length(timing_points)
+    current_beat_length = _most_common_beat_length(timing_points, beatmap.hit_objects)
     current_scroll_speed = 1.0
     base_beat_length = current_beat_length
 
     for point in timing_points:
         if point.uninherited:
-            # 红线切换 BPM，同时重置 SV 为 1.0。
+            # 红线切换 BPM，同时重置当前分段使用的 scroll speed。
             current_beat_length = point.beat_length
             current_scroll_speed = 1.0
-        elif point.beat_length < 0:
+        elif allow_sv and point.beat_length < 0:
             # 绿线 beat_length 为负数，osu! 用 -100 / beat_length 表示 SV 倍率。
             current_scroll_speed = -100.0 / point.beat_length
         else:
@@ -273,15 +277,32 @@ def _build_scroll_map(timing_points: list[TimingPoint], constant: bool) -> Scrol
     return ScrollMap(starts=tuple(starts), positions=tuple(positions), multipliers=tuple(multipliers))
 
 
-def _most_common_beat_length(timing_points: list[TimingPoint]) -> float:
+def _most_common_beat_length(timing_points: list[TimingPoint], hit_objects: list[ManiaHitObject]) -> float:
     red_lines = [point for point in timing_points if point.uninherited and point.beat_length > 0]
     if not red_lines:
         return 500.0
-    buckets: dict[int, int] = {}
-    for point in red_lines:
-        key = round(point.beat_length)
-        buckets[key] = buckets.get(key, 0) + 1
-    return float(max(buckets.items(), key=lambda item: item[1])[0])
+
+    if hit_objects:
+        last_time = max(hit_object.end_time for hit_object in hit_objects)
+    else:
+        last_time = red_lines[-1].time
+
+    buckets: dict[float, float] = {}
+    for index, point in enumerate(red_lines):
+        if point.time > last_time:
+            duration = 0.0
+        else:
+            current_time = 0.0 if index == 0 else point.time
+            next_time = last_time if index == len(red_lines) - 1 else red_lines[index + 1].time
+            duration = max(0.0, next_time - current_time)
+
+        key = round(point.beat_length * 1000.0) / 1000.0
+        buckets[key] = buckets.get(key, 0.0) + duration
+
+    most_common = max(buckets.items(), key=lambda item: item[1])[0]
+    min_beat_length = min(point.beat_length for point in red_lines)
+    max_beat_length = max(point.beat_length for point in red_lines)
+    return max(min_beat_length, min(max_beat_length, most_common))
 
 
 def _segment_left(segment_index: int, layout: GifLayout) -> int:

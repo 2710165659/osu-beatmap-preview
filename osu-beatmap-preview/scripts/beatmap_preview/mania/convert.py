@@ -10,6 +10,8 @@ from ..errors import PreviewError
 from ..models import Beatmap, ManiaHitObject, StandardHitObject, TimingPoint
 from ..mods import ModSettings
 
+SOURCE_MODE_KEY = "PreviewSourceMode"
+
 
 HIT_WHISTLE = 1 << 1
 HIT_FINISH = 1 << 2
@@ -101,6 +103,7 @@ def convert_beatmap(
     new_diff = dict(diff)
     new_diff["CircleSize"] = str(total_columns)
     new_general = dict(beatmap.general)
+    new_general[SOURCE_MODE_KEY] = str(beatmap.mode)
     new_general["Mode"] = "3"
 
     return Beatmap(
