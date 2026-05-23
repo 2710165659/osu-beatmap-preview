@@ -11,6 +11,7 @@ def save_animated_gif(
     frame_duration_ms: int,
     loop: int,
 ) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     first = next(frames_iter)
     first.save(
         output_path,
@@ -24,4 +25,5 @@ def save_animated_gif(
 
 
 def save_png(image: Image.Image, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     image.convert("RGB").save(output_path, optimize=True)
