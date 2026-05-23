@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from ..errors import PreviewError
-from ..models import Beatmap, TaikoHitObject
+from ..models import Beatmap, TaikoHitObject, TimingPoint
 from ..mods import ModSettings
 from .config import (
     BASE_ROW_WIDTH_0_TO_1_MIN,
@@ -106,8 +106,9 @@ def render_taiko_grid(
     render_cache: dict = {}
     slider_multiplier = _effective_slider_multiplier(beatmap, mods)
     timing_points = _effective_timing_points(beatmap, mods)
+    spacing_timing_points = _spacing_timing_points_for_png(timing_points)
     mapper = build_scroll_mapper(
-        timing_points=timing_points,
+        timing_points=spacing_timing_points,
         chart_end_time=chart_end_time,
         slider_multiplier=slider_multiplier,
         spacing_bpm=SPACING_BPM,
@@ -691,3 +692,18 @@ def _effective_timing_points(beatmap: Beatmap, mods: ModSettings | None):
         # Constant Speed 在 drawable ruleset 层禁用 SV 可视化，这里用只保留红线来等价呈现。
         return [point for point in beatmap.timing_points if point.uninherited]
     return beatmap.timing_points
+
+
+def _spacing_timing_points_for_png(timing_points: list[TimingPoint]) -> list[TimingPoint]:
+    # 静态图更强调 note 关系而非滚动感，因此横向间距只跟红线 BPM 走，不让 SV 拉伸/压缩排布。
+    # 这里保留 inherited 点的时间与 kiai 信息，但把它们对 scroll speed 的影响抹平。
+    return [
+        point if point.uninherited else TimingPoint(
+            time=point.time,
+            beat_length=math.nan,
+            meter=point.meter,
+            uninherited=False,
+            kiai_mode=point.kiai_mode,
+        )
+        for point in timing_points
+    ]

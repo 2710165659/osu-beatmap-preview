@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from bisect import bisect_right
 from dataclasses import dataclass
 
@@ -427,6 +428,8 @@ def _apply_timing_state(
     if point.uninherited:
         bl = point.beat_length if point.beat_length >= 60 else 60_000 / 180
         return bl, point.meter, scroll_speed
+    if math.isnan(point.beat_length):
+        return beat_length, meter, scroll_speed
     if point.beat_length >= -0.001:
         return beat_length, meter, 1.0
     return beat_length, meter, -100 / point.beat_length

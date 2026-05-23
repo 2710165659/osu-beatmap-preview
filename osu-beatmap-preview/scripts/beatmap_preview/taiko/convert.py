@@ -193,9 +193,10 @@ def _convert_timing_points(beatmap: Beatmap) -> list[TimingPoint]:
     converted = [
         point if point.uninherited else TimingPoint(
             time=point.time,
-            # 这里的绿线只用于保留 kiai 切换，不代表 taiko scroll speed。
-            # timing._apply_timing_state 会把非负绿线视为 1.0x，但 build_sv_changes 不会把它画成 SV 标签。
-            beat_length=0.0,
+            # standard 谱的 inherited 点在 taiko convert 后不应自动变成 scroll speed。
+            # lazer 里这些点的 slider velocity 会留在 DifficultyControlPoint，而不是写进 taiko 的 EffectControlPoint。
+            # 这里只保留 kiai / 时序占位信息，后续 timing 状态机会忽略 NaN，不把它当成 1.0x reset。
+            beat_length=math.nan,
             meter=point.meter,
             uninherited=False,
             kiai_mode=point.kiai_mode,
