@@ -60,6 +60,7 @@ pub(crate) struct RenderCache {
     pub(crate) slider_body_layers: HashMap<usize, CachedLayer>,
     pub(crate) slider_body_alpha_layers: HashMap<(usize, u8), Img>,
     pub(crate) reverse_arrows: HashMap<(i64, [u8; 3]), Img>,
+    pub(crate) reverse_edges: HashMap<(i64,), Img>,
 }
 
 /// std 渲染使用的皮肤参数。

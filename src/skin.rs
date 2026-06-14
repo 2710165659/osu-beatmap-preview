@@ -15,10 +15,6 @@ static SKIN_INI: &str = include_str!("../assets/skin.ini");
 pub struct SkinConfig {
     /// `[Colours]` Combo1..ComboN（按编号排序）。
     pub combo_colors: Vec<[u8; 3]>,
-    /// `[Colours]` SliderBorder（滑条边框颜色），缺省时由渲染端回退到 combo 颜色。
-    pub slider_border: Option<[u8; 3]>,
-    /// `[Colours]` SliderTrackOverride（滑条轨道颜色）。
-    pub slider_track_override: Option<[u8; 3]>,
     /// `[Fonts]` HitCircleOverlap，combo 数字之间的重叠量（相对数字高度的百分比基准）。
     pub hitcircle_overlap: i64,
     /// `[CatchTheBeat]` HyperDash 颜色（超冲水果的提示色）。
@@ -86,8 +82,6 @@ fn parse_skin_ini() -> SkinConfig {
 
     SkinConfig {
         combo_colors: parse_combo_colors(&colours),
-        slider_border: get(&colours, "SliderBorder").and_then(parse_rgb),
-        slider_track_override: get(&colours, "SliderTrackOverride").and_then(parse_rgb),
         hitcircle_overlap: get(&fonts, "HitCircleOverlap")
             .and_then(|v| v.trim().parse().ok())
             .unwrap_or(10),

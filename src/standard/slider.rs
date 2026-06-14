@@ -105,12 +105,11 @@ pub(crate) fn render_slider_body_layer(
 
     let inner_width = py_round(width as f64 * (1.0 - ARGON_SLIDER_BORDER_PORTION)).max(1);
     let body_alpha = py_round(alpha_byte as f64 * ARGON_SLIDER_BODY_ALPHA).clamp(0, 255) as u8;
-    // 边框 / 轨道颜色优先取 skin.ini 的 SliderBorder / SliderTrackOverride
-    let skin_config = crate::skin::skin();
-    let border_color = skin_config.slider_border.unwrap_or(color);
-    let inner_color = skin_config
-        .slider_track_override
-        .unwrap_or_else(|| scale_rgb(color, 0.2));
+    // 边框颜色：使用 combo 颜色（与 C# Argon 的 AccentColour 一致）
+    // 轨道内部颜色：使用 Darken(4)（与 C# Argon 的 AccentColour.Darken(4) 一致）
+    // 注意：skin.ini 的 SliderBorder / SliderTrackOverride 会被忽略，以匹配 Argon 风格
+    let border_color = color;
+    let inner_color = darken(color, 4.0);
 
     layer.stroke_polyline(
         &scaled_points,
@@ -309,7 +308,8 @@ fn build_slider_ball(diameter: i64, circle_diameter: i64, color: [u8; 3]) -> Img
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
     let border = 2.5 * circle_diameter as f64 * ARGON_BORDER_RATIO;
-    fill_circle_gradient_aa(&mut img, c, c, d as f64 / 2.0, color, scale_rgb(color, 0.667));
+    // C# Argon: fill = accentColour -> accentColour.Darken(0.5) 垂直渐变
+    fill_circle_gradient_aa(&mut img, c, c, d as f64 / 2.0, color, darken(color, 0.5));
     draw_ring_aa(&mut img, c, c, d as f64 / 2.0, border, [255, 255, 255, 255]);
     img
 }
@@ -397,6 +397,23 @@ pub(crate) fn draw_slider_reverse_arrows(
 
         let angle_deg = -slider_data.reverse_angles[i].to_degrees();
         let angle_key = py_round(angle_deg);
+
+        // 绘制 repeat-edge-piece（白色半圆 + 水平 alpha 渐变）
+        let edge_key = (angle_key,);  // 不依赖颜色，纯白色
+        if !cache.reverse_edges.contains_key(&edge_key) {
+            let edge_base = build_reverse_edge_piece(context.frame_circle_diameter);
+            cache
+                .reverse_edges
+                .insert(edge_key, edge_base.rotate_expand(angle_deg));
+        }
+        let edge_rotated = &cache.reverse_edges[&edge_key];
+        let edge_id = color_id(ID_REVERSE_EDGE + (angle_key + 720) as u64, [255, 255, 255]);
+        let edge = with_alpha(&mut cache.resized_alpha, edge_rotated, edge_id, effective_alpha);
+        let ex = py_round(center.0 - edge.w as f64 / 2.0);
+        let ey = py_round(center.1 - edge.h as f64 / 2.0);
+        frame.alpha_composite(edge, ex, ey);
+
+        // 绘制 << 箭头（覆盖在 edge piece 之上）
         let rotated_key = (angle_key, color);
         if !cache.reverse_arrows.contains_key(&rotated_key) {
             let base = build_reverse_arrow(context.frame_circle_diameter, color);
@@ -416,9 +433,9 @@ pub(crate) fn draw_slider_reverse_arrows(
 /// 程序化 Argon 折返图标（对照 lazer ArgonReverseArrow）：
 /// 白色胶囊（lazer 为 40×20 / 128 物件）+ 深色 `»` 双 V 形图标
 /// （lazer 的 FontAwesome AngleDoubleRight，icon 高约为胶囊高的 80%）。
-/// 游戏内有 1.0→1.3 的脉冲缩放，静态图按 1.3 峰值绘制，保证可读性。
+/// 游戏内有 1.0→1.3 的脉冲缩放，静态图按 1.0 绘制，避免过大。
 fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
-    let s = circle_diameter as f64 / 128.0 * 1.3;
+    let s = circle_diameter as f64 / 128.0;  // 按 1.0 绘制，不放大
     let cap_w = 40.0 * s;
     let cap_h = 20.0 * s;
     let pad = 2.0_f64.max(2.0 * s);
@@ -437,13 +454,14 @@ fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
         true,
     );
 
-    // 深色 `»` 图标：accent.Darken(4) ≈ 颜色 × 0.2
-    let dark = scale_rgb(color, 0.2);
+    // 深色 `»` 图标：C# Argon = accent.Darken(4)
+    // 图标高度约为胶囊高的 60%（原 72%，缩小一点）
+    let dark = darken(color, 4.0);
     let dark_rgba = [dark[0], dark[1], dark[2], 255];
-    let chev_h = cap_h * 0.72;
-    let chev_w = chev_h * 0.55;
-    let thickness = (cap_h * 0.18).max(1.5);
-    let spacing = chev_w + thickness * 0.9;
+    let chev_h = cap_h * 0.60;
+    let chev_w = chev_h * 0.50;
+    let thickness = (cap_h * 0.15).max(1.5);
+    let spacing = chev_w + thickness * 0.8;
     for k in [-0.5, 0.5] {
         let tip_x = cx + k * spacing + chev_w / 2.0;
         let back_x = tip_x - chev_w;
@@ -461,14 +479,52 @@ fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
     img
 }
 
+/// 程序化 Argon 折返边缘纹理（对照 repeat-edge-piece.png）。
+/// 白色左半圆 + 水平 alpha 渐变：从左边缘 A=127 线性衰减到右边缘 A=0。
+/// 200×200 原始纹理的像素分析确认：alpha 只取决于 x 位置，半圆边界由弧形自然裁剪。
+fn build_reverse_edge_piece(diameter: i64) -> Img {
+    let d = diameter.max(1);
+    let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
+    let cx = d as f64 / 2.0;
+    let cy = d as f64 / 2.0;
+    let r = d as f64 / 2.0;
+
+    for y in 0..d {
+        for x in 0..d {
+            let fx = x as f64 + 0.5;
+            let fy = y as f64 + 0.5;
+            // 左半圆边界：点在圆内 且 x <= cx
+            let dx = fx - cx;
+            let dy = fy - cy;
+            if dx * dx + dy * dy > r * r {
+                continue;
+            }
+            if fx > cx {
+                continue;
+            }
+            // 水平 alpha 渐变：从左边缘 A=127 线性衰减到右边缘 A=0
+            let t = fx / r; // 0.0 (左) -> 1.0 (圆心/右边缘)
+            let a = (127.0 * (1.0 - t)).clamp(0.0, 255.0) as u8;
+            if a > 0 {
+                img.blend_px(x, y, [255, 255, 255, a]);
+            }
+        }
+    }
+    img
+}
+
 // ——— helpers ———
 
-pub(crate) fn scale_rgb(color: [u8; 3], factor: f64) -> [u8; 3] {
-    let mut out = [0u8; 3];
-    for i in 0..3 {
-        out[i] = py_round(color[i] as f64 * factor).clamp(0, 255) as u8;
-    }
-    out
+/// 模拟 C# osu-framework 的 Color4.Darken(amount) 函数。
+/// 将 RGB 通道各减去 amount * 255（加法变暗）。
+/// 例如：Darken(0.1) = 每通道减 25.5，Darken(4) = 每通道减 1020（钳制到 0）。
+pub(crate) fn darken(color: [u8; 3], amount: f64) -> [u8; 3] {
+    let delta = py_round(amount * 255.0) as i32;
+    [
+        (color[0] as i32 - delta).clamp(0, 255) as u8,
+        (color[1] as i32 - delta).clamp(0, 255) as u8,
+        (color[2] as i32 - delta).clamp(0, 255) as u8,
+    ]
 }
 
 pub(crate) fn alpha_to_byte(alpha: f64) -> u8 {

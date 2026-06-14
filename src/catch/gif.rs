@@ -13,7 +13,7 @@ use crate::time_selection::PreviewTimeSelector;
 use std::path::Path;
 
 use super::constants::*;
-use super::drawing::{draw_argon_catcher, draw_catch_object, object_diameter};
+use super::drawing::{draw_catch_object, object_diameter};
 use super::objects::{build_catch_render_objects, effective_difficulty, RenderObject};
 use super::png::rhe;
 
@@ -30,8 +30,6 @@ struct GifLayout {
     playfield_top: f64,
     object_scale: f64,
     pixels_per_ms: f64,
-    catcher_width: f64,
-    catcher_scale: f64,
 }
 
 fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayout {
@@ -44,10 +42,6 @@ fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayout {
     let time_range = super::objects::catch_time_range(approach_rate);
     let visible_fall_height = (STABLE_CATCHER_Y - STABLE_FRUIT_START_Y) * playfield_scale;
     let pixels_per_ms = visible_fall_height / time_range;
-
-    let catcher_scale = object_scale * 2.0 * playfield_scale;
-    let catcher_width =
-        (CATCHER_SPRITE_LOGICAL_WIDTH * LEGACY_CATCHER_VISUAL_SCALE * catcher_scale).max(1.0);
 
     let row_height = GIF_IMAGE_HEIGHT + GIF_TIME_LABEL_TOP_GAP + GIF_TIME_LABEL_HEIGHT;
     let canvas_width = PAGE_MARGIN_X * 2
@@ -64,8 +58,6 @@ fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayout {
         playfield_top,
         object_scale,
         pixels_per_ms,
-        catcher_width,
-        catcher_scale,
     }
 }
 
@@ -121,7 +113,7 @@ pub(crate) fn render_catch_gif(
     let start_times: Vec<i64> = render_objects.iter().map(|o| o.start_time).collect();
 
     let render = move |frame_index: usize| -> Img {
-        let mut canvas = Img::new(layout.canvas_width as u32, layout.canvas_height as u32, IMAGE_BACKGROUND);
+        let mut canvas = Img::new(layout.canvas_width as u32, layout.canvas_height as u32, PLAYFIELD_BACKGROUND);
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
             let (frame_x, frame_y) = frame_origin(segment_index);
@@ -145,16 +137,14 @@ fn render_gif_frame(
     snapshot_time: i64,
     layout: &GifLayout,
 ) -> Img {
-    let mut frame = Img::new(GIF_IMAGE_WIDTH as u32, GIF_IMAGE_HEIGHT as u32, IMAGE_BACKGROUND);
+    let mut frame = Img::new(GIF_IMAGE_WIDTH as u32, GIF_IMAGE_HEIGHT as u32, PLAYFIELD_BACKGROUND);
 
     let playfield_left = layout.playfield_left;
     let playfield_right = playfield_left + PLAYFIELD_WIDTH * layout.playfield_scale;
-    // playfield 区域底色与左右边界
+    // playfield 区域底色
     frame.set_rect(
         rhe(playfield_left), 0, rhe(playfield_right), GIF_IMAGE_HEIGHT, PLAYFIELD_BACKGROUND,
     );
-    frame.set_rect(rhe(playfield_left), 0, rhe(playfield_left), GIF_IMAGE_HEIGHT, PLAYFIELD_BORDER);
-    frame.set_rect(rhe(playfield_right), 0, rhe(playfield_right), GIF_IMAGE_HEIGHT, PLAYFIELD_BORDER);
 
     // 判定线（接手所在高度）
     let judgement_y = layout.playfield_top + STABLE_CATCHER_Y * layout.playfield_scale;
@@ -163,9 +153,6 @@ fn render_gif_frame(
         rhe(playfield_left), judgement_y_px, rhe(playfield_right), judgement_y_px + 1,
         [238, 238, 238, 200],
     );
-
-    let catcher_x = playfield_left + PLAYFIELD_WIDTH * layout.playfield_scale / 2.0;
-    draw_argon_catcher(&mut frame, catcher_x, judgement_y, layout.catcher_width, layout.catcher_scale);
 
     // 可见时间窗：对象在 [snapshot, snapshot + 下落时间窗 + 余量] 内才可能出现在帧中
     let fall_window_ms =

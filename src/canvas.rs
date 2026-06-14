@@ -80,40 +80,6 @@ impl Img {
         }
     }
 
-    /// Additive blend `src` at (ox, oy): dst.rgb += src.rgb * src.a, saturating.
-    /// Mirrors osu-framework's additive blending for glow/blob layers.
-    pub fn additive_composite(&mut self, src: &Img, ox: i64, oy: i64) {
-        let x0 = ox.max(0);
-        let y0 = oy.max(0);
-        let x1 = (ox + src.w as i64).min(self.w as i64);
-        let y1 = (oy + src.h as i64).min(self.h as i64);
-        if x0 >= x1 || y0 >= y1 {
-            return;
-        }
-        for y in y0..y1 {
-            let sy = (y - oy) as u32;
-            let drow = ((y as u32 * self.w + x0 as u32) * 4) as usize;
-            let srow = ((sy * src.w + (x0 - ox) as u32) * 4) as usize;
-            let count = (x1 - x0) as usize;
-            let dst = &mut self.data[drow..drow + count * 4];
-            let sp = &src.data[srow..srow + count * 4];
-            for (d, s) in dst.chunks_exact_mut(4).zip(sp.chunks_exact(4)) {
-                let sa = s[3] as u32;
-                if sa == 0 {
-                    continue;
-                }
-                for c in 0..3 {
-                    let add = (s[c] as u32 * sa + 127) / 255;
-                    d[c] = (d[c] as u32 + add).min(255) as u8;
-                }
-                // keep destination alpha at least as opaque as source
-                if s[3] > d[3] {
-                    d[3] = s[3];
-                }
-            }
-        }
-    }
-
     pub fn crop(&self, x0: u32, y0: u32, x1: u32, y1: u32) -> Img {
         let w = x1.saturating_sub(x0);
         let h = y1.saturating_sub(y0);

@@ -13,8 +13,8 @@ pub(crate) const GIF_DURATION_MS: i64 = 5000;
 pub(crate) const GIF_FPS: i64 = 15;
 pub(crate) const GIF_GRID_GAP: i64 = 20;
 
-// 单帧画面为 16:9（匹配游戏内 1080p 比例），高度沿用 384，宽度 = 384 * 16 / 9 ≈ 683。
-pub(crate) const IMAGE_WIDTH: i64 = 683;
+// 单帧画面高度沿用 384，宽度使左右留白约 60px（playfield 宽 409.6，两侧各约 60）。
+pub(crate) const IMAGE_WIDTH: i64 = 530;
 pub(crate) const IMAGE_HEIGHT: i64 = 384;
 pub(crate) const HORIZONTAL_PAGE_MARGIN: i64 = 20;
 pub(crate) const VERTICAL_PAGE_MARGIN: i64 = 20;
@@ -73,3 +73,4 @@ pub(crate) const ID_CIRCLE_PIECE: u64 = 100;
 pub(crate) const ID_SLIDER_BALL: u64 = 102;
 pub(crate) const ID_FOLLOW: u64 = 103;
 pub(crate) const ID_ARROW_BASE: u64 = 4096;
+pub(crate) const ID_REVERSE_EDGE: u64 = 8192;

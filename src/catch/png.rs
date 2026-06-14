@@ -63,7 +63,7 @@ fn build_layout(beatmap_duration: i64, circle_size: f64, approach_rate: f64) -> 
             "songs longer than 10 minutes are not supported",
         ));
     }
-    let playfield_scale = (COLUMN_WIDTH - LEFT_PANEL_WIDTH) as f64 / PLAYFIELD_WIDTH;
+    let playfield_scale = PLAYFIELD_RENDER_WIDTH as f64 / PLAYFIELD_WIDTH;
     let object_scale = super::objects::circle_scale(circle_size);
 
     // 纵向密度上限：限制谱面总像素高度，防止高 AR + 长曲导致内存爆炸
@@ -84,7 +84,7 @@ fn build_layout(beatmap_duration: i64, circle_size: f64, approach_rate: f64) -> 
     Ok(RenderLayout {
         column_count,
         total_column_height,
-        visible_playfield_width: COLUMN_WIDTH - LEFT_PANEL_WIDTH,
+        visible_playfield_width: PLAYFIELD_RENDER_WIDTH,
         image_width,
         image_height,
         playfield_scale,
@@ -98,7 +98,7 @@ fn column_left(column_index: i64) -> i64 {
 }
 
 fn playfield_left(column_index: i64) -> i64 {
-    column_left(column_index) + LEFT_PANEL_WIDTH
+    column_left(column_index) + LEFT_PANEL_WIDTH + 23
 }
 
 // ─── 节拍线 ───
@@ -191,8 +191,6 @@ pub(crate) fn render_catch_grid(
     for column_index in 0..layout.column_count {
         draw_column_background(&mut image, &layout, column_index);
     }
-    // 接手示意只画在第一列的判定位置
-    draw_catcher(&mut image, &layout);
 
     let mut last_label_time: Option<i64> = None;
     for timing_line in &timing_lines {
@@ -224,34 +222,42 @@ pub(crate) fn render_catch_grid(
     Ok(output_path.to_path_buf())
 }
 
-/// 画单列背景：左侧灰条 + playfield 底色 + 左右边界线。
+/// 画单列背景：左侧灰条 + playfield 底色 + 左右边界线（与 playfield 区域留 23px）。
 fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: i64) {
     let column_left = column_left(column_index);
     let chart_top = PAGE_MARGIN_Y;
     let chart_bottom = PAGE_MARGIN_Y + layout.total_column_height;
-    let visible_left = column_left + LEFT_PANEL_WIDTH;
+    // 左侧灰条在最左边
+    let panel_right = column_left + LEFT_PANEL_WIDTH;
+    // playfield 在灰条右侧 23px 处开始
+    let visible_left = panel_right + 23;
     let visible_right = visible_left + layout.visible_playfield_width;
+    let border_left = visible_left - 23;
+    let border_right = visible_right + 23;
 
-    image.set_rect(column_left, chart_top, visible_left, chart_bottom, LEFT_PANEL_BACKGROUND);
+    image.set_rect(column_left, chart_top, panel_right, chart_bottom, LEFT_PANEL_BACKGROUND);
     image.set_rect(visible_left, chart_top, visible_right, chart_bottom, PLAYFIELD_BACKGROUND);
-    image.set_rect(visible_left, chart_top, visible_left, chart_bottom, PLAYFIELD_BORDER);
-    image.set_rect(visible_right, chart_top, visible_right, chart_bottom, PLAYFIELD_BORDER);
+    image.set_rect(border_left, chart_top, border_left, chart_bottom, PLAYFIELD_BORDER);
+    image.set_rect(border_right, chart_top, border_right, chart_bottom, PLAYFIELD_BORDER);
 }
 
-/// 时间 → （列号, 列内 y 坐标）。
+/// 时间 → （列号, y 坐标）。时间从列底部向上递增（与游戏内下落方向一致）。
 fn locate_time(time: i64, layout: &RenderLayout) -> (i64, i64) {
     let absolute_y = time as f64 * layout.pixels_per_ms;
     let column_index = ((absolute_y / layout.total_column_height as f64).floor() as i64)
         .clamp(0, layout.column_count - 1);
-    let local_y = rhe(absolute_y - (column_index * layout.total_column_height) as f64);
-    (column_index, local_y)
+    let local_y_from_top = rhe(absolute_y - (column_index * layout.total_column_height) as f64);
+    // 从列底部开始计算，时间 0 在底部，时间增大向上
+    let chart_bottom = PAGE_MARGIN_Y + layout.total_column_height;
+    let y = chart_bottom - local_y_from_top;
+    (column_index, y)
 }
 
 fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &RenderLayout) {
-    let (column_index, local_y) = locate_time(timing_line.time, layout);
+    let (column_index, y) = locate_time(timing_line.time, layout);
     let left = playfield_left(column_index);
     let right = left + layout.visible_playfield_width;
-    let y = (PAGE_MARGIN_Y + local_y).clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
+    let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
 
     if timing_line.is_measure {
         image.set_rect(left, y, right, y + 1, MEASURE_LINE);
@@ -261,9 +267,9 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
 }
 
 fn draw_timing_label_png(image: &mut Img, timing_line: &TimingLine, layout: &RenderLayout) {
-    let (column_index, local_y) = locate_time(timing_line.time, layout);
+    let (column_index, y) = locate_time(timing_line.time, layout);
     let right = playfield_left(column_index) + layout.visible_playfield_width;
-    let y = (PAGE_MARGIN_Y + local_y).clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
+    let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
     let label = format!("{:.1}s", timing_line.time as f64 / 1000.0);
     let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
     let label_x = (right + 4).min(layout.image_width - label_width as i64 - PAGE_MARGIN_X);
@@ -272,23 +278,13 @@ fn draw_timing_label_png(image: &mut Img, timing_line: &TimingLine, layout: &Ren
 }
 
 fn draw_catch_object_png(image: &mut Img, catch_object: &RenderObject, layout: &RenderLayout) {
-    let (column_index, local_y) = locate_time(catch_object.start_time, layout);
+    let (column_index, y) = locate_time(catch_object.start_time, layout);
     let center_x = playfield_left(column_index) as f64
         + catch_object.x * layout.playfield_scale;
-    let center_y = (PAGE_MARGIN_Y + local_y) as f64;
+    let center_y = y as f64;
     let diameter = super::drawing::object_diameter(
         layout.object_scale, layout.playfield_scale, catch_object.scale_factor,
     );
 
     draw_catch_object(image, catch_object, center_x, center_y, diameter);
-}
-
-/// 在第一列顶部画接手示意（表示判定线相对宽度）。
-fn draw_catcher(image: &mut Img, layout: &RenderLayout) {
-    let catcher_x = playfield_left(0) as f64 + PLAYFIELD_WIDTH * layout.playfield_scale / 2.0;
-    let catcher_y = PAGE_MARGIN_Y as f64;
-    let catcher_scale = layout.object_scale * 2.0 * layout.playfield_scale;
-    let catcher_width =
-        (CATCHER_SPRITE_LOGICAL_WIDTH * LEGACY_CATCHER_VISUAL_SCALE * catcher_scale).max(1.0);
-    super::drawing::draw_argon_catcher(image, catcher_x, catcher_y, catcher_width, catcher_scale);
 }

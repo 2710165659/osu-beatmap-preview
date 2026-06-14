@@ -9,9 +9,9 @@ use super::context::{
     color_id, py_round, to_frame_point, RenderCache, RenderContext,
 };
 use super::slider::{
-    draw_cached_slider_body, draw_slider_body, draw_slider_ball, draw_slider_reverse_arrows,
+    darken, draw_cached_slider_body, draw_slider_body, draw_slider_ball, draw_slider_reverse_arrows,
     draw_ring_aa, fill_circle_gradient_aa, get_slider_render_data, is_full_slider_body,
-    resized_with_alpha, scale_rgb, slider_snaked_range, with_alpha,
+    resized_with_alpha, slider_snaked_range, with_alpha,
 };
 
 // ——— frame rendering ———
@@ -252,20 +252,26 @@ fn build_circle_piece(diameter: i64, color: [u8; 3]) -> Img {
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
     let border = d as f64 * ARGON_BORDER_RATIO;
-    let dark = scale_rgb(color, 0.2);
+    // C# Argon: outerFill = accentColour.Darken(4)
+    let dark = darken(color, 4.0);
 
+    // 1. outerFill: 深色填充圆
     img.fill_circle_aa(c, c, (d as f64 - 1.0) / 2.0, [dark[0], dark[1], dark[2], 255]);
+    // 2. border: 白色外环
     draw_ring_aa(&mut img, c, c, d as f64 / 2.0, border, [255, 255, 255, 255]);
 
+    // 3. outerGradient: 外层亮渐变 (accentColour -> accentColour.Darken(0.1))
     let outer_d = (d as f64 - 4.0 * border).max(0.0);
-    fill_circle_gradient_aa(&mut img, c, c, outer_d / 2.0, color, scale_rgb(color, 0.909));
+    fill_circle_gradient_aa(&mut img, c, c, outer_d / 2.0, color, darken(color, 0.1));
 
+    // 4. innerGradient: 内层暗渐变 (accentColour.Darken(0.5) -> accentColour.Darken(0.6))
     let inner_d = (outer_d - 2.0 * 2.5 * border).max(0.0);
     fill_circle_gradient_aa(
         &mut img, c, c, inner_d / 2.0,
-        scale_rgb(color, 0.667), scale_rgb(color, 0.625),
+        darken(color, 0.5), darken(color, 0.6),
     );
 
+    // 5. innerFill: 最内层深色填充 (同 outerFill 颜色)
     let fill_d = (inner_d - 2.0 * 2.5 * border).max(0.0);
     img.fill_circle_aa(c, c, fill_d / 2.0, [dark[0], dark[1], dark[2], 255]);
     img
@@ -280,7 +286,7 @@ fn draw_number(
     circle_diameter: i64,
     alpha: f64,
 ) {
-    let digit_height = py_round(circle_diameter as f64 * 0.48).max(1);
+    let digit_height = py_round(circle_diameter as f64 * 0.30).max(1);
     let digits: Vec<usize> = number
         .chars()
         .filter_map(|c| c.to_digit(10).map(|d| d as usize))

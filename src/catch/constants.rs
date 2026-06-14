@@ -4,29 +4,31 @@ use crate::canvas::Rgba;
 
 pub(crate) const MAX_SUPPORTED_DURATION_MS: i64 = 10 * 60 * 1000;
 
-pub(crate) const MAX_AREA_HEIGHT_0_TO_1_MIN: i64 = 4000;
-pub(crate) const MAX_AREA_HEIGHT_1_TO_2_MIN: i64 = 5500;
-pub(crate) const MAX_AREA_HEIGHT_2_TO_3_MIN: i64 = 7000;
-pub(crate) const MAX_AREA_HEIGHT_3_TO_4_MIN: i64 = 8500;
-pub(crate) const MAX_AREA_HEIGHT_4_TO_5_MIN: i64 = 10000;
-pub(crate) const MAX_AREA_HEIGHT_5_TO_6_MIN: i64 = 11500;
+pub(crate) const MAX_AREA_HEIGHT_0_TO_1_MIN: i64 = 3000;
+pub(crate) const MAX_AREA_HEIGHT_1_TO_2_MIN: i64 = 4125;
+pub(crate) const MAX_AREA_HEIGHT_2_TO_3_MIN: i64 = 5250;
+pub(crate) const MAX_AREA_HEIGHT_3_TO_4_MIN: i64 = 6375;
+pub(crate) const MAX_AREA_HEIGHT_4_TO_5_MIN: i64 = 7500;
+pub(crate) const MAX_AREA_HEIGHT_5_TO_6_MIN: i64 = 8625;
 /// 谱面总像素高度上限（所有列合计）。超出时压缩纵向密度，
-/// 限制最终图像内存占用（约 30 列 × 11500 px 的量级）。
-pub(crate) const MAX_TOTAL_CHART_HEIGHT: i64 = 240_000;
+/// 限制最终图像内存占用。
+pub(crate) const MAX_TOTAL_CHART_HEIGHT: i64 = 180_000;
 
 pub(crate) const PLAYFIELD_WIDTH: f64 = 512.0;
 pub(crate) const STABLE_FRUIT_START_Y: f64 = -100.0;
 pub(crate) const STABLE_CATCHER_Y: f64 = 340.0;
 pub(crate) const OBJECT_RADIUS: f64 = 64.0;
 
-pub(crate) const PAGE_MARGIN_X: i64 = 20;
-pub(crate) const PAGE_MARGIN_Y: i64 = 20;
-pub(crate) const LEFT_PANEL_WIDTH: i64 = 12;
-pub(crate) const COLUMN_WIDTH: i64 = 360;
-pub(crate) const COLUMN_GAP: i64 = 100;
+pub(crate) const PAGE_MARGIN_X: i64 = 15;
+pub(crate) const PAGE_MARGIN_Y: i64 = 15;
+pub(crate) const LEFT_PANEL_WIDTH: i64 = 9;
+pub(crate) const COLUMN_WIDTH: i64 = 315;
+/// playfield 实际渲染宽度（不包含两侧 23px 留白），保持原始缩放比例。
+pub(crate) const PLAYFIELD_RENDER_WIDTH: i64 = 260;
+pub(crate) const COLUMN_GAP: i64 = 75;
 
 pub(crate) const LEFT_PANEL_BACKGROUND: Rgba = [112, 112, 112, 255];
-pub(crate) const IMAGE_BACKGROUND: Rgba = [0, 0, 0, 255];
+pub(crate) const IMAGE_BACKGROUND: Rgba = [7, 7, 7, 255];
 pub(crate) const PLAYFIELD_BACKGROUND: Rgba = [7, 7, 7, 255];
 pub(crate) const PLAYFIELD_BORDER: Rgba = [34, 34, 34, 255];
 pub(crate) const MEASURE_LINE: Rgba = [87, 87, 87, 255];
@@ -37,8 +39,6 @@ pub(crate) const TINY_DROPLET_SCALE: f64 = 0.4;
 pub(crate) const BANANA_SCALE: f64 = 0.6;
 
 pub(crate) const CATCHER_BASE_SIZE: f64 = 106.75;
-pub(crate) const LEGACY_CATCHER_VISUAL_SCALE: f64 = 0.35;
-pub(crate) const CATCHER_SPRITE_LOGICAL_WIDTH: f64 = 307.0;
 
 pub(crate) const DEFAULT_BEAT_LENGTH: f64 = 500.0;
 pub(crate) const RNG_SEED: u32 = 1337;
@@ -58,8 +58,8 @@ pub(crate) const GIF_IMAGES_PER_ROW: i64 = 2;
 pub(crate) const GIF_SEGMENT_COUNT: usize = (GIF_ROW_COUNT * GIF_IMAGES_PER_ROW) as usize;
 pub(crate) const GIF_DURATION_MS: f64 = 5000.0;
 pub(crate) const GIF_FPS: f64 = 15.0;
-/// 单帧为 16:9（匹配游戏内 1080p 比例）。
-pub(crate) const GIF_IMAGE_WIDTH: i64 = 683;
+/// 单帧高度沿用 384，宽度使左右留白约 30px（playfield 宽 409.6，两侧各约 30）。
+pub(crate) const GIF_IMAGE_WIDTH: i64 = 470;
 pub(crate) const GIF_IMAGE_HEIGHT: i64 = 384;
 pub(crate) const GIF_GRID_GAP: i64 = 20;
 
@@ -81,6 +81,6 @@ pub(crate) const GIF_TIME_LABEL_NOTE_TOP_GAP: i64 = 9;
 pub(crate) const GIF_TIME_LABEL_COLOR: Rgba = [232, 232, 232, 255];
 pub(crate) const GIF_TIME_LABEL_NOTE_COLOR: Rgba = [170, 170, 170, 255];
 pub(crate) const GIF_PREVIEW_TIME_LABEL_COLOR: Rgba = [95, 221, 108, 255];
-pub(crate) const TIME_LABEL_FONT_SIZE: u32 = 18;
+pub(crate) const TIME_LABEL_FONT_SIZE: u32 = 14;
 pub(crate) const TIME_LABEL_MIN_INTERVAL_MS: i64 = 5000;
 pub(crate) const TIME_LABEL_COLOR: Rgba = [200, 200, 200, 255];
