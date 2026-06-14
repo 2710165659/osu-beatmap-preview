@@ -15,9 +15,14 @@ pub(crate) fn rhe(v: f64) -> i64 {
     round_half_even(v)
 }
 
+#[inline]
+fn to_float32(v: f64) -> f32 {
+    v as f32
+}
+
 // ─── render objects ───
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum ObjType {
     TinyDroplet,
     Droplet,
@@ -51,7 +56,7 @@ impl RenderObject {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum EventType {
     Head,
     Tick,
@@ -216,28 +221,30 @@ fn build_banana_shower_objects(
 ) {
     let start_time = hit_object.start_time;
     let end_time = hit_object.end_time;
-    let mut spacing = (hit_object.end_time - hit_object.start_time) as f64 as f32;
+    let mut spacing = to_float32((hit_object.end_time - hit_object.start_time) as f64);
 
     while spacing > 100.0 {
-        spacing /= 2.0;
+        spacing = to_float32((spacing / 2.0) as f64);
     }
     if spacing <= 0.0 {
         return;
     }
 
-    let mut current_time = start_time as f64 as f32;
-    while current_time as f64 <= end_time as f64 {
+    let mut current_time = to_float32(start_time as f64);
+    let mut count = 0;
+    while current_time <= end_time as f32 {
         let x = rng.next_double() * PLAYFIELD_WIDTH;
         rng.next();
         rng.next();
         rng.next();
-        let trunc_time = current_time as i64;
+
         out.push(RenderObject {
             object_type: ObjType::Banana, x, start_time: rhe(current_time as f64),
-            color: banana_color(trunc_time), scale_factor: BANANA_SCALE,
+            color: banana_color(current_time as i64), scale_factor: BANANA_SCALE,
             event_time: Some(current_time as f64), hyper_dash: false,
         });
-        current_time += spacing;
+        current_time = to_float32((current_time + spacing) as f64);
+        count += 1;
     }
 }
 
@@ -257,6 +264,7 @@ fn build_juice_stream_objects(
     let events = build_slider_events(
         hit_object, slider_tick_rate, slider_multiplier, beatmap_format_version, timing_points,
     )?;
+
     let mut nested_objects: Vec<RenderObject> = Vec::new();
     let mut previous_event: Option<SliderEvent> = None;
 
@@ -285,12 +293,14 @@ fn build_juice_stream_objects(
     for mut obj in nested_objects {
         match obj.object_type {
             ObjType::TinyDroplet => {
-                let raw_offset = rng.next_double();
-                let offset = ((raw_offset - 0.5) * 8.0).clamp(-2.0, 2.0);
-                obj.x += offset;
+                // Python: offset = rng.next(-20, 20)
+                // which is: int(-20 + rng.next_double() * 40)
+                let offset = (-20.0 + rng.next_double() * 40.0) as i32 as f64;
+                obj.x = (obj.x + offset).max(0.0).min(PLAYFIELD_WIDTH);
+            }
+            ObjType::Droplet => {
                 rng.next();
             }
-            ObjType::Droplet => { rng.next(); }
             _ => {}
         }
         out.push(obj);
@@ -328,6 +338,18 @@ fn build_slider_events(
     }
 
     events.push(SliderEvent { event_type: EventType::Tail, time: hit_object.end_time as f64, path_progress: if span_count % 2 == 1 { 1.0 } else { 0.0 } });
+
+    // Build global legacy last tick (after all spans, before tail)
+    // Note: Always generate legacy last tick, regardless of format version
+    if span_count > 0 {
+        let span_duration = duration as f64 / span_count as f64;
+        if let Some(legacy_tick) = build_global_legacy_last_tick(
+            hit_object.start_time, span_duration, span_count, hit_object.end_time as f64, tick_spacing
+        ) {
+            events.insert(events.len() - 1, legacy_tick);
+        }
+    }
+
     events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
     Ok(events)
 }
@@ -335,7 +357,7 @@ fn build_slider_events(
 fn generate_span_ticks(
     span_start_time: i64, span_end_time: i64, tick_spacing: f64,
     events: &mut Vec<SliderEvent>, _span_count: i32, span_index: i32,
-    beatmap_format_version: i32, hit_object: &CatchHitObject,
+    _beatmap_format_version: i32, _hit_object: &CatchHitObject,
 ) -> Result<()> {
     let span_duration = (span_end_time - span_start_time) as f64;
     if tick_spacing <= 0.0 || span_duration <= tick_spacing {
@@ -344,12 +366,11 @@ fn generate_span_ticks(
 
     let tick_time = span_start_time as f64 + tick_spacing;
     let tick_count = ((span_duration / tick_spacing).floor() as i32).max(0);
-    let has_legacy_last_tick = beatmap_format_version < 8 && tick_count > 0;
 
+    // Legacy last tick is now handled globally, not per-span
     let end_time_f64 = span_end_time as f64;
-    let actual_count = if has_legacy_last_tick { tick_count - 1 } else { tick_count };
 
-    for i in 0..actual_count.max(0) {
+    for i in 0..tick_count.max(0) {
         let t = tick_time + i as f64 * tick_spacing;
         if t < end_time_f64 - 0.001 {
             let span_progress = (t - span_start_time as f64) / span_duration;
@@ -358,39 +379,71 @@ fn generate_span_ticks(
         }
     }
 
-    if has_legacy_last_tick {
-        let last_tick_time = tick_time + tick_count as f64 * tick_spacing;
-        if last_tick_time < end_time_f64 {
-            build_legacy_last_tick(events, hit_object, last_tick_time, span_duration, span_index);
-        }
-    }
-
     Ok(())
 }
 
-fn build_legacy_last_tick(
-    events: &mut Vec<SliderEvent>, hit_object: &CatchHitObject,
-    last_tick_time: f64, span_duration: f64, span_index: i32,
-) {
-    let span_progress = (last_tick_time - hit_object.start_time as f64) / span_duration;
-    let path_progress = if span_index % 2 == 0 { span_progress } else { 1.0 - span_progress };
-    events.push(SliderEvent { event_type: EventType::LegacyLastTick, time: last_tick_time, path_progress });
+fn build_global_legacy_last_tick(
+    start_time: i64, span_duration: f64, span_count: i32, end_time: f64, tick_spacing: f64,
+) -> Option<SliderEvent> {
+    if span_count <= 0 {
+        return None;
+    }
+
+    let total_duration = span_count as f64 * span_duration;
+    let final_span_index = span_count - 1;
+    let final_span_start_time = start_time as f64 + final_span_index as f64 * span_duration;
+
+    // Check if there are any ticks at all
+    let tick_count = ((span_duration / tick_spacing).floor() as i32).max(0);
+    if tick_count <= 0 {
+        return None;
+    }
+
+    let legacy_last_tick_time = (start_time as f64 + total_duration / 2.0)
+        .max(final_span_start_time + span_duration - 36.0);
+
+    // Make sure it's before the end time
+    if legacy_last_tick_time >= end_time {
+        return None;
+    }
+
+    let mut path_progress = (legacy_last_tick_time - final_span_start_time) / span_duration;
+    if span_count % 2 == 0 {
+        path_progress = 1.0 - path_progress;
+    }
+
+    Some(SliderEvent {
+        event_type: EventType::LegacyLastTick,
+        time: legacy_last_tick_time,
+        path_progress,
+    })
 }
 
 fn build_tiny_droplets_between(
     path: &SliderPath, prev: &SliderEvent, next: &SliderEvent,
     combo_color: [u8; 3], out: &mut Vec<RenderObject>,
 ) {
-    let count = 8usize;
-    for i in 0..count {
-        let t = (i + 1) as f64 / (count + 1) as f64;
-        let progress = prev.path_progress + (next.path_progress - prev.path_progress) * t;
+    let since_last_event = next.time as i64 - prev.time as i64;
+    if since_last_event <= 80 {
+        return;
+    }
+
+    let mut time_between_tiny = since_last_event as f64;
+    while time_between_tiny > 100.0 {
+        time_between_tiny /= 2.0;
+    }
+
+    let mut offset = time_between_tiny;
+    while offset < since_last_event as f64 - 0.001 {
+        let ratio = offset / since_last_event as f64;
+        let progress = prev.path_progress + (next.path_progress - prev.path_progress) * ratio;
         let x = path_position_at(path, progress).0;
-        let time = prev.time + (next.time - prev.time) * t;
+        let time = prev.time + offset;
         out.push(RenderObject {
             object_type: ObjType::TinyDroplet, x, start_time: rhe(time), color: combo_color,
             scale_factor: TINY_DROPLET_SCALE, event_time: Some(time), hyper_dash: false,
         });
+        offset += time_between_tiny;
     }
 }
 

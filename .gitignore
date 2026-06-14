@@ -4,3 +4,5 @@ target/
 dist/
 .env
 .env.local
+.codegraph/
+.reasonix/
