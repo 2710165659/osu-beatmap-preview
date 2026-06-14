@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
-TAIKO_ASSET_DIR = Path(__file__).resolve().parents[3] / "assets" / "taiko"
+TAIKO_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "taiko"
 
 _skin_singleton: TaikoSkin | None = None
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
-CATCH_ASSET_DIR = Path(__file__).resolve().parents[3] / "assets" / "catch"
+CATCH_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "catch"
 
 _skin_singleton: CatchSkin | None = None
 

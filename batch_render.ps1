@@ -10,7 +10,7 @@
 
 $ErrorActionPreference = "Continue"
 $py    = "python"
-$script = Join-Path $PSScriptRoot "scripts\run.py"
+$script = Join-Path $PSScriptRoot "run.py"
 # 输出到 temp 下程序自身的输出目录：%TEMP%\osu-beatmap-preview\outputs\batch-python
 $outdir = Join-Path $env:TEMP "osu-beatmap-preview\outputs\batch-python"
 

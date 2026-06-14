@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "osu-beatmap-preview"
+version = "1.0.0"
+description = "osu! beatmap preview generator — render standard/taiko/catch/mania previews as PNG or GIF"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10.0",
+]
+
+[project.scripts]
+osu-preview = "beatmap_preview.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["beatmap_preview*"]

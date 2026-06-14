@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
-STANDARD_ASSET_DIR = Path(__file__).resolve().parents[3] / "assets" / "standard"
+STANDARD_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "standard"
 
 
 @dataclass(frozen=True)

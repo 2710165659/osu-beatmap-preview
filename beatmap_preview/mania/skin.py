@@ -30,7 +30,7 @@ def load_mania_skin_config(keys: int) -> ManiaSkinConfig:
 
 
 def _load_all_mania_configs() -> dict[int, ManiaSkinConfig]:
-    skin_path = Path(__file__).resolve().parents[3] / "assets" / "mania" / "skin.ini"
+    skin_path = Path(__file__).resolve().parents[2] / "assets" / "mania" / "skin.ini"
     if not skin_path.exists():
         return {}
 
