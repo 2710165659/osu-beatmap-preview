@@ -81,3 +81,6 @@ pub(crate) const GIF_TIME_LABEL_NOTE_TOP_GAP: i64 = 9;
 pub(crate) const GIF_TIME_LABEL_COLOR: Rgba = [232, 232, 232, 255];
 pub(crate) const GIF_TIME_LABEL_NOTE_COLOR: Rgba = [170, 170, 170, 255];
 pub(crate) const GIF_PREVIEW_TIME_LABEL_COLOR: Rgba = [95, 221, 108, 255];
+pub(crate) const TIME_LABEL_FONT_SIZE: u32 = 18;
+pub(crate) const TIME_LABEL_MIN_INTERVAL_MS: i64 = 5000;
+pub(crate) const TIME_LABEL_COLOR: Rgba = [200, 200, 200, 255];

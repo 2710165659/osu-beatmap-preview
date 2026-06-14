@@ -22,6 +22,7 @@ use super::{
 const LANE_GAP: i64 = 0;
 const LANE_SEPARATOR: Rgba = [32, 32, 32, 255];
 const TIME_LABEL_FONT_SIZE: u32 = 20;
+const TIME_LABEL_MIN_INTERVAL_MS: i64 = 5000;
 
 const MAX_AREA_HEIGHT_0_TO_1_MIN: i64 = 4000;
 const MAX_AREA_HEIGHT_1_TO_2_MIN: i64 = 5500;
@@ -38,6 +39,7 @@ const MEASURE_LINE: Rgba = [83, 83, 83, 255];
 const BEAT_LINE: Rgba = [56, 56, 56, 255];
 const SUBDIVISION_LINE: Rgba = [34, 34, 34, 255];
 
+#[derive(Clone, Copy)]
 struct TimingLine {
     time: i64,
     color: Rgba,
@@ -94,8 +96,20 @@ pub(crate) fn render_mania_grid(
     for column_index in 0..layout.column_count {
         draw_column_background(&mut image, key_count, column_index, &layout);
     }
+    let mut last_label_time: Option<i64> = None;
     for timing_line in &timing_lines {
-        draw_timing_line(&mut image, timing_line, &layout);
+        let mut tl = *timing_line;
+        if tl.show_label {
+            if let Some(prev) = last_label_time {
+                if (tl.time - prev).abs() < TIME_LABEL_MIN_INTERVAL_MS {
+                    tl.show_label = false;
+                }
+            }
+            if tl.show_label {
+                last_label_time = Some(tl.time);
+            }
+        }
+        draw_timing_line(&mut image, &tl, &layout);
     }
     for sv_change in &sv_changes {
         draw_sv_indicator(&mut image, *sv_change, &layout);

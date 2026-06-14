@@ -18,10 +18,10 @@ if (Test-Path $outdir) { Remove-Item "$outdir\*" -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $outdir | Out-Null
 
 # ── 谱面列表 ──
-$std   = @("713703", "2875069", "4077740", "2304032", "1529760", "5467386")
-$taiko = @("4537563", "4700499", "5237055", "4289396", "4507630")
-$catch = @("1316292", "1655664", "3169455", "2502343", "944502")
-$mania = @("3486603", "256725", "1361218", "4883895", "5221843", "2422376", "1698512", "4972672")
+$std   = @("738063", "2875069", "4897202", "1024742","372245", "1529760", "5467386")
+$taiko = @("4242023", "1418246", "4590053", "2923535", "5651058", "3726150")
+$catch = @("3852338", "3807626", "944502", "2571609", "265177")
+$mania = @("4312004", "4610729", "5061439", "4789195", "3793380", "4665942", "5354177", "5221843", "5369780", "4972672", "5013742")
 
 # 构造一个任务对象
 function New-Task {
@@ -42,45 +42,47 @@ foreach ($b in $mania) { $tasks.Add((New-Task "mania" $b "png")); $tasks.Add((Ne
 
 # ── 穿插：mod 示例（遵守各模式支持的 mod；DT/HT 仅 gif） ──
 # std: 支持 EZ HR HD DA（gif/png），DT/HT 仅 gif
-$tasks.Add((New-Task "std" "713703"  "gif" $null "hd+hr"))
+$tasks.Add((New-Task "std" "738063"  "gif" $null "hd+hr"))
 $tasks.Add((New-Task "std" "2875069" "png" $null "hr"))
-$tasks.Add((New-Task "std" "4077740" "gif" $null "dt1.3"))
-$tasks.Add((New-Task "std" "3377168" "gif" $null "daar9.5+dacs4.5"))
-$tasks.Add((New-Task "std" "2304032" "gif" $null "ez+hd"))
+$tasks.Add((New-Task "std" "4897202" "gif" $null "dt1.3"))
+$tasks.Add((New-Task "std" "1024742" "gif" $null "daar9.5+dacs4.5"))
+$tasks.Add((New-Task "std" "5467386" "gif" $null "ez+hd"))
 # taiko: 支持 EZ HR SW（png/gif）、CS（gif）、DT/HT（gif）
-$tasks.Add((New-Task "taiko" "4537563" "gif" $null "hr"))
-$tasks.Add((New-Task "taiko" "4700499" "gif" $null "dt"))
-$tasks.Add((New-Task "taiko" "5237055" "png" $null "sw"))
-$tasks.Add((New-Task "taiko" "4289396" "gif" $null "cs"))
+$tasks.Add((New-Task "taiko" "4242023" "gif" $null "hr"))
+$tasks.Add((New-Task "taiko" "1418246" "gif" $null "dt"))
+$tasks.Add((New-Task "taiko" "4590053" "png" $null "sw"))
+$tasks.Add((New-Task "taiko" "2923535" "gif" $null "cs"))
 # catch: 支持 EZ HR（png/gif）、DT/HT（gif）
-$tasks.Add((New-Task "catch" "1316292" "gif" $null "hr"))
-$tasks.Add((New-Task "catch" "1655664" "png" $null "ez"))
-$tasks.Add((New-Task "catch" "3169455" "gif" $null "dt1.4"))
+$tasks.Add((New-Task "catch" "3852338" "gif" $null "hr"))
+$tasks.Add((New-Task "catch" "3807626" "png" $null "ez"))
+$tasks.Add((New-Task "catch" "944502" "gif" $null "dt1.4"))
 # mania: 支持 IN HO（png/gif）、CS DS（gif）、K（key mod）
-$tasks.Add((New-Task "mania" "256725"  "png" $null "in"))
-$tasks.Add((New-Task "mania" "3955355" "gif" $null "ho"))
-$tasks.Add((New-Task "mania" "4883895" "gif" $null "cs"))
-$tasks.Add((New-Task "mania" "2610859" "gif" $null "ds"))
+$tasks.Add((New-Task "mania" "4312004"  "png" $null "in"))
+$tasks.Add((New-Task "mania" "4610729" "gif" $null "ho"))
+$tasks.Add((New-Task "mania" "5061439" "gif" $null "cs"))
+$tasks.Add((New-Task "mania" "4789195" "gif" $null "ds"))
 
 # ── 穿插：转谱示例（仅 standard 谱面可转），png + gif ──
-$tasks.Add((New-Task "convert" "713703"  "png" "taiko"))
-$tasks.Add((New-Task "convert" "713703"  "gif" "taiko"))
-$tasks.Add((New-Task "convert" "2875069" "png" "ctb"))
-$tasks.Add((New-Task "convert" "2875069" "gif" "ctb"))
-$tasks.Add((New-Task "convert" "4077740" "png" "mania"))
-$tasks.Add((New-Task "convert" "4077740" "gif" "mania"))
-$tasks.Add((New-Task "convert" "2304032" "gif" "taiko"))
+$tasks.Add((New-Task "convert" "738063"  "png" "taiko"))
+$tasks.Add((New-Task "convert" "2875069"  "gif" "taiko"))
+$tasks.Add((New-Task "convert" "4897202" "png" "ctb"))
+$tasks.Add((New-Task "convert" "1024742" "gif" "ctb"))
+$tasks.Add((New-Task "convert" "372245" "png" "mania"))
+$tasks.Add((New-Task "convert" "1529760" "gif" "mania"))
+$tasks.Add((New-Task "convert" "5467386" "gif" "taiko"))
+$tasks.Add((New-Task "convert" "260177" "png" "taiko"))
+$tasks.Add((New-Task "convert" "260177" "png" "ctb"))
 
 # ── 穿插：指定时间点（仅 gif，最多 4 个，单位秒） ──
-$tasks.Add((New-Task "std" "3377168" "gif" $null $null "30+40+50+60"))
-$tasks.Add((New-Task "std" "2304032" "gif" $null $null "10+25+60"))
-$tasks.Add((New-Task "std" "713703"  "gif" $null $null "45"))
+$tasks.Add((New-Task "std" "738063" "gif" $null $null "30+40+50+60"))
+$tasks.Add((New-Task "std" "2875069" "gif" $null $null "10+25+60"))
+$tasks.Add((New-Task "std" "4897202"  "gif" $null $null "45"))
 
 # ── 穿插：多特性组合示例 ──
-$tasks.Add((New-Task "convert" "713703"  "gif" "mania" "in"))           # 转谱 + mod
+$tasks.Add((New-Task "convert" "738063"  "gif" "mania" "in"))           # 转谱 + mod
 $tasks.Add((New-Task "convert" "2875069" "gif" "ctb"   "hr"))           # 转谱 + mod
-$tasks.Add((New-Task "std"     "4077740" "gif" $null   "hd+dt1.25" "20+40"))  # mod + 时间点
-$tasks.Add((New-Task "convert" "713703"  "gif" "taiko" "hr" "15+30")) # 转谱 + mod + 时间点
+$tasks.Add((New-Task "std"     "4897202" "gif" $null   "hd+dt1.25" "20+40"))  # mod + 时间点
+$tasks.Add((New-Task "convert" "5467386"  "gif" "taiko" "hr" "15+30")) # 转谱 + mod + 时间点
 
 # ── 为任务生成唯一标签（用于文件名） ──
 function Get-Label {
@@ -93,9 +95,38 @@ function Get-Label {
     return $label
 }
 
+# ── 执行前统计 ──
+$totalCount = $tasks.Count
+$basicCount = ($tasks | Where-Object { -not $_.convert -and -not $_.mods -and -not $_.time }).Count
+$modCount   = ($tasks | Where-Object { $_.mods -and -not $_.convert -and -not $_.time }).Count
+$convCount  = ($tasks | Where-Object { $_.convert -and -not $_.mods -and -not $_.time }).Count
+$timeCount  = ($tasks | Where-Object { $_.time -and -not $_.convert -and -not $_.mods }).Count
+$comboCount = ($tasks | Where-Object { ($_.convert -and $_.mods) -or ($_.mods -and $_.time) -or ($_.convert -and $_.time) }).Count
+
+Write-Host ""
+Write-Host ("=" * 70)
+Write-Host "  任务统计"
+Write-Host ("-" * 70)
+Write-Host ("  基础任务 (各模式 png+gif):          {0,4}" -f $basicCount)
+Write-Host ("  Mod 示例 (HR/DT/EZ/HD/DA/IN/HO...):  {0,4}" -f $modCount)
+Write-Host ("  转谱示例 (std->taiko/ctb/mania):     {0,4}" -f $convCount)
+Write-Host ("  指定时间点 (--time):                 {0,4}" -f $timeCount)
+Write-Host ("  多特性组合 (转谱+mod/时间):          {0,4}" -f $comboCount)
+Write-Host ("-" * 70)
+Write-Host ("  任务总计:                            {0,4}" -f $totalCount)
+Write-Host ("=" * 70)
+Write-Host ""
+
 # ── 执行 ──
 $results = New-Object System.Collections.Generic.List[object]
 $index = 0
+
+# 表头
+$headerLine = "{0,6} {1,-7} {2,-40} {3,-9} {4,7}   {5,7}    {6,9}   {7,6}" -f `
+    "#", "MODE", "LABEL", "STATUS", "TIME", "PEAKMEM", "SIZE", "%"
+Write-Host $headerLine
+Write-Host ("-" * 100)
+
 foreach ($t in $tasks) {
     $index++
     $label = Get-Label $t
@@ -178,8 +209,8 @@ foreach ($t in $tasks) {
         ms = $elapsedMs; peakMB = $peakMB; sizeKB = $sizeKB; cpuPct = $cpuPct; msg = $msg
     })
 
-    $consoleLine = "{0,3}. {1,-7} {2,-40} {3,-9} {4,7}ms  {5,7}MB  {6,9}KB  {7,6}%CPU" -f `
-        $index, $t.mode, $label, $status, $elapsedMs, $peakMB, $sizeKB, $cpuPct
+    $consoleLine = "{0}/{1} {2,-7} {3,-40} {4,-9} {5,7}ms  {6,7}MB  {7,9}KB  {8,5}%" -f `
+        $index, $totalCount, $t.mode, $label, $status, $elapsedMs, $peakMB, $sizeKB, $cpuPct
     Write-Host $consoleLine
 }
 
@@ -203,7 +234,7 @@ $lines.Add("任务总数: $($results.Count)    成功: $okCount    失败: $($re
 $lines.Add(("总耗时: {0}ms ({1:F1}s)    峰值内存(单进程最大): {2}MB" -f $totalMs, ($totalMs / 1000), $maxMem))
 $lines.Add(("CPU 统计: 平均 {0}%    最高 {1}%    总CPU时间 {2:F1}s" -f $avgCpu, $maxCpu, ($totalCpuMs / 1000)))
 $lines.Add("")
-$lines.Add(("{0,3}  {1,-7} {2,-42} {3,-9} {4,8}  {5,8}  {6,10}  {7,6}" -f "#", "MODE", "LABEL", "STATUS", "TIME", "PEAKMEM", "SIZE", "CPU%"))
+$lines.Add(("{0,3}  {1,-7} {2,-42} {3,-9} {4,8}  {5,8}  {6,10}  {7,6}" -f "#", "MODE", "LABEL", "STATUS", "TIME", "PEAKMEM", "SIZE", "%"))
 $lines.Add(("-" * 110))
 foreach ($r in $results) {
     $lines.Add(("{0,3}  {1,-7} {2,-42} {3,-9} {4,6}ms  {5,6}MB  {6,8}KB  {7,5}%" -f `

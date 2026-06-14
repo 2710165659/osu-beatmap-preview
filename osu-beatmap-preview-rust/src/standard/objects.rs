@@ -280,7 +280,7 @@ fn draw_number(
     circle_diameter: i64,
     alpha: f64,
 ) {
-    let digit_height = py_round(circle_diameter as f64 * 0.52).max(1);
+    let digit_height = py_round(circle_diameter as f64 * 0.48).max(1);
     let digits: Vec<usize> = number
         .chars()
         .filter_map(|c| c.to_digit(10).map(|d| d as usize))

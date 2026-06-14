@@ -112,8 +112,20 @@ pub(crate) fn render_taiko_grid(
         draw_row_background(&mut image, &layout, row_index);
     }
 
+    let mut last_label_time: Option<i64> = None;
     for timing_line in timing_lines.iter().rev() {
-        draw_timing_line(&mut image, timing_line, &layout);
+        let mut tl = timing_line.clone();
+        if tl.show_label {
+            if let Some(prev) = last_label_time {
+                if (tl.time - prev).abs() < TIME_LABEL_MIN_INTERVAL_MS {
+                    tl.show_label = false;
+                }
+            }
+            if tl.show_label {
+                last_label_time = Some(tl.time);
+            }
+        }
+        draw_timing_line(&mut image, &tl, &layout);
     }
 
     draw_sv_indicators(&mut image, &sv_changes, &layout);

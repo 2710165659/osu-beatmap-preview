@@ -10,6 +10,7 @@ use crate::errors::{PreviewError, Result};
 use crate::models::{Beatmap, HitObjects, TimingPoint};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
+use crate::text::{draw_text, text_size};
 use std::path::{Path, PathBuf};
 
 use super::constants::*;
@@ -102,9 +103,11 @@ fn playfield_left(column_index: i64) -> i64 {
 
 // ─── 节拍线 ───
 
+#[derive(Clone, Copy)]
 struct TimingLine {
     time: i64,
     is_measure: bool,
+    show_label: bool,
 }
 
 /// 红线分段：每段持有固定的 beat_length 与 meter。
@@ -158,6 +161,7 @@ fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec
                 lines.push(TimingLine {
                     time: rhe(time),
                     is_measure: beat_index % section.meter as i64 == 0,
+                    show_label: true,
                 });
             }
             beat_index += 1;
@@ -190,8 +194,23 @@ pub(crate) fn render_catch_grid(
     // 接手示意只画在第一列的判定位置
     draw_catcher(&mut image, &layout);
 
+    let mut last_label_time: Option<i64> = None;
     for timing_line in &timing_lines {
-        draw_timing_line_png(&mut image, timing_line, &layout);
+        let mut tl = timing_line.clone();
+        if tl.show_label {
+            if let Some(prev) = last_label_time {
+                if (tl.time - prev).abs() < TIME_LABEL_MIN_INTERVAL_MS {
+                    tl.show_label = false;
+                }
+            }
+            if tl.show_label {
+                last_label_time = Some(tl.time);
+            }
+        }
+        draw_timing_line_png(&mut image, &tl, &layout);
+        if tl.show_label {
+            draw_timing_label_png(&mut image, &tl, &layout);
+        }
     }
 
     // 后发生的对象先画（早出现的盖在上层），同时刻按 类型 排序
@@ -239,6 +258,17 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
     } else {
         image.set_rect(left, y, right, y, BEAT_LINE);
     }
+}
+
+fn draw_timing_label_png(image: &mut Img, timing_line: &TimingLine, layout: &RenderLayout) {
+    let (column_index, local_y) = locate_time(timing_line.time, layout);
+    let right = playfield_left(column_index) + layout.visible_playfield_width;
+    let y = (PAGE_MARGIN_Y + local_y).clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
+    let label = format!("{:.1}s", timing_line.time as f64 / 1000.0);
+    let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
+    let label_x = (right + 4).min(layout.image_width - label_width as i64 - PAGE_MARGIN_X);
+    let label_y = (y as f64 - label_height as f64 / 2.0).max(PAGE_MARGIN_Y as f64).floor() as i64;
+    draw_text(image, label_x, label_y, &label, TIME_LABEL_FONT_SIZE, TIME_LABEL_COLOR);
 }
 
 fn draw_catch_object_png(image: &mut Img, catch_object: &RenderObject, layout: &RenderLayout) {
