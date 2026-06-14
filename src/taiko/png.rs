@@ -38,6 +38,7 @@ struct RenderLayout {
     big_note_diameter: i64,
     /// 每行的滚动空间起始位置（已对齐到小节线）。
     row_start_positions: Vec<f64>,
+    chart_start_time: i64,
 }
 
 impl RenderLayout {
@@ -58,7 +59,7 @@ pub(crate) fn render_taiko_grid(
     output_path: &Path,
     mods: Option<&ModSettings>,
 ) -> Result<PathBuf> {
-    let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
+    let mut hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
         return Err(PreviewError::new("taiko beatmap has no hit objects"));
     }
@@ -70,19 +71,39 @@ pub(crate) fn render_taiko_grid(
         ));
     }
 
+    // Trim leading silence: if first note is >= 5s in, start 1s before it.
+    let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
+    let chart_start_time = if first_note_time >= 5000 { (first_note_time - 1000).max(0) } else { 0 };
+
+    let effective_chart_end_time: i64;
+    if chart_start_time > 0 {
+        for ho in &mut hit_objects {
+            ho.start_time = (ho.start_time - chart_start_time).max(0);
+            ho.end_time = (ho.end_time - chart_start_time).max(ho.start_time);
+        }
+        effective_chart_end_time = (chart_end_time - chart_start_time).max(0);
+    } else {
+        effective_chart_end_time = chart_end_time;
+    }
+
     let mut cache = RenderCache::default();
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;
-    let timing_points = effective_timing_points(beatmap, mods);
+    let mut timing_points = effective_timing_points(beatmap, mods);
+    if chart_start_time > 0 {
+        for tp in &mut timing_points {
+            tp.time = (tp.time - chart_start_time as f64).max(0.0);
+        }
+    }
     // 静态图的 note 间距只跟随红线 BPM（绿线 SV 不影响排版）
     let spacing_timing_points = spacing_timing_points_for_png(&timing_points);
     let mapper = build_scroll_mapper(
         &spacing_timing_points,
-        chart_end_time,
+        effective_chart_end_time,
         slider_multiplier,
         SPACING_BPM,
     );
-    let redline_sections = build_redline_sections(&timing_points, chart_end_time);
-    let kiai_sections = build_kiai_sections(&timing_points, chart_end_time);
+    let redline_sections = build_redline_sections(&timing_points, effective_chart_end_time);
+    let kiai_sections = build_kiai_sections(&timing_points, effective_chart_end_time);
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let timing_lines = build_timing_lines(
         &redline_sections,
@@ -92,12 +113,13 @@ pub(crate) fn render_taiko_grid(
         first_note_time,
     );
     let layout = build_png_layout(
-        chart_end_time,
+        effective_chart_end_time,
         mapper.end_position(),
         &redline_sections,
         &timing_lines,
+        chart_start_time,
     );
-    let sv_changes = build_sv_changes(&timing_points, chart_end_time, &mapper);
+    let sv_changes = build_sv_changes(&timing_points, effective_chart_end_time, &mapper);
 
     let mut image = Img::new(
         layout.image_width as u32,
@@ -172,6 +194,7 @@ fn build_png_layout(
     chart_width: f64,
     redline_sections: &[RedlineSection],
     timing_lines: &[TimingLine],
+    chart_start_time: i64,
 ) -> RenderLayout {
     let base_row_width = resolve_base_row_width(beatmap_duration);
     let bpm_width_multiplier = if SPACING_BPM > 0.0 {
@@ -218,6 +241,7 @@ fn build_png_layout(
         normal_note_diameter,
         big_note_diameter,
         row_start_positions,
+        chart_start_time,
     }
 }
 
@@ -342,7 +366,7 @@ fn draw_time_label(
     row_top: i64,
     layout: &RenderLayout,
 ) {
-    let label = time_label_text(timing_line.time);
+    let label = time_label_text(timing_line.time + layout.chart_start_time);
     let note: Option<&str> = if timing_line.is_kiai_start {
         Some("Kiai Start")
     } else {

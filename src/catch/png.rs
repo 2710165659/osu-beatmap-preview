@@ -35,6 +35,7 @@ struct RenderLayout {
     playfield_scale: f64,
     object_scale: f64,
     pixels_per_ms: f64,
+    chart_start_time: i64,
 }
 
 /// AR 决定的纵向密度：AR 时间窗内的下落距离映射为像素。
@@ -57,7 +58,7 @@ fn ceil_div(a: i64, b: i64) -> i64 {
     (a + b - 1) / b
 }
 
-fn build_layout(beatmap_duration: i64, circle_size: f64, approach_rate: f64) -> Result<RenderLayout> {
+fn build_layout(beatmap_duration: i64, circle_size: f64, approach_rate: f64, chart_start_time: i64) -> Result<RenderLayout> {
     if beatmap_duration >= MAX_SUPPORTED_DURATION_MS {
         return Err(PreviewError::new(
             "songs longer than 10 minutes are not supported",
@@ -79,7 +80,8 @@ fn build_layout(beatmap_duration: i64, circle_size: f64, approach_rate: f64) -> 
     let total_column_height = ceil_div(total_chart_height, column_count);
     let image_width = PAGE_MARGIN_X * 2
         + column_count * (COLUMN_WIDTH + COLUMN_GAP)
-        - COLUMN_GAP;
+        - COLUMN_GAP
+        + LABEL_RIGHT_MARGIN;
     let image_height = PAGE_MARGIN_Y * 2 + total_column_height;
     Ok(RenderLayout {
         column_count,
@@ -90,6 +92,7 @@ fn build_layout(beatmap_duration: i64, circle_size: f64, approach_rate: f64) -> 
         playfield_scale,
         object_scale,
         pixels_per_ms,
+        chart_start_time,
     })
 }
 
@@ -181,10 +184,33 @@ pub(crate) fn render_catch_grid(
     };
 
     let difficulty = effective_difficulty(beatmap, mods);
-    let render_objects = build_catch_render_objects(beatmap, hit_objects, mods, &difficulty)?;
+    let mut render_objects = build_catch_render_objects(beatmap, hit_objects, mods, &difficulty)?;
     let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap().max(1);
-    let timing_lines = build_timing_lines(&beatmap.timing_points, chart_end_time);
-    let layout = build_layout(chart_end_time, difficulty.cs, difficulty.ar)?;
+
+    // Trim leading silence: if first note is >= 5s in, start 1s before it.
+    let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
+    let chart_start_time = if first_note_time >= 5000 { (first_note_time - 1000).max(0) } else { 0 };
+
+    let (effective_chart_end_time, timing_points_for_render): (i64, Vec<TimingPoint>) =
+        if chart_start_time > 0 {
+            for ro in &mut render_objects {
+                ro.start_time = (ro.start_time - chart_start_time).max(0);
+                if let Some(ref mut et) = ro.event_time {
+                    *et = (*et - chart_start_time as f64).max(0.0);
+                }
+            }
+            let tp = beatmap.timing_points.iter().map(|tp| {
+                let mut tp = *tp;
+                tp.time = (tp.time - chart_start_time as f64).max(0.0);
+                tp
+            }).collect();
+            ((chart_end_time - chart_start_time).max(0), tp)
+        } else {
+            (chart_end_time, beatmap.timing_points.clone())
+        };
+
+    let timing_lines = build_timing_lines(&timing_points_for_render, effective_chart_end_time);
+    let layout = build_layout(effective_chart_end_time, difficulty.cs, difficulty.ar, chart_start_time)?;
 
     let mut image = Img::new(layout.image_width as u32, layout.image_height as u32, IMAGE_BACKGROUND);
 
@@ -268,11 +294,11 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
 
 fn draw_timing_label_png(image: &mut Img, timing_line: &TimingLine, layout: &RenderLayout) {
     let (column_index, y) = locate_time(timing_line.time, layout);
-    let right = playfield_left(column_index) + layout.visible_playfield_width;
+    let border_right = column_left(column_index) + COLUMN_WIDTH;
     let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
-    let label = format!("{:.1}s", timing_line.time as f64 / 1000.0);
+    let label = format!("{:.1}s", (timing_line.time + layout.chart_start_time) as f64 / 1000.0);
     let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
-    let label_x = (right + 4).min(layout.image_width - label_width as i64 - PAGE_MARGIN_X);
+    let label_x = (border_right + 4).min(layout.image_width - label_width as i64 - PAGE_MARGIN_X);
     let label_y = (y as f64 - label_height as f64 / 2.0).max(PAGE_MARGIN_Y as f64).floor() as i64;
     draw_text(image, label_x, label_y, &label, TIME_LABEL_FONT_SIZE, TIME_LABEL_COLOR);
 }

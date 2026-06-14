@@ -22,7 +22,7 @@ use super::{
 const LANE_GAP: i64 = 0;
 const LANE_SEPARATOR: Rgba = [32, 32, 32, 255];
 const TIME_LABEL_FONT_SIZE: u32 = 20;
-const TIME_LABEL_MIN_INTERVAL_MS: i64 = 5000;
+const TIME_LABEL_MIN_INTERVAL_MS: i64 = 2000;
 
 const MAX_AREA_HEIGHT_0_TO_1_MIN: i64 = 4000;
 const MAX_AREA_HEIGHT_1_TO_2_MIN: i64 = 5500;
@@ -55,6 +55,7 @@ struct RenderLayout {
     column_width: i64,
     image_width: i64,
     image_height: i64,
+    chart_start_time: i64,
 }
 
 pub(crate) fn render_mania_grid(
@@ -77,15 +78,35 @@ pub(crate) fn render_mania_grid(
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     let native_mania = is_native_mania(beatmap);
 
+    // Trim leading silence: if first note is >= 5s in, start 1s before it.
+    let first_note_time = hit_objects.iter().map(|ho| ho.start_time).min().unwrap_or(0);
+    let chart_start_time = if first_note_time >= 5000 { (first_note_time - 1000).max(0) } else { 0 };
+
+    if chart_start_time > 0 {
+        for ho in &mut hit_objects {
+            ho.start_time = (ho.start_time - chart_start_time).max(0);
+            ho.end_time = (ho.end_time - chart_start_time).max(ho.start_time);
+        }
+    }
+
     let beatmap_duration = hit_objects.iter().map(|ho| ho.end_time).max().unwrap_or(0);
     let chart_end_time = beatmap_duration + BOTTOM_PADDING_MS;
-    let timing_lines = build_timing_lines(&beatmap.timing_points, chart_end_time);
+    let timing_points_for_render: Vec<TimingPoint> = if chart_start_time > 0 {
+        beatmap.timing_points.iter().map(|tp| {
+            let mut tp = *tp;
+            tp.time = (tp.time - chart_start_time as f64).max(0.0);
+            tp
+        }).collect()
+    } else {
+        beatmap.timing_points.clone()
+    };
+    let timing_lines = build_timing_lines(&timing_points_for_render, chart_end_time);
     let sv_changes = if cs_mode || !native_mania {
         Vec::new()
     } else {
-        build_sv_changes(&beatmap.timing_points, chart_end_time)
+        build_sv_changes(&timing_points_for_render, chart_end_time)
     };
-    let layout = build_png_layout(key_count, beatmap_duration, chart_end_time)?;
+    let layout = build_png_layout(key_count, beatmap_duration, chart_end_time, chart_start_time)?;
 
     let mut image = Img::new(
         layout.image_width as u32,
@@ -126,6 +147,7 @@ fn build_png_layout(
     key_count: i32,
     beatmap_duration: i64,
     chart_end_time: i64,
+    chart_start_time: i64,
 ) -> Result<RenderLayout> {
     let total_chart_height = ((chart_end_time as f64 * PIXELS_PER_MS).ceil() as i64).max(1);
     let column_count = calculate_column_count(beatmap_duration, total_chart_height)?;
@@ -145,6 +167,7 @@ fn build_png_layout(
         column_width,
         image_width,
         image_height,
+        chart_start_time,
     })
 }
 
@@ -239,7 +262,7 @@ fn draw_timing_line(image: &mut Img, timing_line: &TimingLine, layout: &RenderLa
     );
 
     if timing_line.show_label {
-        let label = format!("{:.1}s", timing_line.time as f64 / 1000.0);
+        let label = format!("{:.1}s", (timing_line.time + layout.chart_start_time) as f64 / 1000.0);
         let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
         let label_width = label_width as i64;
         let text_mid_y = label_height as f64 / 2.0;
