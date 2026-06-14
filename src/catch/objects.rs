@@ -224,7 +224,7 @@ fn build_banana_shower_objects(
     let mut spacing = to_float32((hit_object.end_time - hit_object.start_time) as f64);
 
     while spacing > 100.0 {
-        spacing = to_float32((spacing / 2.0) as f64);
+        spacing = to_float32(spacing as f64 / 2.0);
     }
     if spacing <= 0.0 {
         return;
@@ -243,7 +243,7 @@ fn build_banana_shower_objects(
             color: banana_color(current_time as i64), scale_factor: BANANA_SCALE,
             event_time: Some(current_time as f64), hyper_dash: false,
         });
-        current_time = to_float32((current_time + spacing) as f64);
+        current_time = to_float32(current_time as f64 + spacing as f64);
         count += 1;
     }
 }
@@ -312,42 +312,66 @@ fn build_slider_events(
     hit_object: &CatchHitObject, slider_tick_rate: f64, slider_multiplier: f64,
     beatmap_format_version: i32, timing_points: &[TimingPoint],
 ) -> Result<Vec<SliderEvent>> {
-    let (beat_length, slider_velocity) = catch_resolve_slider_timing(hit_object.start_time, timing_points);
-    let span_count = hit_object.slider_repeats.max(1);
-    let duration = hit_object.end_time - hit_object.start_time;
-    let scoring_distance = OBJECT_RADIUS * slider_multiplier * slider_velocity;
-    let tick_spacing = if slider_tick_rate > 0.0 && scoring_distance > 0.0 {
-        (beat_length / slider_tick_rate) as f64
-    } else {
-        duration as f64
-    };
-
-    let mut events: Vec<SliderEvent> = Vec::new();
-    for span_index in 0..span_count {
-        let span_start_time = hit_object.start_time + (duration / span_count as i64) * span_index as i64;
-        let span_end_time = hit_object.start_time + (duration / span_count as i64) * (span_index + 1) as i64;
-
-        if span_index == 0 {
-            events.push(SliderEvent { event_type: EventType::Head, time: span_start_time as f64, path_progress: 0.0 });
-        } else {
-            let _progress = span_index as f64 / span_count as f64;
-            events.push(SliderEvent { event_type: EventType::Repeat, time: span_start_time as f64, path_progress: if span_index % 2 == 1 { 1.0 } else { 0.0 } });
-        }
-
-        generate_span_ticks(span_start_time, span_end_time, tick_spacing, &mut events, span_count, span_index, beatmap_format_version, hit_object)?;
+    if slider_tick_rate <= 0.0 {
+        return Err(PreviewError::new("SliderTickRate must be positive"));
     }
 
-    events.push(SliderEvent { event_type: EventType::Tail, time: hit_object.end_time as f64, path_progress: if span_count % 2 == 1 { 1.0 } else { 0.0 } });
+    let (beat_length, slider_velocity) = catch_resolve_slider_timing(hit_object.start_time, timing_points);
+    let span_count = hit_object.slider_repeats.max(1);
 
-    // Build global legacy last tick (after all spans, before tail)
-    // Note: Always generate legacy last tick, regardless of format version
-    if span_count > 0 {
-        let span_duration = duration as f64 / span_count as f64;
-        if let Some(legacy_tick) = build_global_legacy_last_tick(
-            hit_object.start_time, span_duration, span_count, hit_object.end_time as f64, tick_spacing
-        ) {
-            events.insert(events.len() - 1, legacy_tick);
-        }
+    let adjusted_beat_length = precision_adjusted_beat_length(beat_length, slider_velocity);
+    let velocity = 100.0 * slider_multiplier / adjusted_beat_length;
+
+    if hit_object.slider_pixel_length <= 0.0 || velocity <= 0.0 {
+        return Ok(vec![
+            SliderEvent { event_type: EventType::Head, time: hit_object.start_time as f64, path_progress: 0.0 },
+            SliderEvent { event_type: EventType::Tail, time: hit_object.end_time as f64, path_progress: if span_count % 2 == 1 { 1.0 } else { 0.0 } },
+        ]);
+    }
+
+    let span_duration = hit_object.slider_pixel_length / velocity;
+    let scoring_distance = velocity * beat_length;
+    let scoring_distance = if beatmap_format_version < 8 {
+        scoring_distance / slider_velocity
+    } else {
+        scoring_distance
+    };
+    let total_distance = hit_object.slider_pixel_length.min(100000.0);
+    let tick_distance = (scoring_distance / slider_tick_rate).max(0.0).min(total_distance);
+    let min_distance_from_end = velocity * 10.0;
+
+    let mut events: Vec<SliderEvent> = Vec::new();
+    events.push(SliderEvent {
+        event_type: EventType::Head,
+        time: hit_object.start_time as f64,
+        path_progress: 0.0,
+    });
+
+    for span_index in 0..span_count {
+        let span_start_time = hit_object.start_time as f64 + span_index as f64 * span_duration;
+        let reversed_span = span_index % 2 == 1;
+
+        generate_span_ticks(
+            span_index, span_start_time, span_duration, reversed_span,
+            total_distance, tick_distance, min_distance_from_end, &mut events,
+        );
+
+        let is_last_span = span_index == span_count - 1;
+        let event_type = if is_last_span { EventType::Tail } else { EventType::Repeat };
+        let path_progress = if span_index % 2 == 0 { 1.0 } else { 0.0 };
+
+        events.push(SliderEvent {
+            event_type,
+            time: span_start_time + span_duration,
+            path_progress,
+        });
+    }
+
+    // Always generate legacy last tick, regardless of format version
+    if let Some(legacy_tick) = build_legacy_last_tick(
+        hit_object.start_time as i64, span_duration, span_count,
+    ) {
+        events.push(legacy_tick);
     }
 
     events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
@@ -355,35 +379,42 @@ fn build_slider_events(
 }
 
 fn generate_span_ticks(
-    span_start_time: i64, span_end_time: i64, tick_spacing: f64,
-    events: &mut Vec<SliderEvent>, _span_count: i32, span_index: i32,
-    _beatmap_format_version: i32, _hit_object: &CatchHitObject,
-) -> Result<()> {
-    let span_duration = (span_end_time - span_start_time) as f64;
-    if tick_spacing <= 0.0 || span_duration <= tick_spacing {
-        return Ok(());
+    _span_index: i32, span_start_time: f64, span_duration: f64,
+    reversed_span: bool, total_distance: f64, tick_distance: f64,
+    min_distance_from_end: f64, events: &mut Vec<SliderEvent>,
+) {
+    if tick_distance <= 0.0 {
+        return;
     }
 
-    let tick_time = span_start_time as f64 + tick_spacing;
-    let tick_count = ((span_duration / tick_spacing).floor() as i32).max(0);
+    let mut ticks: Vec<SliderEvent> = Vec::new();
+    let mut distance = tick_distance;
 
-    // Legacy last tick is now handled globally, not per-span
-    let end_time_f64 = span_end_time as f64;
-
-    for i in 0..tick_count.max(0) {
-        let t = tick_time + i as f64 * tick_spacing;
-        if t < end_time_f64 - 0.001 {
-            let span_progress = (t - span_start_time as f64) / span_duration;
-            let path_progress = if span_index % 2 == 0 { span_progress } else { 1.0 - span_progress };
-            events.push(SliderEvent { event_type: EventType::Tick, time: t, path_progress });
+    while distance <= total_distance + 0.001 {
+        if distance >= total_distance - min_distance_from_end {
+            break;
         }
+
+        let path_progress = distance / total_distance;
+        let time_progress = if reversed_span { 1.0 - path_progress } else { path_progress };
+
+        ticks.push(SliderEvent {
+            event_type: EventType::Tick,
+            time: span_start_time + time_progress * span_duration,
+            path_progress,
+        });
+        distance += tick_distance;
     }
 
-    Ok(())
+    if reversed_span {
+        ticks.reverse();
+    }
+
+    events.extend(ticks);
 }
 
-fn build_global_legacy_last_tick(
-    start_time: i64, span_duration: f64, span_count: i32, end_time: f64, tick_spacing: f64,
+fn build_legacy_last_tick(
+    start_time: i64, span_duration: f64, span_count: i32,
 ) -> Option<SliderEvent> {
     if span_count <= 0 {
         return None;
@@ -392,20 +423,8 @@ fn build_global_legacy_last_tick(
     let total_duration = span_count as f64 * span_duration;
     let final_span_index = span_count - 1;
     let final_span_start_time = start_time as f64 + final_span_index as f64 * span_duration;
-
-    // Check if there are any ticks at all
-    let tick_count = ((span_duration / tick_spacing).floor() as i32).max(0);
-    if tick_count <= 0 {
-        return None;
-    }
-
     let legacy_last_tick_time = (start_time as f64 + total_duration / 2.0)
         .max(final_span_start_time + span_duration - 36.0);
-
-    // Make sure it's before the end time
-    if legacy_last_tick_time >= end_time {
-        return None;
-    }
 
     let mut path_progress = (legacy_last_tick_time - final_span_start_time) / span_duration;
     if span_count % 2 == 0 {
@@ -417,6 +436,14 @@ fn build_global_legacy_last_tick(
         time: legacy_last_tick_time,
         path_progress,
     })
+}
+
+fn precision_adjusted_beat_length(beat_length: f64, slider_velocity: f64) -> f64 {
+    if slider_velocity <= 0.0 {
+        return beat_length;
+    }
+    let bpm_multiplier = to_float32(100.0 / slider_velocity).max(10.0).min(1000.0) / 100.0;
+    beat_length * bpm_multiplier as f64
 }
 
 fn build_tiny_droplets_between(
