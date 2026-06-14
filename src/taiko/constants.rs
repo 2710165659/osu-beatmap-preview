@@ -19,7 +19,6 @@ pub(crate) const ROW_WIDTH_BPM_180_TO_240: f64 = 1.15;
 pub(crate) const ROW_WIDTH_BPM_240_TO_300: f64 = 1.3;
 pub(crate) const ROW_WIDTH_BPM_300_PLUS: f64 = 1.45;
 
-pub(crate) const DRAW_DRUM_EACH_ROW: bool = false;
 pub(crate) const ROW_GAP: i64 = 80;
 pub(crate) const ROW_HEIGHT: i64 = 80;
 pub(crate) const SPACING_BPM: f64 = 0.0;
@@ -31,6 +30,8 @@ pub(crate) const DEFAULT_METER: i32 = 4;
 
 pub(crate) const PAGE_MARGIN_X: i64 = 8;
 pub(crate) const PAGE_MARGIN_Y: i64 = 8;
+/// 第一行上方为 SV 指示标预留的额外空间。
+pub(crate) const FIRST_ROW_SV_TOP_MARGIN: i64 = 24;
 pub(crate) const ROW_INNER_PADDING_X: i64 = 33;
 pub(crate) const LABEL_RIGHT_PADDING: i64 = 1;
 pub(crate) const MIN_BEAT_LINE_SPACING: f64 = 200.0;

@@ -15,8 +15,7 @@ use std::path::{Path, PathBuf};
 
 use super::constants::*;
 use super::notes::{
-    cached_roll_tail, draw_drum_panel, draw_note_disc, draw_track_background,
-    DRUM_PANEL_WIDTH_RATIO, RenderCache,
+    cached_roll_tail, draw_note_disc, draw_track_background, RenderCache,
 };
 use super::timing::*;
 
@@ -32,8 +31,6 @@ struct RenderLayout {
     row_count: i64,
     /// 每行的最大内容宽度（像素）；行的实际终点由小节线对齐决定。
     max_row_width: i64,
-    left_panel_width: i64,
-    right_panel_width: i64,
     content_width: i64,
     image_width: i64,
     image_height: i64,
@@ -207,18 +204,14 @@ fn build_png_layout(
     }
     let used_row_width = (used_row_width.ceil() as i64).clamp(1, max_row_width);
 
-    let left_panel_width = pyround(ROW_HEIGHT as f64 * DRUM_PANEL_WIDTH_RATIO);
-    let right_panel_width = ROW_INNER_PADDING_X * 2 + used_row_width;
-    let content_width = left_panel_width + right_panel_width;
+    let content_width = ROW_INNER_PADDING_X * 2 + used_row_width;
     let image_width = PAGE_MARGIN_X * 2 + content_width;
-    let image_height = PAGE_MARGIN_Y * 2 + row_count * ROW_HEIGHT + row_count * ROW_GAP;
+    let image_height = PAGE_MARGIN_Y * 2 + FIRST_ROW_SV_TOP_MARGIN + row_count * ROW_HEIGHT + row_count * ROW_GAP;
     let normal_note_diameter = pyround(ROW_HEIGHT as f64 * NORMAL_NOTE_SIZE_RATIO);
     let big_note_diameter = pyround(normal_note_diameter as f64 * BIG_NOTE_SCALE);
     RenderLayout {
         row_count,
         max_row_width,
-        left_panel_width,
-        right_panel_width,
         content_width,
         image_width,
         image_height,
@@ -295,46 +288,27 @@ fn resolve_main_bpm(redline_sections: &[RedlineSection]) -> f64 {
 // ─── row helpers ───
 
 fn png_row_top(row_index: i64) -> i64 {
-    PAGE_MARGIN_Y + row_index * (ROW_HEIGHT + ROW_GAP)
+    let base = PAGE_MARGIN_Y + row_index * (ROW_HEIGHT + ROW_GAP);
+    if row_index == 0 {
+        base + FIRST_ROW_SV_TOP_MARGIN
+    } else {
+        base
+    }
 }
 
 fn png_row_center_y(row_index: i64) -> i64 {
     png_row_top(row_index) + ROW_HEIGHT / 2
 }
 
-fn png_row_chart_left(layout: &RenderLayout, row_index: i64) -> i64 {
-    let mut row_left = PAGE_MARGIN_X;
-    if DRAW_DRUM_EACH_ROW || row_index == 0 {
-        row_left += layout.left_panel_width;
-    }
-    row_left + ROW_INNER_PADDING_X
+fn png_row_chart_left(_layout: &RenderLayout, _row_index: i64) -> i64 {
+    PAGE_MARGIN_X + ROW_INNER_PADDING_X
 }
 
 // ─── 行背景 ───
 
-/// 绘制单行背景：首行带鼓面板，其余行只画轨道（程序化，无图片）。
+/// 绘制单行背景：所有行只画轨道（程序化，无图片）。
 fn draw_row_background(image: &mut Img, layout: &RenderLayout, row_index: i64) {
     let row_top = png_row_top(row_index);
-    let row_has_drum = DRAW_DRUM_EACH_ROW || row_index == 0;
-
-    if row_has_drum {
-        draw_drum_panel(
-            image,
-            PAGE_MARGIN_X,
-            row_top,
-            layout.left_panel_width,
-            ROW_HEIGHT,
-        );
-        draw_track_background(
-            image,
-            PAGE_MARGIN_X + layout.left_panel_width,
-            row_top,
-            layout.right_panel_width,
-            ROW_HEIGHT,
-        );
-        return;
-    }
-
     draw_track_background(image, PAGE_MARGIN_X, row_top, layout.content_width, ROW_HEIGHT);
 }
 

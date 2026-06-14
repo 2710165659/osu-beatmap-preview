@@ -231,7 +231,6 @@ fn build_banana_shower_objects(
     }
 
     let mut current_time = to_float32(start_time as f64);
-    let mut count = 0;
     while current_time <= end_time as f32 {
         let x = rng.next_double() * PLAYFIELD_WIDTH;
         rng.next();
@@ -244,7 +243,6 @@ fn build_banana_shower_objects(
             event_time: Some(current_time as f64), hyper_dash: false,
         });
         current_time = to_float32(current_time as f64 + spacing as f64);
-        count += 1;
     }
 }
 
