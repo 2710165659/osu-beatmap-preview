@@ -1,7 +1,6 @@
 # osu! 谱面预览工具（Rust 版）
 
 `osu-beatmap-preview` 的 Rust 重构版，生成 osu! 四模式的预览图或预览动图。
-功能与 Python 版保持一致，目标是大幅提升渲染速度、减少内存占用、减少输出文件体积。
 
 - 单可执行文件：皮肤资源在编译期嵌入二进制，无运行时依赖。
 - 跨平台：Windows / Linux / macOS（动态链接系统库即可）。
@@ -102,12 +101,3 @@ osu-beatmap-preview --bid=123456 --convert=mania --fmt=gif --mods=4k+ds+in+dt1.2
 - 谱面缓存：`<系统临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu`。
 - 输出文件：`<系统临时目录>/osu-beatmap-preview/outputs/<bid>[_convert][_mod-...].<fmt>`。
 - 缓存文件不会自动删除，占用过大时可手动清理。
-
-## 相对 Python 版的实现差异
-
-- 皮肤元素全部代码绘制（不再使用贴图）：`standard`/`catch` 为 osu!lazer Argon 风格，`taiko` 为 classic 风格（note 无中心星形）；`mania` 沿用矩形绘制。
-- `standard`/`catch` 的 combo 颜色优先使用谱面 `[Colours]` 配置，缺省时回退到 lazer 默认四色。
-- GIF 编码：全局调色板 + 帧间增量（delta + 透明复用），文件体积显著小于 PIL 输出。
-- GIF 帧流式编码，渲染一帧写一帧，内存占用与帧数无关。
-- 时间点随机选择使用时间种子的 xorshift（Python 版为未播种的 Mersenne Twister，同样不可复现）。
-- 文本标签使用内置 8×8 位图字体，与 PIL 默认字体外观略有差异。
