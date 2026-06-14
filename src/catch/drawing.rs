@@ -89,10 +89,11 @@ struct BlobLayer {
 }
 
 /// 将多层 blob 的加色贡献累加进一个 sprite：
-/// rgb 通道存「待加的颜色量」，alpha 通道存最大覆盖（用于结果图 alpha）。
+/// rgb 通道存 src-over 混合后的颜色（非预乘），alpha 通道存累计覆盖。
 fn build_blob_sprite(base_diameter: f64, layers: &[BlobLayer], seed: u64) -> Img {
     let max_ratio = layers.iter().fold(1.0f64, |m, l| m.max(l.size_ratio));
     let sprite_size = ((base_diameter * max_ratio).ceil() as i64 + 4).max(1) as u32;
+    // [0]=R, [1]=G, [2]=B (非预乘), [3]=A (0..1)
     let mut acc = vec![[0.0f64; 4]; (sprite_size * sprite_size) as usize];
     let center = sprite_size as f64 / 2.0;
 
@@ -121,57 +122,42 @@ fn build_blob_sprite(base_diameter: f64, layers: &[BlobLayer], seed: u64) -> Img
                 if cov <= 0.0 {
                     continue;
                 }
-                let weight = cov * layer.alpha;
+                let src_a = cov * layer.alpha;
                 let cell = &mut acc[(y as u32 * sprite_size + x as u32) as usize];
-                cell[0] += layer.color[0] as f64 * weight;
-                cell[1] += layer.color[1] as f64 * weight;
-                cell[2] += layer.color[2] as f64 * weight;
-                cell[3] = cell[3].max(weight * 255.0);
+                let dst_a = cell[3];
+                let inv_src_a = 1.0 - src_a;
+                let new_a = src_a + dst_a * inv_src_a;
+                if new_a > 0.0 {
+                    let src_weight = src_a / new_a;
+                    let dst_weight = 1.0 - src_weight;
+                    cell[0] = layer.color[0] as f64 * src_weight + cell[0] * dst_weight;
+                    cell[1] = layer.color[1] as f64 * src_weight + cell[1] * dst_weight;
+                    cell[2] = layer.color[2] as f64 * src_weight + cell[2] * dst_weight;
+                }
+                cell[3] = new_a;
             }
         }
     }
 
     let mut sprite = Img::new(sprite_size, sprite_size, [0, 0, 0, 0]);
     for (i, cell) in acc.iter().enumerate() {
+        if cell[3] <= 0.0 {
+            continue;
+        }
         let idx = i * 4;
         sprite.data[idx] = cell[0].round().clamp(0.0, 255.0) as u8;
         sprite.data[idx + 1] = cell[1].round().clamp(0.0, 255.0) as u8;
         sprite.data[idx + 2] = cell[2].round().clamp(0.0, 255.0) as u8;
-        sprite.data[idx + 3] = cell[3].round().clamp(0.0, 255.0) as u8;
+        sprite.data[idx + 3] = (cell[3] * 255.0).round().clamp(0.0, 255.0) as u8;
     }
     sprite
 }
 
-/// 加色合成预构建的 blob sprite：dst.rgb += sprite.rgb（饱和），alpha 取较大值。
+/// src-over 合成预构建的 blob sprite（标准 alpha 混合，替代加色混合）。
 fn composite_blob_sprite(image: &mut Img, sprite: &Img, cx: f64, cy: f64) {
     let ox = (cx - sprite.w as f64 / 2.0).round() as i64;
     let oy = (cy - sprite.h as f64 / 2.0).round() as i64;
-    let x0 = ox.max(0);
-    let y0 = oy.max(0);
-    let x1 = (ox + sprite.w as i64).min(image.w as i64);
-    let y1 = (oy + sprite.h as i64).min(image.h as i64);
-    if x0 >= x1 || y0 >= y1 {
-        return;
-    }
-    for y in y0..y1 {
-        let sy = (y - oy) as u32;
-        let drow = ((y as u32 * image.w + x0 as u32) * 4) as usize;
-        let srow = ((sy * sprite.w + (x0 - ox) as u32) * 4) as usize;
-        let count = (x1 - x0) as usize;
-        let dst = &mut image.data[drow..drow + count * 4];
-        let src = &sprite.data[srow..srow + count * 4];
-        for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
-            if s[3] == 0 {
-                continue;
-            }
-            d[0] = (d[0] as u32 + s[0] as u32).min(255) as u8;
-            d[1] = (d[1] as u32 + s[1] as u32).min(255) as u8;
-            d[2] = (d[2] as u32 + s[2] as u32).min(255) as u8;
-            if s[3] > d[3] {
-                d[3] = s[3];
-            }
-        }
-    }
+    image.alpha_composite(sprite, ox, oy);
 }
 
 /// sprite 缓存键：对象种类 + 颜色 + 像素直径 + 形状变体 + 超冲。

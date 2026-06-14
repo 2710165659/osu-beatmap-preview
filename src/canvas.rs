@@ -439,6 +439,7 @@ impl Img {
         }
     }
 
+    #[allow(dead_code)]
     pub fn to_rgb_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity((self.w * self.h * 3) as usize);
         for px in self.data.chunks_exact(4) {

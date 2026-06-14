@@ -11,19 +11,44 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
         std::fs::create_dir_all(parent)
             .map_err(|e| PreviewError::new(format!("failed to create output dir: {e}")))?;
     }
+
+    // Build consistent RGBA data for NeuQuant (same 4-byte format as GIF code).
+    let mut sample = Vec::with_capacity((image.w * image.h * 4) as usize);
+    for px in image.data.chunks_exact(4) {
+        sample.extend_from_slice(&[px[0], px[1], px[2], 255]);
+    }
+
+    // Build 256-color palette with NeuQuant (same quantizer as GIF).
+    let nq = color_quant::NeuQuant::new(10, 255, &sample);
+    let palette_rgba = nq.color_map_rgba();
+    let mut palette_rgb = Vec::with_capacity(256 * 3);
+    for px in palette_rgba.chunks_exact(4) {
+        palette_rgb.extend_from_slice(&px[..3]);
+    }
+    while palette_rgb.len() < 256 * 3 {
+        palette_rgb.extend_from_slice(&[0, 0, 0]);
+    }
+
+    // Map every RGBA pixel to the nearest palette index.
+    let mut indexed = vec![0u8; (image.w * image.h) as usize];
+    for (i, px) in image.data.chunks_exact(4).enumerate() {
+        indexed[i] = nq.index_of(&[px[0], px[1], px[2], 255]) as u8;
+    }
+
     let file = std::fs::File::create(path)
         .map_err(|e| PreviewError::new(format!("failed to write png: {e}")))?;
     let writer = std::io::BufWriter::new(file);
     let mut encoder = png::Encoder::new(writer, image.w, image.h);
-    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_color(png::ColorType::Indexed);
     encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_palette(&palette_rgb);
     encoder.set_compression(png::Compression::Best);
     encoder.set_filter(png::FilterType::Paeth);
     let mut writer = encoder
         .write_header()
         .map_err(|e| PreviewError::new(format!("failed to write png: {e}")))?;
     writer
-        .write_image_data(&image.to_rgb_bytes())
+        .write_image_data(&indexed)
         .map_err(|e| PreviewError::new(format!("failed to write png: {e}")))?;
     Ok(())
 }
