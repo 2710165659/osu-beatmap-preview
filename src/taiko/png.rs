@@ -127,8 +127,16 @@ pub(crate) fn render_taiko_grid(
         IMAGE_BACKGROUND,
     );
 
+    // Pre-render track background strip — identical for every row.
+    let track_bg = {
+        let mut bg = Img::new(layout.content_width as u32, ROW_HEIGHT as u32, [0, 0, 0, 0]);
+        draw_track_background(&mut bg, 0, 0, layout.content_width, ROW_HEIGHT);
+        bg
+    };
+
     for row_index in 0..layout.row_count {
-        draw_row_background(&mut image, &layout, row_index);
+        let row_top = png_row_top(row_index);
+        image.alpha_composite(&track_bg, PAGE_MARGIN_X, row_top);
     }
 
     let mut last_label_time: Option<i64> = None;
@@ -328,13 +336,7 @@ fn png_row_chart_left(_layout: &RenderLayout, _row_index: i64) -> i64 {
     PAGE_MARGIN_X + ROW_INNER_PADDING_X
 }
 
-// ─── 行背景 ───
-
-/// 绘制单行背景：所有行只画轨道（程序化，无图片）。
-fn draw_row_background(image: &mut Img, layout: &RenderLayout, row_index: i64) {
-    let row_top = png_row_top(row_index);
-    draw_track_background(image, PAGE_MARGIN_X, row_top, layout.content_width, ROW_HEIGHT);
-}
+// ─── 行背景（已预渲染为 track_bg，逐行 alpha_composite） ───
 
 // ─── 节拍线绘制 ───
 

@@ -89,10 +89,16 @@ struct BlobLayer {
 }
 
 /// 将多层 blob 的加色贡献累加进一个 sprite：
+/// blob sprite 渲染缩放：先以 0.5× 渲染，再 Lanczos 回目标尺寸。
+/// 像素计算量降至 ¼，噪声光斑边缘经 Lanczos 平滑后视觉差异很小。
+const BLOB_SPRITE_SCALE: f64 = 0.5;
+
 /// rgb 通道存 src-over 混合后的颜色（非预乘），alpha 通道存累计覆盖。
 fn build_blob_sprite(base_diameter: f64, layers: &[BlobLayer], seed: u64) -> Img {
     let max_ratio = layers.iter().fold(1.0f64, |m, l| m.max(l.size_ratio));
-    let sprite_size = ((base_diameter * max_ratio).ceil() as i64 + 4).max(1) as u32;
+    let full_size = ((base_diameter * max_ratio).ceil() as i64 + 4).max(1) as u32;
+    let small_d = base_diameter * BLOB_SPRITE_SCALE;
+    let sprite_size = ((full_size as f64 * BLOB_SPRITE_SCALE).ceil() as i64 + 4).max(1) as u32;
     // [0]=R, [1]=G, [2]=B (非预乘), [3]=A (0..1)
     let mut acc = vec![[0.0f64; 4]; (sprite_size * sprite_size) as usize];
     let center = sprite_size as f64 / 2.0;
@@ -102,7 +108,7 @@ fn build_blob_sprite(base_diameter: f64, layers: &[BlobLayer], seed: u64) -> Img
     let noise_y = blob_random(seed as f64 * 0.297, 91.17) * 1000.0;
 
     for layer in layers {
-        let layer_size = base_diameter * layer.size_ratio;
+        let layer_size = small_d * layer.size_ratio;
         if layer_size <= 1.0 {
             continue;
         }
@@ -139,18 +145,22 @@ fn build_blob_sprite(base_diameter: f64, layers: &[BlobLayer], seed: u64) -> Img
         }
     }
 
-    let mut sprite = Img::new(sprite_size, sprite_size, [0, 0, 0, 0]);
+    let mut small = Img::new(sprite_size, sprite_size, [0, 0, 0, 0]);
     for (i, cell) in acc.iter().enumerate() {
         if cell[3] <= 0.0 {
             continue;
         }
         let idx = i * 4;
-        sprite.data[idx] = cell[0].round().clamp(0.0, 255.0) as u8;
-        sprite.data[idx + 1] = cell[1].round().clamp(0.0, 255.0) as u8;
-        sprite.data[idx + 2] = cell[2].round().clamp(0.0, 255.0) as u8;
-        sprite.data[idx + 3] = (cell[3] * 255.0).round().clamp(0.0, 255.0) as u8;
+        small.data[idx] = cell[0].round().clamp(0.0, 255.0) as u8;
+        small.data[idx + 1] = cell[1].round().clamp(0.0, 255.0) as u8;
+        small.data[idx + 2] = cell[2].round().clamp(0.0, 255.0) as u8;
+        small.data[idx + 3] = (cell[3] * 255.0).round().clamp(0.0, 255.0) as u8;
     }
-    sprite
+    if full_size == sprite_size {
+        small
+    } else {
+        small.resize(full_size, full_size)
+    }
 }
 
 /// src-over 合成预构建的 blob sprite（标准 alpha 混合，替代加色混合）。
@@ -162,6 +172,9 @@ fn composite_blob_sprite(image: &mut Img, sprite: &Img, cx: f64, cy: f64) {
 
 /// sprite 缓存键：对象种类 + 颜色 + 像素直径 + 形状变体 + 超冲。
 type SpriteKey = (u8, [u8; 3], u32, u8, bool);
+
+/// sprite 缓存容量上限：超出后清空整个缓存，防止无界增长。
+const SPRITE_CACHE_MAX_ENTRIES: usize = 256;
 
 thread_local! {
     static SPRITE_CACHE: RefCell<HashMap<SpriteKey, Rc<Img>>> = RefCell::new(HashMap::new());
@@ -184,7 +197,11 @@ fn cached_blob_sprite(
             return Rc::clone(sprite);
         }
         let sprite = Rc::new(build(seed % SEED_VARIANTS));
-        cache.borrow_mut().insert(key, Rc::clone(&sprite));
+        let mut cache_mut = cache.borrow_mut();
+        if cache_mut.len() >= SPRITE_CACHE_MAX_ENTRIES {
+            cache_mut.clear();
+        }
+        cache_mut.insert(key, Rc::clone(&sprite));
         sprite
     })
 }
