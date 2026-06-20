@@ -21,6 +21,9 @@ mod validate;
 
 use errors::Result;
 
+const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 struct Args {
     bid: String,
     convert: Option<String>,
@@ -33,7 +36,7 @@ struct Args {
 fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko] \
-         [--mods=<MODS>] [--fmt=png|gif] [--time=<T1+T2+...>] [--bpm=<BPM>]"
+         [--mods=<MODS>] [--fmt=png|gif] [--time=<T1+T2+...>] [--bpm=<BPM>]\n       osu-beatmap-preview --version"
     );
     std::process::exit(code)
 }
@@ -103,6 +106,10 @@ fn parse_args() -> Args {
                 bpm = Some(val);
             }
             "-h" | "--help" => print_usage_and_exit(0),
+            "--version" => {
+                println!("osu-beatmap-preview v{} (built {})", VERSION, BUILD_TIMESTAMP);
+                std::process::exit(0)
+            }
             _ => {
                 eprintln!("error: unknown argument: {arg}");
                 print_usage_and_exit(2)
@@ -146,6 +153,13 @@ fn run(args: &Args) -> Result<serde_json::Value> {
     )
 }
 
+fn build_info() -> serde_json::Value {
+    serde_json::json!({
+        "version": VERSION,
+        "build_time": BUILD_TIMESTAMP
+    })
+}
+
 fn dump_convert_signatures(osu_path: &str) {
     let beatmap = parser::parse_beatmap(std::path::Path::new(osu_path)).unwrap();
     for target in [1, 2, 3] {
@@ -180,7 +194,10 @@ fn main() {
     }
     let args = parse_args();
     match run(&args) {
-        Ok(result) => {
+        Ok(mut result) => {
+            if let Some(obj) = result.as_object_mut() {
+                obj.insert("build-info".to_string(), build_info());
+            }
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }
         Err(exc) => {
