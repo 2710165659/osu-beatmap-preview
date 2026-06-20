@@ -61,6 +61,7 @@ pub(crate) fn taiko_convert(
         hit_objects: HitObjects::Taiko(taiko_objects),
         break_periods: beatmap.break_periods.clone(),
         combo_colors: beatmap.combo_colors.clone(),
+        beat_divisor: beatmap.beat_divisor,
     })
 }
 

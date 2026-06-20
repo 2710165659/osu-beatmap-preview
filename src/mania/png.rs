@@ -100,7 +100,7 @@ pub(crate) fn render_mania_grid(
     } else {
         beatmap.timing_points.clone()
     };
-    let timing_lines = build_timing_lines(&timing_points_for_render, chart_end_time);
+    let timing_lines = build_timing_lines(&timing_points_for_render, chart_end_time, beatmap.beat_divisor);
     let sv_changes = if cs_mode || !native_mania {
         Vec::new()
     } else {
@@ -345,7 +345,7 @@ fn draw_png_hit_object(
     }
 }
 
-fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec<TimingLine> {
+fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64, beat_divisor: i32) -> Vec<TimingLine> {
     let base_points: Vec<&TimingPoint> = timing_points.iter().filter(|p| p.uninherited).collect();
     if base_points.is_empty() {
         return Vec::new();
@@ -360,7 +360,9 @@ fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec
         };
 
         let beat_pixels = point.beat_length * PIXELS_PER_MS;
-        let subdivision: i64 = if beat_pixels >= 72.0 {
+        let subdivision: i64 = if beat_divisor > 0 {
+            (beat_divisor as i64).max(1)
+        } else if beat_pixels >= 72.0 {
             4
         } else if beat_pixels >= 28.0 {
             2

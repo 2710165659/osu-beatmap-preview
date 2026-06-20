@@ -33,6 +33,12 @@ fn parse_beatmap_str(content: &str) -> Option<Beatmap> {
 
     let combo_colors = parse_combo_colors(sections.get("Colours"));
 
+    let editor = sections
+        .get("Editor")
+        .map(|lines| parse_key_value(lines))
+        .unwrap_or_default();
+    let beat_divisor: i32 = editor.get("BeatDivisor").and_then(|v| v.parse().ok()).unwrap_or(0);
+
     let hit_lines = sections.get("HitObjects")?;
     let hit_objects = match mode {
         0 => HitObjects::Standard(parse_standard(hit_lines, &difficulty, &timing_points)?),
@@ -50,6 +56,7 @@ fn parse_beatmap_str(content: &str) -> Option<Beatmap> {
         hit_objects,
         break_periods,
         combo_colors,
+        beat_divisor,
     })
 }
 

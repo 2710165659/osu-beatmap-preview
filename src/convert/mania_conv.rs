@@ -266,6 +266,7 @@ pub(crate) fn mania_convert(
         hit_objects: HitObjects::Mania(mania_objects),
         break_periods: beatmap.break_periods.clone(),
         combo_colors: beatmap.combo_colors.clone(),
+        beat_divisor: beatmap.beat_divisor,
     })
 }
 

@@ -143,6 +143,8 @@ pub struct Beatmap {
     pub break_periods: Vec<BreakPeriod>,
     /// Combo colours from the beatmap's [Colours] section (Combo1..ComboN order).
     pub combo_colors: Vec<[u8; 3]>,
+    /// BeatDivisor from the [Editor] section, 0 if not set.
+    pub beat_divisor: i32,
 }
 
 impl Beatmap {
