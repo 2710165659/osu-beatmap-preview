@@ -17,8 +17,9 @@ mod standard;
 mod taiko;
 mod text;
 mod time_selection;
+mod validate;
 
-use errors::{PreviewError, Result};
+use errors::Result;
 
 struct Args {
     bid: String,
@@ -26,12 +27,13 @@ struct Args {
     mods: Option<String>,
     fmt: Option<String>,
     time: Option<String>,
+    bpm: Option<f64>,
 }
 
 fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko] \
-         [--mods=<MODS>] [--fmt=png|gif] [--time=<T1+T2+...>]"
+         [--mods=<MODS>] [--fmt=png|gif] [--time=<T1+T2+...>] [--bpm=<BPM>]"
     );
     std::process::exit(code)
 }
@@ -42,6 +44,7 @@ fn parse_args() -> Args {
     let mut mods: Option<String> = None;
     let mut fmt: Option<String> = None;
     let mut time: Option<String> = None;
+    let mut bpm: Option<f64> = None;
 
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -68,8 +71,8 @@ fn parse_args() -> Args {
             "--bid" => bid = Some(take_value(value)),
             "--convert" => {
                 let v = take_value(value);
-                if !["mania", "ctb", "taiko"].contains(&v.as_str()) {
-                    eprintln!("error: --convert must be one of mania, ctb, taiko");
+                if let Err(e) = validate::validate_convert_value(&v) {
+                    eprintln!("error: {e}");
                     print_usage_and_exit(2)
                 }
                 convert = Some(v);
@@ -77,13 +80,28 @@ fn parse_args() -> Args {
             "--mod" | "--mods" => mods = Some(take_value(value)),
             "--fmt" | "--format" => {
                 let v = take_value(value);
-                if v != "png" && v != "gif" {
-                    eprintln!("error: --fmt must be png or gif");
+                if let Err(e) = validate::validate_fmt_value(&v) {
+                    eprintln!("error: {e}");
                     print_usage_and_exit(2)
                 }
                 fmt = Some(v);
             }
             "--time" | "--times" => time = Some(take_value(value)),
+            "--bpm" => {
+                let v = take_value(value);
+                let val: f64 = v
+                    .parse()
+                    .map_err(|_| {
+                        eprintln!("error: --bpm must be a number, got '{v}'");
+                        print_usage_and_exit(2)
+                    })
+                    .unwrap();
+                if let Err(e) = validate::validate_bpm_value(val) {
+                    eprintln!("error: {e}");
+                    print_usage_and_exit(2)
+                }
+                bpm = Some(val);
+            }
             "-h" | "--help" => print_usage_and_exit(0),
             _ => {
                 eprintln!("error: unknown argument: {arg}");
@@ -103,51 +121,18 @@ fn parse_args() -> Args {
         mods,
         fmt,
         time,
+        bpm,
     }
-}
-
-fn parse_times(raw: &str) -> Result<Vec<f64>> {
-    let parts: Vec<&str> = raw
-        .split('+')
-        .map(|p| p.trim())
-        .filter(|p| !p.is_empty())
-        .collect();
-    if parts.len() > 4 {
-        return Err(PreviewError::new("--time accepts at most 4 time points"));
-    }
-    let mut result = Vec::with_capacity(parts.len());
-    for p in parts {
-        let val: f64 = p
-            .parse()
-            .map_err(|_| PreviewError::new(format!("invalid time value: '{p}'")))?;
-        if val < 0.0 {
-            return Err(PreviewError::new(format!(
-                "time must be non-negative, got {val}"
-            )));
-        }
-        result.push(val);
-    }
-    Ok(result)
 }
 
 fn run(args: &Args) -> Result<serde_json::Value> {
-    let mod_settings = match &args.mods {
-        Some(mod_str) => {
-            let settings = mods::parse_mods(mod_str)?;
-            let errors = mods::validate_mods(&settings, None, None);
-            if !errors.is_empty() {
-                return Err(PreviewError::new(format!(
-                    "mod conflict: {}",
-                    errors.join("; ")
-                )));
-            }
-            Some(settings)
-        }
+    let mods_unvalidated = match &args.mods {
+        Some(mod_str) => Some(mods::parse_mods(mod_str)?),
         None => None,
     };
 
     let times = match &args.time {
-        Some(raw) => Some(parse_times(raw)?),
+        Some(raw) => Some(validate::parse_times(raw)?),
         None => None,
     };
 
@@ -155,8 +140,9 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         &args.bid,
         args.fmt.as_deref(),
         args.convert.as_deref(),
-        mod_settings,
+        mods_unvalidated,
         times,
+        args.bpm,
     )
 }
 

@@ -58,6 +58,7 @@ pub(crate) fn render_taiko_grid(
     beatmap: &Beatmap,
     output_path: &Path,
     mods: Option<&ModSettings>,
+    bpm: Option<f64>,
 ) -> Result<PathBuf> {
     let mut hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
@@ -100,7 +101,7 @@ pub(crate) fn render_taiko_grid(
         &spacing_timing_points,
         effective_chart_end_time,
         slider_multiplier,
-        SPACING_BPM,
+        bpm.unwrap_or(SPACING_BPM),
     );
     let redline_sections = build_redline_sections(&timing_points, effective_chart_end_time);
     let kiai_sections = build_kiai_sections(&timing_points, effective_chart_end_time);

@@ -1,6 +1,7 @@
 use crate::errors::{PreviewError, Result};
 use crate::models::{Beatmap, HitObjects};
-use crate::mods::{mods_for_mode, validate_mods, ModSettings};
+use crate::mods::ModSettings;
+use crate::validate::{self, ValidateContext};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
@@ -10,11 +11,8 @@ pub fn generate_preview(
     convert: Option<&str>,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
+    bpm: Option<f64>,
 ) -> Result<Value> {
-    if bid.is_empty() || !bid.chars().all(|c| c.is_ascii_digit()) {
-        return Err(PreviewError::new("bid must be numeric"));
-    }
-
     let temp_root = std::env::temp_dir().join("osu-beatmap-preview");
     let beatmap_path =
         crate::downloader::download_beatmap_file(bid, &temp_root.join("osu-download-cache"))?;
@@ -40,25 +38,18 @@ pub fn generate_preview(
             }
         }
     };
-    if times.is_some() && fmt != "gif" && !(fmt == "png" && target_mode == 0) {
-        return Err(PreviewError::new(
-            "--times is only valid for GIF or standard PNG output",
-        ));
-    }
 
-    let mods: Option<ModSettings> = match mods {
-        Some(m) if m.has_any_mod() => {
-            let mode_errors = validate_mods(&m, Some(target_mode), Some(&fmt));
-            if !mode_errors.is_empty() {
-                return Err(PreviewError::new(format!(
-                    "mod conflict: {}",
-                    mode_errors.join("; ")
-                )));
-            }
-            Some(mods_for_mode(&m, target_mode))
-        }
-        _ => None,
+    let ctx = ValidateContext {
+        bid,
+        fmt: &fmt,
+        target_mode,
     };
+    let mods = validate::validate_with_context(
+        &ctx,
+        times.as_deref(),
+        bpm,
+        mods,
+    )?;
 
     let mut parts: Vec<String> = vec![bid.to_string()];
     if let Some(convert_name) = convert_used {
@@ -74,7 +65,7 @@ pub fn generate_preview(
         .join(format!("{}.{}", parts.join("_"), fmt));
 
     let preview_path =
-        render_preview_for_mode(beatmap.clone(), &output_path, &fmt, target_mode, mods, times)?;
+        render_preview_for_mode(beatmap.clone(), &output_path, &fmt, target_mode, mods, times, bpm)?;
 
     let abs = preview_path
         .canonicalize()
@@ -161,6 +152,7 @@ fn render_preview_for_mode(
     target_mode: i32,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
+    bpm: Option<f64>,
 ) -> Result<PathBuf> {
     let times_ms = crate::time_selection::times_to_milliseconds(times.as_deref());
     let mods_ref = mods.as_ref();
@@ -189,7 +181,7 @@ fn render_preview_for_mode(
                 crate::taiko::render_taiko_gif(&beatmap, mods_ref, times_ms, output_path)?;
                 Ok(output_path.to_path_buf())
             } else {
-                crate::taiko::render_taiko_grid(&beatmap, output_path, mods_ref)
+                crate::taiko::render_taiko_grid(&beatmap, output_path, mods_ref, bpm)
             }
         }
         2 => {
