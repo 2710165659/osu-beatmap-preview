@@ -79,9 +79,14 @@ pub(crate) fn render_mania_grid(
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     let native_mania = is_native_mania(beatmap);
 
-    // Trim leading silence: if first note is >= 5s in, start 1s before it.
+    // Trim leading silence: if first note is >= 5s in, start 1s before it,
+    // aligned to the red-line beat grid.
     let first_note_time = hit_objects.iter().map(|ho| ho.start_time).min().unwrap_or(0);
-    let chart_start_time = if first_note_time >= 5000 { (first_note_time - 1000).max(0) } else { 0 };
+    let chart_start_time = if first_note_time >= 5000 {
+        crate::time_selection::snap_to_beat_grid(first_note_time - 1000, &beatmap.timing_points)
+    } else {
+        0
+    };
 
     if chart_start_time > 0 {
         for ho in &mut hit_objects {
@@ -95,7 +100,7 @@ pub(crate) fn render_mania_grid(
     let timing_points_for_render: Vec<TimingPoint> = if chart_start_time > 0 {
         beatmap.timing_points.iter().map(|tp| {
             let mut tp = *tp;
-            tp.time = (tp.time - chart_start_time as f64).max(0.0);
+            tp.time -= chart_start_time as f64;
             tp
         }).collect()
     } else {

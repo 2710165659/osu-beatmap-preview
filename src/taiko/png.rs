@@ -72,9 +72,10 @@ pub(crate) fn render_taiko_grid(
         ));
     }
 
-    // Trim leading silence: if first note is >= 5s in, start 1s before it.
+    // Always trim leading silence, starting directly from the first note.
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
-    let chart_start_time = if first_note_time >= 5000 { (first_note_time - 1000).max(0) } else { 0 };
+    let chart_start_time =
+        crate::time_selection::snap_to_beat_grid(first_note_time, &beatmap.timing_points);
 
     let effective_chart_end_time: i64;
     if chart_start_time > 0 {
@@ -92,7 +93,7 @@ pub(crate) fn render_taiko_grid(
     let mut timing_points = effective_timing_points(beatmap, mods);
     if chart_start_time > 0 {
         for tp in &mut timing_points {
-            tp.time = (tp.time - chart_start_time as f64).max(0.0);
+            tp.time -= chart_start_time as f64;
         }
     }
     // 静态图的 note 间距只跟随红线 BPM（绿线 SV 不影响排版）

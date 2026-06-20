@@ -1,5 +1,5 @@
 use crate::errors::{PreviewError, Result};
-use crate::models::{Beatmap, BreakPeriod};
+use crate::models::{Beatmap, BreakPeriod, TimingPoint};
 
 pub const BREAK_GAP_MS: i64 = 2200;
 
@@ -291,4 +291,22 @@ fn break_periods_overlapping_segment(
         .filter(|p| p.start_time < segment_end_time && p.end_time > segment_start_time)
         .copied()
         .collect()
+}
+
+/// Snap `time` backward to the nearest beat-line position on the red-line grid,
+/// so that timing lines stay in phase after chart trimming.
+pub fn snap_to_beat_grid(time: i64, timing_points: &[TimingPoint]) -> i64 {
+    let red = timing_points
+        .iter()
+        .filter(|p| p.uninherited && p.beat_length > 0.0)
+        .rfind(|p| (p.time as i64) <= time);
+    let (red_time, beat_length) = match red {
+        Some(p) => (p.time as i64, p.beat_length),
+        None => return time.max(0),
+    };
+    if beat_length <= 0.0 {
+        return time.max(0);
+    }
+    let beats_from_red = (time - red_time) as f64 / beat_length;
+    (red_time + (beats_from_red.floor() as i64 as f64 * beat_length) as i64).max(0)
 }

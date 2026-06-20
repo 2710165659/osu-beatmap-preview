@@ -211,6 +211,7 @@ pub(crate) fn build_redline_sections(
     let mut beat_length = DEFAULT_BEAT_LENGTH;
     let mut meter = DEFAULT_METER;
     let mut section_start: i64 = 0;
+    let mut last_pre_zero_red: Option<f64> = None;
 
     for point in timing_points {
         if point.time > 0.0 {
@@ -219,6 +220,16 @@ pub(crate) fn build_redline_sections(
         if point.uninherited {
             beat_length = point.beat_length;
             meter = point.meter;
+            last_pre_zero_red = Some(point.time);
+        }
+    }
+
+    // If the last red line before time 0 has a negative time (happens after
+    // chart trimming), start the first section from that negative time so
+    // beat phase is preserved.
+    if let Some(t) = last_pre_zero_red {
+        if t < 0.0 {
+            section_start = pyround(t);
         }
     }
 
@@ -383,7 +394,9 @@ pub(crate) fn build_timing_lines(
             let is_measure = beat_index % (section.meter.max(1) as i64) == 0;
             let is_first_beat = beat_index == 0;
 
-            if is_measure || beat_spacing >= min_beat_line_spacing || (show_bpm && is_first_beat) {
+            if rounded_time >= 0
+                && (is_measure || beat_spacing >= min_beat_line_spacing || (show_bpm && is_first_beat))
+            {
                 merge_timing_line(
                     &mut line_by_time,
                     rounded_time,
