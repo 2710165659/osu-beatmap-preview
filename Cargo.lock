@@ -327,7 +327,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "osu-beatmap-preview"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "color_quant",
  "font8x8",

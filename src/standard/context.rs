@@ -7,7 +7,7 @@ use crate::mods::ModSettings;
 use crate::parser::round_half_even;
 use crate::time_selection::PreviewTimeSelector;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use super::constants::*;
 use super::slider::SliderRenderData;
@@ -56,7 +56,7 @@ pub(crate) struct CachedLayer {
 pub(crate) struct RenderCache {
     pub(crate) resized_alpha: HashMap<(u64, (u32, u32), u8), Img>,
     pub(crate) procedural: HashMap<(u64, [u8; 3]), Img>,
-    pub(crate) slider_data: HashMap<usize, Rc<SliderRenderData>>,
+    pub(crate) slider_data: HashMap<usize, Arc<SliderRenderData>>,
     pub(crate) slider_body_layers: HashMap<usize, CachedLayer>,
     pub(crate) slider_body_alpha_layers: HashMap<(usize, u8), Img>,
     pub(crate) reverse_arrows: HashMap<(i64, [u8; 3]), Img>,

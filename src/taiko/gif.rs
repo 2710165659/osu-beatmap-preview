@@ -9,6 +9,7 @@ use crate::parser::round_half_even;
 use crate::text::{draw_text, text_size};
 use crate::time_selection::{PreviewSegmentTiming, PreviewTimeSelector};
 use std::path::Path;
+use std::sync::Mutex;
 
 use super::constants::*;
 use super::notes::{
@@ -127,25 +128,34 @@ pub(crate) fn render_taiko_gif(
         })
         .collect();
 
-    let mut cache = RenderCache::default();
+    let cache = Mutex::new(RenderCache::default());
 
-    let render = move |frame_index: usize| -> Img {
-        let mut canvas = Img::new(
+    // Pre-render static row backgrounds (drum panels + tracks + judgement lines)
+    // once, then clone per frame instead of redrawing 600 times across 150 frames.
+    let static_bg = {
+        let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
             IMAGE_BACKGROUND,
         );
+        for segment_index in 0..segment_timings.len() {
+            draw_row_background(&mut bg, &layout, segment_index as i64);
+        }
+        bg
+    };
+
+    let render = move |frame_index: usize| -> Img {
+        let mut canvas = static_bg.clone();
 
         for segment_index in 0..segment_timings.len() {
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
-            draw_row_background(&mut canvas, &layout, segment_index as i64);
             draw_hit_objects(
                 &mut canvas,
                 &prepared_hit_objects,
                 &layout,
                 segment_index as i64,
                 snapshot_time,
-                &mut cache,
+                &mut *cache.lock().unwrap(),
             );
         }
 

@@ -244,10 +244,42 @@ impl Img {
         let ya = y0.max(0) as u32;
         let xb = (x1 + 1).clamp(0, self.w as i64) as u32;
         let yb = (y1 + 1).clamp(0, self.h as i64) as u32;
-        for y in ya..yb {
-            let i = self.idx(xa, y);
-            for px in self.data[i..i + ((xb.saturating_sub(xa)) * 4) as usize].chunks_exact_mut(4) {
-                px.copy_from_slice(&color);
+        self.set_rect_unchecked(xa, ya, xb, yb, color);
+    }
+
+    /// Like `set_rect` but caller guarantees `xa < xb`, `ya < yb`, and all coords
+    /// are within `[0, w)` / `[0, h)`. Used on hot paths (mania rendering).
+    #[inline]
+    pub fn set_rect_unchecked(&mut self, xa: u32, ya: u32, xb: u32, yb: u32, color: Rgba) {
+        let row_bytes = ((xb - xa) * 4) as usize;
+        // For single-pixel-wide columns (lane separators, timing lines) use a
+        // tight per-row put loop instead of chunks_exact_mut overhead.
+        if row_bytes == 4 {
+            for y in ya..yb {
+                let i = self.idx(xa, y);
+                self.data[i..i + 4].copy_from_slice(&color);
+            }
+            return;
+        }
+        // For narrow rects (note heads ~38px) the chunks overhead is amortised;
+        // for wide rects we fill whole rows with a pre-built pattern.
+        if row_bytes >= 64 {
+            // Build one full row pattern then copy it per row (memcpy).
+            let pattern: Vec<u8> = std::iter::repeat(&color[..])
+                .take((xb - xa) as usize)
+                .flatten()
+                .copied()
+                .collect();
+            for y in ya..yb {
+                let i = self.idx(xa, y);
+                self.data[i..i + row_bytes].copy_from_slice(&pattern);
+            }
+        } else {
+            for y in ya..yb {
+                let i = self.idx(xa, y);
+                for px in self.data[i..i + row_bytes].chunks_exact_mut(4) {
+                    px.copy_from_slice(&color);
+                }
             }
         }
     }

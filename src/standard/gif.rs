@@ -7,6 +7,7 @@ use crate::models::Beatmap;
 use crate::mods::ModSettings;
 use crate::text::{draw_text, format_mmssmmm, text_size};
 use std::path::Path;
+use std::sync::Mutex;
 
 use super::constants::*;
 use super::context::*;
@@ -64,7 +65,7 @@ pub(crate) fn render_standard_gif(
         })
         .collect();
 
-    let mut cache = RenderCache::default();
+    let cache = Mutex::new(RenderCache::default());
     let render = move |frame_index: usize| -> Img {
         let mut canvas = Img::new(canvas_w as u32, canvas_h as u32, CANVAS_BACKGROUND_COLOR);
         for (segment_index, row_timing) in row_timings.iter().enumerate() {
@@ -72,7 +73,7 @@ pub(crate) fn render_standard_gif(
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
             let frame = render_frame(
                 &context,
-                &mut cache,
+                &mut *cache.lock().unwrap(),
                 snapshot_time,
                 &row_timing.break_periods,
                 &segment_visible_indexes[segment_index][frame_index],

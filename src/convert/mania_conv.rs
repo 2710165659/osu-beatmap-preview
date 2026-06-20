@@ -5,11 +5,11 @@
 
 use crate::errors::{PreviewError, Result};
 use crate::legacy_random::LegacyRandom;
-use crate::models::{Beatmap, HitObjects, KvSection, ManiaHitObject, StandardHitObject, TimingPoint};
+use crate::models::{Beatmap, HitObjects, KvSection, ManiaHitObject, StandardHitObject};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
 
-use super::{kiai_at, std_objects};
+use super::{std_objects, TimingCursor};
 
 const SOURCE_MODE_KEY: &str = "PreviewSourceMode";
 
@@ -34,26 +34,25 @@ const HIT_CLAP: i32 = 1 << 3;
 
 #[derive(Clone)]
 struct Pattern {
-    columns: Vec<i32>,
+    /// Bitmask of occupied columns (max 18 columns fits in u32).
+    column_mask: u32,
     objects: Vec<ManiaHitObject>,
 }
 
 impl Pattern {
     fn new() -> Self {
         Pattern {
-            columns: Vec::new(),
+            column_mask: 0,
             objects: Vec::new(),
         }
     }
 
     fn has_column(&self, c: i32) -> bool {
-        self.columns.contains(&c)
+        self.column_mask & (1 << c as u32) != 0
     }
 
     fn add(&mut self, col: i32, start_time: i64, end_time: i64) {
-        if !self.columns.contains(&col) {
-            self.columns.push(col);
-        }
+        self.column_mask |= 1 << col as u32;
         self.objects.push(ManiaHitObject {
             lane: col,
             start_time,
@@ -63,12 +62,12 @@ impl Pattern {
     }
 
     fn column_count(&self) -> i32 {
-        self.columns.len() as i32
+        self.column_mask.count_ones() as i32
     }
 
-    // Only meaningful when column_count == 1 (matching Python's set iteration use).
+    /// Only meaningful when column_count == 1 (matching Python's set iteration use).
     fn any_column(&self) -> i32 {
-        self.columns.first().copied().unwrap_or(0)
+        self.column_mask.trailing_zeros() as i32
     }
 }
 
@@ -78,7 +77,7 @@ struct ConversionState<'a> {
     rng: LegacyRandom,
     total_columns: i32,
     conv_diff: f64,
-    timing_points: &'a [TimingPoint],
+    timing_cursor: TimingCursor<'a>,
     slider_multiplier: f64,
     random_start: i32,
     stair_type: u32,
@@ -114,8 +113,8 @@ impl ConversionState<'_> {
 
     fn slider_segment_duration(&self, ho: &StandardHitObject) -> i64 {
         let span_count = i32::max(1, ho.slider_repeats) as i64;
-        let (beat_length, slider_velocity) =
-            mania_resolve_slider_timing(ho.start_time, self.timing_points);
+        let beat_length = self.timing_cursor.beat_length;
+        let slider_velocity = self.timing_cursor.slider_velocity;
         let adjusted_beat_length =
             beat_length * f64::max(10.0, f64::min(10000.0, 100.0 / slider_velocity)) / 100.0;
         let duration = (ho.start_time as f64
@@ -241,7 +240,7 @@ pub(crate) fn mania_convert(
         rng,
         total_columns,
         conv_diff,
-        timing_points: &beatmap.timing_points,
+        timing_cursor: TimingCursor::new(&beatmap.timing_points),
         slider_multiplier: diff.get_f64_or("SliderMultiplier", 1.4),
         random_start: if total_columns == 8 { 1 } else { 0 },
         stair_type: P_STAIR,
@@ -362,29 +361,6 @@ fn mania_compute_conversion_difficulty(
     f64::min(cd, 12.0)
 }
 
-fn mania_resolve_slider_timing(start_time: i64, timing_points: &[TimingPoint]) -> (f64, f64) {
-    let mut beat_length = if !timing_points.is_empty() {
-        timing_points[0].beat_length
-    } else {
-        500.0
-    };
-    let mut slider_velocity = 1.0;
-
-    for point in timing_points {
-        if point.time > start_time as f64 {
-            break;
-        }
-        if point.uninherited {
-            beat_length = point.beat_length;
-            slider_velocity = 1.0;
-        } else if point.beat_length < 0.0 {
-            slider_velocity = -100.0 / point.beat_length;
-        }
-    }
-
-    (beat_length, slider_velocity)
-}
-
 // ── main conversion loop ──
 
 fn mania_convert_all(
@@ -393,6 +369,7 @@ fn mania_convert_all(
 ) -> Result<Vec<ManiaHitObject>> {
     let mut result: Vec<ManiaHitObject> = Vec::new();
     for ho in hit_objects {
+        s.timing_cursor.advance_to(ho.start_time);
         if ho.end_time > ho.start_time && ho.slider_type.is_some() {
             let seg_dur = s.slider_segment_duration(ho);
             for i in 0..(ho.slider_repeats + 1) {
@@ -426,7 +403,7 @@ fn circle_resolve_convert_type(
 ) -> u32 {
     let mut ct: u32 = 0;
     let t_cols = s.total_columns;
-    let beat_len = circle_beat_length_at(s.timing_points, ho.start_time);
+    let beat_len = s.timing_cursor.beat_length;
     let density = s.density();
 
     if time_gap <= 80 {
@@ -443,7 +420,7 @@ fn circle_resolve_convert_type(
         ct |= P_FORCE_STACK | P_LOW_PROBABILITY;
     } else if pos_gap < 20.0 && density >= beat_len / 2.5 {
         ct |= P_REVERSE | P_LOW_PROBABILITY;
-    } else if density < beat_len / 2.5 || kiai_at(ho.start_time, s.timing_points) {
+    } else if density < beat_len / 2.5 || s.timing_cursor.kiai {
         // high density, no special flag
     } else {
         ct |= P_LOW_PROBABILITY;
@@ -458,16 +435,6 @@ fn circle_resolve_convert_type(
     }
 
     ct
-}
-
-fn circle_beat_length_at(timing_points: &[TimingPoint], time: i64) -> f64 {
-    let mut base = 500.0;
-    for tp in timing_points {
-        if tp.uninherited && tp.time <= time as f64 {
-            base = tp.beat_length;
-        }
-    }
-    base
 }
 
 fn circle_generate(
@@ -776,7 +743,7 @@ fn slider_generate(s: &mut ConversionState, ho: &StandardHitObject) -> Result<Ve
         seg_dur,
         end_time,
         duration: end_time - ho.start_time,
-        convert_type: if kiai_at(ho.start_time, s.timing_points) {
+        convert_type: if s.timing_cursor.kiai {
             0
         } else {
             P_LOW_PROBABILITY

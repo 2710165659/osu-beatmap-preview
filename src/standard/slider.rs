@@ -6,7 +6,7 @@ use crate::slider_path::{
     build_path, build_standard_slider_path, path_position_at, SliderPath,
 };
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use super::constants::*;
 use super::context::{
@@ -137,9 +137,9 @@ pub(crate) fn get_slider_render_data(
     cache: &mut RenderCache,
     context: &RenderContext,
     index: usize,
-) -> Rc<SliderRenderData> {
+) -> Arc<SliderRenderData> {
     if let Some(cached) = cache.slider_data.get(&index) {
-        return Rc::clone(cached);
+        return Arc::clone(cached);
     }
 
     let hit_object = &context.hit_objects[index];
@@ -184,13 +184,13 @@ pub(crate) fn get_slider_render_data(
     }
 
     let head_center = frame_path.points.first().copied().unwrap_or((0.0, 0.0));
-    let data = Rc::new(SliderRenderData {
+    let data = Arc::new(SliderRenderData {
         frame_path,
         head_center,
         reverse_centers,
         reverse_angles,
     });
-    cache.slider_data.insert(index, Rc::clone(&data));
+    cache.slider_data.insert(index, Arc::clone(&data));
     data
 }
 

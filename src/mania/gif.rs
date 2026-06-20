@@ -134,18 +134,28 @@ pub(crate) fn render_mania_gif(
 
     let hold_colors: Vec<Rgba> = palette.iter().map(|&c| darken(c, 0.5)).collect();
 
-    let render_frame = |frame_index: usize| -> Img {
-        let mut canvas = Img::new(
+    // Pre-render static background (segment separators + column/lane backdrops +
+    // judgement lines) once and clone per frame, avoiding ~600 redraws of the
+    // same pixels across 150 frames.
+    let static_bg = {
+        let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
             IMAGE_BACKGROUND,
         );
-        draw_segment_separators(&mut canvas, &layout);
+        draw_segment_separators(&mut bg, &layout);
+        for segment_index in 0..layout.segment_count {
+            draw_segment_background(&mut bg, segment_left(segment_index, &layout), &layout);
+        }
+        bg
+    };
+
+    let render_frame = |frame_index: usize| -> Img {
+        let mut canvas = static_bg.clone();
 
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
             let seg_left = segment_left(segment_index as i64, &layout);
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
-            draw_segment_background(&mut canvas, seg_left, &layout);
             draw_gif_sv_indicators(
                 &mut canvas,
                 &sv_changes,
