@@ -39,11 +39,12 @@ const MEASURE_LINE: Rgba = [83, 83, 83, 255];
 const BEAT_LINE: Rgba = [56, 56, 56, 255];
 const SUBDIVISION_LINE: Rgba = [34, 34, 34, 255];
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct TimingLine {
     time: i64,
     color: Rgba,
     show_label: bool,
+    bpm_label: Option<String>,
 }
 
 struct RenderLayout {
@@ -100,7 +101,12 @@ pub(crate) fn render_mania_grid(
     } else {
         beatmap.timing_points.clone()
     };
-    let timing_lines = build_timing_lines(&timing_points_for_render, chart_end_time, beatmap.beat_divisor);
+    let timing_lines = build_timing_lines(
+        &timing_points_for_render,
+        chart_end_time,
+        beatmap.beat_divisor,
+        hit_objects.iter().map(|ho| ho.start_time).min().unwrap_or(0),
+    );
     let sv_changes = if cs_mode || !native_mania {
         Vec::new()
     } else {
@@ -119,7 +125,7 @@ pub(crate) fn render_mania_grid(
     }
     let mut last_label_time: Option<i64> = None;
     for timing_line in &timing_lines {
-        let mut tl = *timing_line;
+        let mut tl = timing_line.clone();
         if tl.show_label {
             if let Some(prev) = last_label_time {
                 if (tl.time - prev).abs() < TIME_LABEL_MIN_INTERVAL_MS {
@@ -282,6 +288,20 @@ fn draw_timing_line(image: &mut Img, timing_line: &TimingLine, layout: &RenderLa
             TIME_LABEL_FONT_SIZE,
             RULER_TEXT,
         );
+
+        if let Some(ref bpm_label) = timing_line.bpm_label {
+            let (bpm_w, bpm_h) = text_size(bpm_label, TIME_LABEL_FONT_SIZE);
+            let bpm_w = bpm_w as i64;
+            let mut bpm_x = column_left + layout.column_width + 4;
+            if column_index < layout.column_count - 1 {
+                let next_column_left = column_left + layout.column_width + COLUMN_GAP;
+                bpm_x = bpm_x.min(next_column_left - bpm_w - 4);
+            } else {
+                bpm_x = bpm_x.min(layout.image_width - PAGE_MARGIN_X - bpm_w);
+            }
+            let bpm_y = (label_y + label_height as i64 + 3).min(PAGE_MARGIN_Y + layout.total_column_height - bpm_h as i64);
+            draw_text(image, bpm_x, bpm_y, bpm_label, TIME_LABEL_FONT_SIZE, RULER_TEXT);
+        }
     }
 }
 
@@ -345,7 +365,7 @@ fn draw_png_hit_object(
     }
 }
 
-fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64, beat_divisor: i32) -> Vec<TimingLine> {
+fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64, beat_divisor: i32, first_note_time: i64) -> Vec<TimingLine> {
     let base_points: Vec<&TimingPoint> = timing_points.iter().filter(|p| p.uninherited).collect();
     if base_points.is_empty() {
         return Vec::new();
@@ -395,6 +415,7 @@ fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64, beat_d
                             SUBDIVISION_LINE
                         },
                         show_label: is_bar || is_beat,
+                        bpm_label: None,
                     },
                 );
             }
@@ -402,6 +423,51 @@ fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64, beat_d
             current = point.time + step_index as f64 * step;
         }
     }
+    // Attach BPM labels: at each red line's first bar line when BPM changes,
+    // and at the bar line nearest the first note.
+    if !ordered_unique.is_empty() {
+        let mut last_bpm: Option<f64> = None;
+        for point in &base_points {
+            let bpm = 60_000.0 / point.beat_length;
+            let bpm_changed = last_bpm.map_or(true, |prev| (bpm - prev).abs() > 0.01);
+            last_bpm = Some(bpm);
+
+            if bpm_changed {
+                // Find the first bar line at or after this red line's time.
+                let rounded = round_half_even(point.time);
+                let key = ordered_unique
+                    .range(rounded..)
+                    .next()
+                    .map(|(&k, _)| k)
+                    .unwrap_or(rounded);
+                if let Some(line) = ordered_unique.get_mut(&key) {
+                    line.bpm_label = Some(format!("{:.0}BPM", bpm.round()));
+                }
+            }
+        }
+
+        // First note BPM: use the current BPM at first_note_time.
+        if first_note_time > 0 {
+            let bpm = 60_000.0
+                / base_points
+                    .iter()
+                    .rfind(|p| p.time <= first_note_time as f64)
+                    .map_or(base_points[0].beat_length, |p| p.beat_length);
+            let key = ordered_unique
+                .range(first_note_time..)
+                .next()
+                .map(|(&k, _)| k);
+            if let Some(k) = key {
+                if let Some(line) = ordered_unique.get_mut(&k) {
+                    // Only attach if not already labelled by a BPM change at the same time.
+                    if line.bpm_label.is_none() {
+                        line.bpm_label = Some(format!("{:.0}BPM", bpm.round()));
+                    }
+                }
+            }
+        }
+    }
+
     ordered_unique.into_values().collect()
 }
 
