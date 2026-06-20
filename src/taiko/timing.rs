@@ -217,11 +217,7 @@ pub(crate) fn build_redline_sections(
             break;
         }
         if point.uninherited {
-            beat_length = if point.beat_length >= 60.0 {
-                point.beat_length
-            } else {
-                60_000.0 / 180.0
-            };
+            beat_length = point.beat_length;
             meter = point.meter;
         }
     }
@@ -240,11 +236,7 @@ pub(crate) fn build_redline_sections(
                 meter,
             });
         }
-        beat_length = if point.beat_length >= 60.0 {
-            point.beat_length
-        } else {
-            60_000.0 / 180.0
-        };
+        beat_length = point.beat_length;
         meter = point.meter;
         section_start = point_time;
     }
