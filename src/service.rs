@@ -21,8 +21,13 @@ pub fn generate_preview(
     let beatmap = crate::parser::parse_beatmap(&beatmap_path)?;
 
     let mut target_mode = beatmap.mode();
+    let mut convert_used: Option<&str> = None;
     if let Some(convert_name) = convert {
-        target_mode = crate::convert::resolve_convert_target(&beatmap, convert_name)?;
+        let mode = crate::convert::resolve_convert_target(&beatmap, convert_name)?;
+        if mode != beatmap.mode() {
+            target_mode = mode;
+            convert_used = Some(convert_name);
+        }
     }
 
     let fmt: String = match fmt {
@@ -56,7 +61,7 @@ pub fn generate_preview(
     };
 
     let mut parts: Vec<String> = vec![bid.to_string()];
-    if let Some(convert_name) = convert {
+    if let Some(convert_name) = convert_used {
         parts.push(convert_name.to_string());
     }
     if let Some(m) = &mods {

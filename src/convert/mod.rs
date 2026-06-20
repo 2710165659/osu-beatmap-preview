@@ -72,6 +72,24 @@ impl<'a> TimingCursor<'a> {
 // ── dispatch ─────────────────────────────────────────────────────────────────
 
 pub fn resolve_convert_target(beatmap: &Beatmap, name: &str) -> Result<i32> {
+    let lowered = name.to_lowercase();
+    let key = lowered.trim();
+    let target = match key {
+        "taiko" => 1,
+        "ctb" | "catch" => 2,
+        "mania" => 3,
+        "standard" | "std" => 0,
+        _ => {
+            return Err(PreviewError::new(format!(
+                "unknown convert target: '{name}', expected one of ['catch', 'ctb', 'mania', 'taiko', 'standard']"
+            )))
+        }
+    };
+
+    if target == beatmap.mode() {
+        return Ok(target);
+    }
+
     if beatmap.mode() != 0 {
         return Err(PreviewError::new(format!(
             "mode conversion (--convert) is only supported for osu!standard beatmaps, \
@@ -80,16 +98,7 @@ pub fn resolve_convert_target(beatmap: &Beatmap, name: &str) -> Result<i32> {
         )));
     }
 
-    let lowered = name.to_lowercase();
-    let key = lowered.trim();
-    match key {
-        "taiko" => Ok(1),
-        "ctb" | "catch" => Ok(2),
-        "mania" => Ok(3),
-        _ => Err(PreviewError::new(format!(
-            "unknown convert target: '{name}', expected one of ['catch', 'ctb', 'mania', 'taiko']"
-        ))),
-    }
+    Ok(target)
 }
 
 pub fn convert_beatmap(
