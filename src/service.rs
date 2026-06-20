@@ -51,14 +51,30 @@ pub fn generate_preview(
         mods,
     )?;
 
-    let mut parts: Vec<String> = vec![bid.to_string()];
-    if let Some(convert_name) = convert_used {
-        parts.push(convert_name.to_string());
+    let mode_name = match target_mode {
+        0 => "standard",
+        1 => "taiko",
+        2 => "catch",
+        3 => "mania",
+        _ => "unknown",
+    };
+
+    let mut parts: Vec<String> = vec![mode_name.to_string(), bid.to_string()];
+    if convert_used.is_some() {
+        parts.push("convert".to_string());
     }
     if let Some(m) = &mods {
         if m.has_any_mod() {
             parts.push(format_mod_suffix(m));
         }
+    }
+    if let Some(t) = &times {
+        if !t.is_empty() {
+            parts.push(format_time_suffix(t));
+        }
+    }
+    if let Some(b) = bpm {
+        parts.push(format!("bpm{}", b));
     }
     let output_path: PathBuf = temp_root
         .join("outputs")
@@ -139,10 +155,18 @@ fn format_mod_suffix(mods: &ModSettings) -> String {
         })
         .filter(|t| !t.is_empty())
         .collect();
-    if tokens.is_empty() {
-        return "mod".to_string();
-    }
-    format!("mod-{}", tokens.join("-"))
+    tokens.join("-")
+}
+
+fn format_time_suffix(times: &[f64]) -> String {
+    format!(
+        "t{}",
+        times
+            .iter()
+            .map(|t| format!("{}", t))
+            .collect::<Vec<_>>()
+            .join("-")
+    )
 }
 
 fn render_preview_for_mode(

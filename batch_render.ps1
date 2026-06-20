@@ -35,10 +35,10 @@ function New-Task {
 $tasks = New-Object System.Collections.Generic.List[object]
 
 # ── 基础任务：每张谱面 png + gif ──
-foreach ($b in $std)   { $tasks.Add((New-Task "std"   $b "png")); $tasks.Add((New-Task "std"   $b "gif")) }
-foreach ($b in $taiko) { $tasks.Add((New-Task "taiko" $b "png")); $tasks.Add((New-Task "taiko" $b "gif")) }
-foreach ($b in $catch) { $tasks.Add((New-Task "catch" $b "png")); $tasks.Add((New-Task "catch" $b "gif")) }
-foreach ($b in $mania) { $tasks.Add((New-Task "mania" $b "png")); $tasks.Add((New-Task "mania" $b "gif")) }
+foreach ($b in $std)   { $tasks.Add((New-Task "std"   $b "png")) }; foreach ($b in $std)   { $tasks.Add((New-Task "std"   $b "gif")) }
+foreach ($b in $taiko) { $tasks.Add((New-Task "taiko" $b "png")) }; foreach ($b in $taiko) { $tasks.Add((New-Task "taiko" $b "gif")) }
+foreach ($b in $catch) { $tasks.Add((New-Task "catch" $b "png")) }; foreach ($b in $catch) { $tasks.Add((New-Task "catch" $b "gif")) }
+foreach ($b in $mania) { $tasks.Add((New-Task "mania" $b "png")) }; foreach ($b in $mania) { $tasks.Add((New-Task "mania" $b "gif")) }
 
 # ── 穿插：mod 示例（遵守各模式支持的 mod；DT/HT 仅 gif） ──
 # std: 支持 EZ HR HD DA（gif/png），DT/HT 仅 gif
@@ -84,16 +84,6 @@ $tasks.Add((New-Task "convert" "2875069" "gif" "ctb"   "hr"))           # 转谱
 $tasks.Add((New-Task "std"     "4897202" "gif" $null   "hd+dt1.25" "20+40"))  # mod + 时间点
 $tasks.Add((New-Task "convert" "5467386"  "gif" "taiko" "hr" "15+30")) # 转谱 + mod + 时间点
 
-# ── 为任务生成唯一标签（用于文件名） ──
-function Get-Label {
-    param($t)
-    $label = $t.bid
-    if ($t.convert) { $label += "_$($t.convert)" }
-    if ($t.mods)    { $label += "_" + ($t.mods -replace '[^a-zA-Z0-9.]', '-') }
-    if ($t.time)    { $label += "_t" + ($t.time -replace '\+', '-') }
-    $label += "_$($t.fmt)"
-    return $label
-}
 
 # ── 执行前统计 ──
 $totalCount = $tasks.Count
@@ -129,7 +119,7 @@ Write-Host ("-" * 100)
 
 foreach ($t in $tasks) {
     $index++
-    $label = Get-Label $t
+    $label = $t.bid  # 默认标签；成功时从输出文件名覆盖
 
     # 组装命令行参数（参数内无空格，直接拼成字符串，兼容 PowerShell 5.1）
     $argList = @("--bid=$($t.bid)", "--fmt=$($t.fmt)")
@@ -188,9 +178,10 @@ foreach ($t in $tasks) {
         $msg = $json.msg
         $src = $json.'preview-img'
         if ($status -eq "success" -and $src -and (Test-Path $src)) {
-            $dest = "$outdir\$label.$($t.fmt)"
+            $dest = Join-Path $outdir (Split-Path $src -Leaf)
             Copy-Item $src $dest -Force
             $sizeBytes = (Get-Item $dest).Length
+            $label = Split-Path $src -Leaf
         }
     } else {
         $status = "ERR"
