@@ -147,12 +147,7 @@ fn run(args: &Args) -> Result<serde_json::Value> {
     };
 
     let times = match &args.time {
-        Some(raw) => {
-            if args.fmt.as_deref() == Some("png") {
-                return Err(PreviewError::new("--time is only valid for GIF output"));
-            }
-            Some(parse_times(raw)?)
-        }
+        Some(raw) => Some(parse_times(raw)?),
         None => None,
     };
 

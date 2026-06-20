@@ -10,7 +10,11 @@ use super::constants::*;
 use super::context::*;
 use super::objects::render_frame;
 
-pub(crate) fn render_standard_png(beatmap: &Beatmap, mods: Option<&ModSettings>) -> Result<Img> {
+pub(crate) fn render_standard_png(
+    beatmap: &Beatmap,
+    mods: Option<&ModSettings>,
+    times_ms: Option<Vec<i64>>,
+) -> Result<Img> {
     let hit_objects = standard_objects(beatmap)?;
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods);
@@ -20,7 +24,7 @@ pub(crate) fn render_standard_png(beatmap: &Beatmap, mods: Option<&ModSettings>)
         PNG_ROW_COUNT,
         PNG_IMAGES_PER_ROW,
         PNG_MS_PER_IMAGE,
-        None,
+        times_ms,
     )?;
 
     let (canvas_w, canvas_h) = png_canvas_size();
@@ -62,7 +66,7 @@ pub(crate) fn render_standard_png(beatmap: &Beatmap, mods: Option<&ModSettings>)
             } else {
                 None
             };
-            let is_preview_label = row_timing.is_preview && image_index == 0;
+            let is_preview_label = row_timing.is_preview;
             draw_time_label(
                 &mut canvas,
                 &format_mmssmmm(snapshot_time),

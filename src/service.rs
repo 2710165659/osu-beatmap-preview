@@ -35,8 +35,10 @@ pub fn generate_preview(
             }
         }
     };
-    if times.is_some() && fmt != "gif" {
-        return Err(PreviewError::new("--times is only valid for GIF output"));
+    if times.is_some() && fmt != "gif" && !(fmt == "png" && target_mode == 0) {
+        return Err(PreviewError::new(
+            "--times is only valid for GIF or standard PNG output",
+        ));
     }
 
     let mods: Option<ModSettings> = match mods {
@@ -167,7 +169,7 @@ fn render_preview_for_mode(
             if fmt == "gif" {
                 crate::standard::render_standard_gif(&beatmap, mods_ref, times_ms, output_path)?;
             } else {
-                let image = crate::standard::render_standard_png(&beatmap, mods_ref)?;
+                let image = crate::standard::render_standard_png(&beatmap, mods_ref, times_ms)?;
                 crate::composer::save_png(&image, output_path)?;
             }
             Ok(output_path.to_path_buf())
