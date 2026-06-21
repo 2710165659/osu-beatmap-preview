@@ -7,7 +7,7 @@ use crate::models::{Beatmap, TaikoHitObject, TimingPoint};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
 use crate::text::{draw_text, text_size};
-use crate::time_selection::{PreviewSegmentTiming, PreviewTimeSelector};
+use crate::common::time_selection::{PreviewSegmentTiming, PreviewTimeSelector};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -84,7 +84,7 @@ pub(crate) fn render_taiko_gif(
 ) -> Result<()> {
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
-        return Err(PreviewError::new("taiko beatmap has no hit objects"));
+        return Err(PreviewError::render("taiko beatmap has no hit objects"));
     }
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);

@@ -8,7 +8,7 @@ use crate::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
 use crate::text::{draw_text, text_size};
-use crate::time_selection::PreviewTimeSelector;
+use crate::common::time_selection::PreviewTimeSelector;
 use std::path::Path;
 
 use super::{
@@ -75,7 +75,7 @@ pub(crate) fn render_mania_gif(
     }
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     if hit_objects.is_empty() {
-        return Err(PreviewError::new("mania beatmap has no hit objects"));
+        return Err(PreviewError::render("mania beatmap has no hit objects"));
     }
 
     // DT/HT only changes how fast chart time advances; the GIF still plays 10s/segment.

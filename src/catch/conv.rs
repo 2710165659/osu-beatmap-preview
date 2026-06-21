@@ -4,7 +4,7 @@ use crate::errors::{PreviewError, Result};
 use crate::models::{Beatmap, CatchHitObject, HitObjects};
 use crate::mods::ModSettings;
 
-use super::std_objects;
+use crate::common::conversion::std_objects;
 
 pub(crate) fn catch_convert(
     beatmap: &Beatmap,

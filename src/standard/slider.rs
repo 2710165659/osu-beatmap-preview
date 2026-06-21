@@ -2,7 +2,7 @@
 
 use crate::canvas::Img;
 use crate::models::StandardHitObject;
-use crate::slider_path::{
+use crate::common::slider_path::{
     build_path, build_standard_slider_path, path_position_at, SliderPath,
 };
 use std::collections::HashMap;

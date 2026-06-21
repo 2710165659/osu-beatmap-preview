@@ -5,7 +5,7 @@ use crate::errors::{PreviewError, Result};
 use crate::models::{Beatmap, BreakPeriod, HitObjects, StandardHitObject};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
-use crate::time_selection::PreviewTimeSelector;
+use crate::common::time_selection::PreviewTimeSelector;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -97,8 +97,8 @@ pub(crate) struct RowTiming {
 pub(crate) fn standard_objects(beatmap: &Beatmap) -> Result<Vec<StandardHitObject>> {
     match &beatmap.hit_objects {
         HitObjects::Standard(v) if !v.is_empty() => Ok(v.clone()),
-        HitObjects::Standard(_) => Err(PreviewError::new("standard beatmap has no hit objects")),
-        _ => Err(PreviewError::new("beatmap is not an osu!standard beatmap")),
+        HitObjects::Standard(_) => Err(PreviewError::render("standard beatmap has no hit objects")),
+        _ => Err(PreviewError::render("beatmap is not an osu!standard beatmap")),
     }
 }
 
@@ -247,7 +247,7 @@ pub(crate) fn build_combo_info(
 /// 加载 std 皮肤：数字位图程序化生成，颜色与重叠量来自统一 skin.ini。
 pub(crate) fn load_skin(beatmap: &Beatmap) -> Skin {
     let skin_config = crate::skin::skin();
-    let digit_crops = (0..10).map(crate::digits::digit_image).collect();
+    let digit_crops = (0..10).map(super::digits::digit_image).collect();
     // 谱面自带 [Colours] 时优先使用；否则用 skin.ini 配色；都没有则回退 Argon 默认
     let combo_colors = if !beatmap.combo_colors.is_empty() {
         beatmap.combo_colors.clone()

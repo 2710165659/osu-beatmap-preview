@@ -3,6 +3,7 @@
 //! RNG call order mirrors the Python/stable implementations exactly.
 
 mod constants;
+pub(crate) mod conv;
 mod drawing;
 mod gif;
 pub(crate) mod objects;

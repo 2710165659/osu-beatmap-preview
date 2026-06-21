@@ -2,11 +2,11 @@
 //! HR offsets, hyperdash. RNG call order mirrors Python/stable exactly.
 
 use crate::errors::{PreviewError, Result};
-use crate::legacy_random::{stateless_next_int, LegacyRandom};
+use crate::common::legacy_random::{stateless_next_int, LegacyRandom};
 use crate::models::{Beatmap, CatchHitObject, TimingPoint};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
-use crate::slider_path::{build_catch_slider_path, path_position_at, SliderPath};
+use crate::common::slider_path::{build_catch_slider_path, path_position_at, SliderPath};
 
 use super::constants::*;
 

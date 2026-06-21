@@ -6,10 +6,10 @@
 use crate::canvas::Img;
 use crate::composer::save_animated_gif_streamed;
 use crate::errors::{PreviewError, Result};
-use crate::models::{Beatmap, HitObjects};
+use crate::models::Beatmap;
 use crate::mods::ModSettings;
 use crate::text::{draw_text, text_size};
-use crate::time_selection::PreviewTimeSelector;
+use crate::common::time_selection::PreviewTimeSelector;
 use std::path::Path;
 
 use super::constants::*;
@@ -77,9 +77,9 @@ pub(crate) fn render_catch_gif(
     beatmap: &Beatmap, mods: Option<&ModSettings>, times_ms: Option<Vec<i64>>,
     output_path: &Path,
 ) -> Result<()> {
-    let hit_objects = match &beatmap.hit_objects {
-        HitObjects::Catch(v) if !v.is_empty() => v,
-        _ => return Err(PreviewError::new("catch beatmap has no hit objects")),
+    let hit_objects = match beatmap.hit_objects.as_catch() {
+        Some(v) if !v.is_empty() => v,
+        _ => return Err(PreviewError::render("catch beatmap has no hit objects")),
     };
 
     let difficulty = effective_difficulty(beatmap, mods);

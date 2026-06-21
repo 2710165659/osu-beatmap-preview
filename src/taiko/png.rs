@@ -62,12 +62,12 @@ pub(crate) fn render_taiko_grid(
 ) -> Result<PathBuf> {
     let mut hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
-        return Err(PreviewError::new("taiko beatmap has no hit objects"));
+        return Err(PreviewError::render("taiko beatmap has no hit objects"));
     }
 
     let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap();
     if chart_end_time >= MAX_SUPPORTED_DURATION_MS {
-        return Err(PreviewError::new(
+        return Err(PreviewError::render(
             "songs longer than 10 minutes are not supported",
         ));
     }
@@ -75,7 +75,7 @@ pub(crate) fn render_taiko_grid(
     // Always trim leading silence, starting directly from the first note.
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let chart_start_time =
-        crate::time_selection::snap_to_beat_grid(first_note_time, &beatmap.timing_points);
+        crate::common::time_selection::snap_to_beat_grid(first_note_time, &beatmap.timing_points);
 
     let effective_chart_end_time: i64;
     if chart_start_time > 0 {

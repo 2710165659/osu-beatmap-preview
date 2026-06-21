@@ -91,16 +91,55 @@ pub enum HitObjects {
     Mania(Vec<ManiaHitObject>),
 }
 
+/// Map an expression across all four `HitObjects` variants.
+macro_rules! for_each_hit_variant {
+    ($self:expr, |$v:ident| $body:expr) => {
+        match $self {
+            HitObjects::Standard($v) => $body,
+            HitObjects::Taiko($v) => $body,
+            HitObjects::Catch($v) => $body,
+            HitObjects::Mania($v) => $body,
+        }
+    };
+}
+
+#[allow(dead_code)]
 impl HitObjects {
     pub fn len(&self) -> usize {
+        for_each_hit_variant!(self, |v| v.len())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        for_each_hit_variant!(self, |v| v.is_empty())
+    }
+
+    pub fn as_standard(&self) -> Option<&[StandardHitObject]> {
         match self {
-            HitObjects::Standard(v) => v.len(),
-            HitObjects::Taiko(v) => v.len(),
-            HitObjects::Catch(v) => v.len(),
-            HitObjects::Mania(v) => v.len(),
+            HitObjects::Standard(v) => Some(v),
+            _ => None,
         }
     }
 
+    pub fn as_taiko(&self) -> Option<&[TaikoHitObject]> {
+        match self {
+            HitObjects::Taiko(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_catch(&self) -> Option<&[CatchHitObject]> {
+        match self {
+            HitObjects::Catch(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_mania(&self) -> Option<&[ManiaHitObject]> {
+        match self {
+            HitObjects::Mania(v) => Some(v),
+            _ => None,
+        }
+    }
 }
 
 // Key/value sections preserve insertion order via Vec; lookup helper provided.

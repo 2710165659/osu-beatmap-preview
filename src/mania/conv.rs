@@ -4,12 +4,12 @@
 //! RNG call order and float32 round-trip points must match Python exactly.
 
 use crate::errors::{PreviewError, Result};
-use crate::legacy_random::LegacyRandom;
+use crate::common::legacy_random::LegacyRandom;
 use crate::models::{Beatmap, HitObjects, KvSection, ManiaHitObject, StandardHitObject};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
 
-use super::{std_objects, TimingCursor};
+use crate::common::conversion::{std_objects, TimingCursor};
 
 const SOURCE_MODE_KEY: &str = "PreviewSourceMode";
 

@@ -83,7 +83,7 @@ pub(crate) fn render_mania_grid(
     // aligned to the red-line beat grid.
     let first_note_time = hit_objects.iter().map(|ho| ho.start_time).min().unwrap_or(0);
     let chart_start_time = if first_note_time >= 5000 {
-        crate::time_selection::snap_to_beat_grid(first_note_time - 1000, &beatmap.timing_points)
+        crate::common::time_selection::snap_to_beat_grid(first_note_time - 1000, &beatmap.timing_points)
     } else {
         0
     };
@@ -188,7 +188,7 @@ fn ceil_div(a: i64, b: i64) -> i64 {
 
 fn calculate_column_count(beatmap_duration: i64, total_chart_height: i64) -> Result<i64> {
     if beatmap_duration >= MAX_SUPPORTED_DURATION_MS {
-        return Err(crate::errors::PreviewError::new(
+        return Err(crate::errors::PreviewError::render(
             "songs longer than 10 minutes are not supported",
         ));
     }

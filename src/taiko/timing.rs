@@ -2,7 +2,7 @@
 //! kiai sections, timing lines, SV changes, and mod helpers.
 
 use crate::errors::{PreviewError, Result};
-use crate::models::{Beatmap, HitObjects, TaikoHitObject, TimingPoint};
+use crate::models::{Beatmap, TaikoHitObject, TimingPoint};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
 use std::collections::BTreeMap;
@@ -648,8 +648,5 @@ pub(crate) fn spacing_timing_points_for_png(timing_points: &[TimingPoint]) -> Ve
 }
 
 pub(crate) fn taiko_hit_objects(beatmap: &Beatmap) -> Vec<TaikoHitObject> {
-    match &beatmap.hit_objects {
-        HitObjects::Taiko(v) => v.clone(),
-        _ => Vec::new(),
-    }
+    beatmap.hit_objects.as_taiko().map(|v| v.to_vec()).unwrap_or_default()
 }

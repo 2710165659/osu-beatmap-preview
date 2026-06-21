@@ -1,27 +1,24 @@
+mod build_time;
+mod cache;
 mod canvas;
 mod catch;
+mod common;
 mod composer;
-mod convert;
-mod digits;
 mod downloader;
 mod errors;
-mod legacy_random;
 mod mania;
 mod models;
 mod mods;
 mod parser;
 mod service;
 mod skin;
-mod slider_path;
 mod standard;
 mod taiko;
 mod text;
-mod time_selection;
 mod validate;
 
-mod utils;
-
 use errors::Result;
+use lexopt::prelude::*;
 
 const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -46,90 +43,88 @@ fn print_usage_and_exit(code: i32) -> ! {
 }
 
 fn parse_args() -> Args {
+    let mut parser = lexopt::Parser::from_env();
     let mut bid: Option<String> = None;
     let mut convert: Option<String> = None;
     let mut mods: Option<String> = None;
     let mut fmt: Option<String> = None;
     let mut time: Option<String> = None;
     let mut bpm: Option<f64> = None;
-
     let mut no_cache: bool = false;
 
-    let argv: Vec<String> = std::env::args().skip(1).collect();
-    let mut i = 0;
-    while i < argv.len() {
-        let arg = &argv[i];
-        let (key, value) = if let Some((k, v)) = arg.split_once('=') {
-            (k.to_string(), Some(v.to_string()))
-        } else {
-            (arg.clone(), None)
-        };
-        let mut take_value = |inline: Option<String>| -> String {
-            if let Some(v) = inline {
-                v
-            } else {
-                i += 1;
-                if i >= argv.len() {
-                    eprintln!("error: missing value for {key}");
-                    print_usage_and_exit(2)
-                }
-                argv[i].clone()
+    while let Some(arg) = parser.next().unwrap_or_else(|e| {
+        eprintln!("error: {e}");
+        print_usage_and_exit(2);
+    }) {
+        match arg {
+            Long("bid") => {
+                bid = Some(take_value(&mut parser, "--bid"));
             }
-        };
-        match key.as_str() {
-            "--bid" => bid = Some(take_value(value)),
-            "--convert" => {
-                let v = take_value(value);
+            Long("convert") => {
+                let v = take_value(&mut parser, "--convert");
                 if let Err(e) = validate::validate_convert_value(&v) {
                     eprintln!("error: {e}");
-                    print_usage_and_exit(2)
+                    print_usage_and_exit(2);
                 }
                 convert = Some(v);
             }
-            "--mod" | "--mods" => mods = Some(take_value(value)),
-            "--fmt" | "--format" => {
-                let v = take_value(value);
+            Long("mod") | Long("mods") => {
+                mods = Some(take_value(&mut parser, "--mods"));
+            }
+            Long("fmt") | Long("format") => {
+                let v = take_value(&mut parser, "--fmt");
                 if let Err(e) = validate::validate_fmt_value(&v) {
                     eprintln!("error: {e}");
-                    print_usage_and_exit(2)
+                    print_usage_and_exit(2);
                 }
                 fmt = Some(v);
             }
-            "--time" | "--times" => time = Some(take_value(value)),
-            "--bpm" => {
-                let v = take_value(value);
-                let val: f64 = v
-                    .parse()
-                    .map_err(|_| {
-                        eprintln!("error: --bpm must be a number, got '{v}'");
-                        print_usage_and_exit(2)
-                    })
-                    .unwrap();
+            Long("time") | Long("times") => {
+                time = Some(take_value(&mut parser, "--time"));
+            }
+            Long("bpm") => {
+                let v = take_value(&mut parser, "--bpm");
+                let val: f64 = v.parse().unwrap_or_else(|_| {
+                    eprintln!("error: --bpm must be a number, got '{v}'");
+                    print_usage_and_exit(2);
+                });
                 if let Err(e) = validate::validate_bpm_value(val) {
                     eprintln!("error: {e}");
-                    print_usage_and_exit(2)
+                    print_usage_and_exit(2);
                 }
                 bpm = Some(val);
             }
-            "--no-cache" => {
-                let v = value.as_deref().unwrap_or("true");
-                no_cache = v == "true" || v == "1";
+            Long("no-cache") => {
+                no_cache = true;
             }
-            "--version" => {
+            Long("version") => {
                 println!("osu-beatmap-preview v{} (built {})", VERSION, BUILD_TIMESTAMP);
-                std::process::exit(0)
+                std::process::exit(0);
             }
-            _ => {
-                eprintln!("error: unknown argument: {arg}");
-                print_usage_and_exit(2)
+            Short('h') | Long("help") => {
+                print_usage_and_exit(0);
+            }
+            Short(c) => {
+                eprintln!("error: unknown flag: -{c}");
+                print_usage_and_exit(2);
+            }
+            Value(val) => {
+                eprintln!(
+                    "error: unexpected argument: {}",
+                    val.to_string_lossy()
+                );
+                print_usage_and_exit(2);
+            }
+            Long(unknown) => {
+                eprintln!("error: unknown argument: --{unknown}");
+                print_usage_and_exit(2);
             }
         }
-        i += 1;
     }
 
     let Some(bid) = bid else {
         eprintln!("error: --bid is required");
-        print_usage_and_exit(2)
+        print_usage_and_exit(2);
     };
     Args {
         bid,
@@ -140,6 +135,17 @@ fn parse_args() -> Args {
         bpm,
         no_cache,
     }
+}
+
+fn take_value(parser: &mut lexopt::Parser, name: &str) -> String {
+    parser
+        .value()
+        .unwrap_or_else(|e| {
+            eprintln!("error: {name} requires a value: {e}");
+            print_usage_and_exit(2);
+        })
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn run(args: &Args) -> Result<serde_json::Value> {
@@ -171,38 +177,7 @@ fn build_info() -> serde_json::Value {
     })
 }
 
-fn dump_convert_signatures(osu_path: &str) {
-    let beatmap = parser::parse_beatmap(std::path::Path::new(osu_path)).unwrap();
-    for target in [1, 2, 3] {
-        let conv = convert::convert_beatmap(&beatmap, target, None).unwrap();
-        let mut lines = Vec::new();
-        match &conv.hit_objects {
-            models::HitObjects::Taiko(v) => {
-                for o in v.iter().take(2000) {
-                    lines.push(format!("[{}, {}, {}, {}]", o.start_time, o.end_time, o.hit_type, o.hitsound));
-                }
-            }
-            models::HitObjects::Catch(v) => {
-                for o in v.iter().take(2000) {
-                    lines.push(format!("[{}, {}, {}, {}, {}]", o.x, o.y, o.start_time, o.end_time, o.hit_type));
-                }
-            }
-            models::HitObjects::Mania(v) => {
-                for o in v.iter().take(2000) {
-                    lines.push(format!("[{}, {}, {}, {}]", o.lane, o.start_time, o.end_time, if o.is_long_note { "true" } else { "false" }));
-                }
-            }
-            _ => {}
-        }
-        println!("{} {} [{}]", target, conv.hit_objects.len(), lines.join(", "));
-    }
-}
-
 fn main() {
-    if let Ok(path) = std::env::var("OSU_PREVIEW_DUMP_CONVERT") {
-        dump_convert_signatures(&path);
-        return;
-    }
     let args = parse_args();
     match run(&args) {
         Ok(mut result) => {
@@ -212,9 +187,16 @@ fn main() {
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }
         Err(exc) => {
+            let kind_label = match exc.kind() {
+                errors::ErrorKind::Download => "download error",
+                errors::ErrorKind::Parse => "parse error",
+                errors::ErrorKind::Render => "render error",
+                errors::ErrorKind::Other => "error",
+            };
+            let msg = format!("{kind_label}: {}", exc);
             let payload = serde_json::json!({
                 "status": "error",
-                "msg": exc.to_string(),
+                "msg": msg,
                 "preview-img": "",
                 "beatmap-info": {},
             });

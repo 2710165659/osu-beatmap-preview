@@ -7,7 +7,7 @@
 use crate::canvas::Img;
 use crate::composer::save_png;
 use crate::errors::{PreviewError, Result};
-use crate::models::{Beatmap, HitObjects, TimingPoint};
+use crate::models::{Beatmap, TimingPoint};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
 use crate::text::{draw_text, text_size};
@@ -60,7 +60,7 @@ fn ceil_div(a: i64, b: i64) -> i64 {
 
 fn build_layout(beatmap_duration: i64, circle_size: f64, approach_rate: f64, chart_start_time: i64) -> Result<RenderLayout> {
     if beatmap_duration >= MAX_SUPPORTED_DURATION_MS {
-        return Err(PreviewError::new(
+        return Err(PreviewError::render(
             "songs longer than 10 minutes are not supported",
         ));
     }
@@ -178,9 +178,9 @@ fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec
 pub(crate) fn render_catch_grid(
     beatmap: &Beatmap, output_path: &Path, mods: Option<&ModSettings>,
 ) -> Result<PathBuf> {
-    let hit_objects = match &beatmap.hit_objects {
-        HitObjects::Catch(v) if !v.is_empty() => v,
-        _ => return Err(PreviewError::new("catch beatmap has no hit objects")),
+    let hit_objects = match beatmap.hit_objects.as_catch() {
+        Some(v) if !v.is_empty() => v,
+        _ => return Err(PreviewError::render("catch beatmap has no hit objects")),
     };
 
     let difficulty = effective_difficulty(beatmap, mods);
@@ -191,7 +191,7 @@ pub(crate) fn render_catch_grid(
     // aligned to the red-line beat grid.
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let chart_start_time = if first_note_time >= 5000 {
-        crate::time_selection::snap_to_beat_grid(first_note_time - 1000, &beatmap.timing_points)
+        crate::common::time_selection::snap_to_beat_grid(first_note_time - 1000, &beatmap.timing_points)
     } else {
         0
     };

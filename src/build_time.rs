@@ -1,4 +1,5 @@
-//! Utility helpers: build-time parsing, path normalization, etc.
+//! Build-time parsing: parse the ISO 8601 timestamp injected by `vergen`
+//! into a `SystemTime` for cache expiration checks.
 
 use std::time::SystemTime;
 

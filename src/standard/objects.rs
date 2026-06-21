@@ -8,6 +8,7 @@ use super::constants::*;
 use super::context::{
     color_id, py_round, to_frame_point, RenderCache, RenderContext,
 };
+use super::draw_centered_text;
 use super::slider::{
     darken, draw_cached_slider_body, draw_slider_body, draw_slider_ball, draw_slider_reverse_arrows,
     draw_ring_aa, fill_circle_gradient_aa, get_slider_render_data, is_full_slider_body,
@@ -106,7 +107,7 @@ fn draw_slider(
     if is_full_slider_body(snaked_start, snaked_end) {
         draw_cached_slider_body(frame, context, cache, index, &slider_data, combo.color, alpha);
     } else {
-        let visible_path = crate::slider_path::slice_path(&slider_data.frame_path, snaked_start, snaked_end);
+        let visible_path = crate::common::slider_path::slice_path(&slider_data.frame_path, snaked_start, snaked_end);
         draw_slider_body(frame, &visible_path, context.slider_body_width, combo.color, alpha);
     }
 
@@ -469,10 +470,4 @@ fn break_remaining_bar_ratio(break_period: &BreakPeriod, snapshot_time: i64) -> 
     }
     let remaining = break_period.end_time - BREAK_FADE_DURATION_MS - snapshot_time;
     (remaining as f64 / effective_duration as f64).clamp(0.0, 1.0)
-}
-
-fn draw_centered_text(canvas: &mut Img, text: &str, x: i64, y: i64, size: u32, color: [u8; 4]) {
-    let (text_w, _) = crate::text::text_size(text, size);
-    let text_x = x + (IMAGE_WIDTH - text_w as i64) / 2;
-    crate::text::draw_text(canvas, text_x, y, text, size, color);
 }

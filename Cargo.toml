@@ -8,12 +8,14 @@ vergen = { version = "9", features = ["build"] }
 
 [dependencies]
 ureq = "2"
+lexopt = "0.3"
 serde_json = { version = "1", features = ["preserve_order"] }
 gif = "0.13"
 color_quant = "1.1"
 png = "0.17"
 rayon = "1"
 font8x8 = "0.3"
+thiserror = "2"
 
 [profile.release]
 opt-level = 3

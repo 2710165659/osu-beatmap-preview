@@ -11,7 +11,7 @@ use std::path::Path;
 pub fn save_png(image: &Img, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| PreviewError::new(format!("failed to create output dir: {e}")))?;
+            .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
     }
 
     // Subsample 1 of every 4 pixels for the NeuQuant palette (same strategy as
@@ -51,7 +51,7 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
     }
 
     let file = std::fs::File::create(path)
-        .map_err(|e| PreviewError::new(format!("failed to write png: {e}")))?;
+        .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
     let writer = std::io::BufWriter::new(file);
     let mut encoder = png::Encoder::new(writer, image.w, image.h);
     encoder.set_color(png::ColorType::Indexed);
@@ -61,10 +61,10 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
     encoder.set_filter(png::FilterType::Paeth);
     let mut writer = encoder
         .write_header()
-        .map_err(|e| PreviewError::new(format!("failed to write png: {e}")))?;
+        .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
     writer
         .write_image_data(&indexed)
-        .map_err(|e| PreviewError::new(format!("failed to write png: {e}")))?;
+        .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
     Ok(())
 }
 
@@ -99,11 +99,11 @@ pub fn save_animated_gif_streamed(
     frame_duration_ms: u32,
 ) -> Result<()> {
     if frame_count == 0 {
-        return Err(PreviewError::new("no frames to encode"));
+        return Err(PreviewError::render("no frames to encode"));
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| PreviewError::new(format!("failed to create output dir: {e}")))?;
+            .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
     }
 
     // ── palette pass: sample up to 4 frames (sequential — cheap) ──
@@ -149,13 +149,13 @@ pub fn save_animated_gif_streamed(
     let (w, h) = (first_dims.0 as usize, first_dims.1 as usize);
 
     let file = std::fs::File::create(path)
-        .map_err(|e| PreviewError::new(format!("failed to write gif: {e}")))?;
+        .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
     let writer = std::io::BufWriter::new(file);
     let mut encoder = gif::Encoder::new(writer, w as u16, h as u16, &palette)
-        .map_err(|e| PreviewError::new(format!("failed to write gif: {e}")))?;
+        .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
     encoder
         .set_repeat(gif::Repeat::Infinite)
-        .map_err(|e| PreviewError::new(format!("failed to write gif: {e}")))?;
+        .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
 
     let delay = (frame_duration_ms / 10) as u16; // GIF delay unit = 10ms
 
@@ -254,7 +254,7 @@ pub fn save_animated_gif_streamed(
             gframe.make_lzw_pre_encoded();
             encoder
                 .write_lzw_pre_encoded_frame(&gframe)
-                .map_err(|e| PreviewError::new(format!("failed to write gif: {e}")))?;
+                .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
             prev_indexed = indexed;
         }
     }

@@ -5,7 +5,7 @@ use crate::errors::{PreviewError, Result};
 use crate::models::{Beatmap, HitObjects, StandardHitObject, TaikoHitObject, TimingPoint};
 use crate::mods::ModSettings;
 
-use super::{almost_equals, std_objects, TimingCursor};
+use crate::common::conversion::{almost_equals, std_objects, TimingCursor};
 
 // C# constant is 1.4f; keep it as a float32 value.
 const VELOCITY_MULTIPLIER: f64 = 1.4f32 as f64;
