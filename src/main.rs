@@ -19,6 +19,8 @@ mod text;
 mod time_selection;
 mod validate;
 
+mod utils;
+
 use errors::Result;
 
 const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
@@ -31,12 +33,14 @@ struct Args {
     fmt: Option<String>,
     time: Option<String>,
     bpm: Option<f64>,
+    no_cache: bool,
 }
 
 fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko] \
-         [--mods=<MODS>] [--fmt=png|gif] [--time=<T1+T2+...>] [--bpm=<BPM>]\n       osu-beatmap-preview --version"
+         [--mods=<MODS>] [--fmt=png|gif] [--time=<T1+T2+...>] [--bpm=<BPM>] [--no-cache]\
+       osu-beatmap-preview --version"
     );
     std::process::exit(code)
 }
@@ -48,6 +52,8 @@ fn parse_args() -> Args {
     let mut fmt: Option<String> = None;
     let mut time: Option<String> = None;
     let mut bpm: Option<f64> = None;
+
+    let mut no_cache: bool = false;
 
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -105,7 +111,10 @@ fn parse_args() -> Args {
                 }
                 bpm = Some(val);
             }
-            "-h" | "--help" => print_usage_and_exit(0),
+            "--no-cache" => {
+                let v = value.as_deref().unwrap_or("true");
+                no_cache = v == "true" || v == "1";
+            }
             "--version" => {
                 println!("osu-beatmap-preview v{} (built {})", VERSION, BUILD_TIMESTAMP);
                 std::process::exit(0)
@@ -129,6 +138,7 @@ fn parse_args() -> Args {
         fmt,
         time,
         bpm,
+        no_cache,
     }
 }
 
@@ -150,6 +160,7 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         mods_unvalidated,
         times,
         args.bpm,
+        args.no_cache,
     )
 }
 

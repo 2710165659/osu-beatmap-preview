@@ -3,13 +3,15 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub fn download_beatmap_file(bid: &str, temp_dir: &Path) -> Result<PathBuf> {
+pub fn download_beatmap_file(bid: &str, temp_dir: &Path, no_cache: bool) -> Result<PathBuf> {
     std::fs::create_dir_all(temp_dir)
         .map_err(|e| PreviewError::new(format!("failed to create cache dir: {e}")))?;
     let target_path = temp_dir.join(format!("{bid}.osu"));
-    if let Ok(meta) = target_path.metadata() {
-        if meta.is_file() && meta.len() > 0 {
-            return Ok(target_path);
+    if !no_cache {
+        if let Ok(meta) = target_path.metadata() {
+            if meta.is_file() && meta.len() > 0 {
+                return Ok(target_path);
+            }
         }
     }
 

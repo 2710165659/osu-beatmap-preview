@@ -3,7 +3,8 @@ use crate::models::{Beatmap, HitObjects};
 use crate::mods::ModSettings;
 use crate::validate::{self, ValidateContext};
 use serde_json::{json, Map, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 pub fn generate_preview(
     bid: &str,
@@ -12,10 +13,11 @@ pub fn generate_preview(
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
     bpm: Option<f64>,
+    no_cache: bool,
 ) -> Result<Value> {
     let temp_root = std::env::temp_dir().join("osu-beatmap-preview");
     let beatmap_path =
-        crate::downloader::download_beatmap_file(bid, &temp_root.join("osu-download-cache"))?;
+        crate::downloader::download_beatmap_file(bid, &temp_root.join("osu-download-cache"), no_cache)?;
     let beatmap = crate::parser::parse_beatmap(&beatmap_path)?;
 
     let mut target_mode = beatmap.mode();
@@ -79,6 +81,24 @@ pub fn generate_preview(
     let output_path: PathBuf = temp_root
         .join("outputs")
         .join(format!("{}.{}", parts.join("_"), fmt));
+
+    // ── image cache check ──
+    let cached = output_cache_hit(&output_path, &beatmap_path, &times, &fmt, target_mode, no_cache);
+    if let Some(cached_path) = cached {
+        let abs = cached_path
+            .canonicalize()
+            .unwrap_or(cached_path.clone());
+        let abs_str = clean_windows_path(&abs.to_string_lossy());
+        return Ok(json!({
+            "status": "success",
+            "msg": format!("preview generated successfully for bid {bid}"),
+            "preview-img": abs_str,
+            "beatmap-info": {
+                "meta-data": format_section_keys(&beatmap.metadata),
+                "difficulty": format_section_keys(&beatmap.difficulty),
+            },
+        }));
+    }
 
     let preview_path =
         render_preview_for_mode(beatmap.clone(), &output_path, &fmt, target_mode, mods, times, bpm)?;
@@ -167,6 +187,68 @@ fn format_time_suffix(times: &[f64]) -> String {
             .collect::<Vec<_>>()
             .join("-")
     )
+}
+
+// ── output cache helpers ──
+
+/// Returns `Some(path)` if the cached output is still valid, `None` otherwise.
+fn output_cache_hit(
+    output_path: &Path,
+    beatmap_path: &Path,
+    times: &Option<Vec<f64>>,
+    fmt: &str,
+    target_mode: i32,
+    no_cache: bool,
+) -> Option<PathBuf> {
+    if no_cache {
+        return None;
+    }
+    let out_meta = output_path.metadata().ok()?;
+    if out_meta.len() == 0 {
+        return None;
+    }
+
+    // Output must be newer than the program build.
+    let out_mtime = out_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+    if out_mtime < crate::utils::build_time() {
+        return None;
+    }
+
+    // Output must be newer than the beatmap file.
+    if let Ok(beatmap_meta) = beatmap_path.metadata() {
+        if let Ok(beatmap_mtime) = beatmap_meta.modified() {
+            if out_mtime < beatmap_mtime {
+                return None;
+            }
+        }
+    }
+
+    // When random time selection is involved and the user did NOT pin ALL
+    // required time points, the output is non-deterministic → never cache.
+    if !all_times_pinned(fmt, target_mode, times) {
+        return None;
+    }
+
+    Some(output_path.to_path_buf())
+}
+
+/// Returns `true` when the output is fully deterministic w.r.t. time selection.
+///
+/// * GIF (all modes): needs 4 segments → cache only when `--time` gives all 4.
+/// * Standard PNG: needs 5 rows but `--time` accepts at most 4 → never cachable.
+/// * Taiko / Catch / Mania PNG: no time selection at all → always cachable.
+fn all_times_pinned(fmt: &str, target_mode: i32, times: &Option<Vec<f64>>) -> bool {
+    // Modes that don't use PreviewTimeSelector at all are always deterministic.
+    if fmt == "png" && target_mode != 0 {
+        return true;
+    }
+
+    // GIF needs 4, std PNG needs 5 (but max allowed is 4 → unreachable).
+    let needed: usize = if fmt == "gif" { 4 } else { 5 };
+    match times {
+        Some(ts) => ts.len() >= needed,
+        None => false,
+    }
 }
 
 fn render_preview_for_mode(
