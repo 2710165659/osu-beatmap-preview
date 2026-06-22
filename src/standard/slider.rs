@@ -30,11 +30,12 @@ pub(crate) fn draw_slider_body(
     width: i64,
     color: [u8; 3],
     alpha: f64,
+    traceable: bool,
 ) {
     if points.len() < 2 {
         return;
     }
-    let layer = render_slider_body_layer(points, width, color, alpha_to_byte(alpha));
+    let layer = render_slider_body_layer(points, width, color, alpha_to_byte(alpha), traceable);
     frame.alpha_composite(&layer.image, layer.offset.0, layer.offset.1);
 }
 
@@ -46,31 +47,34 @@ pub(crate) fn draw_cached_slider_body(
     slider_data: &SliderRenderData,
     color: [u8; 3],
     alpha: f64,
+    traceable: bool,
 ) {
-    if !cache.slider_body_layers.contains_key(&index) {
+    let cache_key = (index, traceable);
+    if !cache.slider_body_layers.contains_key(&cache_key) {
         let layer = render_slider_body_layer(
             &slider_data.frame_path.points,
             context.slider_body_width,
             color,
             255,
+            traceable,
         );
-        cache.slider_body_layers.insert(index, layer);
+        cache.slider_body_layers.insert(cache_key, layer);
     }
 
     let alpha_key = alpha_to_byte(alpha);
     let (offset_x, offset_y) = {
-        let layer = &cache.slider_body_layers[&index];
+        let layer = &cache.slider_body_layers[&cache_key];
         layer.offset
     };
     if alpha_key >= 255 {
-        let layer = &cache.slider_body_layers[&index];
+        let layer = &cache.slider_body_layers[&cache_key];
         frame.alpha_composite(&layer.image, offset_x, offset_y);
         return;
     }
 
     let key = (index, alpha_key);
     if !cache.slider_body_alpha_layers.contains_key(&key) {
-        let scaled = cache.slider_body_layers[&index]
+        let scaled = cache.slider_body_layers[&cache_key]
             .image
             .scale_alpha(alpha_key as f64 / 255.0);
         cache.slider_body_alpha_layers.insert(key, scaled);
@@ -83,6 +87,7 @@ pub(crate) fn render_slider_body_layer(
     width: i64,
     color: [u8; 3],
     alpha_byte: u8,
+    traceable: bool,
 ) -> CachedLayer {
     let scale = SLIDER_BODY_SUPERSAMPLE;
     let pad = (width + 4) as f64;
@@ -111,18 +116,38 @@ pub(crate) fn render_slider_body_layer(
     let border_color = color;
     let inner_color = darken(color, 4.0);
 
-    layer.stroke_polyline(
-        &scaled_points,
-        (width * scale) as f64,
-        [border_color[0], border_color[1], border_color[2], body_alpha],
-        true,
-    );
-    layer.stroke_polyline(
-        &scaled_points,
-        (inner_width * scale) as f64,
-        [inner_color[0], inner_color[1], inner_color[2], body_alpha],
-        true,
-    );
+    if traceable {
+        // TC: AccentColour=transparent, BorderColour=accent
+        // Draw full body shape with border_color, then erase center with background color
+        // to create a hollow border-only look while preserving shape/size.
+        layer.stroke_polyline(
+            &scaled_points,
+            (width * scale) as f64,
+            [border_color[0], border_color[1], border_color[2], body_alpha],
+            true,
+        );
+        // Erase the center fill with background color (playfield is black)
+        let bg = IMAGE_BACKGROUND_COLOR;
+        layer.stroke_polyline(
+            &scaled_points,
+            (inner_width * scale) as f64,
+            [bg[0], bg[1], bg[2], 255],
+            true,
+        );
+    } else {
+        layer.stroke_polyline(
+            &scaled_points,
+            (width * scale) as f64,
+            [border_color[0], border_color[1], border_color[2], body_alpha],
+            true,
+        );
+        layer.stroke_polyline(
+            &scaled_points,
+            (inner_width * scale) as f64,
+            [inner_color[0], inner_color[1], inner_color[2], body_alpha],
+            true,
+        );
+    }
 
     let resized = layer.resize((right - left).max(1) as u32, (bottom - top).max(1) as u32);
     CachedLayer {

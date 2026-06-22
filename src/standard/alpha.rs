@@ -11,7 +11,7 @@ pub(crate) fn object_alpha(
     snapshot_time: i64,
     settings: &RenderSettings,
 ) -> f64 {
-    if settings.hidden {
+    if settings.hidden && !settings.traceable {
         hidden_object_alpha(start_time, end_time, snapshot_time, settings)
     } else {
         normal_object_alpha(start_time, end_time, snapshot_time, settings)
@@ -63,7 +63,7 @@ pub(crate) fn slider_body_alpha(
     snapshot_time: i64,
     settings: &RenderSettings,
 ) -> f64 {
-    if settings.hidden {
+    if settings.hidden && !settings.traceable {
         hidden_slider_body_alpha(
             hit_object.start_time,
             hit_object.end_time,
@@ -104,7 +104,7 @@ pub(crate) fn spinner_alpha(
     snapshot_time: i64,
     settings: &RenderSettings,
 ) -> f64 {
-    if !settings.hidden {
+    if !settings.hidden || settings.traceable {
         return normal_object_alpha(
             hit_object.start_time,
             hit_object.end_time,
@@ -144,7 +144,7 @@ pub(crate) fn slider_head_alpha(
             settings,
         );
     }
-    if settings.hidden {
+    if settings.hidden && !settings.traceable {
         return 0.0;
     }
     if snapshot_time <= hit_object.start_time + POST_HIT_FADE_MS {

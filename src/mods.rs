@@ -14,6 +14,7 @@ pub struct ModSettings {
     pub easy: bool,
     pub hard_rock: bool,
     pub hidden: bool,
+    pub traceable: bool,
 
     pub swap: bool,
     pub cs_override: bool,
@@ -45,6 +46,7 @@ impl ModSettings {
             || self.easy
             || self.hard_rock
             || self.hidden
+            || self.traceable
             || self.swap
             || self.cs_override
             || self.mania_keys.is_some()
@@ -135,6 +137,7 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         "EZ" => s.easy = true,
         "HR" => s.hard_rock = true,
         "HD" => s.hidden = true,
+        "TC" => s.traceable = true,
         "SW" => s.swap = true,
         "CS" => s.cs_override = true,
         "DS" => s.dual_stage = true,
@@ -258,6 +261,9 @@ pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str
     if settings.easy && settings.hard_rock {
         errors.push("EZ and HR cannot be used together".to_string());
     }
+    if settings.hidden && settings.traceable {
+        errors.push("HD and TC cannot be used together".to_string());
+    }
     if settings.mania_key_mods.len() > 1 {
         let keys: Vec<String> = settings
             .mania_key_mods
@@ -292,11 +298,11 @@ pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str
 
 fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
     match (fmt, mode) {
-        ("gif", 0) => &["EZ", "HR", "HD", "DA"],
+        ("gif", 0) => &["EZ", "HR", "HD", "DA", "TC"],
         ("gif", 1) => &["EZ", "HR", "SW", "CS"],
         ("gif", 2) => &["EZ", "HR"],
         ("gif", 3) => &["K", "DS", "CS", "IN", "HO"],
-        ("png", 0) => &["EZ", "HR", "HD", "DA"],
+        ("png", 0) => &["EZ", "HR", "HD", "DA", "TC"],
         ("png", 1) => &["EZ", "HR", "SW"],
         ("png", 2) => &["EZ", "HR"],
         ("png", 3) => &["K", "DS", "IN", "HO"],
@@ -337,6 +343,9 @@ fn active_switch_mods(settings: &ModSettings) -> Vec<(String, String)> {
     }
     if settings.hidden {
         active.push(("HD".into(), "HD".into()));
+    }
+    if settings.traceable {
+        active.push(("TC".into(), "TC".into()));
     }
     if settings.has_da() {
         active.push(("DA".into(), "DA".into()));
@@ -390,6 +399,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
             filtered.easy = settings.easy;
             filtered.hard_rock = settings.hard_rock;
             filtered.hidden = settings.hidden;
+            filtered.traceable = settings.traceable;
             filtered.da_cs = settings.da_cs;
             filtered.da_ar = settings.da_ar;
             filtered.da_od = settings.da_od;

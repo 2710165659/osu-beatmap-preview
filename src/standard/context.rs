@@ -45,6 +45,7 @@ pub(crate) struct RenderSettings {
     pub(crate) preempt_ms: i64,
     pub(crate) fade_in_ms: f64,
     pub(crate) hidden: bool,
+    pub(crate) traceable: bool,
 }
 
 pub(crate) struct CachedLayer {
@@ -57,7 +58,7 @@ pub(crate) struct RenderCache {
     pub(crate) resized_alpha: HashMap<(u64, (u32, u32), u8), Img>,
     pub(crate) procedural: HashMap<(u64, [u8; 3]), Img>,
     pub(crate) slider_data: HashMap<usize, Arc<SliderRenderData>>,
-    pub(crate) slider_body_layers: HashMap<usize, CachedLayer>,
+    pub(crate) slider_body_layers: HashMap<(usize, bool), CachedLayer>,
     pub(crate) slider_body_alpha_layers: HashMap<(usize, u8), Img>,
     pub(crate) reverse_arrows: HashMap<(i64, [u8; 3]), Img>,
     pub(crate) reverse_edges: HashMap<(i64,), Img>,
@@ -171,6 +172,7 @@ pub(crate) fn build_render_settings(
     let circle_diameter = py_round(circle_radius * 2.0).max(1);
     let preempt_ms = difficulty_range_int(difficulty.approach_rate, 1800, 1200, 450);
     let hidden = mods.map(|m| m.hidden).unwrap_or(false);
+    let traceable = mods.map(|m| m.traceable).unwrap_or(false);
     let fade_in_ms = if hidden {
         preempt_ms as f64 * 0.4
     } else {
@@ -181,6 +183,7 @@ pub(crate) fn build_render_settings(
         preempt_ms,
         fade_in_ms,
         hidden,
+        traceable,
     }
 }
 

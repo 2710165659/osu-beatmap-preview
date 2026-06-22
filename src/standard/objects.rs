@@ -75,6 +75,10 @@ fn draw_hit_circle(
         snapshot_time,
         &context.settings,
     );
+    if context.settings.traceable {
+        // TC: only approach circle is visible, skip the circle piece
+        return;
+    }
     let center = to_frame_point(
         hit_object.x as f64,
         hit_object.y as f64,
@@ -105,10 +109,10 @@ fn draw_slider(
     let (snaked_start, snaked_end) =
         slider_snaked_range(hit_object, snapshot_time, &context.settings);
     if is_full_slider_body(snaked_start, snaked_end) {
-        draw_cached_slider_body(frame, context, cache, index, &slider_data, combo.color, alpha);
+        draw_cached_slider_body(frame, context, cache, index, &slider_data, combo.color, alpha, context.settings.traceable);
     } else {
         let visible_path = crate::common::slider_path::slice_path(&slider_data.frame_path, snaked_start, snaked_end);
-        draw_slider_body(frame, &visible_path, context.slider_body_width, combo.color, alpha);
+        draw_slider_body(frame, &visible_path, context.slider_body_width, combo.color, alpha, context.settings.traceable);
     }
 
     draw_slider_reverse_arrows(
@@ -122,7 +126,7 @@ fn draw_slider(
     let head_alpha = slider_head_alpha(
         hit_object, snapshot_time, &context.settings, snaked_start, snaked_end,
     );
-    if head_alpha > 0.0 {
+    if head_alpha > 0.0 && !context.settings.traceable {
         draw_circle_piece(
             frame, context, cache, slider_data.head_center,
             combo.color, head_alpha, &combo.number.to_string(),
