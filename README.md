@@ -16,7 +16,7 @@
 
 ## 使用
 
-<img src="./docs/usage.png" width="80%">
+<img src="./docs/usage.png" width="100%">
 
 ## 输出
 
