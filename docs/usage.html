@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>osu! Beatmap Preview · 使用说明</title>
+<style>
+  :root{
+    --bg:#0f1220;
+    --bg2:#171b2e;
+    --card:#1e2340;
+    --card2:#262c52;
+    --line:#353c6b;
+    --pink:#ff66aa;
+    --pink2:#ff9ec4;
+    --blue:#66ccff;
+    --blue2:#9ad9ff;
+    --yellow:#ffd56a;
+    --green:#7fffb2;
+    --red:#ff7a7a;
+    --text:#eef1ff;
+    --dim:#a6acd8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(255,102,170,.18), transparent 60%),
+      radial-gradient(1000px 500px at -10% 10%, rgba(102,204,255,.16), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    line-height:1.65;
+    padding:40px 36px 56px;
+    max-width:1180px;
+    margin:0 auto;
+  }
+
+  /* ===== 顶部标题 ===== */
+  .hero{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+    padding:10px 0 0;
+    margin-bottom:30px;
+    text-align:center;
+  }
+  .hero h1{font-size:36px;font-weight:900;letter-spacing:.5px;
+    background:linear-gradient(135deg,var(--pink),var(--blue));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .hero .sub{font-size:17px;color:var(--dim);margin-top:2px;}
+  .hero .badges{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+  .badge{
+    font-size:13px;padding:4px 12px;border-radius:999px;
+    background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--blue2);
+  }
+
+  /* ===== 章节标题 ===== */
+  h2.section{
+    font-size:26px;font-weight:800;margin:40px 0 18px;
+    display:flex;align-items:center;gap:14px;
+  }
+  h2.section .num{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:38px;height:38px;border-radius:10px;flex:0 0 auto;
+    background:rgba(255,102,170,.10);
+    border:1.5px solid var(--pink);
+    color:var(--pink2);font-size:18px;font-weight:800;
+    font-family:"Cascadia Code","Consolas",monospace;
+  }
+  h2.section .bar{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent);}
+
+  /* ===== 卡片通用 ===== */
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:20px 24px;
+  }
+
+  /* ===== 用法 ===== */
+  .usage-cmd{
+    font-family:"Cascadia Code","Consolas",monospace;
+    font-size:19px;
+    background:#0a0d1c;
+    border:1px solid var(--line);
+    border-left:5px solid var(--pink);
+    border-radius:12px;
+    padding:16px 20px;
+    margin-bottom:12px;
+    color:var(--text);
+    overflow-x:auto;
+  }
+  .usage-cmd .ph{color:var(--yellow);}
+  .usage-cmd .opt{color:var(--blue2);}
+  .usage-note{font-size:15px;color:var(--dim);padding-left:6px;}
+
+  /* ===== 参数 ===== */
+  .params{display:grid;grid-template-columns:1fr;gap:10px;}
+  .param{
+    display:grid;grid-template-columns:170px 1fr;gap:20px;align-items:center;
+    background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:14px 22px;
+  }
+  .param .name{
+    font-family:"Cascadia Code","Consolas",monospace;
+    font-size:18px;color:var(--pink2);font-weight:700;
+  }
+  .param .name .req{color:var(--red);font-size:13px;margin-left:6px;}
+  .param .desc{font-size:16px;color:var(--text);}
+  .param .desc code{
+    background:#0a0d1c;padding:2px 7px;border-radius:5px;
+    font-size:14px;color:var(--blue2);
+  }
+
+  /* ===== 默认行为 ===== */
+  .defaults{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:8px;
+  }
+  .default-card{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:16px;text-align:center;
+  }
+  .default-card .mode{font-size:17px;font-weight:800;color:var(--blue2);}
+  .default-card .fmt{
+    display:inline-block;margin-top:8px;font-size:15px;font-weight:700;
+    padding:4px 14px;border-radius:999px;
+    background:rgba(102,204,255,.14);color:var(--blue);border:1px solid rgba(102,204,255,.4);
+  }
+  .default-card .note{font-size:13px;color:var(--dim);margin-top:8px;}
+
+  /* ===== 示例 ===== */
+  .examples{display:flex;flex-direction:column;gap:10px;}
+  .example{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:12px 20px;display:flex;align-items:center;gap:14px;
+  }
+  .example .tag{
+    flex:0 0 auto;font-size:13px;font-weight:700;color:var(--bg);
+    background:var(--yellow);border-radius:6px;padding:4px 10px;
+  }
+  .example .cmd{
+    font-family:"Cascadia Code","Consolas",monospace;font-size:15px;
+    color:var(--text);overflow-x:auto;white-space:nowrap;
+  }
+  .example .cmd .k{color:var(--pink2);}
+  .example .cmd .v{color:var(--yellow);}
+
+  /* ===== Mod 支持：按模式卡片 ===== */
+  .modes{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .mode-card{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;
+  }
+  .mode-card .head{
+    padding:14px 22px;display:flex;align-items:center;gap:14px;
+    background:linear-gradient(135deg,rgba(255,102,170,.14),rgba(102,204,255,.10));
+    border-bottom:1px solid var(--line);
+  }
+  .mode-card .head .icon{
+    width:40px;height:40px;border-radius:10px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,var(--pink),#b8377a);
+    box-shadow:0 6px 14px rgba(255,102,170,.30);
+  }
+  .mode-card.taiko .head .icon{background:linear-gradient(135deg,#ff9a3c,#c95b00);box-shadow:0 6px 14px rgba(255,154,60,.30);}
+  .mode-card.catch .head .icon{background:linear-gradient(135deg,#7fffb2,#1f9c5b);box-shadow:0 6px 14px rgba(127,255,178,.28);}
+  .mode-card.mania .head .icon{background:linear-gradient(135deg,#b58bff,#5e2bb5);box-shadow:0 6px 14px rgba(181,139,255,.30);}
+  .mode-card .head .icon img{
+    width:26px;height:26px;object-fit:contain;
+    filter:brightness(0) invert(1);
+    display:block;
+  }
+  .mode-card.std .head .icon{background:linear-gradient(135deg,var(--pink),#b8377a);}
+  .mode-card .head .title{font-size:20px;font-weight:800;}
+  .mode-card .body{padding:16px 22px;}
+  .fmt-row{margin-bottom:14px;}
+  .fmt-row:last-child{margin-bottom:0;}
+  .fmt-row .fmt-label{
+    display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:700;
+    color:var(--dim);margin-bottom:10px;
+  }
+  .fmt-row .fmt-label .dot{
+    width:10px;height:10px;border-radius:50%;
+  }
+  .fmt-row.gif .dot{background:var(--pink);box-shadow:0 0 8px var(--pink);}
+  .fmt-row.png .dot{background:var(--blue);box-shadow:0 0 8px var(--blue);}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;}
+  .chip{
+    font-family:"Cascadia Code","Consolas",monospace;
+    font-size:16px;font-weight:700;
+    padding:6px 13px;border-radius:9px;
+    background:var(--card2);border:1px solid var(--line);color:var(--text);
+  }
+  .chip.accent{border-color:var(--pink);color:var(--pink2);background:rgba(255,102,170,.10);}
+  .chip.blue{border-color:var(--blue);color:var(--blue2);background:rgba(102,204,255,.10);}
+  .mode-empty{font-size:14px;color:var(--dim);font-style:italic;}
+  .mode-foot{
+    margin-top:12px;font-size:13px;color:var(--dim);
+    border-top:1px dashed var(--line);padding-top:10px;
+  }
+
+  /* ===== Mod 规则 ===== */
+  .rules{display:flex;flex-direction:column;gap:8px;}
+  .rule{
+    display:grid;grid-template-columns:190px 1fr;gap:20px;align-items:center;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:12px 22px;
+  }
+  .rule .pair{
+    font-family:"Cascadia Code","Consolas",monospace;font-size:17px;font-weight:700;
+    color:var(--pink2);
+  }
+  .rule .pair .vs{color:var(--dim);margin:0 6px;font-weight:400;}
+  .rule .txt{font-size:15px;color:var(--text);}
+  .rule .txt code{
+    background:#0a0d1c;padding:2px 7px;border-radius:5px;font-size:13px;color:var(--blue2);
+  }
+  .rule .txt b{color:var(--yellow);}
+  .conflict-note{
+    margin-top:14px;font-size:16px;color:var(--red);
+    background:rgba(255,122,122,.10);border:1px solid rgba(255,122,122,.4);
+    border-radius:12px;padding:12px 20px;
+  }
+
+  /* ===== 输出 ===== */
+  .out-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .out-card{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 22px;
+  }
+  .out-card .t{font-size:16px;font-weight:700;color:var(--blue2);margin-bottom:6px;}
+  .out-card .p{font-family:"Cascadia Code","Consolas",monospace;font-size:14px;color:var(--dim);word-break:break-all;}
+
+  .footer{
+    margin-top:48px;text-align:center;font-size:14px;color:var(--dim);
+    border-top:1px solid var(--line);padding-top:20px;
+  }
+  .footer .star{color:var(--yellow);}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>osu! Beatmap Preview</h1>
+  <div class="sub">osu! 谱面预览工具 · 支持 Standard / Taiko / Catch / Mania 四模式 GIF 与 PNG 渲染 · 支持 Mod</div>
+  <div class="badges">
+    <span class="badge">单可执行文件 · 无运行时依赖</span>
+    <span class="badge">Windows / Linux / macOS</span>
+    <span class="badge">高性能</span>
+  </div>
+</div>
+
+<!-- 1. 用法 -->
+<h2 class="section"><span class="num">1</span> 用法 <span class="bar"></span></h2>
+<div class="usage-cmd">osu-beatmap-preview <span class="opt">--bid</span>=<span class="ph">&lt;BID&gt;</span> [选项]</div>
+
+<!-- 2. 参数 -->
+<h2 class="section"><span class="num">2</span> 参数 <span class="bar"></span></h2>
+<div class="params">
+  <div class="param">
+    <div class="name">--bid<span class="req">必填</span></div>
+    <div class="desc">Beatmap ID，程序唯一必填项。</div>
+  </div>
+  <div class="param">
+    <div class="name">--convert</div>
+    <div class="desc">转谱模式，可选 <code>mania</code> / <code>ctb</code> / <code>taiko</code>，仅 Standard 谱面可用。</div>
+  </div>
+  <div class="param">
+    <div class="name">--mods</div>
+    <div class="desc">Mod 组合，用 <code>+</code> 连接，如 <code>hd+hr</code>；倍速类可带数值如 <code>dt1.25</code>；DA 类可带参数如 <code>daar5cs7</code>。</div>
+  </div>
+  <div class="param">
+    <div class="name">--fmt</div>
+    <div class="desc">输出格式：<code>gif</code> 或 <code>png</code>，不填则按模式取默认值。</div>
+  </div>
+  <div class="param">
+    <div class="name">--time</div>
+    <div class="desc">GIF 时间点，最多四个，单位秒，用 <code>+</code> 连接，如 <code>10+25+60</code>。</div>
+  </div>
+  <div class="param">
+    <div class="name">--bpm</div>
+    <div class="desc">仅对 Taiko PNG 有效：指定排列间距 BPM，让 taiko note 按该 BPM 的节拍间距渲染，如 <code>--bpm=180</code>。</div>
+  </div>
+</div>
+
+<div style="margin-top:18px">
+  <div style="font-size:16px;font-weight:700;margin-bottom:10px;color:var(--blue2);">其他参数</div>
+  <div class="params">
+    <div class="param">
+      <div class="name">--no-cache</div>
+      <div class="desc">跳过下载缓存与输出缓存，强制重新下载谱面并重新渲染。</div>
+    </div>
+    <div class="param">
+      <div class="name">--version</div>
+      <div class="desc">打印版本号与构建时间后退出，不执行渲染。</div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. 示例 -->
+<h2 class="section"><span class="num">3</span> 示例 <span class="bar"></span></h2>
+<div class="examples">
+  <div class="example"><span class="tag">基本</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span></div></div>
+  <div class="example"><span class="tag">转谱</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--convert</span>=<span class="v">mania</span></div></div>
+  <div class="example"><span class="tag">强制GIF</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--convert</span>=<span class="v">mania</span> <span class="k">--fmt</span>=<span class="v">gif</span></div></div>
+  <div class="example"><span class="tag">Mod组合</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--mods</span>=<span class="v">hd+hr</span></div></div>
+  <div class="example"><span class="tag">时间点</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--time</span>=<span class="v">10+25+60</span></div></div>
+  <div class="example"><span class="tag">复杂</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--convert</span>=<span class="v">mania</span> <span class="k">--fmt</span>=<span class="v">gif</span> <span class="k">--mods</span>=<span class="v">4k+ds+in+dt1.2</span> <span class="k">--time</span>=<span class="v">10+30+50</span></div></div>
+</div>
+
+<!-- 4. Mod 支持 -->
+<h2 class="section"><span class="num">4</span> Mod 支持 <span class="bar"></span></h2>
+
+<div class="modes">
+  <!-- Standard -->
+  <div class="mode-card std">
+    <div class="head">
+      <div class="icon"><img src="https://i.ppy.sh/de07d873e344ec4e411674f51f932b857f552027/68747470733a2f2f626c6f676765722e676f6f676c6575736572636f6e74656e742e636f6d2f696d672f622f523239765a32786c2f4156765873456934624861734b494b6e63784867704b6b65764b67564652507661754c366f71357338352d356773552d5f47316d78514d4a536a7344565847494e51587779722d68507235542d6e5636592d334f65304575744956415a547569724a436e6a6630547364536d6f714134746966304950796359325a4739755266615457513254704e6e566b4d51796b576a614d736e3134507143652d434f346344327657574f52573844516d66667656484a483368693636583436656a6a69695179772f73313630302f6f7375776d655f7374645f6d6f64652e706e67" alt="std"></div>
+      <div class="title">Standard</div>
+    </div>
+    <div class="body">
+      <div class="fmt-row gif">
+        <div class="fmt-label"><span class="dot"></span>GIF 支持</div>
+        <div class="chips">
+          <span class="chip accent">EZ</span><span class="chip accent">HR</span>
+          <span class="chip accent">HD</span><span class="chip accent">DA</span>
+          <span class="chip accent">TC</span><span class="chip accent">DT</span><span class="chip accent">HT</span>
+        </div>
+      </div>
+      <div class="fmt-row png">
+        <div class="fmt-label"><span class="dot"></span>PNG 支持</div>
+        <div class="chips">
+          <span class="chip blue">EZ</span><span class="chip blue">HR</span>
+          <span class="chip blue">HD</span><span class="chip blue">DA</span><span class="chip blue">TC</span>
+        </div>
+      </div>
+      <div class="mode-foot">可转谱为 Taiko / Catch / Mania 预览（<code style="background:#0a0d1c;padding:2px 5px;border-radius:4px;color:var(--blue2)">--convert</code>）。</div>
+    </div>
+  </div>
+
+  <!-- Taiko -->
+  <div class="mode-card taiko">
+    <div class="head">
+      <div class="icon"><img src="https://i.ppy.sh/ab13cb24aaeea193ef6e69bd2e8ef2de51198aa6/68747470733a2f2f626c6f676765722e676f6f676c6575736572636f6e74656e742e636f6d2f696d672f622f523239765a32786c2f415676587345682d50324e2d537233795568343533564e4f44494e56752d69685666344277566e794274684a61546c53696c7261524a46523148316e623330465743325269686f304b4e527058727252494a35526b4b6c626a4c2d6255524a722d5846714d59436b73684a6653427133396a45356352715a58726658723945714d6475504154355f527834686e714c5934782d386d6549365544414e477464673559396b465f37646f62536f61706877696431427a35707963343873614549526e73672f73313630302f6f7375776d655f7461696b6f5f6d6f64652e706e67" alt="taiko"></div>
+      <div class="title">Taiko</div>
+    </div>
+    <div class="body">
+      <div class="fmt-row gif">
+        <div class="fmt-label"><span class="dot"></span>GIF 支持</div>
+        <div class="chips">
+          <span class="chip accent">EZ</span><span class="chip accent">HR</span>
+          <span class="chip accent">SW</span><span class="chip accent">CS</span>
+          <span class="chip accent">DT</span><span class="chip accent">HT</span>
+        </div>
+      </div>
+      <div class="fmt-row png">
+        <div class="fmt-label"><span class="dot"></span>PNG 支持</div>
+        <div class="chips">
+          <span class="chip blue">EZ</span><span class="chip blue">HR</span><span class="chip blue">SW</span>
+        </div>
+      </div>
+      <div class="mode-foot">默认 PNG 全谱面长图。</div>
+    </div>
+  </div>
+
+  <!-- Catch -->
+  <div class="mode-card catch">
+    <div class="head">
+      <div class="icon"><img src="https://i.ppy.sh/a75ee3f8082d293e441afd3ddd480ce852c0d754/68747470733a2f2f626c6f676765722e676f6f676c6575736572636f6e74656e742e636f6d2f696d672f622f523239765a32786c2f415676587345684c3565465a774a6e716a3249584c53496351675f4574414555794f6649707a46324e4373645652574c592d35485f61714159677a356243434d44335f31437930556c6137773879354e69305958796b547a45527a53312d7a636b5452324f4d75524c6b47556f7869514d70434938767a51624c324c44672d7044694c59717a64384362386e6a557758756c6376755f452d684b414a4b736d4f5a6c364272474d784f38434a757852483250416b623055434c6850774c346362755f382f73313630302f6f7375776d655f6374625f6d6f64652e706e67" alt="ctb"></div>
+      <div class="title">Catch</div>
+    </div>
+    <div class="body">
+      <div class="fmt-row gif">
+        <div class="fmt-label"><span class="dot"></span>GIF 支持</div>
+        <div class="chips">
+          <span class="chip accent">EZ</span><span class="chip accent">HR</span>
+          <span class="chip accent">DT</span><span class="chip accent">HT</span>
+        </div>
+      </div>
+      <div class="fmt-row png">
+        <div class="fmt-label"><span class="dot"></span>PNG 支持</div>
+        <div class="chips">
+          <span class="chip blue">EZ</span><span class="chip blue">HR</span>
+        </div>
+      </div>
+      <div class="mode-foot">默认 PNG 全谱面长图。</div>
+    </div>
+  </div>
+
+  <!-- Mania -->
+  <div class="mode-card mania">
+    <div class="head">
+      <div class="icon"><img src="https://i.ppy.sh/76920907d6135f6e9fe9160a9dc147505b279c8d/68747470733a2f2f626c6f676765722e676f6f676c6575736572636f6e74656e742e636f6d2f696d672f622f523239765a32786c2f4156765873456939446272666b796b73733445622d6b775f31503359774d735a4530423169724579306731685557704f66586346774a464b4579794e47584d366f58685157443935554f547a316b347933634559723531476933354a775656627975524f41474c79537639337533686737504865526e6879506f514e6a5f575a4e2d72314646424f686f55546434727342647039694c6f76774e627773765a5678786d593763376a594d583554674c67624e38616b395377644e6d55495159646752552f73313630302f6f7375776d655f6d616e69615f6d6f64652e706e67" alt="mania"></div>
+      <div class="title">Mania</div>
+    </div>
+    <div class="body">
+      <div class="fmt-row gif">
+        <div class="fmt-label"><span class="dot"></span>GIF 支持</div>
+        <div class="chips">
+          <span class="chip accent">CS</span><span class="chip accent">DT</span><span class="chip accent">HT</span>
+          <span class="chip accent">1K–10K</span><span class="chip accent">DS</span><span class="chip accent">IN</span><span class="chip accent">HO</span>
+        </div>
+      </div>
+      <div class="fmt-row png">
+        <div class="fmt-label"><span class="dot"></span>PNG 支持</div>
+        <div class="chips">
+          <span class="chip blue">1K–10K</span><span class="chip blue">DS</span><span class="chip blue">IN</span><span class="chip blue">HO</span>
+        </div>
+      </div>
+      <div class="mode-foot"><code style="background:#0a0d1c;padding:2px 5px;border-radius:4px;color:var(--blue2)">1K–10K</code> 仅在 <code style="background:#0a0d1c;padding:2px 5px;border-radius:4px;color:var(--blue2)">--convert=mania</code> 时生效。默认 PNG 全谱面长图。</div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:14px;font-size:14px;color:var(--dim);">
+  提示：<span style="color:var(--pink2)">粉色</span>为 GIF 支持，<span style="color:var(--blue2)">蓝色</span>为 PNG 支持。<code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--yellow)">DT</code> / <code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--yellow)">HT</code> / <code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--yellow)">CS</code> 仅 GIF 支持。
+</div>
+
+<!-- 5. Mod 规则 -->
+<h2 class="section"><span class="num">5</span> Mod 规则 <span class="bar"></span></h2>
+<div class="rules">
+  <div class="rule">
+    <div class="pair">DT<span class="vs">/</span>HT</div>
+    <div class="txt">互斥。<b>DT</b> 默认 <code>1.5x</code>，范围 <code>1.01–2.00</code>；<b>HT</b> 默认 <code>0.75x</code>，范围 <code>0.50–0.99</code>。</div>
+  </div>
+  <div class="rule">
+    <div class="pair">EZ<span class="vs">/</span>HR</div>
+    <div class="txt">互斥。</div>
+  </div>
+  <div class="rule">
+    <div class="pair">TC<span class="vs">/</span>HD</div>
+    <div class="txt">互斥。</div>
+  </div>
+  <div class="rule">
+    <div class="pair">1K<span class="vs">–</span>10K</div>
+    <div class="txt">互斥，仅 <code>--convert=mania</code> 时生效。</div>
+  </div>
+  <div class="rule">
+    <div class="pair">IN<span class="vs">/</span>HO</div>
+    <div class="txt">互斥。</div>
+  </div>
+  <div class="rule">
+    <div class="pair">DA<span class="vs">/</span>EZ<span class="vs">/</span>HR</div>
+    <div class="txt"><b>DA</b> 不能与 <code>EZ</code> 或 <code>HR</code> 同时使用，仅 Standard 可用。</div>
+  </div>
+  <div class="rule">
+    <div class="pair">DA 参数</div>
+    <div class="txt">格式 <code>da&lt;参数&gt;&lt;值&gt;</code>，如 <code>dacs5</code>、<code>daar9.5</code>，可叠加如 <code>dacs5ar9.5</code>。</div>
+  </div>
+</div>
+<div class="conflict-note">⚠ 冲突组合会直接报错，请按上述规则组合 Mod。</div>
+
+<div class="footer">
+  osu! Beatmap Preview · MIT License &nbsp;·&nbsp; <span class="star">⭐</span> 觉得有用欢迎 Star
+</div>
+
+</body>
+</html>

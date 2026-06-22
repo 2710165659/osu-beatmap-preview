@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 ---
+## [1.0.3] - 2026.06.23
+
+### Added
+
+- 加入图片缓存功能。
+- std模式支持TC mod。
+
+### Changed
+
+- 优化了项目结构
 
 ## [1.0.2] - 2026.06.21
 
