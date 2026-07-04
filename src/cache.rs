@@ -131,6 +131,11 @@ pub fn output_cache_hit(
 /// * Standard PNG: needs 5 rows but `--time` accepts at most 4 → never cachable.
 /// * Taiko / Catch / Mania PNG: no time selection at all → always cachable.
 fn all_times_pinned(fmt: &str, target_mode: i32, times: &Option<Vec<f64>>) -> bool {
+    // mp4 is always deterministic: full-chart (±2s) is fixed by the beatmap,
+    // and an explicit [t1, t2] range is user-pinned.
+    if fmt == "mp4" {
+        return true;
+    }
     // Modes that don't use PreviewTimeSelector at all are always deterministic.
     if fmt == "png" && target_mode != 0 {
         return true;

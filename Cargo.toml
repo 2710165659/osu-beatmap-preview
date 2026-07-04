@@ -16,6 +16,11 @@ png = "0.17"
 rayon = "1"
 font8x8 = "0.3"
 thiserror = "2"
+# Video (MP4/H.264) output. openh264 默认 `source` feature 把 Cisco 源码通过 cc
+# crate 静态编译进二进制，保持「单文件无运行时依赖」；构建期需要 C++ 编译器。
+openh264 = "0.9"
+mp4 = "0.14"
+bytes = "1"
 
 [profile.release]
 opt-level = 3

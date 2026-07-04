@@ -6,10 +6,12 @@ mod gif;
 mod png;
 mod skin;
 mod utils;
+mod video;
 
 pub(crate) use gif::render_mania_gif;
 pub(crate) use png::render_mania_grid;
 pub(crate) use utils::*;
+pub(crate) use video::render_mania_video;
 
 use crate::canvas::Rgba;
 

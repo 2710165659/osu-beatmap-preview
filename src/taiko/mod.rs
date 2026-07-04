@@ -9,6 +9,8 @@ mod gif;
 mod notes;
 mod png;
 pub(crate) mod timing;
+mod video;
 
 pub(crate) use gif::render_taiko_gif;
 pub(crate) use png::render_taiko_grid;
+pub(crate) use video::render_taiko_video;

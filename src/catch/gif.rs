@@ -19,7 +19,7 @@ use super::png::rhe;
 
 // ─── GIF 布局 ───
 
-struct GifLayout {
+pub(crate) struct GifLayout {
     canvas_width: i64,
     canvas_height: i64,
     /// playfield（512 宽坐标系）在帧内的缩放。
@@ -32,7 +32,7 @@ struct GifLayout {
     pixels_per_ms: f64,
 }
 
-fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayout {
+pub(crate) fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayout {
     let playfield_scale = GIF_PLAYFIELD_SCALE;
     let playfield_left = (GIF_IMAGE_WIDTH as f64 - PLAYFIELD_WIDTH * playfield_scale) / 2.0;
     let playfield_top = GIF_PLAYFIELD_TOP;
@@ -131,7 +131,7 @@ pub(crate) fn render_catch_gif(
 }
 
 /// 渲染单段单帧：背景 + 判定线 + 接手 + 可见的下落对象。
-fn render_gif_frame(
+pub(crate) fn render_gif_frame(
     render_objects: &[RenderObject],
     start_times_desc: &[i64],
     snapshot_time: i64,

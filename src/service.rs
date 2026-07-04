@@ -151,6 +151,18 @@ trait ModeRenderer {
         bpm: Option<f64>,
     ) -> Result<PathBuf>;
 
+    /// Render an MP4 (H.264) video of the full chart to `output_path`.
+    /// `times_ms` is either `None` (full chart, ±2s padding) or `Some([t1, t2])`
+    /// (explicit range); other lengths are rejected by validation. Returns the
+    /// output path.
+    fn render_video(
+        &self,
+        beatmap: &Beatmap,
+        mods: Option<&ModSettings>,
+        times_ms: Option<Vec<i64>>,
+        output_path: &Path,
+    ) -> Result<PathBuf>;
+
     /// Optionally convert the beatmap before rendering. Default: clone (no conversion).
     fn convert(
         &self,
@@ -200,6 +212,17 @@ impl ModeRenderer for StandardRenderer {
         crate::composer::save_png(&image, output_path)?;
         Ok(output_path.to_path_buf())
     }
+
+    fn render_video(
+        &self,
+        beatmap: &Beatmap,
+        mods: Option<&ModSettings>,
+        times_ms: Option<Vec<i64>>,
+        output_path: &Path,
+    ) -> Result<PathBuf> {
+        crate::standard::render_standard_video(beatmap, mods, times_ms, output_path)?;
+        Ok(output_path.to_path_buf())
+    }
 }
 
 struct TaikoRenderer;
@@ -232,6 +255,17 @@ impl ModeRenderer for TaikoRenderer {
         bpm: Option<f64>,
     ) -> Result<PathBuf> {
         crate::taiko::render_taiko_grid(beatmap, output_path, mods, bpm)
+    }
+
+    fn render_video(
+        &self,
+        beatmap: &Beatmap,
+        mods: Option<&ModSettings>,
+        times_ms: Option<Vec<i64>>,
+        output_path: &Path,
+    ) -> Result<PathBuf> {
+        crate::taiko::render_taiko_video(beatmap, mods, times_ms, output_path)?;
+        Ok(output_path.to_path_buf())
     }
 }
 
@@ -266,6 +300,17 @@ impl ModeRenderer for CatchRenderer {
     ) -> Result<PathBuf> {
         crate::catch::render_catch_grid(beatmap, output_path, mods)
     }
+
+    fn render_video(
+        &self,
+        beatmap: &Beatmap,
+        mods: Option<&ModSettings>,
+        times_ms: Option<Vec<i64>>,
+        output_path: &Path,
+    ) -> Result<PathBuf> {
+        crate::catch::render_catch_video(beatmap, mods, times_ms, output_path)?;
+        Ok(output_path.to_path_buf())
+    }
 }
 
 struct ManiaRenderer;
@@ -298,6 +343,17 @@ impl ModeRenderer for ManiaRenderer {
         _bpm: Option<f64>,
     ) -> Result<PathBuf> {
         crate::mania::render_mania_grid(beatmap, output_path, mods)
+    }
+
+    fn render_video(
+        &self,
+        beatmap: &Beatmap,
+        mods: Option<&ModSettings>,
+        times_ms: Option<Vec<i64>>,
+        output_path: &Path,
+    ) -> Result<PathBuf> {
+        crate::mania::render_mania_video(beatmap, mods, times_ms, output_path)?;
+        Ok(output_path.to_path_buf())
     }
 }
 
@@ -394,6 +450,8 @@ fn render_preview_for_mode(
 
     if fmt == "gif" {
         renderer.render_gif(&beatmap, mods_ref, times_ms, output_path)
+    } else if fmt == "mp4" {
+        renderer.render_video(&beatmap, mods_ref, times_ms, output_path)
     } else {
         renderer.render_png(&beatmap, mods_ref, output_path, bpm)
     }

@@ -19,7 +19,7 @@ use super::notes::{
 use super::timing::*;
 
 #[inline]
-fn pyround(v: f64) -> i64 {
+pub(crate) fn pyround(v: f64) -> i64 {
     round_half_even(v)
 }
 
@@ -36,13 +36,13 @@ fn gif_scroll_length_px() -> i64 {
 // ─── multiplier / prepared objects ───
 
 #[derive(Debug, Clone, Copy)]
-struct MultiplierPoint {
+pub(crate) struct MultiplierPoint {
     time: f64,
     multiplier: f64,
 }
 
-struct MultiplierLookup {
-    points: Vec<MultiplierPoint>,
+pub(crate) struct MultiplierLookup {
+    pub(crate) points: Vec<MultiplierPoint>,
 }
 
 impl MultiplierLookup {
@@ -53,7 +53,7 @@ impl MultiplierLookup {
 }
 
 #[derive(Debug, Clone)]
-struct PreparedTaikoHitObject {
+pub(crate) struct PreparedTaikoHitObject {
     hit_object: TaikoHitObject,
     start_multiplier: f64,
     end_multiplier: f64,
@@ -62,16 +62,16 @@ struct PreparedTaikoHitObject {
 }
 
 #[derive(Debug, Clone)]
-struct GifLayout {
-    segment_width: i64,
-    row_height: i64,
-    left_panel_width: i64,
-    right_panel_width: i64,
-    image_width: i64,
-    image_height: i64,
-    normal_note_diameter: i64,
-    big_note_diameter: i64,
-    time_range: f64,
+pub(crate) struct GifLayout {
+    pub(crate) segment_width: i64,
+    pub(crate) row_height: i64,
+    pub(crate) left_panel_width: i64,
+    pub(crate) right_panel_width: i64,
+    pub(crate) image_width: i64,
+    pub(crate) image_height: i64,
+    pub(crate) normal_note_diameter: i64,
+    pub(crate) big_note_diameter: i64,
+    pub(crate) time_range: f64,
 }
 
 // ─── public API ───
@@ -178,12 +178,12 @@ pub(crate) fn render_taiko_gif(
 
 // ─── time range / multiplier ───
 
-fn compute_time_range() -> f64 {
+pub(crate) fn compute_time_range() -> f64 {
     let in_length = GIF_ASPECT * GIF_STABLE_GAMEFIELD_HEIGHT - GIF_STABLE_HIT_LOCATION;
     in_length / 100.0 * 1000.0 / GIF_VELOCITY_MULTIPLIER
 }
 
-fn build_multiplier_points(
+pub(crate) fn build_multiplier_points(
     timing_points: &[TimingPoint],
     slider_multiplier: f64,
 ) -> Vec<MultiplierPoint> {
@@ -231,7 +231,7 @@ fn build_multiplier_points(
     points
 }
 
-fn prepare_hit_objects(
+pub(crate) fn prepare_hit_objects(
     hit_objects: &[TaikoHitObject],
     multiplier_lookup: &MultiplierLookup,
 ) -> Vec<PreparedTaikoHitObject> {
@@ -253,7 +253,7 @@ fn prepare_hit_objects(
 
 // ─── layout ───
 
-fn build_gif_layout(time_range: f64) -> GifLayout {
+pub(crate) fn build_gif_layout(time_range: f64) -> GifLayout {
     let segment_width = gif_scroll_length_px();
     let left_panel_width = pyround(GIF_ROW_HEIGHT as f64 * DRUM_PANEL_WIDTH_RATIO);
     let right_panel_width = ROW_INNER_PADDING_X * 2 + segment_width;
@@ -307,7 +307,7 @@ fn draw_judgement_line(image: &mut Img, layout: &GifLayout, row_index: i64) {
 }
 
 /// 绘制单段背景：鼓面板 + 轨道 + 判定线（程序化，无图片）。
-fn draw_row_background(image: &mut Img, layout: &GifLayout, row_index: i64) {
+pub(crate) fn draw_row_background(image: &mut Img, layout: &GifLayout, row_index: i64) {
     let row_top = gif_row_top(row_index, layout);
 
     draw_drum_panel(
@@ -328,7 +328,7 @@ fn draw_row_background(image: &mut Img, layout: &GifLayout, row_index: i64) {
     draw_judgement_line(image, layout, row_index);
 }
 
-fn draw_hit_objects(
+pub(crate) fn draw_hit_objects(
     image: &mut Img,
     hit_objects: &[PreparedTaikoHitObject],
     layout: &GifLayout,

@@ -312,6 +312,8 @@ fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
 
 fn validate_supported_mods(settings: &ModSettings, mode: i32, fmt: &str) -> Vec<String> {
     let fmt_key = fmt.trim().to_lowercase();
+    // mp4 uses the same mod rules as gif (animated output, DT/HT allowed).
+    let fmt_key = if fmt_key == "mp4" { "gif".to_owned() } else { fmt_key };
     if fmt_key != "gif" && fmt_key != "png" {
         return vec![format!("unknown output format: {fmt}")];
     }

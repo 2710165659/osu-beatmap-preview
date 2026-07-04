@@ -16,6 +16,7 @@ mod standard;
 mod taiko;
 mod text;
 mod validate;
+mod video;
 
 use errors::Result;
 use lexopt::prelude::*;
@@ -36,7 +37,7 @@ struct Args {
 fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko] \
-         [--mods=<MODS>] [--fmt=png|gif] [--time=<T1+T2+...>] [--bpm=<BPM>] [--no-cache]\
+         [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--bpm=<BPM>] [--no-cache]\
        osu-beatmap-preview --version"
     );
     std::process::exit(code)

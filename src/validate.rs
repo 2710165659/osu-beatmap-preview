@@ -20,9 +20,9 @@ pub fn validate_convert_value(v: &str) -> Result<()> {
 /// Validate `--fmt` value.
 pub fn validate_fmt_value(v: &str) -> Result<()> {
     match v {
-        "png" | "gif" => Ok(()),
+        "png" | "gif" | "mp4" => Ok(()),
         _ => Err(PreviewError::new(format!(
-            "--fmt must be png or gif; got '{v}'"
+            "--fmt must be png, gif, or mp4; got '{v}'"
         ))),
     }
 }
@@ -83,10 +83,21 @@ pub fn validate_with_context(
         return Err(PreviewError::new("bid must be numeric"));
     }
 
-    // --- --times only for GIF or standard PNG ---
-    if times.is_some() && ctx.fmt != "gif" && !(ctx.fmt == "png" && ctx.target_mode == 0) {
+    // --- --times rules ---
+    // mp4: 0 values (full chart ±2s) or exactly 2 (explicit [t1, t2]); else reject.
+    // gif: any (≤4 by parse_times) time points.
+    // standard png: time points allowed; other png modes: reject.
+    if ctx.fmt == "mp4" {
+        if let Some(ts) = times {
+            if ts.len() != 2 {
+                return Err(PreviewError::new(
+                    "--time for mp4 needs exactly 2 values t1+t2 (or omit for the full chart)",
+                ));
+            }
+        }
+    } else if times.is_some() && ctx.fmt != "gif" && !(ctx.fmt == "png" && ctx.target_mode == 0) {
         return Err(PreviewError::new(
-            "--times is only valid for GIF or standard PNG output",
+            "--times is only valid for GIF, standard PNG, or mp4 output",
         ));
     }
 

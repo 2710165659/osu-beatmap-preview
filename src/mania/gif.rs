@@ -25,23 +25,23 @@ use super::{
 
 use super::skin::load_mania_skin_config;
 
-struct GifLayout {
-    segment_count: i64,
-    segment_width: i64,
-    playfield_height: i64,
-    lane_area_width: i64,
-    image_width: i64,
-    image_height: i64,
-    hit_position_y: i64,
-    scroll_length: i64,
-    note_head_height: i64,
-    column_left_offsets: Vec<i64>,
-    column_widths: Vec<i64>,
-    column_colours: Vec<Rgba>,
+pub(crate) struct GifLayout {
+    pub(crate) segment_count: i64,
+    pub(crate) segment_width: i64,
+    pub(crate) playfield_height: i64,
+    pub(crate) lane_area_width: i64,
+    pub(crate) image_width: i64,
+    pub(crate) image_height: i64,
+    pub(crate) hit_position_y: i64,
+    pub(crate) scroll_length: i64,
+    pub(crate) note_head_height: i64,
+    pub(crate) column_left_offsets: Vec<i64>,
+    pub(crate) column_widths: Vec<i64>,
+    pub(crate) column_colours: Vec<Rgba>,
 }
 
 /// Maps beatmap time to a sequential scroll distance, handling BPM and SV changes.
-struct ScrollMap {
+pub(crate) struct ScrollMap {
     starts: Vec<f64>,
     positions: Vec<f64>,
     multipliers: Vec<f64>,
@@ -234,7 +234,7 @@ fn build_gif_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
     }
 }
 
-fn build_column_left_offsets(column_widths: &[i64], column_line_widths: &[i64]) -> Vec<i64> {
+pub(crate) fn build_column_left_offsets(column_widths: &[i64], column_line_widths: &[i64]) -> Vec<i64> {
     // ColumnLineWidth has keys + 1 entries: leftmost, between-columns, rightmost.
     let mut offsets = Vec::with_capacity(column_widths.len());
     let mut cursor = column_line_widths.first().copied().unwrap_or(0);
@@ -249,13 +249,13 @@ fn build_column_left_offsets(column_widths: &[i64], column_line_widths: &[i64]) 
 }
 
 /// Mirrors DrawableManiaRuleset.updateTimeRange(): base 33-speed window adjusted by HitPosition.
-fn compute_time_range(speed_multiplier: f64, hit_position: f64) -> f64 {
+pub(crate) fn compute_time_range(speed_multiplier: f64, hit_position: f64) -> f64 {
     let hit_position_scale =
         (GIF_FRAME_HEIGHT as f64 - hit_position) / (GIF_FRAME_HEIGHT as f64 - GIF_DEFAULT_HIT_POSITION);
     (GIF_MAX_TIME_RANGE / GIF_SCROLL_SPEED * hit_position_scale * speed_multiplier).max(1.0)
 }
 
-fn build_scroll_map(
+pub(crate) fn build_scroll_map(
     beatmap: &Beatmap,
     hit_objects: &[ManiaHitObject],
     constant: bool,
@@ -359,7 +359,7 @@ fn most_common_beat_length(timing_points: &[TimingPoint], hit_objects: &[ManiaHi
     most_common.min(max_beat_length).max(min_beat_length)
 }
 
-fn segment_left(segment_index: i64, layout: &GifLayout) -> i64 {
+pub(crate) fn segment_left(segment_index: i64, layout: &GifLayout) -> i64 {
     PAGE_MARGIN_X + segment_index * (layout.segment_width + GIF_GRID_GAP)
 }
 
@@ -379,7 +379,7 @@ fn draw_segment_separators(canvas: &mut Img, layout: &GifLayout) {
     }
 }
 
-fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &GifLayout) {
+pub(crate) fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &GifLayout) {
     // GIF skips bar/beat/lane-separator lines; only grey side panels + judgement line.
     let playfield_top = PAGE_MARGIN_Y;
     let playfield_bottom = playfield_top + layout.playfield_height;
@@ -430,7 +430,7 @@ fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &GifLayout) 
     );
 }
 
-fn draw_gif_sv_indicators(
+pub(crate) fn draw_gif_sv_indicators(
     canvas: &mut Img,
     sv_changes: &[(i64, f64)],
     seg_left: i64,
@@ -460,7 +460,7 @@ fn draw_gif_sv_indicators(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_gif_hit_object(
+pub(crate) fn draw_gif_hit_object(
     canvas: &mut Img,
     hit_object: &ManiaHitObject,
     palette: &[Rgba],

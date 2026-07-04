@@ -10,9 +10,11 @@ mod gif;
 mod objects;
 mod png;
 pub(crate) mod slider;
+mod video;
 
 pub(crate) use gif::render_standard_gif;
 pub(crate) use png::render_standard_png;
+pub(crate) use video::render_standard_video;
 
 use crate::canvas::Img;
 use crate::text::{draw_text, text_size};
