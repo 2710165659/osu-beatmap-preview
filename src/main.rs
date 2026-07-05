@@ -30,14 +30,14 @@ struct Args {
     mods: Option<String>,
     fmt: Option<String>,
     time: Option<String>,
-    bpm: Option<f64>,
+    gap: Option<f64>,
     no_cache: bool,
 }
 
 fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko] \
-         [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--bpm=<BPM>] [--no-cache]\
+         [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--gap=<BPM>] [--no-cache]\
        osu-beatmap-preview --version"
     );
     std::process::exit(code)
@@ -50,7 +50,7 @@ fn parse_args() -> Args {
     let mut mods: Option<String> = None;
     let mut fmt: Option<String> = None;
     let mut time: Option<String> = None;
-    let mut bpm: Option<f64> = None;
+    let mut gap: Option<f64> = None;
     let mut no_cache: bool = false;
 
     while let Some(arg) = parser.next().unwrap_or_else(|e| {
@@ -83,17 +83,17 @@ fn parse_args() -> Args {
             Long("time") | Long("times") => {
                 time = Some(take_value(&mut parser, "--time"));
             }
-            Long("bpm") => {
-                let v = take_value(&mut parser, "--bpm");
+            Long("gap") => {
+                let v = take_value(&mut parser, "--gap");
                 let val: f64 = v.parse().unwrap_or_else(|_| {
-                    eprintln!("error: --bpm must be a number, got '{v}'");
+                    eprintln!("error: --gap must be a number, got '{v}'");
                     print_usage_and_exit(2);
                 });
-                if let Err(e) = validate::validate_bpm_value(val) {
+                if let Err(e) = validate::validate_gap_value(val) {
                     eprintln!("error: {e}");
                     print_usage_and_exit(2);
                 }
-                bpm = Some(val);
+                gap = Some(val);
             }
             Long("no-cache") => {
                 no_cache = true;
@@ -133,7 +133,7 @@ fn parse_args() -> Args {
         mods,
         fmt,
         time,
-        bpm,
+        gap,
         no_cache,
     }
 }
@@ -166,7 +166,7 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         args.convert.as_deref(),
         mods_unvalidated,
         times,
-        args.bpm,
+        args.gap,
         args.no_cache,
     )
 }

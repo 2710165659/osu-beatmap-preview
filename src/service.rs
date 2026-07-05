@@ -12,7 +12,7 @@ pub fn generate_preview(
     convert: Option<&str>,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
-    bpm: Option<f64>,
+    gap: Option<f64>,
     no_cache: bool,
 ) -> Result<Value> {
     let temp_root = std::env::temp_dir().join("osu-beatmap-preview");
@@ -49,7 +49,7 @@ pub fn generate_preview(
     let mods = validate::validate_with_context(
         &ctx,
         times.as_deref(),
-        bpm,
+        gap,
         mods,
     )?;
 
@@ -75,7 +75,7 @@ pub fn generate_preview(
             parts.push(cache::format_time_suffix(t));
         }
     }
-    if let Some(b) = bpm {
+    if let Some(b) = gap {
         parts.push(format!("bpm{}", b));
     }
     let output_path: PathBuf = temp_root
@@ -111,7 +111,7 @@ pub fn generate_preview(
     };
 
     let preview_path = render_preview_for_mode(
-        renderer, beatmap.clone(), &output_path, &fmt, target_mode, mods, times, bpm,
+        renderer, beatmap.clone(), &output_path, &fmt, target_mode, mods, times, gap,
     )?;
 
     let abs = preview_path
@@ -148,7 +148,7 @@ trait ModeRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        bpm: Option<f64>,
+        gap: Option<f64>,
     ) -> Result<PathBuf>;
 
     /// Render an MP4 (H.264) video of the full chart to `output_path`.
@@ -206,9 +206,9 @@ impl ModeRenderer for StandardRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        _bpm: Option<f64>,
+        _gap: Option<f64>,
     ) -> Result<PathBuf> {
-        let image = crate::standard::render_standard_png(beatmap, mods, None)?;
+        let image = crate::standard::render_standard_png(beatmap, mods, None)?;;
         crate::composer::save_png(&image, output_path)?;
         Ok(output_path.to_path_buf())
     }
@@ -252,9 +252,9 @@ impl ModeRenderer for TaikoRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        bpm: Option<f64>,
+        gap: Option<f64>,
     ) -> Result<PathBuf> {
-        crate::taiko::render_taiko_grid(beatmap, output_path, mods, bpm)
+        crate::taiko::render_taiko_grid(beatmap, output_path, mods, gap)
     }
 
     fn render_video(
@@ -296,7 +296,7 @@ impl ModeRenderer for CatchRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        _bpm: Option<f64>,
+        _gap: Option<f64>,
     ) -> Result<PathBuf> {
         crate::catch::render_catch_grid(beatmap, output_path, mods)
     }
@@ -340,7 +340,7 @@ impl ModeRenderer for ManiaRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        _bpm: Option<f64>,
+        _gap: Option<f64>,
     ) -> Result<PathBuf> {
         crate::mania::render_mania_grid(beatmap, output_path, mods)
     }
@@ -440,7 +440,7 @@ fn render_preview_for_mode(
     target_mode: i32,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
-    bpm: Option<f64>,
+    gap: Option<f64>,
 ) -> Result<PathBuf> {
     let times_ms = crate::common::time_selection::times_to_milliseconds(times.as_deref());
     let mods_ref = mods.as_ref();
@@ -453,6 +453,6 @@ fn render_preview_for_mode(
     } else if fmt == "mp4" {
         renderer.render_video(&beatmap, mods_ref, times_ms, output_path)
     } else {
-        renderer.render_png(&beatmap, mods_ref, output_path, bpm)
+        renderer.render_png(&beatmap, mods_ref, output_path, gap)
     }
 }

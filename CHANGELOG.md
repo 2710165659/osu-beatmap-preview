@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file.
 
 ---
+## [1.0.4] - 2026.07.05
+
+### Added
+
+- 增加视频渲染支持（`--fmt=mp4`），四种模式均可输出 H.264 MP4 视频。
+- 视频 GPU 硬件加速编码：自动检测 NVIDIA NVENC / AMD AMF，无 GPU 时回退 CPU（openh264），保持单文件无运行时依赖。
+- `--time=t1+t2` 支持指定 MP4 视频片段范围。
+
+### Changed
+
+- `--bpm` 参数重命名为 `--gap`。
+- 更新 README 与使用说明文档。
+
 ## [1.0.3] - 2026.06.23
 
 ### Added

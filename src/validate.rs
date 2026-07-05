@@ -27,11 +27,11 @@ pub fn validate_fmt_value(v: &str) -> Result<()> {
     }
 }
 
-/// Validate `--bpm` raw value (range check).
-pub fn validate_bpm_value(v: f64) -> Result<()> {
+/// Validate `--gap` raw value (range check).
+pub fn validate_gap_value(v: f64) -> Result<()> {
     if v <= 0.0 || v >= 500.0 {
         return Err(PreviewError::new(format!(
-            "--bpm must be between 0 and 500, got {v}"
+            "--gap must be between 0 and 500, got {v}"
         )));
     }
     Ok(())
@@ -75,7 +75,7 @@ pub struct ValidateContext<'a> {
 pub fn validate_with_context(
     ctx: &ValidateContext,
     times: Option<&[f64]>,
-    bpm: Option<f64>,
+    gap: Option<f64>,
     mods: Option<ModSettings>,
 ) -> Result<Option<ModSettings>> {
     // --- bid ---
@@ -101,10 +101,10 @@ pub fn validate_with_context(
         ));
     }
 
-    // --- --bpm only for taiko PNG ---
-    if bpm.is_some() && !(ctx.fmt == "png" && ctx.target_mode == 1) {
+    // --- --gap only for taiko PNG ---
+    if gap.is_some() && !(ctx.fmt == "png" && ctx.target_mode == 1) {
         return Err(PreviewError::new(
-            "--bpm is only valid for taiko PNG output",
+            "--gap is only valid for taiko PNG output",
         ));
     }
 

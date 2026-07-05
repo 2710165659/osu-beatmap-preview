@@ -239,9 +239,10 @@
 
 <div class="hero">
   <h1>osu! Beatmap Preview</h1>
-  <div class="sub">osu! 谱面预览工具 · 支持 Standard / Taiko / Catch / Mania 四模式 GIF 与 PNG 渲染 · 支持 Mod</div>
+  <div class="sub">osu! 谱面预览工具 · 支持 Standard / Taiko / Catch / Mania 四模式 GIF · PNG · MP4 渲染 · GPU 加速 · 支持 Mod</div>
   <div class="badges">
     <span class="badge">单可执行文件 · 无运行时依赖</span>
+    <span class="badge">NVENC / AMF GPU 加速</span>
     <span class="badge">Windows / Linux / macOS</span>
     <span class="badge">高性能</span>
   </div>
@@ -268,15 +269,15 @@
   </div>
   <div class="param">
     <div class="name">--fmt</div>
-    <div class="desc">输出格式：<code>gif</code> 或 <code>png</code>，不填则按模式取默认值。</div>
+    <div class="desc">输出格式：<code>gif</code> / <code>png</code> / <code>mp4</code>，不填则按模式取默认值。<code>mp4</code> 为 H.264 视频输出全谱面，支持 GPU 加速。</div>
   </div>
   <div class="param">
     <div class="name">--time</div>
-    <div class="desc">GIF 时间点，最多四个，单位秒，用 <code>+</code> 连接，如 <code>10+25+60</code>。</div>
+    <div class="desc">GIF 时间点或 MP4 时间范围。GIF 最多四个、用 <code>+</code> 连接；MP4 恰好两个 <code>t1+t2</code> 表示片段起止（秒），省略则渲染全谱面 ±2s。</div>
   </div>
   <div class="param">
-    <div class="name">--bpm</div>
-    <div class="desc">仅对 Taiko PNG 有效：指定排列间距 BPM，让 taiko note 按该 BPM 的节拍间距渲染，如 <code>--bpm=180</code>。</div>
+    <div class="name">--gap</div>
+    <div class="desc">仅对 Taiko PNG 有效：指定排列间距 BPM，让 taiko note 按该 BPM 的节拍间距渲染，如 <code>--gap=180</code>。</div>
   </div>
 </div>
 
@@ -303,6 +304,8 @@
   <div class="example"><span class="tag">Mod组合</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--mods</span>=<span class="v">hd+hr</span></div></div>
   <div class="example"><span class="tag">时间点</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--time</span>=<span class="v">10+25+60</span></div></div>
   <div class="example"><span class="tag">复杂</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--convert</span>=<span class="v">mania</span> <span class="k">--fmt</span>=<span class="v">gif</span> <span class="k">--mods</span>=<span class="v">4k+ds+in+dt1.2</span> <span class="k">--time</span>=<span class="v">10+30+50</span></div></div>
+  <div class="example"><span class="tag">MP4视频</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--fmt</span>=<span class="v">mp4</span></div></div>
+  <div class="example"><span class="tag">MP4片段</span><div class="cmd">osu-beatmap-preview <span class="k">--bid</span>=<span class="v">123456</span> <span class="k">--fmt</span>=<span class="v">mp4</span> <span class="k">--time</span>=<span class="v">30+60</span></div></div>
 </div>
 
 <!-- 4. Mod 支持 -->
@@ -317,7 +320,7 @@
     </div>
     <div class="body">
       <div class="fmt-row gif">
-        <div class="fmt-label"><span class="dot"></span>GIF 支持</div>
+        <div class="fmt-label"><span class="dot"></span>GIF / MP4 支持</div>
         <div class="chips">
           <span class="chip accent">EZ</span><span class="chip accent">HR</span>
           <span class="chip accent">HD</span><span class="chip accent">DA</span>
@@ -343,7 +346,7 @@
     </div>
     <div class="body">
       <div class="fmt-row gif">
-        <div class="fmt-label"><span class="dot"></span>GIF 支持</div>
+        <div class="fmt-label"><span class="dot"></span>GIF / MP4 支持</div>
         <div class="chips">
           <span class="chip accent">EZ</span><span class="chip accent">HR</span>
           <span class="chip accent">SW</span><span class="chip accent">CS</span>
@@ -368,7 +371,7 @@
     </div>
     <div class="body">
       <div class="fmt-row gif">
-        <div class="fmt-label"><span class="dot"></span>GIF 支持</div>
+        <div class="fmt-label"><span class="dot"></span>GIF / MP4 支持</div>
         <div class="chips">
           <span class="chip accent">EZ</span><span class="chip accent">HR</span>
           <span class="chip accent">DT</span><span class="chip accent">HT</span>
@@ -392,7 +395,7 @@
     </div>
     <div class="body">
       <div class="fmt-row gif">
-        <div class="fmt-label"><span class="dot"></span>GIF 支持</div>
+        <div class="fmt-label"><span class="dot"></span>GIF / MP4 支持</div>
         <div class="chips">
           <span class="chip accent">CS</span><span class="chip accent">DT</span><span class="chip accent">HT</span>
           <span class="chip accent">1K–10K</span><span class="chip accent">DS</span><span class="chip accent">IN</span><span class="chip accent">HO</span>
@@ -409,9 +412,6 @@
   </div>
 </div>
 
-<div style="margin-top:14px;font-size:14px;color:var(--dim);">
-  提示：<span style="color:var(--pink2)">粉色</span>为 GIF 支持，<span style="color:var(--blue2)">蓝色</span>为 PNG 支持。<code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--yellow)">DT</code> / <code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--yellow)">HT</code> / <code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--yellow)">CS</code> 仅 GIF 支持。
-</div>
 
 <!-- 5. Mod 规则 -->
 <h2 class="section"><span class="num">5</span> Mod 规则 <span class="bar"></span></h2>
@@ -445,7 +445,29 @@
     <div class="txt">格式 <code>da&lt;参数&gt;&lt;值&gt;</code>，如 <code>dacs5</code>、<code>daar9.5</code>，可叠加如 <code>dacs5ar9.5</code>。</div>
   </div>
 </div>
-<div class="conflict-note">⚠ 冲突组合会直接报错，请按上述规则组合 Mod。</div>
+
+<!-- 6. MP4 视频渲染 -->
+<h2 class="section"><span class="num">6</span> MP4 视频渲染 <span class="bar"></span></h2>
+<div class="card">
+  <p style="font-size:16px;margin-bottom:14px;">使用 <code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--blue2)">--fmt=mp4</code> 输出 H.264 视频（15fps · 16:9），支持全部四种模式，默认渲染全谱面 ±2s，也可用 <code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--blue2)">--time=t1+t2</code> 指定片段。</p>
+  <div style="font-size:17px;font-weight:700;color:var(--green);margin-bottom:10px;">⚡ GPU 加速编码</div>
+  <p style="font-size:15px;margin-bottom:10px;">视频编码自动检测并使用硬件加速，优先级：</p>
+  <div style="display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;align-items:center;gap:12px;background:var(--card2);border-radius:10px;padding:10px 16px;">
+      <span style="font-size:22px;">🟢</span>
+      <div><b style="color:var(--green)">NVIDIA NVENC</b>（N 卡）<span style="color:var(--dim)">— 运行时动态加载 nvEncodeAPI64.dll</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;background:var(--card2);border-radius:10px;padding:10px 16px;">
+      <span style="font-size:22px;">🔴</span>
+      <div><b style="color:var(--red)">AMD AMF</b>（A 卡）<span style="color:var(--dim)">— 运行时动态加载 amfrt64.dll</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;background:var(--card2);border-radius:10px;padding:10px 16px;">
+      <span style="font-size:22px;">💻</span>
+      <div><b style="color:var(--blue2)">CPU openh264</b>（始终可用）<span style="color:var(--dim)">— 无 GPU 时的回退</span></div>
+    </div>
+  </div>
+  <p style="font-size:14px;color:var(--dim);margin-top:12px;">硬件编码器通过 libloading 运行时加载，无 GPU 不影响编译和运行，程序自动回退到 CPU 编码。设置环境变量 <code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--yellow)">OSU_PREVIEW_NO_GPU=1</code> 可强制使用 CPU 编码。</p>
+</div>
 
 <div class="footer">
   osu! Beatmap Preview · MIT License &nbsp;·&nbsp; <span class="star">⭐</span> 觉得有用欢迎 Star
