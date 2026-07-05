@@ -455,18 +455,18 @@
   <div style="display:flex;flex-direction:column;gap:8px;">
     <div style="display:flex;align-items:center;gap:12px;background:var(--card2);border-radius:10px;padding:10px 16px;">
       <span style="font-size:22px;">🟢</span>
-      <div><b style="color:var(--green)">NVIDIA NVENC</b>（N 卡）<span style="color:var(--dim)">— 运行时动态加载 nvEncodeAPI64.dll</span></div>
+      <div><b style="color:var(--green)">NVIDIA NVENC</b>（N 卡）<span style="color:var(--dim)">— 仅 Windows，运行时动态加载 nvEncodeAPI64.dll</span></div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;background:var(--card2);border-radius:10px;padding:10px 16px;">
       <span style="font-size:22px;">🔴</span>
-      <div><b style="color:var(--red)">AMD AMF</b>（A 卡）<span style="color:var(--dim)">— 运行时动态加载 amfrt64.dll</span></div>
+      <div><b style="color:var(--red)">AMD AMF</b>（A 卡）<span style="color:var(--dim)">— 仅 Windows，运行时动态加载 amfrt64.dll</span></div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;background:var(--card2);border-radius:10px;padding:10px 16px;">
       <span style="font-size:22px;">💻</span>
       <div><b style="color:var(--blue2)">CPU openh264</b>（始终可用）<span style="color:var(--dim)">— 无 GPU 时的回退</span></div>
     </div>
   </div>
-  <p style="font-size:14px;color:var(--dim);margin-top:12px;">硬件编码器通过 libloading 运行时加载，无 GPU 不影响编译和运行，程序自动回退到 CPU 编码。设置环境变量 <code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--yellow)">OSU_PREVIEW_NO_GPU=1</code> 可强制使用 CPU 编码。</p>
+  <p style="font-size:14px;color:var(--dim);margin-top:12px;">硬件编码器仅 Windows 可用，Linux / macOS 自动使用 CPU 编码。无 GPU 不影响编译和运行，程序自动回退。设置环境变量 <code style="background:#0a0d1c;padding:2px 7px;border-radius:5px;color:var(--yellow)">OSU_PREVIEW_NO_GPU=1</code> 可强制使用 CPU 编码。</p>
 </div>
 
 <div class="footer">

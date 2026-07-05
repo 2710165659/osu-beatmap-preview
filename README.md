@@ -8,7 +8,7 @@
 - **跨平台**：Windows / Linux / macOS。
 - **四模式支持**：`standard`、`taiko`、`catch`、`mania`。
 - **三种输出格式**：`gif` 动图、`png` 静态长图、`mp4` 视频。
-- **GPU 加速视频编码**：自动检测 NVIDIA NVENC / AMD AMF 硬件编码器，无 GPU 时回退 CPU（openh264），保持单文件无运行时依赖。
+- **GPU 加速视频编码**：Windows 上自动检测 NVIDIA NVENC / AMD AMF 硬件编码器，无 GPU 时回退 CPU（openh264），保持单文件无运行时依赖。Linux / macOS 使用 CPU 编码。
 - **转谱**：Standard 可转为 Taiko / Catch / Mania 并预览。
 - **丰富的 Mod**：`EZ` `HR` `HD` `DA` `DT` `HT` `SW` `CS` `1K`–`10K` `DS` `IN` `HO`。
 - **高性能**：渲染速度快、内存占用低、输出文件体积小。详见 [批量渲染报告](docs/report.txt)。

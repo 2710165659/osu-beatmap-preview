@@ -35,6 +35,7 @@ use std::time::Instant;
 mod amf;
 mod cpu;
 mod mux;
+#[cfg(windows)]
 mod nvenc;
 
 /// Parallel-render chunk size (matches GIF: ~8 frames at once).
@@ -234,13 +235,15 @@ pub(crate) fn save_mp4_streamed(
 fn create_encoder(w: u32, h: u32, fps: u32) -> Result<Box<dyn FrameEncoder>> {
     // `OSU_PREVIEW_NO_GPU=1` forces the CPU path (for benchmarking / fallback).
     let force_cpu = std::env::var("OSU_PREVIEW_NO_GPU").as_deref() == Ok("1");
-    // 1. NVENC (NVIDIA)
+    // 1. NVENC (NVIDIA) — Windows only
+    #[cfg(windows)]
     if !force_cpu {
         if let Some(enc) = nvenc::try_create(w, h, fps)? {
             return Ok(Box::new(enc));
         }
     }
-    // 2. AMF (AMD)
+    // 2. AMF (AMD) — Windows only (amfrt64.dll)
+    #[cfg(windows)]
     if !force_cpu {
         if let Some(enc) = amf::try_create(w, h, fps)? {
             return Ok(Box::new(enc));

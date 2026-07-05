@@ -25,10 +25,12 @@ bytes = "1"
 # GPU 硬件编码（NVENC / AMF）：运行时通过 libloading 动态加载
 # nvEncodeAPI64.dll / amfrt64.dll，无 GPU 时自动回退到 openh264。
 # nvenc crate 仅含 FFI 声明（无 build.rs、无 bindgen），不增加构建依赖。
-nvenc = "0.1"
 libloading = "0.8"
-# windows crate 用于创建 D3D11 device（仅 NVENC session 打开需要）。
-# 版本与 nvenc crate 的 windows 依赖保持一致以统一编译。
+
+# Windows 专属依赖：NVENC (NVIDIA GPU 编码) + D3D11 device 创建。
+# 在非 Windows 平台不编译，视频编码回退到 CPU openh264。
+[target.'cfg(windows)'.dependencies]
+nvenc = "0.1"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dxgi",
