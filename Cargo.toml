@@ -18,9 +18,27 @@ font8x8 = "0.3"
 thiserror = "2"
 # Video (MP4/H.264) output. openh264 默认 `source` feature 把 Cisco 源码通过 cc
 # crate 静态编译进二进制，保持「单文件无运行时依赖」；构建期需要 C++ 编译器。
+# 作为 CPU 回退编码器始终可用。
 openh264 = "0.9"
 mp4 = "0.14"
 bytes = "1"
+# GPU 硬件编码（NVENC / AMF）：运行时通过 libloading 动态加载
+# nvEncodeAPI64.dll / amfrt64.dll，无 GPU 时自动回退到 openh264。
+# nvenc crate 仅含 FFI 声明（无 build.rs、无 bindgen），不增加构建依赖。
+nvenc = "0.1"
+libloading = "0.8"
+# windows crate 用于创建 D3D11 device（仅 NVENC session 打开需要）。
+# 版本与 nvenc crate 的 windows 依赖保持一致以统一编译。
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_Threading",
+] }
 
 [profile.release]
 opt-level = 3
