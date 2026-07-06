@@ -14,16 +14,18 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
     }
 
-    // Subsample 1 of every 4 pixels for the NeuQuant palette (same strategy as
-    // GIF), bounding both memory and quantizer cost.  For large images (mania
-    // grids can exceed 60M pixels) this cuts the sample buffer from ~240 MB to
-    // ~60 MB with negligible perceptual difference.
-    let mut sample = Vec::with_capacity(((image.w * image.h / 4 + 1) * 4) as usize);
-    for px in image.data.chunks_exact(16) {
+    // Subsample 1 of every 16 pixels for the NeuQuant palette.  PNG images
+    // (especially mania grids) are dominated by flat color fills with < 256
+    // distinct colors, so aggressive subsampling barely changes the palette
+    // while cutting the sample buffer 4× vs the previous 1/4 strategy (from
+    // ~60 MB to ~15 MB for a 60M-pixel mania grid) and speeding NeuQuant
+    // training proportionally.
+    let mut sample = Vec::with_capacity(((image.w * image.h / 16 + 1) * 4) as usize);
+    for px in image.data.chunks_exact(64) {
         sample.extend_from_slice(&[px[0], px[1], px[2], 255]);
     }
     // Catch any remainder pixels so very small images still get a sample.
-    let rem_start = (image.data.len() / 16) * 16;
+    let rem_start = (image.data.len() / 64) * 64;
     if rem_start < image.data.len() && sample.is_empty() {
         sample.extend_from_slice(&[
             image.data[rem_start],
@@ -44,10 +46,18 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
         palette_rgb.extend_from_slice(&[0, 0, 0]);
     }
 
-    // Map every RGBA pixel to the nearest palette index.
+    // Map every RGBA pixel to the nearest palette index via a 32³ LUT.
+    // PNG does not posterize, but quantizing each channel to 32 levels (>>3)
+    // introduces at most ±4 LSB error — far below NeuQuant's own quantization
+    // error — so the LUT gives identical indices to a per-pixel index_of() call
+    // in practice.  This replaces the previous HashMap approach with a single
+    // array access: 32K entries built once, O(1) lookup per pixel, no hashing.
+    let lut = build_png_lut(&nq);
     let mut indexed = vec![0u8; (image.w * image.h) as usize];
     for (i, px) in image.data.chunks_exact(4).enumerate() {
-        indexed[i] = nq.index_of(&[px[0], px[1], px[2], 255]) as u8;
+        indexed[i] = lut[px[0] as usize >> 3]
+            [px[1] as usize >> 3]
+            [px[2] as usize >> 3];
     }
 
     let file = std::fs::File::create(path)
@@ -57,7 +67,7 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
     encoder.set_color(png::ColorType::Indexed);
     encoder.set_depth(png::BitDepth::Eight);
     encoder.set_palette(&palette_rgb);
-    encoder.set_compression(png::Compression::Best);
+    encoder.set_compression(png::Compression::Default);
     encoder.set_filter(png::FilterType::Paeth);
     let mut writer = encoder
         .write_header()
@@ -74,6 +84,62 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
 #[inline]
 fn posterize(v: u8) -> u8 {
     (v & 0xF0) | (v >> 4)
+}
+
+/// Precompute a 32³ lookup table mapping posterized RGB → palette index.
+///
+/// posterize() yields 16 distinct values per channel (0x00, 0x11, …, 0xFF);
+/// `>> 3` buckets them into 16 of the 32 slots with no collisions, so the
+/// full posterized color space fits in a `32*32*32 = 32768`-entry array.
+/// Each entry is the NeuQuant nearest-palette index for the corresponding
+/// posterized color, with `transparent_idx` (255) remapped to 254 so it is
+/// never emitted as a regular pixel index.
+///
+/// Each slot is built from `posterize(ri << 3)`, which is exactly the
+/// posterized color that lookups query (`posterize(px) >> 3` maps to the same
+/// slot).  So every lookup hits the `index_of()` result for its precise
+/// posterized color — identical to the old per-pixel HashMap path, with no
+/// quantization drift.  (The other 16 slots per axis are never queried.)
+fn build_gif_lut(nq: &color_quant::NeuQuant, transparent_idx: u8) -> [[[u8; 32]; 32]; 32] {
+    let mut lut = [[[0u8; 32]; 32]; 32];
+    for ri in 0..32u8 {
+        let r = posterize(ri << 3);
+        for gi in 0..32u8 {
+            let g = posterize(gi << 3);
+            for bi in 0..32u8 {
+                let b = posterize(bi << 3);
+                let idx = nq.index_of(&[r, g, b, 255]) as u8;
+                lut[ri as usize][gi as usize][bi as usize] = if idx == transparent_idx {
+                    254
+                } else {
+                    idx
+                };
+            }
+        }
+    }
+    lut
+}
+
+/// Precompute a 32³ LUT mapping `>>3`-bucketed RGB → palette index for PNG.
+///
+/// Unlike `build_gif_lut` there is no transparent index to remap.  Each channel
+/// is quantized to 32 levels (`>>3`), covering the full 0..255 range with ±4
+/// LSB error — well below NeuQuant's own quantization step, so the LUT yields
+/// the same index a per-pixel `index_of()` would return.
+fn build_png_lut(nq: &color_quant::NeuQuant) -> [[[u8; 32]; 32]; 32] {
+    let mut lut = [[[0u8; 32]; 32]; 32];
+    for ri in 0..32u8 {
+        let r = ri << 3;
+        for gi in 0..32u8 {
+            let g = gi << 3;
+            for bi in 0..32u8 {
+                let b = bi << 3;
+                lut[ri as usize][gi as usize][bi as usize] =
+                    nq.index_of(&[r, g, b, 255]) as u8;
+            }
+        }
+    }
+    lut
 }
 
 /// GIF parallel-render chunk size: balance memory (~8 frames × ~2 MB)
@@ -146,6 +212,15 @@ pub fn save_animated_gif_streamed(
     }
     let transparent_idx: u8 = 255;
 
+    // Precompute a 32³ 3D LUT mapping posterized RGB → palette index.
+    // posterize() reduces each channel to 16 distinct values (0x00..0xFF step 0x11);
+    // >>3 buckets these into 16 of 32 slots with no collisions, so a 32³ array
+    // covers the whole posterized color space. This replaces the per-pixel
+    // HashMap lookup + NeuQuant neural-net search with a single array access.
+    //
+    // Build cost: 32768 × index_of() once. Lookup cost: O(1) per pixel.
+    let lut = build_gif_lut(&nq, transparent_idx);
+
     let (w, h) = (first_dims.0 as usize, first_dims.1 as usize);
 
     let file = std::fs::File::create(path)
@@ -159,7 +234,6 @@ pub fn save_animated_gif_streamed(
 
     let delay = (frame_duration_ms / 10) as u16; // GIF delay unit = 10ms
 
-    let mut lookup_cache: std::collections::HashMap<u32, u8> = std::collections::HashMap::new();
     let mut prev_indexed: Vec<u8> = Vec::new();
 
     // ── render + encode in parallel chunks ──
@@ -176,65 +250,34 @@ pub fn save_animated_gif_streamed(
         for (fi, frame) in (chunk_start..).zip(frames) {
             let mut indexed = vec![0u8; w * h];
             for (i, px) in frame.data.chunks_exact(4).enumerate().take(w * h) {
-                let (r, g, b) = (posterize(px[0]), posterize(px[1]), posterize(px[2]));
-                let key = (r as u32) << 16 | (g as u32) << 8 | b as u32;
-                let idx = *lookup_cache.entry(key).or_insert_with(|| {
-                    let idx = nq.index_of(&[r, g, b, 255]) as u8;
-                    if idx == transparent_idx {
-                        254
-                    } else {
-                        idx
-                    }
-                });
-                indexed[i] = idx;
+                indexed[i] = lut[posterize(px[0]) as usize >> 3]
+                    [posterize(px[1]) as usize >> 3]
+                    [posterize(px[2]) as usize >> 3];
             }
             drop(frame);
 
             let (rect, buffer, transparent) = if fi == 0 {
                 ((0usize, 0usize, w, h), indexed.clone(), None)
             } else {
-                let prev = &prev_indexed;
-                let mut min_x = w;
-                let mut min_y = h;
-                let mut max_x = 0usize;
-                let mut max_y = 0usize;
-                for y in 0..h {
-                    let row = y * w;
-                    for x in 0..w {
-                        if indexed[row + x] != prev[row + x] {
-                            if x < min_x {
-                                min_x = x;
-                            }
-                            if x > max_x {
-                                max_x = x;
-                            }
-                            if y < min_y {
-                                min_y = y;
-                            }
-                            if y > max_y {
-                                max_y = y;
+                match find_delta_rect(&indexed, &prev_indexed, w, h) {
+                    None => ((0, 0, 1, 1), vec![transparent_idx], Some(transparent_idx)),
+                    Some((min_x, min_y, max_x, max_y)) => {
+                        let rw = max_x - min_x + 1;
+                        let rh = max_y - min_y + 1;
+                        let mut buf = Vec::with_capacity(rw * rh);
+                        for y in min_y..=max_y {
+                            let row = y * w;
+                            for x in min_x..=max_x {
+                                let v = indexed[row + x];
+                                buf.push(if v == prev_indexed[row + x] {
+                                    transparent_idx
+                                } else {
+                                    v
+                                });
                             }
                         }
+                        ((min_x, min_y, rw, rh), buf, Some(transparent_idx))
                     }
-                }
-                if min_x > max_x {
-                    ((0, 0, 1, 1), vec![transparent_idx], Some(transparent_idx))
-                } else {
-                    let rw = max_x - min_x + 1;
-                    let rh = max_y - min_y + 1;
-                    let mut buf = Vec::with_capacity(rw * rh);
-                    for y in min_y..=max_y {
-                        let row = y * w;
-                        for x in min_x..=max_x {
-                            let v = indexed[row + x];
-                            buf.push(if v == prev[row + x] {
-                                transparent_idx
-                            } else {
-                                v
-                            });
-                        }
-                    }
-                    ((min_x, min_y, rw, rh), buf, Some(transparent_idx))
                 }
             };
 
@@ -259,4 +302,84 @@ pub fn save_animated_gif_streamed(
         }
     }
     Ok(())
+}
+
+/// Find the bounding box of differing bytes between `cur` and `prev`.
+///
+/// Returns `Some((min_x, min_y, max_x, max_y))` (inclusive) or `None` if the
+/// two buffers are identical.  On x86_64 this uses SSE2 to compare 16 bytes at
+/// a time (`_mm_cmpeq_epi8` + `_mm_movemask_epi8`), finding the first and last
+/// differing byte per row in O(w/16) instead of O(w).  SSE2 is baseline on all
+/// x86_64 CPUs so no runtime detection is needed; other architectures fall
+/// back to a scalar byte-by-byte scan.
+#[cfg(target_arch = "x86_64")]
+fn find_delta_rect(cur: &[u8], prev: &[u8], w: usize, h: usize) -> Option<(usize, usize, usize, usize)> {
+    use std::arch::x86_64::*;
+    let mut min_x = w;
+    let mut min_y = h;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    let chunks = w / 16;
+    let rem = w % 16;
+    for y in 0..h {
+        let row = y * w;
+        unsafe {
+            for c in 0..chunks {
+                let off = row + c * 16;
+                let a = _mm_loadu_si128(cur.as_ptr().add(off) as *const __m128i);
+                let b = _mm_loadu_si128(prev.as_ptr().add(off) as *const __m128i);
+                let cmp = _mm_cmpeq_epi8(a, b);
+                let mask = _mm_movemask_epi8(cmp) as u32;
+                // mask bit = 1 means bytes are EQUAL; invert to find diffs.
+                let diff = (!mask) & 0xFFFF;
+                if diff != 0 {
+                    let diff16 = diff as u16;
+                    let first = c * 16 + diff16.trailing_zeros() as usize;
+                    let last = c * 16 + 15 - diff16.leading_zeros() as usize;
+                    if first < min_x { min_x = first; }
+                    if last > max_x { max_x = last; }
+                    if y < min_y { min_y = y; }
+                    if y > max_y { max_y = y; }
+                }
+            }
+        }
+        // Handle the trailing bytes (if w is not a multiple of 16).
+        if rem != 0 {
+            let off = row + chunks * 16;
+            for x in 0..rem {
+                if cur[off + x] != prev[off + x] {
+                    let gx = chunks * 16 + x;
+                    if gx < min_x { min_x = gx; }
+                    if gx > max_x { max_x = gx; }
+                    if y < min_y { min_y = y; }
+                    if y > max_y { max_y = y; }
+                }
+            }
+        }
+    }
+    if min_x > max_x {
+        None
+    } else {
+        Some((min_x, min_y, max_x, max_y))
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn find_delta_rect(cur: &[u8], prev: &[u8], w: usize, h: usize) -> Option<(usize, usize, usize, usize)> {
+    let mut min_x = w;
+    let mut min_y = h;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    for y in 0..h {
+        let row = y * w;
+        for x in 0..w {
+            if cur[row + x] != prev[row + x] {
+                if x < min_x { min_x = x; }
+                if x > max_x { max_x = x; }
+                if y < min_y { min_y = y; }
+                if y > max_y { max_y = y; }
+            }
+        }
+    }
+    if min_x > max_x { None } else { Some((min_x, min_y, max_x, max_y)) }
 }

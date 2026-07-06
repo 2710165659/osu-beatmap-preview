@@ -7,7 +7,7 @@ use crate::errors::{PreviewError, Result};
 use crate::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::mods::ModSettings;
 use crate::parser::round_half_even;
-use crate::text::{draw_text, text_size};
+use crate::text::{draw_text, render_text_sprite, text_size};
 use crate::common::time_selection::PreviewTimeSelector;
 use std::path::Path;
 
@@ -48,7 +48,7 @@ pub(crate) struct ScrollMap {
 }
 
 impl ScrollMap {
-    fn position_at(&self, time: f64) -> f64 {
+    pub(crate) fn position_at(&self, time: f64) -> f64 {
         let index = self
             .starts
             .partition_point(|s| *s <= time)
@@ -134,6 +134,32 @@ pub(crate) fn render_mania_gif(
 
     let hold_colors: Vec<Rgba> = palette.iter().map(|&c| darken(c, 0.5)).collect();
 
+    // Precompute each object's scroll-distance position (position_at(start_time))
+    // for sorted binary-search culling.  position_at is strictly monotonic in
+    // time (every scroll multiplier is > 0) and hit_objects is sorted by
+    // start_time, so `pos_start` is ascending.
+    //
+    // Culling by scroll DISTANCE — not chart time — is required under variable
+    // SV: time↔position is non-linear, so during slow SV many chart-seconds
+    // fold into a few on-screen pixels.  A time-based window would drop notes
+    // that are visibly on screen.  Distance maps to y via the constant
+    // `pixels_per_scroll_unit`, so a distance window stays exact under any SV.
+    let pos_start: Vec<f64> = hit_objects
+        .iter()
+        .map(|ho| scroll_map.position_at(ho.start_time as f64))
+        .collect();
+    // Widest LN body in scroll-distance space; subtracted from the lower bound
+    // so a hold note whose head is far in the past but whose body is still on
+    // screen is never skipped.  Taps contribute 0.
+    let max_hold_position: f64 = hit_objects
+        .iter()
+        .map(|ho| {
+            (scroll_map.position_at(ho.end_time as f64)
+                - scroll_map.position_at(ho.start_time as f64))
+            .max(0.0)
+        })
+        .fold(0.0_f64, f64::max);
+
     // Pre-render static background (segment separators + column/lane backdrops +
     // judgement lines) once and clone per frame, avoiding ~600 redraws of the
     // same pixels across 150 frames.
@@ -150,42 +176,76 @@ pub(crate) fn render_mania_gif(
         bg
     };
 
+    // Pre-render each segment's time label (and "Preview Time" note) into a
+    // sprite once.  Label text is constant within a segment, so this avoids
+    // 150 × format! + text_size + draw_text calls per segment — each frame
+    // just alpha_composites the pre-built sprite.
+    let label_y = PAGE_MARGIN_Y + layout.playfield_height + GIF_TIME_LABEL_TOP_GAP;
+    let pre_labels: Vec<PreLabel> = segment_timings
+        .iter()
+        .enumerate()
+        .map(|(si, st)| {
+            let seg_left = segment_left(si as i64, &layout);
+            build_pre_label(st, gameplay_segment_duration, &layout, seg_left, label_y)
+        })
+        .collect();
+
+    // Pre-render SV label sprites: format_sv_label is expensive (String alloc)
+    // and the label text never changes, only its y position scrolls per frame.
+    let sv_sprites: Vec<(i64, Img)> = sv_changes
+        .iter()
+        .map(|&(time, sv)| (time, render_text_sprite(&format_sv_label(sv), SV_TEXT_FONT_SIZE, SV_TEXT_COLOR)))
+        .collect();
+
     let render_frame = |frame_index: usize| -> Img {
         let mut canvas = static_bg.clone();
 
-        for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
+        for (segment_index, _segment_timing) in segment_timings.iter().enumerate() {
             let seg_left = segment_left(segment_index as i64, &layout);
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
-            draw_gif_sv_indicators(
+            let snapshot_pos = scroll_map.position_at(snapshot_time as f64);
+            draw_gif_sv_indicators_fast(
                 &mut canvas,
-                &sv_changes,
+                &sv_sprites,
                 seg_left,
-                snapshot_time,
+                snapshot_pos,
                 &layout,
                 &scroll_map,
                 pixels_per_scroll_unit,
             );
-            for hit_object in &hit_objects {
+            // Binary-search the precomputed scroll-distance positions instead
+            // of scanning every object.  Culling by distance (not chart time)
+            // stays correct under variable SV; the inner y-cull in
+            // draw_gif_hit_object still runs for pixel-exact clipping.
+            let (lo_pos, hi_pos) = visible_pos_window(
+                snapshot_pos,
+                &layout,
+                pixels_per_scroll_unit,
+                max_hold_position,
+            );
+            let start_idx = pos_start.partition_point(|&p| p < lo_pos);
+            for idx in start_idx..hit_objects.len() {
+                if pos_start[idx] > hi_pos {
+                    break;
+                }
                 draw_gif_hit_object(
                     &mut canvas,
-                    hit_object,
+                    &hit_objects[idx],
                     &palette,
                     &hold_colors,
                     seg_left,
-                    snapshot_time,
+                    snapshot_pos,
                     &layout,
                     &scroll_map,
                     pixels_per_scroll_unit,
                 );
             }
-            draw_gif_time_label(
-                &mut canvas,
-                segment_timing.start_time,
-                gameplay_segment_duration,
-                seg_left,
-                &layout,
-                segment_timing.is_preview,
-            );
+            // Blit pre-rendered time label sprite (no format!/text_size per frame).
+            let pl = &pre_labels[segment_index];
+            canvas.alpha_composite(&pl.sprite, pl.x, pl.y);
+            if let Some(ref note) = pl.note {
+                canvas.alpha_composite(&note.sprite, note.x, note.y);
+            }
         }
         canvas
     };
@@ -466,21 +526,21 @@ pub(crate) fn draw_gif_hit_object(
     palette: &[Rgba],
     hold_colors: &[Rgba],
     seg_left: i64,
-    snapshot_time: i64,
+    snapshot_pos: f64,
     layout: &GifLayout,
     scroll_map: &ScrollMap,
     pixels_per_scroll_unit: f64,
 ) {
-    let y_start = y_at_time(
+    let y_start = y_at_time_fast(
         hit_object.start_time as f64,
-        snapshot_time,
+        snapshot_pos,
         layout,
         scroll_map,
         pixels_per_scroll_unit,
     );
-    let y_end = y_at_time(
+    let y_end = y_at_time_fast(
         hit_object.end_time as f64,
-        snapshot_time,
+        snapshot_pos,
         layout,
         scroll_map,
         pixels_per_scroll_unit,
@@ -528,46 +588,141 @@ fn y_at_time(
     PAGE_MARGIN_Y + layout.hit_position_y - round_half_even(distance * pixels_per_scroll_unit)
 }
 
-fn draw_gif_time_label(
-    canvas: &mut Img,
-    start_time: i64,
-    duration_ms: i64,
-    seg_left: i64,
+/// Same as `y_at_time` but takes a pre-computed `snapshot_pos` to avoid the
+/// `position_at(snapshot_time)` binary search on every call.  For a frame with
+/// thousands of objects this eliminates thousands of redundant searches.
+#[inline]
+fn y_at_time_fast(
+    time: f64,
+    snapshot_pos: f64,
     layout: &GifLayout,
-    is_preview: bool,
-) {
-    let y = PAGE_MARGIN_Y + layout.playfield_height + GIF_TIME_LABEL_TOP_GAP;
+    scroll_map: &ScrollMap,
+    pixels_per_scroll_unit: f64,
+) -> i64 {
+    let distance = scroll_map.position_at(time) - snapshot_pos;
+    PAGE_MARGIN_Y + layout.hit_position_y - round_half_even(distance * pixels_per_scroll_unit)
+}
+
+/// Scroll-distance window `[lo, hi]` outside which no hit object can be
+/// visible, used to binary-search the precomputed `pos_start` array instead
+/// of scanning every object per frame.
+///
+/// The window is in scroll-DISTANCE units (position_at), not chart time,
+/// because variable SV makes time↔position non-linear: during slow SV many
+/// chart-seconds fold into a few on-screen pixels, so a time-based window
+/// would drop notes that are visibly on screen.  Distance maps to screen y
+/// via the constant `pixels_per_scroll_unit`, so this window stays exact
+/// under any SV.  `lo`/`hi` span the playfield plus a `note_head_height`
+/// margin so heads/bodies don't pop at the edges.
+///
+/// `max_hold_position` (widest LN body in distance space) is subtracted from
+/// the lower bound so long-note bodies are never clipped: a LN whose
+/// `end_time` is still on screen may have `start_time` far earlier in
+/// distance.  Since `pos_start >= pos_end - max_hold_position` and
+/// `pos_end >= snapshot_pos - past_dist`, `pos_start >= lo` holds and
+/// partition_point keeps the note.  The inner y-cull in `draw_gif_hit_object`
+/// still runs for pixel-exact clipping.
+#[inline]
+pub(crate) fn visible_pos_window(
+    snapshot_pos: f64,
+    layout: &GifLayout,
+    pixels_per_scroll_unit: f64,
+    max_hold_position: f64,
+) -> (f64, f64) {
+    // Furthest visible future note head sits at y = playfield_top - note_head_height,
+    // i.e. distance = (hit_position_y + note_head_height) above the judgement line.
+    let future_dist =
+        (layout.hit_position_y + layout.note_head_height) as f64 / pixels_per_scroll_unit;
+    // Furthest visible past note sits at y = playfield_bottom + note_head_height,
+    // i.e. distance = -(playfield_height - hit_position_y + note_head_height).
+    let past_dist = (layout.playfield_height - layout.hit_position_y + layout.note_head_height)
+        as f64
+        / pixels_per_scroll_unit;
+    (
+        snapshot_pos - past_dist - max_hold_position,
+        snapshot_pos + future_dist,
+    )
+}
+
+/// Pre-rendered time label sprite + blit position, built once per segment.
+struct PreLabel {
+    sprite: Img,
+    x: i64,
+    y: i64,
+    note: Option<Box<PreLabel>>,
+}
+
+fn build_pre_label(
+    timing: &crate::common::time_selection::PreviewSegmentTiming,
+    duration_ms: i64,
+    layout: &GifLayout,
+    seg_left: i64,
+    y: i64,
+) -> PreLabel {
     let label = format!(
         "{} - {}",
-        format_gif_time(start_time),
-        format_gif_time(start_time + duration_ms)
+        format_gif_time(timing.start_time),
+        format_gif_time(timing.start_time + duration_ms)
     );
-    let color = if is_preview {
+    let color = if timing.is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
     } else {
         GIF_TIME_LABEL_COLOR
     };
-    let note_color = if is_preview {
+    let note_color = if timing.is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
     } else {
         GIF_TIME_LABEL_NOTE_COLOR
     };
     let (label_w, label_h) = text_size(&label, GIF_TIME_LABEL_FONT_SIZE);
+    let sprite = render_text_sprite(&label, GIF_TIME_LABEL_FONT_SIZE, color);
     let x = seg_left + (layout.segment_width - label_w as i64).div_euclid(2);
-    draw_text(canvas, x, y, &label, GIF_TIME_LABEL_FONT_SIZE, color);
 
-    if is_preview {
-        let note = "Preview Time";
-        let (note_w, _) = text_size(note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
+    let note = if timing.is_preview {
+        let note_text = "Preview Time";
+        let (note_w, _) = text_size(note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE);
+        let note_sprite = render_text_sprite(note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE, note_color);
         let note_x = seg_left + (layout.segment_width - note_w as i64).div_euclid(2);
-        draw_text(
-            canvas,
-            note_x,
-            y + label_h as i64 + 4,
-            note,
-            GIF_TIME_LABEL_NOTE_FONT_SIZE,
-            note_color,
+        Some(Box::new(PreLabel {
+            sprite: note_sprite,
+            x: note_x,
+            y: y + label_h as i64 + 4,
+            note: None,
+        }))
+    } else {
+        None
+    };
+
+    PreLabel { sprite, x, y, note }
+}
+
+/// SV indicator drawing using pre-rendered label sprites.
+/// `sv_sprites` is `(time, sprite)` pairs built once; only the y position is
+/// computed per frame via `y_at_time_fast`.
+fn draw_gif_sv_indicators_fast(
+    canvas: &mut Img,
+    sv_sprites: &[(i64, Img)],
+    seg_left: i64,
+    snapshot_pos: f64,
+    layout: &GifLayout,
+    scroll_map: &ScrollMap,
+    pixels_per_scroll_unit: f64,
+) {
+    for &(time, ref sprite) in sv_sprites {
+        let y = y_at_time_fast(
+            time as f64,
+            snapshot_pos,
+            layout,
+            scroll_map,
+            pixels_per_scroll_unit,
         );
+        if y < PAGE_MARGIN_Y || y > PAGE_MARGIN_Y + layout.playfield_height {
+            continue;
+        }
+        let label_h = sprite.h as i64;
+        let x = (seg_left + LEFT_PANEL_WIDTH - sprite.w as i64 - 3).max(0);
+        let label_y = (y as f64 - label_h as f64 / 2.0).floor() as i64;
+        canvas.alpha_composite(sprite, x, label_y);
     }
 }
 

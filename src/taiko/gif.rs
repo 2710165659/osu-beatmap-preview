@@ -8,8 +8,8 @@ use crate::mods::ModSettings;
 use crate::parser::round_half_even;
 use crate::text::{draw_text, text_size};
 use crate::common::time_selection::{PreviewSegmentTiming, PreviewTimeSelector};
+use std::cell::RefCell;
 use std::path::Path;
-use std::sync::Mutex;
 
 use super::constants::*;
 use super::notes::{
@@ -128,7 +128,13 @@ pub(crate) fn render_taiko_gif(
         })
         .collect();
 
-    let cache = Mutex::new(RenderCache::default());
+    // Per-thread render cache avoids serialising parallel render calls behind a
+    // single Mutex — rayon's chunk-parallel render would otherwise queue on the
+    // lock.  Each thread gets its own cache; first few frames rebuild textures,
+    // then cache hits dominate.
+    thread_local! {
+        static TAIKO_GIF_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
+    }
 
     // Pre-render static row backgrounds (drum panels + tracks + judgement lines)
     // once, then clone per frame instead of redrawing 600 times across 150 frames.
@@ -149,14 +155,16 @@ pub(crate) fn render_taiko_gif(
 
         for segment_index in 0..segment_timings.len() {
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
-            draw_hit_objects(
-                &mut canvas,
-                &prepared_hit_objects,
-                &layout,
-                segment_index as i64,
-                snapshot_time,
-                &mut *cache.lock().unwrap(),
-            );
+            TAIKO_GIF_CACHE.with(|cache| {
+                draw_hit_objects(
+                    &mut canvas,
+                    &prepared_hit_objects,
+                    &layout,
+                    segment_index as i64,
+                    snapshot_time,
+                    &mut *cache.borrow_mut(),
+                )
+            });
         }
 
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {

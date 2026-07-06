@@ -21,7 +21,7 @@ use super::{
 };
 use super::gif::{
     build_column_left_offsets, build_scroll_map, compute_time_range, draw_gif_hit_object,
-    draw_gif_sv_indicators, draw_segment_background, segment_left, GifLayout,
+    draw_gif_sv_indicators, draw_segment_background, segment_left, visible_pos_window, GifLayout,
 };
 use super::skin::load_mania_skin_config;
 
@@ -81,6 +81,22 @@ pub(crate) fn render_mania_video(
     };
     let hold_colors: Vec<Rgba> = palette.iter().map(|&c| darken(c, 0.5)).collect();
 
+    // Precompute scroll-distance positions for sorted binary-search culling.
+    // Culling by distance (not chart time) stays correct under variable SV
+    // (time↔position is non-linear); see `visible_pos_window`.
+    let pos_start: Vec<f64> = hit_objects
+        .iter()
+        .map(|ho| scroll_map.position_at(ho.start_time as f64))
+        .collect();
+    let max_hold_position: f64 = hit_objects
+        .iter()
+        .map(|ho| {
+            (scroll_map.position_at(ho.end_time as f64)
+                - scroll_map.position_at(ho.start_time as f64))
+            .max(0.0)
+        })
+        .fold(0.0_f64, f64::max);
+
     // Single-segment static background: one column backdrop + judgement line,
     // no inter-segment separators.
     let static_bg = {
@@ -96,6 +112,7 @@ pub(crate) fn render_mania_video(
     let render = move |frame_index: usize| -> (Img, i64) {
         let snapshot_time =
             start + round_half_even(frame_index as f64 * 1000.0 * speed / fps as f64);
+        let snapshot_pos = scroll_map.position_at(snapshot_time as f64);
         let mut canvas = static_bg.clone();
         let seg_left = segment_left(0, &layout);
         draw_gif_sv_indicators(
@@ -107,14 +124,26 @@ pub(crate) fn render_mania_video(
             &scroll_map,
             pixels_per_scroll_unit,
         );
-        for hit_object in &hit_objects {
+        // Binary-search the precomputed scroll-distance positions.  Culling by
+        // distance (not chart time) stays correct under variable SV.
+        let (lo_pos, hi_pos) = visible_pos_window(
+            snapshot_pos,
+            &layout,
+            pixels_per_scroll_unit,
+            max_hold_position,
+        );
+        let start_idx = pos_start.partition_point(|&p| p < lo_pos);
+        for idx in start_idx..hit_objects.len() {
+            if pos_start[idx] > hi_pos {
+                break;
+            }
             draw_gif_hit_object(
                 &mut canvas,
-                hit_object,
+                &hit_objects[idx],
                 &palette,
                 &hold_colors,
                 seg_left,
-                snapshot_time,
+                snapshot_pos,
                 &layout,
                 &scroll_map,
                 pixels_per_scroll_unit,

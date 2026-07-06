@@ -110,6 +110,32 @@ pub fn draw_text(img: &mut Img, x: i64, y: i64, text: &str, size: u32, color: Rg
     });
 }
 
+/// Render text into a standalone RGBA sprite (transparent background).
+///
+/// Unlike `draw_text` which composites glyphs directly onto a target canvas,
+/// this produces a compact `Img` that can be `alpha_composite`-d repeatedly
+/// without re-running the glyph cache + format logic each frame.  Used by
+/// hot loops (e.g. mania GIF time labels that repeat 150× per segment).
+pub fn render_text_sprite(text: &str, size: u32, color: Rgba) -> Img {
+    let scale = scale_for(size) as i64;
+    let (tw, th) = text_size(text, size);
+    let mut img = Img::new(tw.max(1), th.max(1), [0, 0, 0, 0]);
+    let mut cx = 0i64;
+    GLYPH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() > 512 {
+            cache.clear();
+        }
+        for ch in text.chars() {
+            let key: CacheKey = (ch, size, color);
+            let sprite = cache.entry(key).or_insert_with(|| build_glyph_sprite(ch, size, color));
+            img.alpha_composite(sprite, cx, 0);
+            cx += sprite.w as i64 + scale;
+        }
+    });
+    img
+}
+
 pub fn format_mmssmmm(ms: i64) -> String {
     let ms = ms.max(0);
     let minutes = ms / 60000;

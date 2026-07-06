@@ -208,7 +208,7 @@ impl ModeRenderer for StandardRenderer {
         output_path: &Path,
         _gap: Option<f64>,
     ) -> Result<PathBuf> {
-        let image = crate::standard::render_standard_png(beatmap, mods, None)?;;
+        let image = crate::standard::render_standard_png(beatmap, mods, None)?;
         crate::composer::save_png(&image, output_path)?;
         Ok(output_path.to_path_buf())
     }

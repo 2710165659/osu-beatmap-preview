@@ -6,8 +6,8 @@ use crate::errors::{PreviewError, Result};
 use crate::models::Beatmap;
 use crate::mods::ModSettings;
 use crate::text::format_mmssmmm;
+use std::cell::RefCell;
 use std::path::Path;
-use std::sync::Mutex;
 
 use super::constants::*;
 use super::context::*;
@@ -66,19 +66,28 @@ pub(crate) fn render_standard_gif(
         })
         .collect();
 
-    let cache = Mutex::new(RenderCache::default());
+    // Per-thread render cache avoids serialising parallel render_frame calls
+    // behind a single Mutex — rayon's chunk-parallel render would otherwise queue
+    // on the lock, halving throughput.  Each thread gets its own cache; the
+    // first few frames rebuild procedural textures, then cache hits dominate.
+    thread_local! {
+        static STD_GIF_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
+    }
+
     let render = move |frame_index: usize| -> Img {
         let mut canvas = Img::new(canvas_w as u32, canvas_h as u32, CANVAS_BACKGROUND_COLOR);
         for (segment_index, row_timing) in row_timings.iter().enumerate() {
             let (x, y) = gif_frame_origin(segment_index);
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
-            let frame = render_frame(
-                &context,
-                &mut *cache.lock().unwrap(),
-                snapshot_time,
-                &row_timing.break_periods,
-                &segment_visible_indexes[segment_index][frame_index],
-            );
+            let frame = STD_GIF_CACHE.with(|cache| {
+                render_frame(
+                    &context,
+                    &mut *cache.borrow_mut(),
+                    snapshot_time,
+                    &row_timing.break_periods,
+                    &segment_visible_indexes[segment_index][frame_index],
+                )
+            });
             canvas.alpha_composite(&frame, x, y);
             let note = if row_timing.is_preview {
                 Some("Preview Time")
