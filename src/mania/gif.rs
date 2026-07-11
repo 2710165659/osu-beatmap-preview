@@ -148,16 +148,17 @@ pub(crate) fn render_mania_gif(
         .iter()
         .map(|ho| scroll_map.position_at(ho.start_time as f64))
         .collect();
+    let pos_end: Vec<f64> = hit_objects
+        .iter()
+        .map(|ho| scroll_map.position_at(ho.end_time as f64))
+        .collect();
     // Widest LN body in scroll-distance space; subtracted from the lower bound
     // so a hold note whose head is far in the past but whose body is still on
     // screen is never skipped.  Taps contribute 0.
-    let max_hold_position: f64 = hit_objects
+    let max_hold_position: f64 = pos_start
         .iter()
-        .map(|ho| {
-            (scroll_map.position_at(ho.end_time as f64)
-                - scroll_map.position_at(ho.start_time as f64))
-            .max(0.0)
-        })
+        .zip(&pos_end)
+        .map(|(&start, &end)| (end - start).max(0.0))
         .fold(0.0_f64, f64::max);
 
     // Pre-render static background (segment separators + column/lane backdrops +
@@ -192,9 +193,14 @@ pub(crate) fn render_mania_gif(
 
     // Pre-render SV label sprites: format_sv_label is expensive (String alloc)
     // and the label text never changes, only its y position scrolls per frame.
-    let sv_sprites: Vec<(i64, Img)> = sv_changes
+    let sv_sprites: Vec<(f64, Img)> = sv_changes
         .iter()
-        .map(|&(time, sv)| (time, render_text_sprite(&format_sv_label(sv), SV_TEXT_FONT_SIZE, SV_TEXT_COLOR)))
+        .map(|&(time, sv)| {
+            (
+                scroll_map.position_at(time as f64),
+                render_text_sprite(&format_sv_label(sv), SV_TEXT_FONT_SIZE, SV_TEXT_COLOR),
+            )
+        })
         .collect();
 
     let render_frame = |frame_index: usize| -> Img {
@@ -210,7 +216,6 @@ pub(crate) fn render_mania_gif(
                 seg_left,
                 snapshot_pos,
                 &layout,
-                &scroll_map,
                 pixels_per_scroll_unit,
             );
             // Binary-search the precomputed scroll-distance positions instead
@@ -234,9 +239,10 @@ pub(crate) fn render_mania_gif(
                     &palette,
                     &hold_colors,
                     seg_left,
+                    pos_start[idx],
+                    pos_end[idx],
                     snapshot_pos,
                     &layout,
-                    &scroll_map,
                     pixels_per_scroll_unit,
                 );
             }
@@ -493,21 +499,23 @@ pub(crate) fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &
 pub(crate) fn draw_gif_sv_indicators(
     canvas: &mut Img,
     sv_changes: &[(i64, f64)],
+    sv_positions: &[f64],
     seg_left: i64,
-    snapshot_time: i64,
+    snapshot_pos: f64,
     layout: &GifLayout,
-    scroll_map: &ScrollMap,
     pixels_per_scroll_unit: f64,
 ) {
     // SV text sits near the left grey panel; only marks the change point, no line.
-    for &(time, sv) in sv_changes {
-        let y = y_at_time(
-            time as f64,
-            snapshot_time,
-            layout,
-            scroll_map,
-            pixels_per_scroll_unit,
-        );
+    debug_assert_eq!(sv_changes.len(), sv_positions.len());
+    let (lo_pos, hi_pos) = visible_pos_window(snapshot_pos, layout, pixels_per_scroll_unit, 0.0);
+    let start = sv_positions.partition_point(|&pos| pos < lo_pos);
+    for index in start..sv_changes.len() {
+        let position = sv_positions[index];
+        if position > hi_pos {
+            break;
+        }
+        let (_, sv) = sv_changes[index];
+        let y = y_at_position(position, snapshot_pos, layout, pixels_per_scroll_unit);
         if y < PAGE_MARGIN_Y || y > PAGE_MARGIN_Y + layout.playfield_height {
             continue;
         }
@@ -526,25 +534,14 @@ pub(crate) fn draw_gif_hit_object(
     palette: &[Rgba],
     hold_colors: &[Rgba],
     seg_left: i64,
+    start_pos: f64,
+    end_pos: f64,
     snapshot_pos: f64,
     layout: &GifLayout,
-    scroll_map: &ScrollMap,
     pixels_per_scroll_unit: f64,
 ) {
-    let y_start = y_at_time_fast(
-        hit_object.start_time as f64,
-        snapshot_pos,
-        layout,
-        scroll_map,
-        pixels_per_scroll_unit,
-    );
-    let y_end = y_at_time_fast(
-        hit_object.end_time as f64,
-        snapshot_pos,
-        layout,
-        scroll_map,
-        pixels_per_scroll_unit,
-    );
+    let y_start = y_at_position(start_pos, snapshot_pos, layout, pixels_per_scroll_unit);
+    let y_end = y_at_position(end_pos, snapshot_pos, layout, pixels_per_scroll_unit);
     let playfield_top = PAGE_MARGIN_Y;
     let playfield_bottom = playfield_top + layout.playfield_height;
     if y_start.max(y_end) < playfield_top - layout.note_head_height
@@ -577,6 +574,7 @@ pub(crate) fn draw_gif_hit_object(
 }
 
 /// In falling-note mode, future objects sit above the judgement line, past ones below.
+#[cfg(test)]
 fn y_at_time(
     time: f64,
     snapshot_time: i64,
@@ -592,14 +590,13 @@ fn y_at_time(
 /// `position_at(snapshot_time)` binary search on every call.  For a frame with
 /// thousands of objects this eliminates thousands of redundant searches.
 #[inline]
-fn y_at_time_fast(
-    time: f64,
+fn y_at_position(
+    object_pos: f64,
     snapshot_pos: f64,
     layout: &GifLayout,
-    scroll_map: &ScrollMap,
     pixels_per_scroll_unit: f64,
 ) -> i64 {
-    let distance = scroll_map.position_at(time) - snapshot_pos;
+    let distance = object_pos - snapshot_pos;
     PAGE_MARGIN_Y + layout.hit_position_y - round_half_even(distance * pixels_per_scroll_unit)
 }
 
@@ -697,25 +694,26 @@ fn build_pre_label(
 }
 
 /// SV indicator drawing using pre-rendered label sprites.
-/// `sv_sprites` is `(time, sprite)` pairs built once; only the y position is
-/// computed per frame via `y_at_time_fast`.
+/// `sv_sprites` is `(scroll_position, sprite)` pairs built once; only the y
+/// position is computed per frame.
 fn draw_gif_sv_indicators_fast(
     canvas: &mut Img,
-    sv_sprites: &[(i64, Img)],
+    sv_sprites: &[(f64, Img)],
     seg_left: i64,
     snapshot_pos: f64,
     layout: &GifLayout,
-    scroll_map: &ScrollMap,
     pixels_per_scroll_unit: f64,
 ) {
-    for &(time, ref sprite) in sv_sprites {
-        let y = y_at_time_fast(
-            time as f64,
-            snapshot_pos,
-            layout,
-            scroll_map,
-            pixels_per_scroll_unit,
-        );
+    // SV positions are monotonic because timing points are sorted and every
+    // valid SV multiplier is positive. Include both boundaries to preserve
+    // the old pixel-space visibility behavior at the playfield edges.
+    let (lo_pos, hi_pos) = visible_pos_window(snapshot_pos, layout, pixels_per_scroll_unit, 0.0);
+    let start = sv_sprites.partition_point(|(pos, _)| *pos < lo_pos);
+    for &(position, ref sprite) in &sv_sprites[start..] {
+        if position > hi_pos {
+            break;
+        }
+        let y = y_at_position(position, snapshot_pos, layout, pixels_per_scroll_unit);
         if y < PAGE_MARGIN_Y || y > PAGE_MARGIN_Y + layout.playfield_height {
             continue;
         }
@@ -729,4 +727,110 @@ fn draw_gif_sv_indicators_fast(
 fn format_gif_time(ms: i64) -> String {
     let total_seconds = ms.max(0) / 1000;
     format!("{}:{:02}", total_seconds / 60, total_seconds % 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_layout() -> GifLayout {
+        GifLayout {
+            segment_count: 1,
+            segment_width: 100,
+            playfield_height: 768,
+            lane_area_width: 80,
+            image_width: 140,
+            image_height: 808,
+            hit_position_y: 640,
+            scroll_length: 624,
+            note_head_height: 15,
+            column_left_offsets: vec![0],
+            column_widths: vec![80],
+            column_colours: vec![[0, 0, 0, 255]],
+        }
+    }
+
+    fn variable_sv_map() -> ScrollMap {
+        ScrollMap {
+            starts: vec![0.0, 1_000.0, 2_000.0, 4_000.0],
+            positions: vec![0.0, 1_000.0, 1_250.0, 5_250.0],
+            multipliers: vec![1.0, 0.25, 2.0, 0.5],
+        }
+    }
+
+    #[test]
+    fn precomputed_positions_match_time_based_y_across_sv_changes() {
+        let layout = test_layout();
+        let scroll_map = variable_sv_map();
+        let pixels_per_scroll_unit = 0.8;
+
+        for snapshot in [-500, 0, 999, 1_000, 1_500, 2_000, 3_999, 4_000, 6_000] {
+            let snapshot_pos = scroll_map.position_at(snapshot as f64);
+            for time in [-250, 0, 500, 1_000, 1_750, 2_000, 3_000, 4_000, 5_000] {
+                let old_y = y_at_time(
+                    time as f64,
+                    snapshot,
+                    &layout,
+                    &scroll_map,
+                    pixels_per_scroll_unit,
+                );
+                let new_y = y_at_position(
+                    scroll_map.position_at(time as f64),
+                    snapshot_pos,
+                    &layout,
+                    pixels_per_scroll_unit,
+                );
+                assert_eq!(old_y, new_y, "snapshot={snapshot}, time={time}");
+            }
+        }
+    }
+
+    #[test]
+    fn sv_position_window_matches_full_pixel_visibility_scan() {
+        let layout = test_layout();
+        let scroll_map = variable_sv_map();
+        let pixels_per_scroll_unit = 0.8;
+        let sv_times = [0, 500, 1_000, 1_500, 2_000, 2_000, 3_000, 4_000, 5_000];
+        let sv_positions: Vec<f64> = sv_times
+            .iter()
+            .map(|&time| scroll_map.position_at(time as f64))
+            .collect();
+
+        for snapshot in [-500, 0, 750, 1_000, 1_750, 2_000, 3_500, 4_000, 6_000] {
+            let snapshot_pos = scroll_map.position_at(snapshot as f64);
+            let expected: Vec<usize> = sv_times
+                .iter()
+                .enumerate()
+                .filter_map(|(index, &time)| {
+                    let y = y_at_time(
+                        time as f64,
+                        snapshot,
+                        &layout,
+                        &scroll_map,
+                        pixels_per_scroll_unit,
+                    );
+                    (y >= PAGE_MARGIN_Y && y <= PAGE_MARGIN_Y + layout.playfield_height)
+                        .then_some(index)
+                })
+                .collect();
+
+            let (lo_pos, hi_pos) =
+                visible_pos_window(snapshot_pos, &layout, pixels_per_scroll_unit, 0.0);
+            let start = sv_positions.partition_point(|&pos| pos < lo_pos);
+            let actual: Vec<usize> = (start..sv_positions.len())
+                .take_while(|&index| sv_positions[index] <= hi_pos)
+                .filter(|&index| {
+                    let y = y_at_position(
+                        sv_positions[index],
+                        snapshot_pos,
+                        &layout,
+                        pixels_per_scroll_unit,
+                    );
+                    y >= PAGE_MARGIN_Y && y <= PAGE_MARGIN_Y + layout.playfield_height
+                })
+                .collect();
+
+            assert_eq!(expected, actual, "snapshot={snapshot}");
+        }
+    }
 }

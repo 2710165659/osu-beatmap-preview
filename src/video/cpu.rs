@@ -2,9 +2,9 @@
 //! compiled in via the `source` feature). This is the always-available
 //! fallback when no GPU encoder (NVENC / AMF) can be initialized.
 //!
-//! Mirrors the original implementation: quality mode, bounded QP, single
-//! thread (the render side already fans out across rayon; keep encode on one
-//! core to avoid oversubscription at these small resolutions).
+//! Uses quality mode with a bounded QP. Rendering and encoding are performed
+//! in separate phases, so the encoder can use openh264's automatic thread
+//! count without competing with the Rayon render pool.
 
 use crate::canvas::Img;
 use crate::errors::{PreviewError, Result};
@@ -25,7 +25,10 @@ impl CpuEncoder {
         let config = EncoderConfig::new()
             .rate_control_mode(RateControlMode::Quality)
             .qp(QpRange::new(22, 30))
-            .num_threads(1);
+            // 0 = openh264 automatic thread count. The render chunk has
+            // already joined before encode() is called, so this does not
+            // oversubscribe the render pool.
+            .num_threads(0);
         let api = openh264::OpenH264API::from_source();
         let encoder = Encoder::with_api_config(api, config)
             .map_err(|e| PreviewError::render(format!("failed to init openh264 encoder: {e}")))?;

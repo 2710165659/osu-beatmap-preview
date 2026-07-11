@@ -40,6 +40,8 @@ mod nvenc;
 
 /// Parallel-render chunk size (matches GIF: ~8 frames at once).
 const PAR_CHUNK_SIZE: usize = 8;
+/// Bound transient RGBA frame memory for unusually large playfields.
+const MAX_PAR_FRAME_BYTES: usize = 64 * 1024 * 1024;
 
 const LABEL_COLOR: [u8; 4] = [232, 232, 232, 255];
 const LABEL_FONT_SIZE: u32 = 24;
@@ -109,6 +111,11 @@ pub(crate) fn save_mp4_streamed(
     eprintln!("[video] using {} backend ({}x{}@{}fps)", encoder.name(), out_w, out_h, fps);
 
     let keyframe_period = (fps as usize * 2).max(1);
+    let frame_bytes = (out_w as usize)
+        .saturating_mul(out_h as usize)
+        .saturating_mul(4)
+        .max(1);
+    let par_chunk_size = (MAX_PAR_FRAME_BYTES / frame_bytes).clamp(1, PAR_CHUNK_SIZE);
 
     // ── encode first frame, extract SPS/PPS for the mp4 track config ──
     let first_comp = compose_frame(first_frame, first_time, chart_end_ms, out_w, out_h);
@@ -173,8 +180,8 @@ pub(crate) fn save_mp4_streamed(
     let mut t_encode = std::time::Duration::ZERO;
     let mut t_mux = std::time::Duration::ZERO;
     let chart_end = chart_end_ms;
-    for chunk_start in (1..frame_count).step_by(PAR_CHUNK_SIZE) {
-        let chunk_end = (chunk_start + PAR_CHUNK_SIZE).min(frame_count);
+    for chunk_start in (1..frame_count).step_by(par_chunk_size) {
+        let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
         let t0 = Instant::now();
         let frames: Vec<Img> = (chunk_start..chunk_end)
             .into_par_iter()

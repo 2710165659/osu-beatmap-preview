@@ -79,6 +79,10 @@ pub(crate) fn render_mania_video(
     } else {
         build_sv_changes(&beatmap.timing_points, end + round_half_even(time_range))
     };
+    let sv_positions: Vec<f64> = sv_changes
+        .iter()
+        .map(|&(time, _)| scroll_map.position_at(time as f64))
+        .collect();
     let hold_colors: Vec<Rgba> = palette.iter().map(|&c| darken(c, 0.5)).collect();
 
     // Precompute scroll-distance positions for sorted binary-search culling.
@@ -88,13 +92,14 @@ pub(crate) fn render_mania_video(
         .iter()
         .map(|ho| scroll_map.position_at(ho.start_time as f64))
         .collect();
-    let max_hold_position: f64 = hit_objects
+    let pos_end: Vec<f64> = hit_objects
         .iter()
-        .map(|ho| {
-            (scroll_map.position_at(ho.end_time as f64)
-                - scroll_map.position_at(ho.start_time as f64))
-            .max(0.0)
-        })
+        .map(|ho| scroll_map.position_at(ho.end_time as f64))
+        .collect();
+    let max_hold_position: f64 = pos_start
+        .iter()
+        .zip(&pos_end)
+        .map(|(&start, &end)| (end - start).max(0.0))
         .fold(0.0_f64, f64::max);
 
     // Single-segment static background: one column backdrop + judgement line,
@@ -118,10 +123,10 @@ pub(crate) fn render_mania_video(
         draw_gif_sv_indicators(
             &mut canvas,
             &sv_changes,
+            &sv_positions,
             seg_left,
-            snapshot_time,
+            snapshot_pos,
             &layout,
-            &scroll_map,
             pixels_per_scroll_unit,
         );
         // Binary-search the precomputed scroll-distance positions.  Culling by
@@ -143,9 +148,10 @@ pub(crate) fn render_mania_video(
                 &palette,
                 &hold_colors,
                 seg_left,
+                pos_start[idx],
+                pos_end[idx],
                 snapshot_pos,
                 &layout,
-                &scroll_map,
                 pixels_per_scroll_unit,
             );
         }

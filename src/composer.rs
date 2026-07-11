@@ -92,8 +92,8 @@ fn posterize(v: u8) -> u8 {
 /// `>> 3` buckets them into 16 of the 32 slots with no collisions, so the
 /// full posterized color space fits in a `32*32*32 = 32768`-entry array.
 /// Each entry is the NeuQuant nearest-palette index for the corresponding
-/// posterized color, with `transparent_idx` (255) remapped to 254 so it is
-/// never emitted as a regular pixel index.
+/// posterized color, with `transparent_idx` remapped to the preceding palette
+/// entry so it is never emitted as a regular pixel index.
 ///
 /// Each slot is built from `posterize(ri << 3)`, which is exactly the
 /// posterized color that lookups query (`posterize(px) >> 3` maps to the same
@@ -110,7 +110,7 @@ fn build_gif_lut(nq: &color_quant::NeuQuant, transparent_idx: u8) -> [[[u8; 32];
                 let b = posterize(bi << 3);
                 let idx = nq.index_of(&[r, g, b, 255]) as u8;
                 lut[ri as usize][gi as usize][bi as usize] = if idx == transparent_idx {
-                    254
+                    transparent_idx.saturating_sub(1)
                 } else {
                     idx
                 };
@@ -145,6 +145,8 @@ fn build_png_lut(nq: &color_quant::NeuQuant) -> [[[u8; 32]; 32]; 32] {
 /// GIF parallel-render chunk size: balance memory (~8 frames × ~2 MB)
 /// against parallelism (keep all cores busy).
 const PAR_CHUNK_SIZE: usize = 8;
+/// Prevent unusually large canvases from multiplying peak memory by eight.
+const MAX_PAR_FRAME_BYTES: usize = 64 * 1024 * 1024;
 
 /// Stream `frame_count` frames produced by `render(i)` into a looping GIF.
 ///
@@ -154,10 +156,10 @@ const PAR_CHUNK_SIZE: usize = 8;
 /// per-mode caches that need interior mutability.
 ///
 /// Strategy for size + memory:
-/// - global 255-color palette built from a few sampled frames (NeuQuant),
-///   index 255 reserved for inter-frame transparency
+/// - global 127-color palette built from a few sampled frames (NeuQuant),
+///   index 127 reserved for inter-frame transparency and 7-bit LZW codes
 /// - per-frame delta rect vs previous frame, unchanged pixels transparent
-/// - at most PAR_CHUNK_SIZE raw frames + two indexed frames held at once
+/// - render chunk shrinks dynamically for unusually large canvases
 pub fn save_animated_gif_streamed(
     frame_count: usize,
     render: impl Fn(usize) -> Img + Send + Sync,
@@ -172,7 +174,7 @@ pub fn save_animated_gif_streamed(
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
     }
 
-    // ── palette pass: sample up to 4 frames (sequential — cheap) ──
+    // ── palette pass: sample up to 4 frames ──
     let mut sample_indices: Vec<usize> = if frame_count <= 4 {
         (0..frame_count).collect()
     } else {
@@ -180,10 +182,16 @@ pub fn save_animated_gif_streamed(
     };
     sample_indices.dedup();
 
+    // Palette frames are independent, so render them concurrently. This pass
+    // holds at most four frames, no more than the old fixed render chunk.
+    let palette_frames: Vec<Img> = sample_indices
+        .par_iter()
+        .map(|&si| render(si))
+        .collect();
+
     let mut sample: Vec<u8> = Vec::new();
     let mut first_dims = (0u32, 0u32);
-    for &si in &sample_indices {
-        let frame = render(si);
+    for frame in palette_frames {
         if first_dims == (0, 0) {
             first_dims = (frame.w, frame.h);
         }
@@ -202,15 +210,19 @@ pub fn save_animated_gif_streamed(
             sample.extend_from_slice(&[posterize(px[0]), posterize(px[1]), posterize(px[2]), 255]);
         }
     }
-    let nq = color_quant::NeuQuant::new(10, 255, &sample);
-    let mut palette: Vec<u8> = Vec::with_capacity(256 * 3);
+    // Reserve one index for GIF delta-frame transparency. Keeping 127 actual
+    // colors makes the largest emitted index 127, so LZW can use a 7-bit
+    // initial code instead of being forced to 8 bits by index 255.
+    const GIF_PALETTE_COLORS: usize = 127;
+    let nq = color_quant::NeuQuant::new(10, GIF_PALETTE_COLORS, &sample);
+    let mut palette: Vec<u8> = Vec::with_capacity((GIF_PALETTE_COLORS + 1) * 3);
     for px in nq.color_map_rgba().chunks_exact(4) {
         palette.extend_from_slice(&px[..3]);
     }
-    while palette.len() < 256 * 3 {
+    while palette.len() < (GIF_PALETTE_COLORS + 1) * 3 {
         palette.extend_from_slice(&[0, 0, 0]);
     }
-    let transparent_idx: u8 = 255;
+    let transparent_idx: u8 = GIF_PALETTE_COLORS as u8;
 
     // Precompute a 32³ 3D LUT mapping posterized RGB → palette index.
     // posterize() reduces each channel to 16 distinct values (0x00..0xFF step 0x11);
@@ -235,10 +247,12 @@ pub fn save_animated_gif_streamed(
     let delay = (frame_duration_ms / 10) as u16; // GIF delay unit = 10ms
 
     let mut prev_indexed: Vec<u8> = Vec::new();
+    let frame_bytes = w.saturating_mul(h).saturating_mul(4).max(1);
+    let par_chunk_size = (MAX_PAR_FRAME_BYTES / frame_bytes).clamp(1, PAR_CHUNK_SIZE);
 
     // ── render + encode in parallel chunks ──
-    for chunk_start in (0..frame_count).step_by(PAR_CHUNK_SIZE) {
-        let chunk_end = (chunk_start + PAR_CHUNK_SIZE).min(frame_count);
+    for chunk_start in (0..frame_count).step_by(par_chunk_size) {
+        let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
 
         // Render this chunk in parallel; each thread calls `render(i)` independently.
         let frames: Vec<Img> = (chunk_start..chunk_end)
