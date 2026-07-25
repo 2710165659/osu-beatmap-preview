@@ -3,6 +3,10 @@
 All notable changes to this project will be documented in this file.
 
 ---
+## [1.0.5] - 2026.07.25
+
+- 多项渲染与运行时性能优化，渲染速度提升一倍以上。
+
 ## [1.0.4] - 2026.07.05
 
 ### Added

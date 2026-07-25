@@ -1,5 +1,7 @@
 # osu! Beatmap Preview
 
+[中文](README.md) | [English](docs/README.en.md)
+
 > 一个快速的 osu! 谱面预览工具，支持四种模式（Standard / Taiko / Catch / Mania）的 GIF 动图、PNG 静态图与 MP4 视频渲染。
 
 ## 特性
