@@ -9,7 +9,7 @@
 - **单可执行文件**：皮肤资源在编译期嵌入二进制，无运行时依赖。
 - **跨平台**：Windows / Linux / macOS。
 - **四模式支持**：`standard`、`taiko`、`catch`、`mania`。
-- **三种输出格式**：`gif` 动图、`png` 静态长图、`mp4` 视频。
+- **三种输出格式**：`gif` 动图、`png` 静态长图、带谱面原始音频的 `mp4` 视频。
 - **GPU 加速视频编码**：Windows 上自动检测 NVIDIA NVENC / AMD AMF 硬件编码器，无 GPU 时回退 CPU（openh264），保持单文件无运行时依赖。Linux / macOS 使用 CPU 编码。
 - **转谱**：Standard 可转为 Taiko / Catch / Mania 并预览。
 - **丰富的 Mod**：`EZ` `HR` `HD` `DA` `DT` `HT` `SW` `CS` `1K`–`10K` `DS` `IN` `HO`。
@@ -46,6 +46,7 @@
 | 路径 | 说明 |
 | --- | --- |
 | 谱面缓存 | `<临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
+| OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
 | 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_t<时间点>][_bpm<BPM值>].<fmt>` |
 | 批量脚本 | `batch_render.ps1` — 可批量渲染多个 bid 并生成对比 HTML |
 
@@ -62,8 +63,12 @@ cargo build --release
 # 产物: target/release/osu-beatmap-preview(.exe)
 ```
 
-> 需要 Rust 1.70+。安装方式：<https://rustup.rs>
+> MP4 会根据 `.osu` 中的 `AudioFilename` 从 OSZ 提取并同步 MP3、OGG 或 WAV 音频；`AudioLeadIn` 控制全谱视频开始前的静音时长，`--time`、DT 和 HT 同样作用于音轨。
+
+> OSZ 下载、音频解码与 AAC 编码会和画面渲染并行进行，两个任务完成后统一封装为 MP4。
+
+> 需要 Rust 1.73+ 和 C++ 编译器。安装方式：<https://rustup.rs>
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE)。内嵌 AAC 编码器使用 Fraunhofer FDK-AAC，许可证不授予专利权，详见 [第三方声明](docs/THIRD_PARTY_NOTICES.md)。

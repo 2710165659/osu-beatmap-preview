@@ -200,4 +200,67 @@ impl Beatmap {
             .and_then(|v| v.parse().ok())
             .unwrap_or(14)
     }
+
+    pub fn beatmap_set_id(&self) -> Option<u64> {
+        self.metadata
+            .get("BeatmapSetID")
+            .and_then(|value| value.trim().parse().ok())
+            .filter(|id| *id > 0)
+    }
+
+    pub fn audio_filename(&self) -> Option<&str> {
+        self.general
+            .get("AudioFilename")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    pub fn audio_lead_in_ms(&self) -> i64 {
+        self.general
+            .get("AudioLeadIn")
+            .and_then(|value| value.trim().parse().ok())
+            .unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn beatmap_with_audio_fields(set_id: Option<&str>, filename: Option<&str>, lead_in: Option<&str>) -> Beatmap {
+        let mut metadata = KvSection::default();
+        if let Some(value) = set_id {
+            metadata.insert("BeatmapSetID", value.to_string());
+        }
+        let mut general = KvSection::default();
+        if let Some(value) = filename {
+            general.insert("AudioFilename", value.to_string());
+        }
+        if let Some(value) = lead_in {
+            general.insert("AudioLeadIn", value.to_string());
+        }
+        Beatmap {
+            metadata,
+            difficulty: KvSection::default(),
+            general,
+            timing_points: Vec::new(),
+            hit_objects: HitObjects::Standard(Vec::new()),
+            break_periods: Vec::new(),
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
+
+    #[test]
+    fn audio_metadata_getters_validate_and_default() {
+        let valid = beatmap_with_audio_fields(Some("123"), Some(" song.mp3 "), Some("-250"));
+        assert_eq!(valid.beatmap_set_id(), Some(123));
+        assert_eq!(valid.audio_filename(), Some("song.mp3"));
+        assert_eq!(valid.audio_lead_in_ms(), -250);
+
+        let defaults = beatmap_with_audio_fields(Some("invalid"), Some("  "), None);
+        assert_eq!(defaults.beatmap_set_id(), None);
+        assert_eq!(defaults.audio_filename(), None);
+        assert_eq!(defaults.audio_lead_in_ms(), 0);
+    }
 }

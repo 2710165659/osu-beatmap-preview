@@ -1,6 +1,6 @@
 [package]
 name = "osu-beatmap-preview"
-version = "1.0.3"
+version = "1.0.6"
 edition = "2021"
 
 [build-dependencies]
@@ -22,6 +22,9 @@ thiserror = "2"
 openh264 = "0.9"
 mp4 = "0.14"
 bytes = "1"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+symphonia = { version = "0.5.4", default-features = false, features = ["mp3", "ogg", "vorbis", "wav", "pcm"] }
+fdk-aac = "0.8"
 # GPU 硬件编码（NVENC / AMF）：运行时通过 libloading 动态加载
 # nvEncodeAPI64.dll / amfrt64.dll，无 GPU 时自动回退到 openh264。
 # nvenc crate 仅含 FFI 声明（无 build.rs、无 bindgen），不增加构建依赖。

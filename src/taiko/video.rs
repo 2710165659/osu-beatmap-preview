@@ -6,6 +6,7 @@
 //! Time range: first note − 2s → last note + 2s, or `[t1, t2]` when
 //! `--time=t1+t2` is given. 15 fps, letterboxed to 16:9.
 
+use crate::audio::{full_video_start_time, AudioSourceJob};
 use crate::canvas::Img;
 use crate::errors::{PreviewError, Result};
 use crate::models::Beatmap;
@@ -27,6 +28,7 @@ pub(crate) fn render_taiko_video(
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
     output_path: &Path,
+    audio_job: AudioSourceJob,
 ) -> Result<()> {
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
@@ -37,7 +39,7 @@ pub(crate) fn render_taiko_video(
         None => {
             let first = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
             let last = hit_objects.iter().map(|h| h.end_time).max().unwrap_or(0);
-            (first - 2000, last + 2000)
+            (full_video_start_time(first, beatmap.audio_lead_in_ms()), last + 2000)
         }
         Some(t) if t.len() == 2 => (t[0], t[1]),
         Some(_) => {
@@ -96,7 +98,7 @@ pub(crate) fn render_taiko_video(
         (canvas, snapshot_time)
     };
 
-    save_mp4_streamed(frame_count, end, render, output_path, fps)
+    save_mp4_streamed(frame_count, start, end, speed, render, output_path, fps, audio_job)
 }
 
 /// Single-row layout for MP4: same width as the GIF, height trimmed to one row

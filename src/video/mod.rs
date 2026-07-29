@@ -22,6 +22,7 @@
 //! at build time or runtime never breaks compilation or execution — the encoder
 //! silently falls back to CPU.
 
+use crate::audio::{encode_audio_segment, AudioSourceJob, AUDIO_BITRATE, AUDIO_SAMPLE_RATE};
 use crate::canvas::Img;
 use crate::errors::{PreviewError, Result};
 use crate::text::{draw_text, text_size};
@@ -88,10 +89,13 @@ trait FrameEncoder {
 /// the MP4 timescale (1 tick per frame).
 pub(crate) fn save_mp4_streamed(
     frame_count: usize,
+    chart_start_ms: i64,
     chart_end_ms: i64,
+    speed: f64,
     render: impl Fn(usize) -> (Img, i64) + Send + Sync,
     output_path: &Path,
     fps: u32,
+    audio_job: AudioSourceJob,
 ) -> Result<()> {
     if frame_count == 0 {
         return Err(PreviewError::render("no frames to encode"));
@@ -100,6 +104,18 @@ pub(crate) fn save_mp4_streamed(
         std::fs::create_dir_all(parent)
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
     }
+
+    let audio_task = std::thread::spawn(move || {
+        let source = audio_job.wait()?;
+        let encoded = encode_audio_segment(&source, chart_start_ms, frame_count, fps, speed)?;
+        eprintln!(
+            "[audio] encoded {} AAC frames from {} (lead-in={}ms)",
+            encoded.frames.len(),
+            source.path.display(),
+            source.lead_in_ms,
+        );
+        Ok::<_, PreviewError>(encoded)
+    });
 
     // ── render first frame to discover playfield dimensions ──
     let (first_frame, first_time) = render(0);
@@ -160,6 +176,21 @@ pub(crate) fn save_mp4_streamed(
         .add_track(&track_config)
         .map_err(|e| PreviewError::render(format!("mp4 add_track failed: {e}")))?;
 
+    let audio_track_config = mp4::TrackConfig {
+        track_type: mp4::TrackType::Audio,
+        timescale: AUDIO_SAMPLE_RATE,
+        language: "und".to_string(),
+        media_conf: mp4::MediaConfig::AacConfig(mp4::AacConfig {
+            bitrate: AUDIO_BITRATE,
+            profile: mp4::AudioObjectType::AacLowComplexity,
+            freq_index: mp4::SampleFreqIndex::Freq48000,
+            chan_conf: mp4::ChannelConfig::Stereo,
+        }),
+    };
+    mp4_writer
+        .add_track(&audio_track_config)
+        .map_err(|e| PreviewError::render(format!("mp4 add audio track failed: {e}")))?;
+
     // first sample (IDR, start_time = 0 ticks)
     let sample = mp4::Mp4Sample {
         start_time: 0,
@@ -214,11 +245,32 @@ pub(crate) fn save_mp4_streamed(
             t_mux += t3.elapsed();
         }
     }
+
+    let audio_wait_start = Instant::now();
+    let encoded_audio = audio_task
+        .join()
+        .map_err(|_| PreviewError::render("audio encoding worker panicked"))??;
+    let audio_wait = audio_wait_start.elapsed();
+    let mut audio_start = 0_u64;
+    for frame in encoded_audio.frames {
+        let sample = mp4::Mp4Sample {
+            start_time: audio_start,
+            duration: frame.duration,
+            rendering_offset: 0,
+            is_sync: true,
+            bytes: Bytes::from(frame.bytes),
+        };
+        mp4_writer
+            .write_sample(2, &sample)
+            .map_err(|e| PreviewError::render(format!("mp4 audio write_sample failed: {e}")))?;
+        audio_start += frame.duration as u64;
+    }
     eprintln!(
-        "[video] timing: render+compose={:.1}s encode={:.1}s mux={:.1}s ({})",
+        "[video] timing: render+compose={:.1}s encode={:.1}s mux={:.1}s audio-wait={:.1}s ({})",
         t_render.as_secs_f64(),
         t_encode.as_secs_f64(),
         t_mux.as_secs_f64(),
+        audio_wait.as_secs_f64(),
         encoder.name(),
     );
 

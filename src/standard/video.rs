@@ -5,6 +5,7 @@
 //! Time range: first note − 2s → last note + 2s, or `[t1, t2]` when
 //! `--time=t1+t2` is given. 15 fps, letterboxed to 16:9 by `video::save_mp4_streamed`.
 
+use crate::audio::{full_video_start_time, AudioSourceJob};
 use crate::canvas::Img;
 use crate::errors::{PreviewError, Result};
 use crate::models::Beatmap;
@@ -29,6 +30,7 @@ pub(crate) fn render_standard_video(
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
     output_path: &Path,
+    audio_job: AudioSourceJob,
 ) -> Result<()> {
     let hit_objects = standard_objects(beatmap)?;
     // Resolve the rendered time span: full chart (±2s) or explicit [t1, t2].
@@ -36,7 +38,7 @@ pub(crate) fn render_standard_video(
         None => {
             let first = hit_objects.iter().map(|o| o.start_time).min().unwrap_or(0);
             let last = hit_objects.iter().map(|o| o.end_time).max().unwrap_or(0);
-            (first - PAD_MS, last + PAD_MS)
+            (full_video_start_time(first, beatmap.audio_lead_in_ms()), last + PAD_MS)
         }
         Some(t) if t.len() == 2 => (t[0], t[1]),
         Some(_) => {
@@ -87,5 +89,5 @@ pub(crate) fn render_standard_video(
         (frame, snapshot_time)
     };
 
-    save_mp4_streamed(frame_count, end, render, output_path, fps)
+    save_mp4_streamed(frame_count, start, end, speed, render, output_path, fps, audio_job)
 }

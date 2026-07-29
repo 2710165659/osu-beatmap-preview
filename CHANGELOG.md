@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 ---
+## Unreleased
+
+### Added
+
+- MP4 输出加入从 OSZ 提取的谱面原始音频，支持 MP3、OGG 和 WAV。
+- 音轨遵循 `.osu` 的 `AudioFilename`、`AudioLeadIn`、`--time` 范围以及 DT/HT 倍速。
+- OSZ 下载支持 Sayobot、Nekoha、osu.direct、Catboy 镜像顺序回退。
+- OSZ 下载、音频解码与 AAC 编码会和画面渲染并行执行，完成后统一封装 MP4。
+- 补充 Symphonia、fdk-aac 与 Fraunhofer FDK AAC 的完整许可证及源码获取信息。
+
 ## [1.0.5] - 2026.07.25
 
 - 多项渲染与运行时性能优化，渲染速度提升一倍以上。

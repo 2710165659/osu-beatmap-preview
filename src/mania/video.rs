@@ -6,6 +6,7 @@
 //! Time range: first note − 2s → last note + 2s, or `[t1, t2]` when
 //! `--time=t1+t2` is given. 15 fps, letterboxed to 16:9.
 
+use crate::audio::{full_video_start_time, AudioSourceJob};
 use crate::canvas::{Img, Rgba};
 use crate::errors::{PreviewError, Result};
 use crate::models::Beatmap;
@@ -30,6 +31,7 @@ pub(crate) fn render_mania_video(
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
     output_path: &Path,
+    audio_job: AudioSourceJob,
 ) -> Result<()> {
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
@@ -50,7 +52,7 @@ pub(crate) fn render_mania_video(
         None => {
             let first = original_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
             let last = original_objects.iter().map(|h| h.end_time).max().unwrap_or(0);
-            (first - 2000, last + 2000)
+            (full_video_start_time(first, beatmap.audio_lead_in_ms()), last + 2000)
         }
         Some(t) if t.len() == 2 => (t[0], t[1]),
         Some(_) => {
@@ -158,7 +160,7 @@ pub(crate) fn render_mania_video(
         (canvas, snapshot_time)
     };
 
-    save_mp4_streamed(frame_count, end, render, output_path, fps)
+    save_mp4_streamed(frame_count, start, end, speed, render, output_path, fps, audio_job)
 }
 
 /// Single-segment layout for MP4: one column width, no inter-segment gap, no

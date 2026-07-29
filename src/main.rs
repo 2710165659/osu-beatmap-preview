@@ -1,4 +1,5 @@
 mod build_time;
+mod audio;
 mod cache;
 mod canvas;
 mod catch;
@@ -188,13 +189,10 @@ fn main() {
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }
         Err(exc) => {
-            let kind_label = match exc.kind() {
-                errors::ErrorKind::Download => "download error",
-                errors::ErrorKind::Parse => "parse error",
-                errors::ErrorKind::Render => "render error",
-                errors::ErrorKind::Other => "error",
+            let msg = match exc.kind() {
+                errors::ErrorKind::Other => format!("error: {exc}"),
+                _ => exc.to_string(),
             };
-            let msg = format!("{kind_label}: {}", exc);
             let payload = serde_json::json!({
                 "status": "error",
                 "msg": msg,

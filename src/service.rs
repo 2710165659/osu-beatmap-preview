@@ -1,3 +1,4 @@
+use crate::audio::AudioSourceJob;
 use crate::cache;
 use crate::errors::{PreviewError, Result};
 use crate::models::{Beatmap, HitObjects};
@@ -110,9 +111,35 @@ pub fn generate_preview(
         ))),
     };
 
-    let preview_path = render_preview_for_mode(
-        renderer, beatmap.clone(), &output_path, &fmt, target_mode, mods, times, gap,
-    )?;
+    let audio_job = if fmt == "mp4" {
+        Some(AudioSourceJob::start(
+            beatmap.clone(),
+            temp_root.join("osz-download-cache"),
+            no_cache,
+        )?)
+    } else {
+        None
+    };
+
+    let preview_path = match render_preview_for_mode(
+        renderer,
+        beatmap.clone(),
+        &output_path,
+        &fmt,
+        target_mode,
+        mods,
+        times,
+        gap,
+        audio_job,
+    ) {
+        Ok(path) => path,
+        Err(error) => {
+            if fmt == "mp4" {
+                let _ = std::fs::remove_file(&output_path);
+            }
+            return Err(error);
+        }
+    };
 
     let abs = preview_path
         .canonicalize()
@@ -161,6 +188,7 @@ trait ModeRenderer {
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
         output_path: &Path,
+        audio_job: AudioSourceJob,
     ) -> Result<PathBuf>;
 
     /// Optionally convert the beatmap before rendering. Default: clone (no conversion).
@@ -219,8 +247,9 @@ impl ModeRenderer for StandardRenderer {
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
         output_path: &Path,
+        audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::standard::render_standard_video(beatmap, mods, times_ms, output_path)?;
+        crate::standard::render_standard_video(beatmap, mods, times_ms, output_path, audio_job)?;
         Ok(output_path.to_path_buf())
     }
 }
@@ -263,8 +292,9 @@ impl ModeRenderer for TaikoRenderer {
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
         output_path: &Path,
+        audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::taiko::render_taiko_video(beatmap, mods, times_ms, output_path)?;
+        crate::taiko::render_taiko_video(beatmap, mods, times_ms, output_path, audio_job)?;
         Ok(output_path.to_path_buf())
     }
 }
@@ -307,8 +337,9 @@ impl ModeRenderer for CatchRenderer {
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
         output_path: &Path,
+        audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::catch::render_catch_video(beatmap, mods, times_ms, output_path)?;
+        crate::catch::render_catch_video(beatmap, mods, times_ms, output_path, audio_job)?;
         Ok(output_path.to_path_buf())
     }
 }
@@ -351,8 +382,9 @@ impl ModeRenderer for ManiaRenderer {
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
         output_path: &Path,
+        audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::mania::render_mania_video(beatmap, mods, times_ms, output_path)?;
+        crate::mania::render_mania_video(beatmap, mods, times_ms, output_path, audio_job)?;
         Ok(output_path.to_path_buf())
     }
 }
@@ -441,6 +473,7 @@ fn render_preview_for_mode(
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
     gap: Option<f64>,
+    audio_job: Option<AudioSourceJob>,
 ) -> Result<PathBuf> {
     let times_ms = crate::common::time_selection::times_to_milliseconds(times.as_deref());
     let mods_ref = mods.as_ref();
@@ -451,7 +484,9 @@ fn render_preview_for_mode(
     if fmt == "gif" {
         renderer.render_gif(&beatmap, mods_ref, times_ms, output_path)
     } else if fmt == "mp4" {
-        renderer.render_video(&beatmap, mods_ref, times_ms, output_path)
+        let audio_job =
+            audio_job.ok_or_else(|| PreviewError::render("MP4 audio job was not started"))?;
+        renderer.render_video(&beatmap, mods_ref, times_ms, output_path, audio_job)
     } else {
         renderer.render_png(&beatmap, mods_ref, output_path, gap)
     }
