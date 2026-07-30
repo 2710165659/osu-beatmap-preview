@@ -13,6 +13,11 @@ All notable changes to this project will be documented in this file.
 - OSZ 下载、音频解码与 AAC 编码会和画面渲染并行执行，完成后统一封装 MP4。
 - 补充 Symphonia、fdk-aac 与 Fraunhofer FDK AAC 的完整许可证及源码获取信息。
 
+### Performance
+
+- OSZ 下载优先使用 4 路 HTTP Range 分段并行下载，不支持 Range 时自动回退单连接下载。
+- MP4 编码调整为速度和体积优先：GPU H.264 目标码率降至 900 kbps，AAC 降至 96 kbps，并启用更快的 GPU/CPU 编码预设。
+
 ## [1.0.5] - 2026.07.25
 
 - 多项渲染与运行时性能优化，渲染速度提升一倍以上。

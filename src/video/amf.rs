@@ -20,7 +20,7 @@
 //! 2. `factory->CreateContext()` → `AMFContext`
 //! 3. `context->AllocSurface(HOST, BGRA, w, h)` → system-memory `AMFSurface`
 //! 4. `factory->CreateComponent(context, "AMFVideoEncoderVCE_AVC")` → encoder
-//! 5. Set properties: CQP, QP 22, B-frames=0, profile=High, IDR period
+//! 5. Set properties: speed preset, 900 kbps CBR, no B-frames, High profile
 //! 6. `encoder->Init(BGRA, w, h)`
 //! 7. Loop: lock surface plane → memcpy RGBA → `SubmitInput(surface)` →
 //!    `QueryOutput(&data)` → read Annex-B NALs
@@ -31,7 +31,7 @@ use crate::canvas::Img;
 use crate::errors::{PreviewError, Result};
 
 use super::mux::extract_nals_from_annexb;
-use super::{EncodedFrame, FrameEncoder};
+use super::{EncodedFrame, FrameEncoder, VIDEO_BITRATE};
 
 use libloading::Library;
 use std::ffi::c_void;
@@ -332,12 +332,13 @@ pub(crate) fn try_create(w: u32, h: u32, fps: u32) -> Result<Option<AmfEncoder>>
     // 7. Set encoder properties
     let keyframe_period = (fps * 2).max(1) as i64;
     let props = [
-        (wstr("Usage"), 0),                 // AMF_VIDEO_ENCODER_USAGE_LOW_LATENCY
-        (wstr("Profile"), 100),             // AMF_VIDEO_ENCODER_PROFILE_HIGH
-        (wstr("ProfileLevel"), 41),         // Level 4.1
-        (wstr("TargetBitrate"), 4_000_000), // 4 Mbps
-        (wstr("RateControlMethod"), 1),     // CBR
-        (wstr("BPicturesPattern"), 0),      // No B-frames
+        (wstr("Usage"), 0),         // AMF_VIDEO_ENCODER_USAGE_LOW_LATENCY
+        (wstr("QualityPreset"), 1), // AMF_VIDEO_ENCODER_QUALITY_PRESET_SPEED
+        (wstr("Profile"), 100),     // AMF_VIDEO_ENCODER_PROFILE_HIGH
+        (wstr("ProfileLevel"), 41), // Level 4.1
+        (wstr("TargetBitrate"), VIDEO_BITRATE as i64),
+        (wstr("RateControlMethod"), 1), // CBR
+        (wstr("BPicturesPattern"), 0),  // No B-frames
         (wstr("IDRPeriod"), keyframe_period),
         (wstr("MaxNumRefFrames"), 1),
     ];

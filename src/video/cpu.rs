@@ -8,7 +8,10 @@
 
 use crate::canvas::Img;
 use crate::errors::{PreviewError, Result};
-use openh264::encoder::{EncodedBitStream, Encoder, EncoderConfig, QpRange, RateControlMode};
+use openh264::encoder::{
+    Complexity, EncodedBitStream, Encoder, EncoderConfig, FrameRate, QpRange, RateControlMode,
+    UsageType,
+};
 use openh264::formats::{RgbaSliceU8, YUVBuffer};
 
 use super::mux::extract_nals_from_annexb;
@@ -21,10 +24,17 @@ pub(crate) struct CpuEncoder {
 }
 
 impl CpuEncoder {
-    pub(crate) fn new(_w: u32, _h: u32, _fps: u32) -> Result<Self> {
+    pub(crate) fn new(_w: u32, _h: u32, fps: u32) -> Result<Self> {
         let config = EncoderConfig::new()
+            .usage_type(UsageType::ScreenContentRealTime)
+            .complexity(Complexity::Low)
             .rate_control_mode(RateControlMode::Quality)
-            .qp(QpRange::new(22, 30))
+            .max_frame_rate(FrameRate::from_hz(fps as f32))
+            .qp(QpRange::new(28, 40))
+            .skip_frames(true)
+            .scene_change_detect(true)
+            .adaptive_quantization(false)
+            .background_detection(false)
             // 0 = openh264 automatic thread count. The render chunk has
             // already joined before encode() is called, so this does not
             // oversubscribe the render pool.

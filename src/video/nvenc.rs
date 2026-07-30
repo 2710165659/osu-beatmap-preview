@@ -20,7 +20,7 @@
 //!
 //! ## Configuration
 //!
-//! - H.264, preset P3, LowLatency tuning (CQP + QP ~22, 0 B-frames by default)
+//! - H.264, fastest P1 preset, LowLatency tuning, 900 kbps VBR, no B-frames
 //! - GOP = 2s of frames; NVENC emits SPS/PPS before the first IDR by default
 //! - Output is Annex-B, parsed by the shared `mux` module
 
@@ -33,9 +33,11 @@ use super::{EncodedFrame, FrameEncoder};
 use nvenc::bitstream::BitStream;
 use nvenc::session::{InitParams, Session};
 use nvenc::sys::enums::{
-    NVencBufferFormat, NVencPicStruct, NVencPicType, NVencTuningInfo,
+    NVencBufferFormat, NVencParamsRcMode, NVencPicStruct, NVencPicType, NVencTuningInfo,
 };
-use nvenc::sys::guids::{NV_ENC_CODEC_H264_GUID, NV_ENC_PRESET_P3_GUID};
+use nvenc::sys::guids::{NV_ENC_CODEC_H264_GUID, NV_ENC_PRESET_P1_GUID};
+
+use super::VIDEO_BITRATE;
 
 /// Try to create an NVENC encoder. Returns `Ok(None)` if the NVENC DLL is
 /// unavailable or session creation fails (e.g. no NVIDIA GPU).
@@ -100,7 +102,7 @@ impl NvencEncoder {
         let (session, mut config) = session
             .get_encode_preset_config_ex(
                 NV_ENC_CODEC_H264_GUID,
-                NV_ENC_PRESET_P3_GUID,
+                NV_ENC_PRESET_P1_GUID,
                 NVencTuningInfo::LowLatency,
             )
             .map_err(|e| {
@@ -109,15 +111,17 @@ impl NvencEncoder {
                 )))
             })?;
 
-        // ── 4. override GOP length, enforce no B-frames ──
+        // ── 4. optimize for throughput and compact output ──
         let keyframe_period = (fps * 2).max(1);
         config.preset_cfg.gop_len = keyframe_period;
         config.preset_cfg.frame_interval_p = 1;
+        config.preset_cfg.rc_params.rate_control_mode = NVencParamsRcMode::VBR;
+        config.preset_cfg.rc_params.average_bit_rate = VIDEO_BITRATE;
 
         // ── 5. init encoder ──
         let init_params = InitParams {
             encode_guid: NV_ENC_CODEC_H264_GUID,
-            preset_guid: NV_ENC_PRESET_P3_GUID,
+            preset_guid: NV_ENC_PRESET_P1_GUID,
             aspect_ratio: [w, h],
             encode_config: &mut config.preset_cfg,
             tuning_info: NVencTuningInfo::LowLatency,

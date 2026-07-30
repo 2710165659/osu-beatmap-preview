@@ -43,6 +43,7 @@ mod nvenc;
 const PAR_CHUNK_SIZE: usize = 8;
 /// Bound transient RGBA frame memory for unusually large playfields.
 const MAX_PAR_FRAME_BYTES: usize = 64 * 1024 * 1024;
+pub(crate) const VIDEO_BITRATE: u32 = 900_000;
 
 const LABEL_COLOR: [u8; 4] = [232, 232, 232, 255];
 const LABEL_FONT_SIZE: u32 = 24;

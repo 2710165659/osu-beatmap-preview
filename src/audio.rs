@@ -13,7 +13,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
 pub(crate) const AUDIO_SAMPLE_RATE: u32 = 48_000;
-pub(crate) const AUDIO_BITRATE: u32 = 128_000;
+pub(crate) const AUDIO_BITRATE: u32 = 96_000;
 const MAX_EXTRACTED_AUDIO_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
