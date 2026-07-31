@@ -1,7 +1,7 @@
 //! 单元测试：时间戳、事件/汇总格式、转义、截断、禁用、上下文合并与并发追加。
 
-use super::*;
 use super::config::{PROGRESS_FILE, RENDER_FILE};
+use super::*;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -162,7 +162,12 @@ fn concurrent_threads_write_complete_lines() {
         .map(|thread| {
             std::thread::spawn(move || {
                 for i in 0..200 {
-                    event("test", "info", Some("42"), &format!("thread {thread} line {i}"));
+                    event(
+                        "test",
+                        "info",
+                        Some("42"),
+                        &format!("thread {thread} line {i}"),
+                    );
                 }
             })
         })

@@ -3,8 +3,8 @@
 //! resides in memory at once.  Frames are rendered in parallel chunks (rayon)
 //! and encoded sequentially to preserve delta-frame ordering.
 
-use crate::render::canvas::Img;
 use crate::core::errors::{PreviewError, Result};
+use crate::render::canvas::Img;
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -55,9 +55,7 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
     let lut = build_png_lut(&nq);
     let mut indexed = vec![0u8; (image.w * image.h) as usize];
     for (i, px) in image.data.chunks_exact(4).enumerate() {
-        indexed[i] = lut[px[0] as usize >> 3]
-            [px[1] as usize >> 3]
-            [px[2] as usize >> 3];
+        indexed[i] = lut[px[0] as usize >> 3][px[1] as usize >> 3][px[2] as usize >> 3];
     }
 
     // Write to a sibling temp file and atomically replace the final path only
@@ -140,8 +138,7 @@ fn build_png_lut(nq: &color_quant::NeuQuant) -> [[[u8; 32]; 32]; 32] {
             let g = gi << 3;
             for bi in 0..32u8 {
                 let b = bi << 3;
-                lut[ri as usize][gi as usize][bi as usize] =
-                    nq.index_of(&[r, g, b, 255]) as u8;
+                lut[ri as usize][gi as usize][bi as usize] = nq.index_of(&[r, g, b, 255]) as u8;
             }
         }
     }
@@ -190,10 +187,7 @@ pub fn save_animated_gif_streamed(
 
     // Palette frames are independent, so render them concurrently. This pass
     // holds at most four frames, no more than the old fixed render chunk.
-    let palette_frames: Vec<Img> = sample_indices
-        .par_iter()
-        .map(|&si| render(si))
-        .collect();
+    let palette_frames: Vec<Img> = sample_indices.par_iter().map(|&si| render(si)).collect();
 
     let mut sample: Vec<u8> = Vec::new();
     let mut first_dims = (0u32, 0u32);
@@ -275,8 +269,7 @@ pub fn save_animated_gif_streamed(
                 let mut indexed = vec![0u8; w * h];
                 for (i, px) in frame.data.chunks_exact(4).enumerate().take(w * h) {
                     indexed[i] = lut[posterize(px[0]) as usize >> 3]
-                        [posterize(px[1]) as usize >> 3]
-                        [posterize(px[2]) as usize >> 3];
+                        [posterize(px[1]) as usize >> 3][posterize(px[2]) as usize >> 3];
                 }
                 drop(frame);
 
@@ -339,7 +332,12 @@ pub fn save_animated_gif_streamed(
 /// x86_64 CPUs so no runtime detection is needed; other architectures fall
 /// back to a scalar byte-by-byte scan.
 #[cfg(target_arch = "x86_64")]
-fn find_delta_rect(cur: &[u8], prev: &[u8], w: usize, h: usize) -> Option<(usize, usize, usize, usize)> {
+fn find_delta_rect(
+    cur: &[u8],
+    prev: &[u8],
+    w: usize,
+    h: usize,
+) -> Option<(usize, usize, usize, usize)> {
     use std::arch::x86_64::*;
     let mut min_x = w;
     let mut min_y = h;
@@ -362,10 +360,18 @@ fn find_delta_rect(cur: &[u8], prev: &[u8], w: usize, h: usize) -> Option<(usize
                     let diff16 = diff as u16;
                     let first = c * 16 + diff16.trailing_zeros() as usize;
                     let last = c * 16 + 15 - diff16.leading_zeros() as usize;
-                    if first < min_x { min_x = first; }
-                    if last > max_x { max_x = last; }
-                    if y < min_y { min_y = y; }
-                    if y > max_y { max_y = y; }
+                    if first < min_x {
+                        min_x = first;
+                    }
+                    if last > max_x {
+                        max_x = last;
+                    }
+                    if y < min_y {
+                        min_y = y;
+                    }
+                    if y > max_y {
+                        max_y = y;
+                    }
                 }
             }
         }
@@ -375,10 +381,18 @@ fn find_delta_rect(cur: &[u8], prev: &[u8], w: usize, h: usize) -> Option<(usize
             for x in 0..rem {
                 if cur[off + x] != prev[off + x] {
                     let gx = chunks * 16 + x;
-                    if gx < min_x { min_x = gx; }
-                    if gx > max_x { max_x = gx; }
-                    if y < min_y { min_y = y; }
-                    if y > max_y { max_y = y; }
+                    if gx < min_x {
+                        min_x = gx;
+                    }
+                    if gx > max_x {
+                        max_x = gx;
+                    }
+                    if y < min_y {
+                        min_y = y;
+                    }
+                    if y > max_y {
+                        max_y = y;
+                    }
                 }
             }
         }
@@ -391,7 +405,12 @@ fn find_delta_rect(cur: &[u8], prev: &[u8], w: usize, h: usize) -> Option<(usize
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-fn find_delta_rect(cur: &[u8], prev: &[u8], w: usize, h: usize) -> Option<(usize, usize, usize, usize)> {
+fn find_delta_rect(
+    cur: &[u8],
+    prev: &[u8],
+    w: usize,
+    h: usize,
+) -> Option<(usize, usize, usize, usize)> {
     let mut min_x = w;
     let mut min_y = h;
     let mut max_x = 0usize;
@@ -400,12 +419,24 @@ fn find_delta_rect(cur: &[u8], prev: &[u8], w: usize, h: usize) -> Option<(usize
         let row = y * w;
         for x in 0..w {
             if cur[row + x] != prev[row + x] {
-                if x < min_x { min_x = x; }
-                if x > max_x { max_x = x; }
-                if y < min_y { min_y = y; }
-                if y > max_y { max_y = y; }
+                if x < min_x {
+                    min_x = x;
+                }
+                if x > max_x {
+                    max_x = x;
+                }
+                if y < min_y {
+                    min_y = y;
+                }
+                if y > max_y {
+                    max_y = y;
+                }
             }
         }
     }
-    if min_x > max_x { None } else { Some((min_x, min_y, max_x, max_y)) }
+    if min_x > max_x {
+        None
+    } else {
+        Some((min_x, min_y, max_x, max_y))
+    }
 }

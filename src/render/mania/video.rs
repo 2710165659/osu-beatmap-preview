@@ -6,25 +6,25 @@
 //! Time range: first note − 2s → last note + 2s, or `[t1, t2]` when
 //! `--time=t1+t2` is given. 15 fps, letterboxed to 16:9.
 
-use crate::render::video::audio::{full_video_start_time, AudioSourceJob};
-use crate::render::canvas::{Img, Rgba};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
+use crate::render::canvas::{Img, Rgba};
+use crate::render::video::audio::{full_video_start_time, AudioSourceJob};
 use crate::render::video::save_mp4_streamed;
 use std::path::Path;
 
-use super::{
-    apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
-    mania_objects, resolve_key_count, GIF_FPS, GIF_FRAME_HEIGHT, GIF_STAGE_TOP_PADDING,
-    IMAGE_BACKGROUND, LANE_WIDTH, LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, PAGE_MARGIN_X, PAGE_MARGIN_Y,
-};
 use super::gif::{
     build_column_left_offsets, build_scroll_map, compute_time_range, draw_gif_hit_object,
     draw_gif_sv_indicators, draw_segment_background, segment_left, visible_pos_window, GifLayout,
 };
 use super::skin::load_mania_skin_config;
+use super::{
+    apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
+    mania_objects, resolve_key_count, GIF_FPS, GIF_FRAME_HEIGHT, GIF_STAGE_TOP_PADDING,
+    IMAGE_BACKGROUND, LANE_WIDTH, LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, PAGE_MARGIN_X, PAGE_MARGIN_Y,
+};
 
 pub(crate) fn render_mania_video(
     beatmap: &Beatmap,
@@ -50,9 +50,20 @@ pub(crate) fn render_mania_video(
 
     let (start, end) = match &times_ms {
         None => {
-            let first = original_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
-            let last = original_objects.iter().map(|h| h.end_time).max().unwrap_or(0);
-            (full_video_start_time(first, beatmap.audio_lead_in_ms()), last + 2000)
+            let first = original_objects
+                .iter()
+                .map(|h| h.start_time)
+                .min()
+                .unwrap_or(0);
+            let last = original_objects
+                .iter()
+                .map(|h| h.end_time)
+                .max()
+                .unwrap_or(0);
+            (
+                full_video_start_time(first, beatmap.audio_lead_in_ms()),
+                last + 2000,
+            )
         }
         Some(t) if t.len() == 2 => (t[0], t[1]),
         Some(_) => {
@@ -160,7 +171,16 @@ pub(crate) fn render_mania_video(
         (canvas, snapshot_time)
     };
 
-    save_mp4_streamed(frame_count, start, end, speed, render, output_path, fps, audio_job)
+    save_mp4_streamed(
+        frame_count,
+        start,
+        end,
+        speed,
+        render,
+        output_path,
+        fps,
+        audio_job,
+    )
 }
 
 /// Single-segment layout for MP4: one column width, no inter-segment gap, no
@@ -174,8 +194,8 @@ fn build_video_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
     let playfield_height = GIF_FRAME_HEIGHT;
     let hit_position_y = round_half_even(playfield_height as f64 - skin_config.hit_position);
     let scroll_length = (hit_position_y - GIF_STAGE_TOP_PADDING).max(1);
-    let average_column_width =
-        skin_config.column_widths.iter().sum::<i64>() as f64 / skin_config.column_widths.len() as f64;
+    let average_column_width = skin_config.column_widths.iter().sum::<i64>() as f64
+        / skin_config.column_widths.len() as f64;
     let note_head_height =
         round_half_even(NOTE_HEAD_HEIGHT as f64 * average_column_width / LANE_WIDTH as f64).max(1);
     let image_width = PAGE_MARGIN_X * 2 + segment_width;

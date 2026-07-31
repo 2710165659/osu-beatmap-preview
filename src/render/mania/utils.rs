@@ -1,10 +1,10 @@
 //! Shared mania helpers: key-count resolution, mod applications, SV changes,
 //! lane palette, and timing utilities.
 
-use crate::render::canvas::Rgba;
 use crate::core::errors::PreviewError;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::parser::round_half_even;
+use crate::render::canvas::Rgba;
 use std::collections::BTreeMap;
 
 const MAX_KEY_COUNT: i32 = 18;
@@ -56,7 +56,11 @@ pub(crate) fn resolve_key_count(beatmap: &Beatmap) -> Result<i32, PreviewError> 
 }
 
 pub(crate) fn mania_objects(beatmap: &Beatmap) -> Vec<ManiaHitObject> {
-    beatmap.hit_objects.as_mania().map(|v| v.to_vec()).unwrap_or_default()
+    beatmap
+        .hit_objects
+        .as_mania()
+        .map(|v| v.to_vec())
+        .unwrap_or_default()
 }
 
 pub(crate) fn is_native_mania(beatmap: &Beatmap) -> bool {
@@ -132,7 +136,10 @@ pub(crate) fn apply_hold_off_mod(hit_objects: &[ManiaHitObject]) -> Vec<ManiaHit
     result
 }
 
-pub(crate) fn build_sv_changes(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec<(i64, f64)> {
+pub(crate) fn build_sv_changes(
+    timing_points: &[TimingPoint],
+    chart_end_time: i64,
+) -> Vec<(i64, f64)> {
     let mut changes: Vec<(i64, f64)> = Vec::new();
     let mut prev_sv: Option<f64> = None;
     for point in timing_points {

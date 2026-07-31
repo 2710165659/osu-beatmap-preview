@@ -51,9 +51,7 @@ pub(crate) fn split_nals(annexb: &[u8]) -> Vec<&[u8]> {
         // scan for the next start code
         let mut j = payload_start + 1;
         while j + 2 < len {
-            if (j + 4 <= len && annexb[j..j + 4] == [0, 0, 0, 1])
-                || annexb[j..j + 3] == [0, 0, 1]
-            {
+            if (j + 4 <= len && annexb[j..j + 4] == [0, 0, 0, 1]) || annexb[j..j + 3] == [0, 0, 1] {
                 // guard against 00 00 00 01 where the leading 00 is trailing
                 // zero-byte of the previous NAL — handle by checking we're at a
                 // real boundary (the 3-byte check already covers the 4-byte case
@@ -70,10 +68,7 @@ pub(crate) fn split_nals(annexb: &[u8]) -> Vec<&[u8]> {
             // a single trailing 0x00 may be legitimate RBSP, but multiple
             // trailing 00 00 before a start code are padding. Keep it simple:
             // only strip if there are >=2 trailing zeros AND we hit a boundary.
-            if nal_end - payload_start >= 2
-                && annexb[nal_end - 2] == 0
-                && end < len
-            {
+            if nal_end - payload_start >= 2 && annexb[nal_end - 2] == 0 && end < len {
                 nal_end -= 1;
             } else {
                 break;

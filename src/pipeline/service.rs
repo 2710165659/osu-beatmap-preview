@@ -1,10 +1,10 @@
-use crate::render::video::audio::AudioSourceJob;
-use crate::pipeline::cache;
 use crate::core::errors::{PreviewError, Result};
-use crate::log::{self, CacheKind, SummaryRecord};
 use crate::core::models::{Beatmap, HitObjects};
 use crate::core::mods::ModSettings;
 use crate::core::validate::{self, ValidateContext};
+use crate::log::{self, CacheKind, SummaryRecord};
+use crate::pipeline::cache;
+use crate::render::video::audio::AudioSourceJob;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -106,12 +106,7 @@ fn generate_preview_inner(
         fmt: &fmt,
         target_mode,
     };
-    let mods = validate::validate_with_context(
-        &ctx,
-        times.as_deref(),
-        gap,
-        mods,
-    )?;
+    let mods = validate::validate_with_context(&ctx, times.as_deref(), gap, mods)?;
     rec.mods = mods.as_ref().map(|m| m.tokens.join("+"));
 
     let mode_name = match target_mode {
@@ -139,12 +134,20 @@ fn generate_preview_inner(
     if let Some(b) = gap {
         parts.push(format!("bpm{}", b));
     }
-    let output_path: PathBuf = temp_root
-        .join("outputs")
-        .join(format!("{}.{}", parts.join("_"), fmt));
+    let output_path: PathBuf =
+        temp_root
+            .join("outputs")
+            .join(format!("{}.{}", parts.join("_"), fmt));
 
     // ── image cache check ──
-    let cached = cache::output_cache_hit(&output_path, &beatmap_path, &times, &fmt, target_mode, no_cache);
+    let cached = cache::output_cache_hit(
+        &output_path,
+        &beatmap_path,
+        &times,
+        &fmt,
+        target_mode,
+        no_cache,
+    );
     if let Some(cached_path) = cached {
         rec.status = "cache-hit".to_string();
         log::record_cache(CacheKind::Output, "hit");
@@ -157,9 +160,7 @@ fn generate_preview_inner(
             Some(bid),
             &format!("serving cached output: {}", cached_path.display()),
         );
-        let abs = cached_path
-            .canonicalize()
-            .unwrap_or(cached_path.clone());
+        let abs = cached_path.canonicalize().unwrap_or(cached_path.clone());
         let abs_str = cache::clean_windows_path(&abs.to_string_lossy());
         return Ok(json!({
             "status": "success",
@@ -178,9 +179,11 @@ fn generate_preview_inner(
         1 => &TaikoRenderer,
         2 => &CatchRenderer,
         3 => &ManiaRenderer,
-        _ => return Err(PreviewError::new(format!(
-            "unsupported beatmap mode: {target_mode}"
-        ))),
+        _ => {
+            return Err(PreviewError::new(format!(
+                "unsupported beatmap mode: {target_mode}"
+            )))
+        }
     };
 
     let audio_job = if fmt == "mp4" {
@@ -198,7 +201,10 @@ fn generate_preview_inner(
         "render",
         "start",
         Some(bid),
-        &format!("fmt={fmt} target={mode_name} output={}", output_path.display()),
+        &format!(
+            "fmt={fmt} target={mode_name} output={}",
+            output_path.display()
+        ),
     );
     let preview_path = match render_preview_for_mode(
         renderer,
@@ -232,9 +238,7 @@ fn generate_preview_inner(
         ),
     );
 
-    let abs = preview_path
-        .canonicalize()
-        .unwrap_or(preview_path.clone());
+    let abs = preview_path.canonicalize().unwrap_or(preview_path.clone());
     let abs_str = cache::clean_windows_path(&abs.to_string_lossy());
 
     Ok(json!({
@@ -405,7 +409,13 @@ impl ModeRenderer for StandardRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::render::standard::render_standard_video(beatmap, mods, times_ms, output_path, audio_job)?;
+        crate::render::standard::render_standard_video(
+            beatmap,
+            mods,
+            times_ms,
+            output_path,
+            audio_job,
+        )?;
         Ok(output_path.to_path_buf())
     }
 }
@@ -591,7 +601,9 @@ fn convert_beatmap(
     mods: Option<&ModSettings>,
 ) -> Result<Beatmap> {
     if beatmap.mode() != 0 {
-        return Err(PreviewError::new("source beatmap must be osu!standard (mode=0)"));
+        return Err(PreviewError::new(
+            "source beatmap must be osu!standard (mode=0)",
+        ));
     }
 
     CONVERTERS

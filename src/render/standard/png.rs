@@ -1,15 +1,15 @@
 //! osu!standard PNG grid renderer: 5×8 gameplay snapshots.
 
-use crate::render::canvas::Img;
 use crate::core::errors::Result;
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::render::canvas::Img;
 use crate::render::text::format_mmssmmm;
 
 use super::constants::*;
 use super::context::*;
-use super::objects::render_frame;
 use super::draw_time_label;
+use super::objects::render_frame;
 
 pub(crate) fn render_standard_png(
     beatmap: &Beatmap,
@@ -89,5 +89,3 @@ pub(crate) fn render_standard_png(
     }
     Ok(canvas)
 }
-
-

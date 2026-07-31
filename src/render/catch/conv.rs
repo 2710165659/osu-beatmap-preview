@@ -12,15 +12,21 @@ pub(crate) fn catch_convert(
     _mods: Option<&ModSettings>,
 ) -> Result<Beatmap> {
     if beatmap.mode() != 0 {
-        return Err(PreviewError::new("source beatmap must be osu!standard (mode=0)"));
+        return Err(PreviewError::new(
+            "source beatmap must be osu!standard (mode=0)",
+        ));
     }
     if target_mode != 2 {
-        return Err(PreviewError::new("only catch (mode=2) conversion is supported here"));
+        return Err(PreviewError::new(
+            "only catch (mode=2) conversion is supported here",
+        ));
     }
 
     let objects = std_objects(beatmap);
     if objects.is_empty() {
-        return Err(PreviewError::new("standard beatmap has no hit objects to convert"));
+        return Err(PreviewError::new(
+            "standard beatmap has no hit objects to convert",
+        ));
     }
 
     // CatchBeatmapConverter top-level mapping:

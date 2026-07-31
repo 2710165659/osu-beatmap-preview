@@ -1,18 +1,16 @@
 //! Hit object rendering: hit circles, sliders, spinners, approach circles.
 
-use crate::render::canvas::Img;
 use crate::core::models::{BreakPeriod, StandardHitObject};
+use crate::render::canvas::Img;
 
 use super::alpha::*;
 use super::constants::*;
-use super::context::{
-    color_id, py_round, to_frame_point, RenderCache, RenderContext,
-};
+use super::context::{color_id, py_round, to_frame_point, RenderCache, RenderContext};
 use super::draw_centered_text;
 use super::slider::{
-    darken, draw_cached_slider_body, draw_slider_body, draw_slider_ball, draw_slider_reverse_arrows,
-    draw_ring_aa, fill_circle_gradient_aa, get_slider_render_data, is_full_slider_body,
-    resized_with_alpha, slider_snaked_range, with_alpha,
+    darken, draw_cached_slider_body, draw_ring_aa, draw_slider_ball, draw_slider_body,
+    draw_slider_reverse_arrows, fill_circle_gradient_aa, get_slider_render_data,
+    is_full_slider_body, resized_with_alpha, slider_snaked_range, with_alpha,
 };
 
 // ——— frame rendering ———
@@ -24,7 +22,11 @@ pub(crate) fn render_frame(
     break_periods: &[BreakPeriod],
     visible_indexes: &[usize],
 ) -> Img {
-    let mut frame = Img::new(IMAGE_WIDTH as u32, IMAGE_HEIGHT as u32, IMAGE_BACKGROUND_COLOR);
+    let mut frame = Img::new(
+        IMAGE_WIDTH as u32,
+        IMAGE_HEIGHT as u32,
+        IMAGE_BACKGROUND_COLOR,
+    );
 
     for &index in visible_indexes {
         let hit_object = &context.hit_objects[index];
@@ -84,7 +86,15 @@ fn draw_hit_circle(
         hit_object.y as f64,
         &context.frame_layout,
     );
-    draw_circle_piece(frame, context, cache, center, combo.color, alpha, &combo.number.to_string());
+    draw_circle_piece(
+        frame,
+        context,
+        cache,
+        center,
+        combo.color,
+        alpha,
+        &combo.number.to_string(),
+    );
 }
 
 // ——— slider ———
@@ -109,27 +119,70 @@ fn draw_slider(
     let (snaked_start, snaked_end) =
         slider_snaked_range(hit_object, snapshot_time, &context.settings);
     if is_full_slider_body(snaked_start, snaked_end) {
-        draw_cached_slider_body(frame, context, cache, index, &slider_data, combo.color, alpha, context.settings.traceable);
+        draw_cached_slider_body(
+            frame,
+            context,
+            cache,
+            index,
+            &slider_data,
+            combo.color,
+            alpha,
+            context.settings.traceable,
+        );
     } else {
-        let visible_path = crate::common::slider_path::slice_path(&slider_data.frame_path, snaked_start, snaked_end);
-        draw_slider_body(frame, &visible_path, context.slider_body_width, combo.color, alpha, context.settings.traceable);
+        let visible_path = crate::common::slider_path::slice_path(
+            &slider_data.frame_path,
+            snaked_start,
+            snaked_end,
+        );
+        draw_slider_body(
+            frame,
+            &visible_path,
+            context.slider_body_width,
+            combo.color,
+            alpha,
+            context.settings.traceable,
+        );
     }
 
     draw_slider_reverse_arrows(
-        frame, context, cache, &slider_data, hit_object, snapshot_time,
-        snaked_start, snaked_end, combo.color, alpha,
+        frame,
+        context,
+        cache,
+        &slider_data,
+        hit_object,
+        snapshot_time,
+        snaked_start,
+        snaked_end,
+        combo.color,
+        alpha,
     );
     draw_slider_ball(
-        frame, context, cache, &slider_data, hit_object, snapshot_time,
-        combo.color, overlay_alpha,
+        frame,
+        context,
+        cache,
+        &slider_data,
+        hit_object,
+        snapshot_time,
+        combo.color,
+        overlay_alpha,
     );
     let head_alpha = slider_head_alpha(
-        hit_object, snapshot_time, &context.settings, snaked_start, snaked_end,
+        hit_object,
+        snapshot_time,
+        &context.settings,
+        snaked_start,
+        snaked_end,
     );
     if head_alpha > 0.0 && !context.settings.traceable {
         draw_circle_piece(
-            frame, context, cache, slider_data.head_center,
-            combo.color, head_alpha, &combo.number.to_string(),
+            frame,
+            context,
+            cache,
+            slider_data.head_center,
+            combo.color,
+            head_alpha,
+            &combo.number.to_string(),
         );
     }
 }
@@ -169,12 +222,20 @@ fn draw_spinner(
     );
 
     draw_ring_aa(
-        frame, center.0, center.1, base_r * 0.8,
-        (10.0 * scale).max(1.0), [255, 255, 255, alpha_byte],
+        frame,
+        center.0,
+        center.1,
+        base_r * 0.8,
+        (10.0 * scale).max(1.0),
+        [255, 255, 255, alpha_byte],
     );
     draw_ring_aa(
-        frame, center.0, center.1, base_r,
-        (3.0 * scale).max(1.0), [255, 255, 255, alpha_byte],
+        frame,
+        center.0,
+        center.1,
+        base_r,
+        (3.0 * scale).max(1.0),
+        [255, 255, 255, alpha_byte],
     );
 }
 
@@ -215,7 +276,12 @@ fn draw_approach_circle(
         center.1,
         d / 2.0,
         thickness,
-        [color[0], color[1], color[2], super::slider::alpha_to_byte(alpha)],
+        [
+            color[0],
+            color[1],
+            color[2],
+            super::slider::alpha_to_byte(alpha),
+        ],
     );
 }
 
@@ -261,7 +327,12 @@ fn build_circle_piece(diameter: i64, color: [u8; 3]) -> Img {
     let dark = darken(color, 4.0);
 
     // 1. outerFill: 深色填充圆
-    img.fill_circle_aa(c, c, (d as f64 - 1.0) / 2.0, [dark[0], dark[1], dark[2], 255]);
+    img.fill_circle_aa(
+        c,
+        c,
+        (d as f64 - 1.0) / 2.0,
+        [dark[0], dark[1], dark[2], 255],
+    );
     // 2. border: 白色外环
     draw_ring_aa(&mut img, c, c, d as f64 / 2.0, border, [255, 255, 255, 255]);
 
@@ -272,8 +343,12 @@ fn build_circle_piece(diameter: i64, color: [u8; 3]) -> Img {
     // 4. innerGradient: 内层暗渐变 (accentColour.Darken(0.5) -> accentColour.Darken(0.6))
     let inner_d = (outer_d - 2.0 * 2.5 * border).max(0.0);
     fill_circle_gradient_aa(
-        &mut img, c, c, inner_d / 2.0,
-        darken(color, 0.5), darken(color, 0.6),
+        &mut img,
+        c,
+        c,
+        inner_d / 2.0,
+        darken(color, 0.5),
+        darken(color, 0.6),
     );
 
     // 5. innerFill: 最内层深色填充 (同 outerFill 颜色)
@@ -307,9 +382,7 @@ fn draw_number(
             py_round(crop.w as f64 * digit_height as f64 / crop.h.max(1) as f64).max(1)
         })
         .collect();
-    let overlap = py_round(
-        context.skin.hitcircle_overlap as f64 * digit_height as f64 / 100.0,
-    );
+    let overlap = py_round(context.skin.hitcircle_overlap as f64 * digit_height as f64 / 100.0);
     let total_width: i64 = widths.iter().sum::<i64>() - overlap * (digits.len() as i64 - 1);
     let mut x = py_round(center.0 - total_width as f64 / 2.0);
     let y = py_round(center.1 - digit_height as f64 / 2.0);
@@ -350,10 +423,16 @@ fn draw_break_overlay(frame: &mut Img, break_period: &BreakPeriod, snapshot_time
     let center_y = IMAGE_HEIGHT as f64 / 2.0;
 
     draw_break_arrows(&mut layer, alpha);
-    draw_break_remaining_bar(&mut layer, break_period, snapshot_time, center_x, center_y, alpha);
+    draw_break_remaining_bar(
+        &mut layer,
+        break_period,
+        snapshot_time,
+        center_x,
+        center_y,
+        alpha,
+    );
 
-    let remaining_seconds =
-        ((break_period.end_time - snapshot_time + 999).div_euclid(1000)).max(0);
+    let remaining_seconds = ((break_period.end_time - snapshot_time + 999).div_euclid(1000)).max(0);
     let counter_label = remaining_seconds.to_string();
     let (_, counter_h) =
         crate::render::text::text_size(&counter_label, BREAK_OVERLAY_COUNTER_FONT_SIZE);
@@ -365,8 +444,12 @@ fn draw_break_overlay(frame: &mut Img, break_period: &BreakPeriod, snapshot_time
         py_round(BREAK_OVERLAY_COLOR[3] as f64 * alpha).clamp(0, 255) as u8,
     ];
     draw_centered_text(
-        &mut layer, &counter_label, 0, counter_y,
-        BREAK_OVERLAY_COUNTER_FONT_SIZE, counter_color,
+        &mut layer,
+        &counter_label,
+        0,
+        counter_y,
+        BREAK_OVERLAY_COUNTER_FONT_SIZE,
+        counter_color,
     );
 
     let break_label = format!(
@@ -382,8 +465,12 @@ fn draw_break_overlay(frame: &mut Img, break_period: &BreakPeriod, snapshot_time
         py_round(BREAK_OVERLAY_INFO_COLOR[3] as f64 * alpha).clamp(0, 255) as u8,
     ];
     draw_centered_text(
-        &mut layer, &break_label, 0, info_y,
-        BREAK_OVERLAY_INFO_FONT_SIZE, info_color,
+        &mut layer,
+        &break_label,
+        0,
+        info_y,
+        BREAK_OVERLAY_INFO_FONT_SIZE,
+        info_color,
     );
 
     frame.alpha_composite(&layer, 0, 0);

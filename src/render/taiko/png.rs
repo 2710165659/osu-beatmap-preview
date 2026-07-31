@@ -3,20 +3,18 @@
 //! 行切分以小节线为锚点：每行的起点对齐到一条小节线（measure line），
 //! 保证视觉上每行最左侧都是重拍位置。
 
-use crate::render::canvas::Img;
-use crate::render::composer;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TaikoHitObject};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
+use crate::render::canvas::Img;
+use crate::render::composer;
 use crate::render::text::{draw_text, text_size};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::constants::*;
-use super::notes::{
-    cached_roll_tail, draw_note_disc, draw_track_background, RenderCache,
-};
+use super::notes::{cached_roll_tail, draw_note_disc, draw_track_background, RenderCache};
 use super::timing::*;
 
 #[inline]
@@ -239,7 +237,8 @@ fn build_png_layout(
 
     let content_width = ROW_INNER_PADDING_X * 2 + used_row_width;
     let image_width = PAGE_MARGIN_X * 2 + content_width;
-    let image_height = PAGE_MARGIN_Y * 2 + FIRST_ROW_SV_TOP_MARGIN + row_count * ROW_HEIGHT + row_count * ROW_GAP;
+    let image_height =
+        PAGE_MARGIN_Y * 2 + FIRST_ROW_SV_TOP_MARGIN + row_count * ROW_HEIGHT + row_count * ROW_GAP;
     let normal_note_diameter = pyround(ROW_HEIGHT as f64 * NORMAL_NOTE_SIZE_RATIO);
     let big_note_diameter = pyround(normal_note_diameter as f64 * BIG_NOTE_SCALE);
     RenderLayout {
@@ -387,7 +386,14 @@ fn draw_time_label(
         .max(PAGE_MARGIN_X);
     let label_y = row_top + ROW_HEIGHT + TIME_LABEL_TOP_GAP;
 
-    draw_text(image, label_x, label_y, &label, TIME_LABEL_FONT_SIZE, label_color);
+    draw_text(
+        image,
+        label_x,
+        label_y,
+        &label,
+        TIME_LABEL_FONT_SIZE,
+        label_color,
+    );
 
     let mut next_y = label_y + label_height as i64;
     if let Some(note) = note {
@@ -436,7 +442,14 @@ fn draw_sv_indicators(image: &mut Img, sv_changes: &[SvChange], layout: &RenderL
 
         let label_x = pyround(x as f64 - label_width as f64 / 2.0);
         let label_y = (row_top - SV_TOP_GAP - label_height as i64).max(PAGE_MARGIN_Y);
-        draw_text(image, label_x, label_y, &label, SV_TEXT_FONT_SIZE, SV_TEXT_COLOR);
+        draw_text(
+            image,
+            label_x,
+            label_y,
+            &label,
+            SV_TEXT_FONT_SIZE,
+            SV_TEXT_COLOR,
+        );
     }
 }
 
@@ -459,7 +472,16 @@ fn draw_hit_object(
     cache: &mut RenderCache,
 ) {
     if hit_object.hit_type & SWELL_FLAG != 0 {
-        draw_span_object(image, hit_object, mapper, layout, cache, true, SWELL_COLOR, true);
+        draw_span_object(
+            image,
+            hit_object,
+            mapper,
+            layout,
+            cache,
+            true,
+            SWELL_COLOR,
+            true,
+        );
         return;
     }
     if hit_object.hit_type & DRUMROLL_FLAG != 0 {

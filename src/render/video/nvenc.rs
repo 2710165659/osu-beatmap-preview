@@ -24,8 +24,8 @@
 //! - GOP = 2s of frames; NVENC emits SPS/PPS before the first IDR by default
 //! - Output is Annex-B, parsed by the shared `mux` module
 
-use crate::render::canvas::Img;
 use crate::core::errors::{PreviewError, Result};
+use crate::render::canvas::Img;
 
 use super::mux::extract_nals_from_annexb;
 use super::{EncodedFrame, FrameEncoder};
@@ -144,7 +144,8 @@ impl NvencEncoder {
             )))
         })?;
 
-        let d3d = D3D11Resources::create(&device_guard.device, w, h).map_err(NvencInitError::Failed)?;
+        let d3d =
+            D3D11Resources::create(&device_guard.device, w, h).map_err(NvencInitError::Failed)?;
 
         // ── 7. register the texture ONCE (reused across all frames) ──
         // This avoids the ~5ms/frame overhead of register+unmap+unregister
@@ -245,9 +246,7 @@ struct D3D11Resources {
 #[cfg(windows)]
 impl D3D11DeviceGuard {
     fn create() -> Result<Self> {
-        use windows::Win32::Graphics::Direct3D::{
-            D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL_11_0,
-        };
+        use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL_11_0};
         use windows::Win32::Graphics::Direct3D11::{
             D3D11CreateDevice, D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION,
         };
@@ -264,7 +263,8 @@ impl D3D11DeviceGuard {
                     Ok(adapter) => {
                         if let Ok(desc) = unsafe { adapter.GetDesc() } {
                             let name = String::from_utf16_lossy(
-                                &desc.Description
+                                &desc
+                                    .Description
                                     .iter()
                                     .take_while(|&&c| c != 0)
                                     .copied()
@@ -367,7 +367,9 @@ impl D3D11Resources {
 
     /// Map the staging texture, memcpy RGBA into it, unmap.
     fn update_texture(&self, rgba: &Img) -> Result<()> {
-        use windows::Win32::Graphics::Direct3D11::{D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD};
+        use windows::Win32::Graphics::Direct3D11::{
+            D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD,
+        };
 
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {

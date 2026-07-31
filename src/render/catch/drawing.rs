@@ -58,8 +58,12 @@ fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
 /// blobAlphaAt 的径向近似：像素在归一化 [0,1]² 空间内，
 /// 环半径随角度被噪声扰动，返回该像素的覆盖率（0..1）。
 fn blob_alpha_at(
-    px: f64, py: f64, inner_radius: f64, texel: f64,
-    noise_x: f64, noise_y: f64,
+    px: f64,
+    py: f64,
+    inner_radius: f64,
+    texel: f64,
+    noise_x: f64,
+    noise_y: f64,
 ) -> f64 {
     let path_radius = inner_radius * 0.25;
     let dxc = px - 0.5;
@@ -182,7 +186,11 @@ thread_local! {
 
 /// 取（或构建）某对象的 blob sprite。
 fn cached_blob_sprite(
-    kind: u8, color: [u8; 3], diameter: f64, seed: u64, hyper: bool,
+    kind: u8,
+    color: [u8; 3],
+    diameter: f64,
+    seed: u64,
+    hyper: bool,
     build: impl FnOnce(u64) -> Img,
 ) -> Rc<Img> {
     let key: SpriteKey = (
@@ -215,13 +223,34 @@ fn hyper_dash_color() -> [u8; 3] {
 
 /// Argon 水果：三层噪声光环 + 白色中心点；超冲叠加超冲色外环。
 pub(crate) fn draw_argon_fruit(
-    image: &mut Img, cx: f64, cy: f64, d: f64, color: [u8; 3], hyper: bool, seed: u64,
+    image: &mut Img,
+    cx: f64,
+    cy: f64,
+    d: f64,
+    color: [u8; 3],
+    hyper: bool,
+    seed: u64,
 ) {
     let sprite = cached_blob_sprite(0, color, d, seed, hyper, |variant| {
         let mut layers = vec![
-            BlobLayer { size_ratio: 1.1, inner_radius: 0.5, alpha: 0.15, color },
-            BlobLayer { size_ratio: 1.0, inner_radius: 0.2, alpha: 0.5, color },
-            BlobLayer { size_ratio: 1.0, inner_radius: 0.05, alpha: 1.0, color },
+            BlobLayer {
+                size_ratio: 1.1,
+                inner_radius: 0.5,
+                alpha: 0.15,
+                color,
+            },
+            BlobLayer {
+                size_ratio: 1.0,
+                inner_radius: 0.2,
+                alpha: 0.5,
+                color,
+            },
+            BlobLayer {
+                size_ratio: 1.0,
+                inner_radius: 0.05,
+                alpha: 1.0,
+                color,
+            },
         ];
         if hyper {
             layers.push(BlobLayer {
@@ -240,13 +269,29 @@ pub(crate) fn draw_argon_fruit(
 
 /// Argon 水滴：0.7 缩放的双层光环 + 白色中心点（ArgonDropletPiece）。
 pub(crate) fn draw_argon_droplet(
-    image: &mut Img, cx: f64, cy: f64, d: f64, color: [u8; 3], hyper: bool, seed: u64,
+    image: &mut Img,
+    cx: f64,
+    cy: f64,
+    d: f64,
+    color: [u8; 3],
+    hyper: bool,
+    seed: u64,
 ) {
     let sprite = cached_blob_sprite(1, color, d, seed, hyper, |variant| {
         let mut layers = vec![
-            BlobLayer { size_ratio: 0.7, inner_radius: 0.5, alpha: 0.15, color },
+            BlobLayer {
+                size_ratio: 0.7,
+                inner_radius: 0.5,
+                alpha: 0.15,
+                color,
+            },
             // 内层：blob 自身再缩放 0.7（0.7 × 0.7 = 0.49）
-            BlobLayer { size_ratio: 0.49, inner_radius: 0.4, alpha: 0.5, color },
+            BlobLayer {
+                size_ratio: 0.49,
+                inner_radius: 0.4,
+                alpha: 0.5,
+                color,
+            },
         ];
         if hyper {
             layers.push(BlobLayer {
@@ -264,13 +309,33 @@ pub(crate) fn draw_argon_droplet(
 
 /// Argon 香蕉：与水果同构的光环（ArgonBananaPiece 继承自 FruitPiece）。
 pub(crate) fn draw_argon_banana(
-    image: &mut Img, cx: f64, cy: f64, d: f64, color: [u8; 3], seed: u64,
+    image: &mut Img,
+    cx: f64,
+    cy: f64,
+    d: f64,
+    color: [u8; 3],
+    seed: u64,
 ) {
     let sprite = cached_blob_sprite(2, color, d, seed, false, |variant| {
         let layers = [
-            BlobLayer { size_ratio: 1.1, inner_radius: 0.5, alpha: 0.15, color },
-            BlobLayer { size_ratio: 1.0, inner_radius: 0.2, alpha: 0.5, color },
-            BlobLayer { size_ratio: 1.0, inner_radius: 0.05, alpha: 1.0, color },
+            BlobLayer {
+                size_ratio: 1.1,
+                inner_radius: 0.5,
+                alpha: 0.15,
+                color,
+            },
+            BlobLayer {
+                size_ratio: 1.0,
+                inner_radius: 0.2,
+                alpha: 0.5,
+                color,
+            },
+            BlobLayer {
+                size_ratio: 1.0,
+                inner_radius: 0.05,
+                alpha: 1.0,
+                color,
+            },
         ];
         build_blob_sprite(d, &layers, variant)
     });
@@ -280,7 +345,11 @@ pub(crate) fn draw_argon_banana(
 
 /// 按对象类型分发绘制；形状变体种子取自对象时间，同一对象稳定、不同对象有差异。
 pub(crate) fn draw_catch_object(
-    image: &mut Img, obj: &RenderObject, cx: f64, cy: f64, diameter: f64,
+    image: &mut Img,
+    obj: &RenderObject,
+    cx: f64,
+    cy: f64,
+    diameter: f64,
 ) {
     let seed = (obj.start_time as u64).wrapping_mul(2654435761);
     match obj.object_type {

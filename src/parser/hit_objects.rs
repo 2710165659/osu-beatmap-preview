@@ -210,7 +210,8 @@ fn parse_slider_end_time(
     let pixel_length: f64 = parts.get(7)?.parse().ok()?;
     let slider_multiplier = difficulty.get_f64("SliderMultiplier")?;
     let (beat_length, slider_velocity) = resolve_slider_timing(start_time, timing_points);
-    let duration = pixel_length / (slider_multiplier * 100.0 * slider_velocity) * beat_length * slides;
+    let duration =
+        pixel_length / (slider_multiplier * 100.0 * slider_velocity) * beat_length * slides;
     Some(start_time + round_half_even(duration))
 }
 

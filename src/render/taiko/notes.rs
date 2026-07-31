@@ -1,7 +1,7 @@
 //! 太鼓行背景与 note 的程序化绘制（classic-2013 风格，无图片资源）。
 
-use crate::render::canvas::Img;
 use crate::parser::round_half_even;
+use crate::render::canvas::Img;
 use std::collections::HashMap;
 
 use super::constants::*;
@@ -105,8 +105,11 @@ pub(crate) fn build_roll_tail_sprite(color: [u8; 3], height: i64) -> Img {
     let radius = scaled_height as f64 / 2.0;
     let border_width = pyround(height as f64 * 0.05).max(1) * scale;
 
-    let mut tail =
-        Img::new(scaled_width.max(1) as u32, scaled_height.max(1) as u32, [0, 0, 0, 0]);
+    let mut tail = Img::new(
+        scaled_width.max(1) as u32,
+        scaled_height.max(1) as u32,
+        [0, 0, 0, 0],
+    );
     tail.fill_ellipse(-radius, 0.0, radius, scaled_height as f64, [0, 0, 0, 255]);
     tail.fill_ellipse(
         -radius + border_width as f64,

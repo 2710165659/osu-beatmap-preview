@@ -120,9 +120,8 @@ pub(crate) fn spinner_alpha(
     if snapshot_time <= hit_object.end_time {
         return 1.0;
     }
-    (1.0
-        - (snapshot_time - hit_object.end_time) as f64
-            / (settings.preempt_ms as f64 * 0.3).max(1.0))
+    (1.0 - (snapshot_time - hit_object.end_time) as f64
+        / (settings.preempt_ms as f64 * 0.3).max(1.0))
     .max(0.0)
 }
 

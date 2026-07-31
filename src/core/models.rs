@@ -227,7 +227,11 @@ impl Beatmap {
 mod tests {
     use super::*;
 
-    fn beatmap_with_audio_fields(set_id: Option<&str>, filename: Option<&str>, lead_in: Option<&str>) -> Beatmap {
+    fn beatmap_with_audio_fields(
+        set_id: Option<&str>,
+        filename: Option<&str>,
+        lead_in: Option<&str>,
+    ) -> Beatmap {
         let mut metadata = KvSection::default();
         if let Some(value) = set_id {
             metadata.insert("BeatmapSetID", value.to_string());

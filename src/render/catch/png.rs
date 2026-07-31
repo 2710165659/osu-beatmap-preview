@@ -4,12 +4,12 @@
 //! 谱面总高度有上限（防止超长 / 高 AR 谱面导致内存爆炸），超出时
 //! 按比例压缩纵向密度。
 
-use crate::render::canvas::Img;
-use crate::render::composer::save_png;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TimingPoint};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
+use crate::render::canvas::Img;
+use crate::render::composer::save_png;
 use crate::render::text::{draw_text, text_size};
 use std::path::{Path, PathBuf};
 
@@ -46,19 +46,31 @@ fn pixels_per_ms_for_ar(approach_rate: f64, playfield_scale: f64) -> f64 {
 }
 
 fn resolve_max_area_height(beatmap_duration: i64) -> i64 {
-    if beatmap_duration < 60_000 { MAX_AREA_HEIGHT_0_TO_1_MIN }
-    else if beatmap_duration < 2 * 60_000 { MAX_AREA_HEIGHT_1_TO_2_MIN }
-    else if beatmap_duration < 3 * 60_000 { MAX_AREA_HEIGHT_2_TO_3_MIN }
-    else if beatmap_duration < 4 * 60_000 { MAX_AREA_HEIGHT_3_TO_4_MIN }
-    else if beatmap_duration < 5 * 60_000 { MAX_AREA_HEIGHT_4_TO_5_MIN }
-    else { MAX_AREA_HEIGHT_5_TO_6_MIN }
+    if beatmap_duration < 60_000 {
+        MAX_AREA_HEIGHT_0_TO_1_MIN
+    } else if beatmap_duration < 2 * 60_000 {
+        MAX_AREA_HEIGHT_1_TO_2_MIN
+    } else if beatmap_duration < 3 * 60_000 {
+        MAX_AREA_HEIGHT_2_TO_3_MIN
+    } else if beatmap_duration < 4 * 60_000 {
+        MAX_AREA_HEIGHT_3_TO_4_MIN
+    } else if beatmap_duration < 5 * 60_000 {
+        MAX_AREA_HEIGHT_4_TO_5_MIN
+    } else {
+        MAX_AREA_HEIGHT_5_TO_6_MIN
+    }
 }
 
 fn ceil_div(a: i64, b: i64) -> i64 {
     (a + b - 1) / b
 }
 
-fn build_layout(beatmap_duration: i64, circle_size: f64, approach_rate: f64, chart_start_time: i64) -> Result<RenderLayout> {
+fn build_layout(
+    beatmap_duration: i64,
+    circle_size: f64,
+    approach_rate: f64,
+    chart_start_time: i64,
+) -> Result<RenderLayout> {
     if beatmap_duration >= MAX_SUPPORTED_DURATION_MS {
         return Err(PreviewError::render(
             "songs longer than 10 minutes are not supported",
@@ -78,9 +90,7 @@ fn build_layout(beatmap_duration: i64, circle_size: f64, approach_rate: f64, cha
     let max_area_height = resolve_max_area_height(beatmap_duration);
     let column_count = ceil_div(total_chart_height, max_area_height).max(1);
     let total_column_height = ceil_div(total_chart_height, column_count);
-    let image_width = PAGE_MARGIN_X * 2
-        + column_count * (COLUMN_WIDTH + COLUMN_GAP)
-        - COLUMN_GAP
+    let image_width = PAGE_MARGIN_X * 2 + column_count * (COLUMN_WIDTH + COLUMN_GAP) - COLUMN_GAP
         + LABEL_RIGHT_MARGIN;
     let image_height = PAGE_MARGIN_Y * 2 + total_column_height;
     Ok(RenderLayout {
@@ -135,7 +145,11 @@ fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec
     // 切分红线区段（首段从 0 或首条红线之前开始，沿用首条红线参数）
     let mut sections: Vec<RedlineSection> = Vec::new();
     for (index, point) in red_lines.iter().enumerate() {
-        let start = if index == 0 { point.time.min(0.0) } else { point.time };
+        let start = if index == 0 {
+            point.time.min(0.0)
+        } else {
+            point.time
+        };
         let end = if index + 1 < red_lines.len() {
             red_lines[index + 1].time
         } else {
@@ -176,7 +190,9 @@ fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec
 // ─── 对外接口 ───
 
 pub(crate) fn render_catch_grid(
-    beatmap: &Beatmap, output_path: &Path, mods: Option<&ModSettings>,
+    beatmap: &Beatmap,
+    output_path: &Path,
+    mods: Option<&ModSettings>,
 ) -> Result<PathBuf> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
@@ -191,7 +207,10 @@ pub(crate) fn render_catch_grid(
     // aligned to the red-line beat grid.
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let chart_start_time = if first_note_time >= 5000 {
-        crate::common::time_selection::snap_to_beat_grid(first_note_time - 1000, &beatmap.timing_points)
+        crate::common::time_selection::snap_to_beat_grid(
+            first_note_time - 1000,
+            &beatmap.timing_points,
+        )
     } else {
         0
     };
@@ -204,20 +223,33 @@ pub(crate) fn render_catch_grid(
                     *et = (*et - chart_start_time as f64).max(0.0);
                 }
             }
-            let tp = beatmap.timing_points.iter().map(|tp| {
-                let mut tp = *tp;
-                tp.time -= chart_start_time as f64;
-                tp
-            }).collect();
+            let tp = beatmap
+                .timing_points
+                .iter()
+                .map(|tp| {
+                    let mut tp = *tp;
+                    tp.time -= chart_start_time as f64;
+                    tp
+                })
+                .collect();
             ((chart_end_time - chart_start_time).max(0), tp)
         } else {
             (chart_end_time, beatmap.timing_points.clone())
         };
 
     let timing_lines = build_timing_lines(&timing_points_for_render, effective_chart_end_time);
-    let layout = build_layout(effective_chart_end_time, difficulty.cs, difficulty.ar, chart_start_time)?;
+    let layout = build_layout(
+        effective_chart_end_time,
+        difficulty.cs,
+        difficulty.ar,
+        chart_start_time,
+    )?;
 
-    let mut image = Img::new(layout.image_width as u32, layout.image_height as u32, IMAGE_BACKGROUND);
+    let mut image = Img::new(
+        layout.image_width as u32,
+        layout.image_height as u32,
+        IMAGE_BACKGROUND,
+    );
 
     for column_index in 0..layout.column_count {
         draw_column_background(&mut image, &layout, column_index);
@@ -266,10 +298,34 @@ fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: 
     let border_left = visible_left - 23;
     let border_right = visible_right + 23;
 
-    image.set_rect(column_left, chart_top, panel_right, chart_bottom, LEFT_PANEL_BACKGROUND);
-    image.set_rect(visible_left, chart_top, visible_right, chart_bottom, PLAYFIELD_BACKGROUND);
-    image.set_rect(border_left, chart_top, border_left, chart_bottom, PLAYFIELD_BORDER);
-    image.set_rect(border_right, chart_top, border_right, chart_bottom, PLAYFIELD_BORDER);
+    image.set_rect(
+        column_left,
+        chart_top,
+        panel_right,
+        chart_bottom,
+        LEFT_PANEL_BACKGROUND,
+    );
+    image.set_rect(
+        visible_left,
+        chart_top,
+        visible_right,
+        chart_bottom,
+        PLAYFIELD_BACKGROUND,
+    );
+    image.set_rect(
+        border_left,
+        chart_top,
+        border_left,
+        chart_bottom,
+        PLAYFIELD_BORDER,
+    );
+    image.set_rect(
+        border_right,
+        chart_top,
+        border_right,
+        chart_bottom,
+        PLAYFIELD_BORDER,
+    );
 }
 
 /// 时间 → （列号, y 坐标）。时间从列底部向上递增（与游戏内下落方向一致）。
@@ -301,20 +357,33 @@ fn draw_timing_label_png(image: &mut Img, timing_line: &TimingLine, layout: &Ren
     let (column_index, y) = locate_time(timing_line.time, layout);
     let border_right = column_left(column_index) + COLUMN_WIDTH;
     let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
-    let label = format!("{:.1}s", (timing_line.time + layout.chart_start_time) as f64 / 1000.0);
+    let label = format!(
+        "{:.1}s",
+        (timing_line.time + layout.chart_start_time) as f64 / 1000.0
+    );
     let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
     let label_x = (border_right + 4).min(layout.image_width - label_width as i64 - PAGE_MARGIN_X);
-    let label_y = (y as f64 - label_height as f64 / 2.0).max(PAGE_MARGIN_Y as f64).floor() as i64;
-    draw_text(image, label_x, label_y, &label, TIME_LABEL_FONT_SIZE, TIME_LABEL_COLOR);
+    let label_y = (y as f64 - label_height as f64 / 2.0)
+        .max(PAGE_MARGIN_Y as f64)
+        .floor() as i64;
+    draw_text(
+        image,
+        label_x,
+        label_y,
+        &label,
+        TIME_LABEL_FONT_SIZE,
+        TIME_LABEL_COLOR,
+    );
 }
 
 fn draw_catch_object_png(image: &mut Img, catch_object: &RenderObject, layout: &RenderLayout) {
     let (column_index, y) = locate_time(catch_object.start_time, layout);
-    let center_x = playfield_left(column_index) as f64
-        + catch_object.x * layout.playfield_scale;
+    let center_x = playfield_left(column_index) as f64 + catch_object.x * layout.playfield_scale;
     let center_y = y as f64;
     let diameter = super::drawing::object_diameter(
-        layout.object_scale, layout.playfield_scale, catch_object.scale_factor,
+        layout.object_scale,
+        layout.playfield_scale,
+        catch_object.scale_factor,
     );
 
     draw_catch_object(image, catch_object, center_x, center_y, diameter);

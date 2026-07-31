@@ -1,26 +1,26 @@
 //! osu!mania GIF renderer: 4-segment animated falling-note preview.
 //! Port of beatmap_preview/mania/gif_renderer.py.
 
-use crate::render::canvas::{Img, Rgba};
-use crate::render::composer::save_animated_gif_streamed;
+use crate::common::time_selection::PreviewTimeSelector;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
+use crate::render::canvas::{Img, Rgba};
+use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::{draw_text, render_text_sprite, text_size};
-use crate::common::time_selection::PreviewTimeSelector;
 use std::path::Path;
 
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, format_sv_label,
-    is_native_mania, mania_objects, resolve_key_count, GIF_DEFAULT_HIT_POSITION,
-    GIF_DURATION_MS, GIF_FPS, GIF_FRAME_HEIGHT, GIF_GRID_GAP, GIF_JUDGEMENT_LINE,
-    GIF_MAX_TIME_RANGE, GIF_PREVIEW_TIME_LABEL_COLOR, GIF_SCROLL_SPEED, GIF_SEGMENT_COUNT,
-    GIF_SEPARATOR_BACKGROUND, GIF_SEPARATOR_WIDTH, GIF_STAGE_TOP_PADDING, GIF_TIME_LABEL_COLOR,
-    GIF_TIME_LABEL_FONT_SIZE, GIF_TIME_LABEL_HEIGHT, GIF_TIME_LABEL_NOTE_COLOR,
-    GIF_TIME_LABEL_NOTE_FONT_SIZE, GIF_TIME_LABEL_TOP_GAP, IMAGE_BACKGROUND, LANE_BACKGROUND,
-    LANE_WIDTH, LEFT_PANEL_BACKGROUND, LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, NOTE_SIDE_PADDING,
-    PAGE_MARGIN_X, PAGE_MARGIN_Y, SV_TEXT_COLOR, SV_TEXT_FONT_SIZE,
+    is_native_mania, mania_objects, resolve_key_count, GIF_DEFAULT_HIT_POSITION, GIF_DURATION_MS,
+    GIF_FPS, GIF_FRAME_HEIGHT, GIF_GRID_GAP, GIF_JUDGEMENT_LINE, GIF_MAX_TIME_RANGE,
+    GIF_PREVIEW_TIME_LABEL_COLOR, GIF_SCROLL_SPEED, GIF_SEGMENT_COUNT, GIF_SEPARATOR_BACKGROUND,
+    GIF_SEPARATOR_WIDTH, GIF_STAGE_TOP_PADDING, GIF_TIME_LABEL_COLOR, GIF_TIME_LABEL_FONT_SIZE,
+    GIF_TIME_LABEL_HEIGHT, GIF_TIME_LABEL_NOTE_COLOR, GIF_TIME_LABEL_NOTE_FONT_SIZE,
+    GIF_TIME_LABEL_TOP_GAP, IMAGE_BACKGROUND, LANE_BACKGROUND, LANE_WIDTH, LEFT_PANEL_BACKGROUND,
+    LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, NOTE_SIDE_PADDING, PAGE_MARGIN_X, PAGE_MARGIN_Y,
+    SV_TEXT_COLOR, SV_TEXT_FONT_SIZE,
 };
 
 use super::skin::load_mania_skin_config;
@@ -300,7 +300,10 @@ fn build_gif_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
     }
 }
 
-pub(crate) fn build_column_left_offsets(column_widths: &[i64], column_line_widths: &[i64]) -> Vec<i64> {
+pub(crate) fn build_column_left_offsets(
+    column_widths: &[i64],
+    column_line_widths: &[i64],
+) -> Vec<i64> {
     // ColumnLineWidth has keys + 1 entries: leftmost, between-columns, rightmost.
     let mut offsets = Vec::with_capacity(column_widths.len());
     let mut cursor = column_line_widths.first().copied().unwrap_or(0);
@@ -316,8 +319,8 @@ pub(crate) fn build_column_left_offsets(column_widths: &[i64], column_line_width
 
 /// Mirrors DrawableManiaRuleset.updateTimeRange(): base 33-speed window adjusted by HitPosition.
 pub(crate) fn compute_time_range(speed_multiplier: f64, hit_position: f64) -> f64 {
-    let hit_position_scale =
-        (GIF_FRAME_HEIGHT as f64 - hit_position) / (GIF_FRAME_HEIGHT as f64 - GIF_DEFAULT_HIT_POSITION);
+    let hit_position_scale = (GIF_FRAME_HEIGHT as f64 - hit_position)
+        / (GIF_FRAME_HEIGHT as f64 - GIF_DEFAULT_HIT_POSITION);
     (GIF_MAX_TIME_RANGE / GIF_SCROLL_SPEED * hit_position_scale * speed_multiplier).max(1.0)
 }
 
@@ -420,8 +423,14 @@ fn most_common_beat_length(timing_points: &[TimingPoint], hit_objects: &[ManiaHi
         }
     }
     let most_common = most_common.0 as f64 / 1000.0;
-    let min_beat_length = red_lines.iter().map(|p| p.beat_length).fold(f64::MAX, f64::min);
-    let max_beat_length = red_lines.iter().map(|p| p.beat_length).fold(f64::MIN, f64::max);
+    let min_beat_length = red_lines
+        .iter()
+        .map(|p| p.beat_length)
+        .fold(f64::MAX, f64::min);
+    let max_beat_length = red_lines
+        .iter()
+        .map(|p| p.beat_length)
+        .fold(f64::MIN, f64::max);
     most_common.min(max_beat_length).max(min_beat_length)
 }
 

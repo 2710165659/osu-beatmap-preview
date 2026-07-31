@@ -3,13 +3,13 @@
 //! 单帧 683×384（16:9），playfield 的位置与缩放按游戏内 1080p 等比换算
 //! （见 constants.rs 中 GIF_PLAYFIELD_* 常量），上下左右留白与游戏一致。
 
-use crate::render::canvas::Img;
-use crate::render::composer::save_animated_gif_streamed;
+use crate::common::time_selection::PreviewTimeSelector;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::render::canvas::Img;
+use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::{draw_text, text_size};
-use crate::common::time_selection::PreviewTimeSelector;
 use std::path::Path;
 
 use super::constants::*;
@@ -74,7 +74,9 @@ fn frame_origin(segment_index: usize) -> (i64, i64) {
 // ─── 对外接口 ───
 
 pub(crate) fn render_catch_gif(
-    beatmap: &Beatmap, mods: Option<&ModSettings>, times_ms: Option<Vec<i64>>,
+    beatmap: &Beatmap,
+    mods: Option<&ModSettings>,
+    times_ms: Option<Vec<i64>>,
     output_path: &Path,
 ) -> Result<()> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
@@ -87,10 +89,18 @@ pub(crate) fn render_catch_gif(
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let gameplay_segment_duration = rhe(GIF_DURATION_MS * speed_multiplier);
-    let spans: Vec<(i64, i64)> = hit_objects.iter().map(|h| (h.start_time, h.end_time)).collect();
+    let spans: Vec<(i64, i64)> = hit_objects
+        .iter()
+        .map(|h| (h.start_time, h.end_time))
+        .collect();
     let segment_timings = PreviewTimeSelector::new(
-        beatmap, spans, GIF_SEGMENT_COUNT, gameplay_segment_duration, times_ms,
-    )?.choose()?;
+        beatmap,
+        spans,
+        GIF_SEGMENT_COUNT,
+        gameplay_segment_duration,
+        times_ms,
+    )?
+    .choose()?;
 
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);
     let frame_count = rhe(GIF_DURATION_MS * GIF_FPS / 1000.0).max(1) as usize;
@@ -101,7 +111,8 @@ pub(crate) fn render_catch_gif(
         .map(|timing| {
             (0..frame_count)
                 .map(|frame_index| {
-                    timing.start_time + rhe(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS)
+                    timing.start_time
+                        + rhe(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS)
                 })
                 .collect()
         })
@@ -113,15 +124,23 @@ pub(crate) fn render_catch_gif(
     let start_times: Vec<i64> = render_objects.iter().map(|o| o.start_time).collect();
 
     let render = move |frame_index: usize| -> Img {
-        let mut canvas = Img::new(layout.canvas_width as u32, layout.canvas_height as u32, PLAYFIELD_BACKGROUND);
+        let mut canvas = Img::new(
+            layout.canvas_width as u32,
+            layout.canvas_height as u32,
+            PLAYFIELD_BACKGROUND,
+        );
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
             let (frame_x, frame_y) = frame_origin(segment_index);
             let frame = render_gif_frame(&render_objects, &start_times, snapshot_time, &layout);
             canvas.alpha_composite(&frame, frame_x, frame_y);
             draw_gif_time_label(
-                &mut canvas, segment_timing.start_time, gameplay_segment_duration,
-                frame_x, frame_y, segment_timing.is_preview,
+                &mut canvas,
+                segment_timing.start_time,
+                gameplay_segment_duration,
+                frame_x,
+                frame_y,
+                segment_timing.is_preview,
             );
         }
         canvas
@@ -137,26 +156,36 @@ pub(crate) fn render_gif_frame(
     snapshot_time: i64,
     layout: &GifLayout,
 ) -> Img {
-    let mut frame = Img::new(GIF_IMAGE_WIDTH as u32, GIF_IMAGE_HEIGHT as u32, PLAYFIELD_BACKGROUND);
+    let mut frame = Img::new(
+        GIF_IMAGE_WIDTH as u32,
+        GIF_IMAGE_HEIGHT as u32,
+        PLAYFIELD_BACKGROUND,
+    );
 
     let playfield_left = layout.playfield_left;
     let playfield_right = playfield_left + PLAYFIELD_WIDTH * layout.playfield_scale;
     // playfield 区域底色
     frame.set_rect(
-        rhe(playfield_left), 0, rhe(playfield_right), GIF_IMAGE_HEIGHT, PLAYFIELD_BACKGROUND,
+        rhe(playfield_left),
+        0,
+        rhe(playfield_right),
+        GIF_IMAGE_HEIGHT,
+        PLAYFIELD_BACKGROUND,
     );
 
     // 判定线（接手所在高度）
     let judgement_y = layout.playfield_top + STABLE_CATCHER_Y * layout.playfield_scale;
     let judgement_y_px = rhe(judgement_y);
     frame.set_rect(
-        rhe(playfield_left), judgement_y_px, rhe(playfield_right), judgement_y_px + 1,
+        rhe(playfield_left),
+        judgement_y_px,
+        rhe(playfield_right),
+        judgement_y_px + 1,
         [238, 238, 238, 200],
     );
 
     // 可见时间窗：对象在 [snapshot, snapshot + 下落时间窗 + 余量] 内才可能出现在帧中
-    let fall_window_ms =
-        (GIF_IMAGE_HEIGHT as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
+    let fall_window_ms = (GIF_IMAGE_HEIGHT as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
     // start_times_desc 为降序；找到可见区间 [lo, hi)
     let lo = start_times_desc.partition_point(|&t| t > snapshot_time + fall_window_ms);
     let hi = start_times_desc.partition_point(|&t| t >= snapshot_time - 2000);
@@ -170,13 +199,20 @@ pub(crate) fn render_gif_frame(
 
 /// 绘制单个下落中的对象（超出帧范围的直接跳过）。
 fn draw_gif_object(
-    frame: &mut Img, catch_object: &RenderObject, snapshot_time: i64,
-    judgement_y: f64, layout: &GifLayout,
+    frame: &mut Img,
+    catch_object: &RenderObject,
+    snapshot_time: i64,
+    judgement_y: f64,
+    layout: &GifLayout,
 ) {
     let local_time = catch_object.start_time - snapshot_time;
     let center_x = layout.playfield_left + catch_object.x * layout.playfield_scale;
     let center_y = judgement_y - local_time as f64 * layout.pixels_per_ms;
-    let diameter = object_diameter(layout.object_scale, layout.playfield_scale, catch_object.scale_factor);
+    let diameter = object_diameter(
+        layout.object_scale,
+        layout.playfield_scale,
+        catch_object.scale_factor,
+    );
 
     if center_y + diameter / 2.0 < 0.0 || center_y - diameter / 2.0 > judgement_y {
         return;
@@ -186,12 +222,28 @@ fn draw_gif_object(
 }
 
 fn draw_gif_time_label(
-    canvas: &mut Img, start_time: i64, duration_ms: i64,
-    frame_x: i64, frame_y: i64, is_preview: bool,
+    canvas: &mut Img,
+    start_time: i64,
+    duration_ms: i64,
+    frame_x: i64,
+    frame_y: i64,
+    is_preview: bool,
 ) {
-    let label = format!("{} - {}", format_mmss(start_time), format_mmss(start_time + duration_ms));
-    let color = if is_preview { GIF_PREVIEW_TIME_LABEL_COLOR } else { GIF_TIME_LABEL_COLOR };
-    let note_color = if is_preview { GIF_PREVIEW_TIME_LABEL_COLOR } else { GIF_TIME_LABEL_NOTE_COLOR };
+    let label = format!(
+        "{} - {}",
+        format_mmss(start_time),
+        format_mmss(start_time + duration_ms)
+    );
+    let color = if is_preview {
+        GIF_PREVIEW_TIME_LABEL_COLOR
+    } else {
+        GIF_TIME_LABEL_COLOR
+    };
+    let note_color = if is_preview {
+        GIF_PREVIEW_TIME_LABEL_COLOR
+    } else {
+        GIF_TIME_LABEL_NOTE_COLOR
+    };
     let (label_w, label_h) = text_size(&label, GIF_TIME_LABEL_FONT_SIZE);
     let x = frame_x + (GIF_IMAGE_WIDTH - label_w as i64) / 2;
     let y = frame_y + GIF_IMAGE_HEIGHT + GIF_TIME_LABEL_TOP_GAP;
@@ -201,7 +253,14 @@ fn draw_gif_time_label(
         let note = "Preview Time";
         let (note_w, _) = text_size(note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = frame_x + (GIF_IMAGE_WIDTH - note_w as i64) / 2;
-        draw_text(canvas, note_x, y + label_h as i64 + GIF_TIME_LABEL_NOTE_TOP_GAP, note, GIF_TIME_LABEL_NOTE_FONT_SIZE, note_color);
+        draw_text(
+            canvas,
+            note_x,
+            y + label_h as i64 + GIF_TIME_LABEL_NOTE_TOP_GAP,
+            note,
+            GIF_TIME_LABEL_NOTE_FONT_SIZE,
+            note_color,
+        );
     }
 }
 

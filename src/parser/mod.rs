@@ -10,7 +10,9 @@ mod sections;
 mod timing;
 
 pub use hit_objects::round_half_even;
-pub use sections::{default_metadata, parse_combo_colors, parse_format_version, parse_key_value, split_sections};
+pub use sections::{
+    default_metadata, parse_combo_colors, parse_format_version, parse_key_value, split_sections,
+};
 pub use timing::{parse_break_periods, parse_timing_points};
 
 use crate::core::errors::{PreviewError, Result};
@@ -68,13 +70,28 @@ fn parse_beatmap_str(content: &str) -> Option<Beatmap> {
         .get("Editor")
         .map(|lines| parse_key_value(lines))
         .unwrap_or_default();
-    let beat_divisor: i32 = editor.get("BeatDivisor").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let beat_divisor: i32 = editor
+        .get("BeatDivisor")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
 
     let hit_lines = sections.get("HitObjects")?;
     let hit_objects = match mode {
-        0 => HitObjects::Standard(hit_objects::parse_standard(hit_lines, &difficulty, &timing_points)?),
-        1 => HitObjects::Taiko(hit_objects::parse_taiko(hit_lines, &difficulty, &timing_points)?),
-        2 => HitObjects::Catch(hit_objects::parse_catch(hit_lines, &difficulty, &timing_points)?),
+        0 => HitObjects::Standard(hit_objects::parse_standard(
+            hit_lines,
+            &difficulty,
+            &timing_points,
+        )?),
+        1 => HitObjects::Taiko(hit_objects::parse_taiko(
+            hit_lines,
+            &difficulty,
+            &timing_points,
+        )?),
+        2 => HitObjects::Catch(hit_objects::parse_catch(
+            hit_lines,
+            &difficulty,
+            &timing_points,
+        )?),
         3 => HitObjects::Mania(hit_objects::parse_mania(hit_lines, &difficulty)?),
         _ => return None,
     };

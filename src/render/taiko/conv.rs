@@ -31,15 +31,21 @@ pub(crate) fn taiko_convert(
     _mods: Option<&ModSettings>,
 ) -> Result<Beatmap> {
     if beatmap.mode() != 0 {
-        return Err(PreviewError::new("source beatmap must be osu!standard (mode=0)"));
+        return Err(PreviewError::new(
+            "source beatmap must be osu!standard (mode=0)",
+        ));
     }
     if target_mode != 1 {
-        return Err(PreviewError::new("only taiko (mode=1) conversion is supported here"));
+        return Err(PreviewError::new(
+            "only taiko (mode=1) conversion is supported here",
+        ));
     }
 
     let objects = std_objects(beatmap);
     if objects.is_empty() {
-        return Err(PreviewError::new("standard beatmap has no hit objects to convert"));
+        return Err(PreviewError::new(
+            "standard beatmap has no hit objects to convert",
+        ));
     }
 
     let mut cursor = TimingCursor::new(&beatmap.timing_points);
@@ -103,7 +109,8 @@ fn taiko_convert_slider(
         let all_hitsounds = taiko_slider_node_hitsounds(hit_object);
         let mut sample_index: usize = 0;
         let mut current_time = hit_object.start_time as f64;
-        let end_time = (hit_object.start_time + vals.taiko_duration) as f64 + vals.tick_spacing / 8.0;
+        let end_time =
+            (hit_object.start_time + vals.taiko_duration) as f64 + vals.tick_spacing / 8.0;
 
         while current_time <= end_time + 1e-7 {
             result.push(TaikoHitObject {
@@ -173,18 +180,14 @@ fn slider_conversion_values(
     }
 }
 
-fn should_convert_slider_to_hits(
-    beatmap: &Beatmap,
-    vals: &SliderConversionValues,
-) -> bool {
+fn should_convert_slider_to_hits(beatmap: &Beatmap, vals: &SliderConversionValues) -> bool {
     let osu_velocity = vals.taiko_velocity * (1000.0 / vals.beat_length);
     let mut beat_length = vals.beat_length;
     if beatmap.format_version() >= 8 {
         beat_length = vals.timing_beat_length;
     }
 
-    vals.tick_spacing > 0.0
-        && vals.distance / osu_velocity * 1000.0 < 2.0 * beat_length
+    vals.tick_spacing > 0.0 && vals.distance / osu_velocity * 1000.0 < 2.0 * beat_length
 }
 
 fn taiko_slider_node_hitsounds(hit_object: &StandardHitObject) -> Vec<i32> {
@@ -256,9 +259,15 @@ fn precision_adjusted_beat_length(timing_beat_length: f64, slider_velocity: f64)
 }
 
 fn taiko_slider_multiplier(beatmap: &Beatmap) -> f64 {
-    f64::max(0.4, f64::min(3.6, beatmap.difficulty.get_f64_or("SliderMultiplier", 1.4)))
+    f64::max(
+        0.4,
+        f64::min(3.6, beatmap.difficulty.get_f64_or("SliderMultiplier", 1.4)),
+    )
 }
 
 fn taiko_slider_tick_rate(beatmap: &Beatmap) -> f64 {
-    f64::max(0.5, f64::min(8.0, beatmap.difficulty.get_f64_or("SliderTickRate", 1.0)))
+    f64::max(
+        0.5,
+        f64::min(8.0, beatmap.difficulty.get_f64_or("SliderTickRate", 1.0)),
+    )
 }

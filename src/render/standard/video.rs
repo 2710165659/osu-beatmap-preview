@@ -5,12 +5,12 @@
 //! Time range: first note − 2s → last note + 2s, or `[t1, t2]` when
 //! `--time=t1+t2` is given. 15 fps, letterboxed to 16:9 by `video::save_mp4_streamed`.
 
-use crate::render::video::audio::{full_video_start_time, AudioSourceJob};
-use crate::render::canvas::Img;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
+use crate::render::canvas::Img;
+use crate::render::video::audio::{full_video_start_time, AudioSourceJob};
 use crate::render::video::save_mp4_streamed;
 use std::cell::RefCell;
 use std::path::Path;
@@ -38,7 +38,10 @@ pub(crate) fn render_standard_video(
         None => {
             let first = hit_objects.iter().map(|o| o.start_time).min().unwrap_or(0);
             let last = hit_objects.iter().map(|o| o.end_time).max().unwrap_or(0);
-            (full_video_start_time(first, beatmap.audio_lead_in_ms()), last + PAD_MS)
+            (
+                full_video_start_time(first, beatmap.audio_lead_in_ms()),
+                last + PAD_MS,
+            )
         }
         Some(t) if t.len() == 2 => (t[0], t[1]),
         Some(_) => {
@@ -56,8 +59,7 @@ pub(crate) fn render_standard_video(
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let total_ms = end - start;
     let fps = GIF_FPS as u32;
-    let frame_count =
-        ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
+    let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let break_periods = beatmap.break_periods.clone();
     let context_ref = &context;
@@ -89,5 +91,14 @@ pub(crate) fn render_standard_video(
         (frame, snapshot_time)
     };
 
-    save_mp4_streamed(frame_count, start, end, speed, render, output_path, fps, audio_job)
+    save_mp4_streamed(
+        frame_count,
+        start,
+        end,
+        speed,
+        render,
+        output_path,
+        fps,
+        audio_job,
+    )
 }

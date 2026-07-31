@@ -22,10 +22,12 @@
 //! at build time or runtime never breaks compilation or execution — the encoder
 //! silently falls back to CPU.
 
-use crate::render::video::audio::{encode_audio_segment, AudioSourceJob, AUDIO_BITRATE, AUDIO_SAMPLE_RATE};
-use crate::render::canvas::Img;
 use crate::core::errors::{PreviewError, Result};
+use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
+use crate::render::video::audio::{
+    encode_audio_segment, AudioSourceJob, AUDIO_BITRATE, AUDIO_SAMPLE_RATE,
+};
 use bytes::Bytes;
 use rayon::prelude::*;
 use std::io::BufWriter;
@@ -145,7 +147,13 @@ pub(crate) fn save_mp4_streamed(
         None,
         &format!("{} {}x{}@{}fps", encoder.name(), out_w, out_h, fps),
     );
-    eprintln!("[video] using {} backend ({}x{}@{}fps)", encoder.name(), out_w, out_h, fps);
+    eprintln!(
+        "[video] using {} backend ({}x{}@{}fps)",
+        encoder.name(),
+        out_w,
+        out_h,
+        fps
+    );
 
     let frame_bytes = (out_w as usize)
         .saturating_mul(out_h as usize)
@@ -382,7 +390,14 @@ fn compose_frame(pf: Img, current_ms: i64, end_ms: i64, out_w: u32, out_h: u32) 
     let label = format!("{}/{}", format_mmss(current_ms), format_mmss(end_ms));
     let (lw, _) = text_size(&label, LABEL_FONT_SIZE);
     let lx = out_w as i64 - lw as i64 - LABEL_PAD;
-    draw_text(&mut canvas, lx, LABEL_PAD, &label, LABEL_FONT_SIZE, LABEL_COLOR);
+    draw_text(
+        &mut canvas,
+        lx,
+        LABEL_PAD,
+        &label,
+        LABEL_FONT_SIZE,
+        LABEL_COLOR,
+    );
     canvas
 }
 
@@ -398,7 +413,9 @@ fn format_mmss(ms: i64) -> String {
 #[cfg(windows)]
 fn drop_stdout_silence<F: FnOnce()>(f: F) {
     use std::io::Write;
-    use windows::Win32::Foundation::{CloseHandle, DuplicateHandle, INVALID_HANDLE_VALUE, DUPLICATE_SAME_ACCESS};
+    use windows::Win32::Foundation::{
+        CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, INVALID_HANDLE_VALUE,
+    };
     use windows::Win32::System::Console::{
         GetStdHandle, SetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
     };
@@ -408,7 +425,15 @@ fn drop_stdout_silence<F: FnOnce()>(f: F) {
     let cur_proc = unsafe { GetCurrentProcess() };
     let mut dup = INVALID_HANDLE_VALUE;
     let ok = unsafe {
-        DuplicateHandle(cur_proc, stderr_handle, cur_proc, &mut dup, 0, false, DUPLICATE_SAME_ACCESS)
+        DuplicateHandle(
+            cur_proc,
+            stderr_handle,
+            cur_proc,
+            &mut dup,
+            0,
+            false,
+            DUPLICATE_SAME_ACCESS,
+        )
     };
     if ok.is_err() || dup == INVALID_HANDLE_VALUE {
         f();

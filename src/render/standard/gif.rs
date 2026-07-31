@@ -1,18 +1,18 @@
 //! osu!standard GIF renderer: 2×2 segment animated preview.
 
-use crate::render::canvas::Img;
-use crate::render::composer::save_animated_gif_streamed;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::render::canvas::Img;
+use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::format_mmssmmm;
 use std::cell::RefCell;
 use std::path::Path;
 
 use super::constants::*;
 use super::context::*;
-use super::objects::render_frame;
 use super::draw_time_label;
+use super::objects::render_frame;
 
 pub(crate) fn render_standard_gif(
     beatmap: &Beatmap,
@@ -49,8 +49,7 @@ pub(crate) fn render_standard_gif(
         .map(|rt| {
             (0..frame_count)
                 .map(|fi| {
-                    rt.start_time
-                        + py_round(fi as f64 * 1000.0 * speed_multiplier / GIF_FPS as f64)
+                    rt.start_time + py_round(fi as f64 * 1000.0 * speed_multiplier / GIF_FPS as f64)
                 })
                 .collect()
         })

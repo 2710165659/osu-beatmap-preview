@@ -1,11 +1,11 @@
 //! Render context, difficulty, skin, combo info, row timing, visible indexes.
 
-use crate::render::canvas::Img;
+use crate::common::time_selection::PreviewTimeSelector;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, BreakPeriod, HitObjects, StandardHitObject};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
-use crate::common::time_selection::PreviewTimeSelector;
+use crate::render::canvas::Img;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -99,7 +99,9 @@ pub(crate) fn standard_objects(beatmap: &Beatmap) -> Result<Vec<StandardHitObjec
     match &beatmap.hit_objects {
         HitObjects::Standard(v) if !v.is_empty() => Ok(v.clone()),
         HitObjects::Standard(_) => Err(PreviewError::render("standard beatmap has no hit objects")),
-        _ => Err(PreviewError::render("beatmap is not an osu!standard beatmap")),
+        _ => Err(PreviewError::render(
+            "beatmap is not an osu!standard beatmap",
+        )),
     }
 }
 
@@ -231,8 +233,8 @@ pub(crate) fn build_combo_info(
             index == 0 || previous_was_spinner || (hit_object.new_combo && !is_spinner);
         if starts_combo {
             if index > 0 {
-                color_index = (color_index + hit_object.combo_offset as usize + 1)
-                    % combo_colors.len();
+                color_index =
+                    (color_index + hit_object.combo_offset as usize + 1) % combo_colors.len();
             }
             number = 1;
         } else {
@@ -288,14 +290,10 @@ pub(crate) fn build_render_context(
             settings.circle_diameter as f64 * ARGON_SLIDER_WIDTH_RATIO * frame_layout.scale,
         )
         .max(1),
-        spinner_size: py_round(
-            PLAYFIELD_WIDTH.min(PLAYFIELD_HEIGHT) * 0.95 * frame_layout.scale,
-        )
-        .max(1),
-        slider_follow_size: py_round(
-            settings.circle_diameter as f64 * 2.4 * frame_layout.scale,
-        )
-        .max(1),
+        spinner_size: py_round(PLAYFIELD_WIDTH.min(PLAYFIELD_HEIGHT) * 0.95 * frame_layout.scale)
+            .max(1),
+        slider_follow_size: py_round(settings.circle_diameter as f64 * 2.4 * frame_layout.scale)
+            .max(1),
         slider_ball_size: py_round(
             settings.circle_diameter as f64 * ARGON_SLIDER_WIDTH_RATIO * frame_layout.scale,
         )

@@ -1,17 +1,15 @@
 //! Slider rendering: path data, body, ball, reverse arrows for osu!standard.
 
-use crate::render::canvas::Img;
-use crate::core::models::StandardHitObject;
 use crate::common::slider_path::{
     build_path, build_standard_slider_path, path_position_at, SliderPath,
 };
+use crate::core::models::StandardHitObject;
+use crate::render::canvas::Img;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::constants::*;
-use super::context::{
-    color_id, py_round, to_frame_point, CachedLayer, RenderCache, RenderContext,
-};
+use super::context::{color_id, py_round, to_frame_point, CachedLayer, RenderCache, RenderContext};
 
 // ——— data ———
 
@@ -105,7 +103,12 @@ pub(crate) fn render_slider_body_layer(
     let mut layer = Img::new(layer_w, layer_h, [0, 0, 0, 0]);
     let scaled_points: Vec<(f64, f64)> = points
         .iter()
-        .map(|&(x, y)| ((x - left as f64) * scale as f64, (y - top as f64) * scale as f64))
+        .map(|&(x, y)| {
+            (
+                (x - left as f64) * scale as f64,
+                (y - top as f64) * scale as f64,
+            )
+        })
         .collect();
 
     let inner_width = py_round(width as f64 * (1.0 - ARGON_SLIDER_BORDER_PORTION)).max(1);
@@ -123,7 +126,12 @@ pub(crate) fn render_slider_body_layer(
         layer.stroke_polyline(
             &scaled_points,
             (width * scale) as f64,
-            [border_color[0], border_color[1], border_color[2], body_alpha],
+            [
+                border_color[0],
+                border_color[1],
+                border_color[2],
+                body_alpha,
+            ],
             true,
         );
         // Erase the center fill with background color (playfield is black)
@@ -138,7 +146,12 @@ pub(crate) fn render_slider_body_layer(
         layer.stroke_polyline(
             &scaled_points,
             (width * scale) as f64,
-            [border_color[0], border_color[1], border_color[2], body_alpha],
+            [
+                border_color[0],
+                border_color[1],
+                border_color[2],
+                body_alpha,
+            ],
             true,
         );
         layer.stroke_polyline(
@@ -424,7 +437,7 @@ pub(crate) fn draw_slider_reverse_arrows(
         let angle_key = py_round(angle_deg);
 
         // 绘制 repeat-edge-piece（白色半圆 + 水平 alpha 渐变）
-        let edge_key = (angle_key,);  // 不依赖颜色，纯白色
+        let edge_key = (angle_key,); // 不依赖颜色，纯白色
         if !cache.reverse_edges.contains_key(&edge_key) {
             let edge_base = build_reverse_edge_piece(context.frame_circle_diameter);
             cache
@@ -433,7 +446,12 @@ pub(crate) fn draw_slider_reverse_arrows(
         }
         let edge_rotated = &cache.reverse_edges[&edge_key];
         let edge_id = color_id(ID_REVERSE_EDGE + (angle_key + 720) as u64, [255, 255, 255]);
-        let edge = with_alpha(&mut cache.resized_alpha, edge_rotated, edge_id, effective_alpha);
+        let edge = with_alpha(
+            &mut cache.resized_alpha,
+            edge_rotated,
+            edge_id,
+            effective_alpha,
+        );
         let ex = py_round(center.0 - edge.w as f64 / 2.0);
         let ey = py_round(center.1 - edge.h as f64 / 2.0);
         frame.alpha_composite(edge, ex, ey);
@@ -460,7 +478,7 @@ pub(crate) fn draw_slider_reverse_arrows(
 /// （lazer 的 FontAwesome AngleDoubleRight，icon 高约为胶囊高的 80%）。
 /// 游戏内有 1.0→1.3 的脉冲缩放，静态图按 1.0 绘制，避免过大。
 fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
-    let s = circle_diameter as f64 / 128.0;  // 按 1.0 绘制，不放大
+    let s = circle_diameter as f64 / 128.0; // 按 1.0 绘制，不放大
     let cap_w = 40.0 * s;
     let cap_h = 20.0 * s;
     let pad = 2.0_f64.max(2.0 * s);
@@ -473,7 +491,10 @@ fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
     // 白色胶囊主体
     let half_h = cap_h / 2.0;
     img.stroke_polyline(
-        &[(cx - cap_w / 2.0 + half_h, cy), (cx + cap_w / 2.0 - half_h, cy)],
+        &[
+            (cx - cap_w / 2.0 + half_h, cy),
+            (cx + cap_w / 2.0 - half_h, cy),
+        ],
         cap_h,
         [255, 255, 255, 255],
         true,

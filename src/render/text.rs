@@ -102,7 +102,9 @@ pub fn draw_text(img: &mut Img, x: i64, y: i64, text: &str, size: u32, color: Rg
         let mut cx = x;
         for ch in text.chars() {
             let key: CacheKey = (ch, size, color);
-            let sprite = cache.entry(key).or_insert_with(|| build_glyph_sprite(ch, size, color));
+            let sprite = cache
+                .entry(key)
+                .or_insert_with(|| build_glyph_sprite(ch, size, color));
 
             img.alpha_composite(sprite, cx, y);
             cx += sprite.w as i64 + scale; // advance = glyph width + 1 cell gap
@@ -128,7 +130,9 @@ pub fn render_text_sprite(text: &str, size: u32, color: Rgba) -> Img {
         }
         for ch in text.chars() {
             let key: CacheKey = (ch, size, color);
-            let sprite = cache.entry(key).or_insert_with(|| build_glyph_sprite(ch, size, color));
+            let sprite = cache
+                .entry(key)
+                .or_insert_with(|| build_glyph_sprite(ch, size, color));
             img.alpha_composite(sprite, cx, 0);
             cx += sprite.w as i64 + scale;
         }

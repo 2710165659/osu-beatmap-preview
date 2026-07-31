@@ -1,12 +1,12 @@
 //! osu!catch render-object expansion: fruits, juice streams, banana showers,
 //! HR offsets, hyperdash. RNG call order mirrors Python/stable exactly.
 
-use crate::core::errors::{PreviewError, Result};
 use crate::common::legacy_random::{stateless_next_int, LegacyRandom};
+use crate::common::slider_path::{build_catch_slider_path, path_position_at, SliderPath};
+use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, CatchHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
-use crate::common::slider_path::{build_catch_slider_path, path_position_at, SliderPath};
 
 use super::constants::*;
 
@@ -170,8 +170,8 @@ pub(crate) fn build_catch_render_objects(
 
         if seen_first_combo_object {
             if hit_object.new_combo {
-                color_index = (color_index + 1 + hit_object.combo_offset as usize)
-                    % combo_colors.len();
+                color_index =
+                    (color_index + 1 + hit_object.combo_offset as usize) % combo_colors.len();
             }
         } else {
             seen_first_combo_object = true;
@@ -182,17 +182,29 @@ pub(crate) fn build_catch_render_objects(
             last_position = Some(stable_slider_end_x(hit_object));
             last_start_time = hit_object.start_time as f64;
             build_juice_stream_objects(
-                hit_object, combo_color, difficulty.slider_tick_rate,
-                difficulty.slider_multiplier, beatmap_format_version,
-                &beatmap.timing_points, &mut rng, &mut render_objects,
+                hit_object,
+                combo_color,
+                difficulty.slider_tick_rate,
+                difficulty.slider_multiplier,
+                beatmap_format_version,
+                &beatmap.timing_points,
+                &mut rng,
+                &mut render_objects,
             )?;
             continue;
         }
-        let mut fruit =
-            build_fruit_object(hit_object.x as f64, hit_object.start_time, combo_color, None);
+        let mut fruit = build_fruit_object(
+            hit_object.x as f64,
+            hit_object.start_time,
+            combo_color,
+            None,
+        );
         if hard_rock_offsets {
             apply_hard_rock_fruit_offset(
-                &mut fruit, &mut last_position, &mut last_start_time, &mut rng,
+                &mut fruit,
+                &mut last_position,
+                &mut last_start_time,
+                &mut rng,
             );
         }
         render_objects.push(fruit);
@@ -203,9 +215,20 @@ pub(crate) fn build_catch_render_objects(
 }
 
 pub(crate) fn build_fruit_object(
-    x: f64, start_time: i64, combo_color: [u8; 3], event_time: Option<f64>,
+    x: f64,
+    start_time: i64,
+    combo_color: [u8; 3],
+    event_time: Option<f64>,
 ) -> RenderObject {
-    RenderObject { object_type: ObjType::Fruit, x, start_time, color: combo_color, scale_factor: 1.0, event_time, hyper_dash: false }
+    RenderObject {
+        object_type: ObjType::Fruit,
+        x,
+        start_time,
+        color: combo_color,
+        scale_factor: 1.0,
+        event_time,
+        hyper_dash: false,
+    }
 }
 
 fn stable_slider_end_x(hit_object: &CatchHitObject) -> f64 {
@@ -217,7 +240,9 @@ fn stable_slider_end_x(hit_object: &CatchHitObject) -> f64 {
 }
 
 fn build_banana_shower_objects(
-    hit_object: &CatchHitObject, rng: &mut LegacyRandom, out: &mut Vec<RenderObject>,
+    hit_object: &CatchHitObject,
+    rng: &mut LegacyRandom,
+    out: &mut Vec<RenderObject>,
 ) {
     let start_time = hit_object.start_time;
     let end_time = hit_object.end_time;
@@ -238,9 +263,13 @@ fn build_banana_shower_objects(
         rng.next();
 
         out.push(RenderObject {
-            object_type: ObjType::Banana, x, start_time: rhe(current_time as f64),
-            color: banana_color(current_time as i64), scale_factor: BANANA_SCALE,
-            event_time: Some(current_time as f64), hyper_dash: false,
+            object_type: ObjType::Banana,
+            x,
+            start_time: rhe(current_time as f64),
+            color: banana_color(current_time as i64),
+            scale_factor: BANANA_SCALE,
+            event_time: Some(current_time as f64),
+            hyper_dash: false,
         });
         current_time = to_float32(current_time as f64 + spacing as f64);
     }
@@ -248,19 +277,33 @@ fn build_banana_shower_objects(
 
 #[allow(clippy::too_many_arguments)]
 fn build_juice_stream_objects(
-    hit_object: &CatchHitObject, combo_color: [u8; 3], slider_tick_rate: f64,
-    slider_multiplier: f64, beatmap_format_version: i32, timing_points: &[TimingPoint],
-    rng: &mut LegacyRandom, out: &mut Vec<RenderObject>,
+    hit_object: &CatchHitObject,
+    combo_color: [u8; 3],
+    slider_tick_rate: f64,
+    slider_multiplier: f64,
+    beatmap_format_version: i32,
+    timing_points: &[TimingPoint],
+    rng: &mut LegacyRandom,
+    out: &mut Vec<RenderObject>,
 ) -> Result<()> {
-    let slider_type = hit_object.slider_type.as_deref()
+    let slider_type = hit_object
+        .slider_type
+        .as_deref()
         .ok_or_else(|| PreviewError::new("catch slider is missing path type"))?;
 
     let path = build_catch_slider_path(
-        hit_object.x, hit_object.y, &hit_object.slider_points, slider_type,
+        hit_object.x,
+        hit_object.y,
+        &hit_object.slider_points,
+        slider_type,
         hit_object.slider_pixel_length,
     );
     let events = build_slider_events(
-        hit_object, slider_tick_rate, slider_multiplier, beatmap_format_version, timing_points,
+        hit_object,
+        slider_tick_rate,
+        slider_multiplier,
+        beatmap_format_version,
+        timing_points,
     )?;
 
     let mut nested_objects: Vec<RenderObject> = Vec::new();
@@ -276,13 +319,23 @@ fn build_juice_stream_objects(
             EventType::Tick => {
                 let st = rhe(event.time);
                 nested_objects.push(RenderObject {
-                    object_type: ObjType::Droplet, x, start_time: st, color: combo_color,
-                    scale_factor: DROPLET_SCALE, event_time: Some(event.time), hyper_dash: false,
+                    object_type: ObjType::Droplet,
+                    x,
+                    start_time: st,
+                    color: combo_color,
+                    scale_factor: DROPLET_SCALE,
+                    event_time: Some(event.time),
+                    hyper_dash: false,
                 });
             }
             EventType::LegacyLastTick => {}
             _ => {
-                nested_objects.push(build_fruit_object(x, rhe(event.time), combo_color, Some(event.time)));
+                nested_objects.push(build_fruit_object(
+                    x,
+                    rhe(event.time),
+                    combo_color,
+                    Some(event.time),
+                ));
             }
         }
         previous_event = Some(*event);
@@ -307,14 +360,18 @@ fn build_juice_stream_objects(
 }
 
 fn build_slider_events(
-    hit_object: &CatchHitObject, slider_tick_rate: f64, slider_multiplier: f64,
-    beatmap_format_version: i32, timing_points: &[TimingPoint],
+    hit_object: &CatchHitObject,
+    slider_tick_rate: f64,
+    slider_multiplier: f64,
+    beatmap_format_version: i32,
+    timing_points: &[TimingPoint],
 ) -> Result<Vec<SliderEvent>> {
     if slider_tick_rate <= 0.0 {
         return Err(PreviewError::new("SliderTickRate must be positive"));
     }
 
-    let (beat_length, slider_velocity) = catch_resolve_slider_timing(hit_object.start_time, timing_points);
+    let (beat_length, slider_velocity) =
+        catch_resolve_slider_timing(hit_object.start_time, timing_points);
     let span_count = hit_object.slider_repeats.max(1);
 
     let adjusted_beat_length = precision_adjusted_beat_length(beat_length, slider_velocity);
@@ -322,8 +379,16 @@ fn build_slider_events(
 
     if hit_object.slider_pixel_length <= 0.0 || velocity <= 0.0 {
         return Ok(vec![
-            SliderEvent { event_type: EventType::Head, time: hit_object.start_time as f64, path_progress: 0.0 },
-            SliderEvent { event_type: EventType::Tail, time: hit_object.end_time as f64, path_progress: if span_count % 2 == 1 { 1.0 } else { 0.0 } },
+            SliderEvent {
+                event_type: EventType::Head,
+                time: hit_object.start_time as f64,
+                path_progress: 0.0,
+            },
+            SliderEvent {
+                event_type: EventType::Tail,
+                time: hit_object.end_time as f64,
+                path_progress: if span_count % 2 == 1 { 1.0 } else { 0.0 },
+            },
         ]);
     }
 
@@ -335,7 +400,9 @@ fn build_slider_events(
         scoring_distance
     };
     let total_distance = hit_object.slider_pixel_length.min(100000.0);
-    let tick_distance = (scoring_distance / slider_tick_rate).max(0.0).min(total_distance);
+    let tick_distance = (scoring_distance / slider_tick_rate)
+        .max(0.0)
+        .min(total_distance);
     let min_distance_from_end = velocity * 10.0;
 
     let mut events: Vec<SliderEvent> = Vec::new();
@@ -350,12 +417,22 @@ fn build_slider_events(
         let reversed_span = span_index % 2 == 1;
 
         generate_span_ticks(
-            span_index, span_start_time, span_duration, reversed_span,
-            total_distance, tick_distance, min_distance_from_end, &mut events,
+            span_index,
+            span_start_time,
+            span_duration,
+            reversed_span,
+            total_distance,
+            tick_distance,
+            min_distance_from_end,
+            &mut events,
         );
 
         let is_last_span = span_index == span_count - 1;
-        let event_type = if is_last_span { EventType::Tail } else { EventType::Repeat };
+        let event_type = if is_last_span {
+            EventType::Tail
+        } else {
+            EventType::Repeat
+        };
         let path_progress = if span_index % 2 == 0 { 1.0 } else { 0.0 };
 
         events.push(SliderEvent {
@@ -366,20 +443,29 @@ fn build_slider_events(
     }
 
     // Always generate legacy last tick, regardless of format version
-    if let Some(legacy_tick) = build_legacy_last_tick(
-        hit_object.start_time as i64, span_duration, span_count,
-    ) {
+    if let Some(legacy_tick) =
+        build_legacy_last_tick(hit_object.start_time as i64, span_duration, span_count)
+    {
         events.push(legacy_tick);
     }
 
-    events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+    events.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(events)
 }
 
 fn generate_span_ticks(
-    _span_index: i32, span_start_time: f64, span_duration: f64,
-    reversed_span: bool, total_distance: f64, tick_distance: f64,
-    min_distance_from_end: f64, events: &mut Vec<SliderEvent>,
+    _span_index: i32,
+    span_start_time: f64,
+    span_duration: f64,
+    reversed_span: bool,
+    total_distance: f64,
+    tick_distance: f64,
+    min_distance_from_end: f64,
+    events: &mut Vec<SliderEvent>,
 ) {
     if tick_distance <= 0.0 {
         return;
@@ -394,7 +480,11 @@ fn generate_span_ticks(
         }
 
         let path_progress = distance / total_distance;
-        let time_progress = if reversed_span { 1.0 - path_progress } else { path_progress };
+        let time_progress = if reversed_span {
+            1.0 - path_progress
+        } else {
+            path_progress
+        };
 
         ticks.push(SliderEvent {
             event_type: EventType::Tick,
@@ -412,7 +502,9 @@ fn generate_span_ticks(
 }
 
 fn build_legacy_last_tick(
-    start_time: i64, span_duration: f64, span_count: i32,
+    start_time: i64,
+    span_duration: f64,
+    span_count: i32,
 ) -> Option<SliderEvent> {
     if span_count <= 0 {
         return None;
@@ -445,8 +537,11 @@ fn precision_adjusted_beat_length(beat_length: f64, slider_velocity: f64) -> f64
 }
 
 fn build_tiny_droplets_between(
-    path: &SliderPath, prev: &SliderEvent, next: &SliderEvent,
-    combo_color: [u8; 3], out: &mut Vec<RenderObject>,
+    path: &SliderPath,
+    prev: &SliderEvent,
+    next: &SliderEvent,
+    combo_color: [u8; 3],
+    out: &mut Vec<RenderObject>,
 ) {
     let since_last_event = next.time as i64 - prev.time as i64;
     if since_last_event <= 80 {
@@ -465,16 +560,23 @@ fn build_tiny_droplets_between(
         let x = path_position_at(path, progress).0;
         let time = prev.time + offset;
         out.push(RenderObject {
-            object_type: ObjType::TinyDroplet, x, start_time: rhe(time), color: combo_color,
-            scale_factor: TINY_DROPLET_SCALE, event_time: Some(time), hyper_dash: false,
+            object_type: ObjType::TinyDroplet,
+            x,
+            start_time: rhe(time),
+            color: combo_color,
+            scale_factor: TINY_DROPLET_SCALE,
+            event_time: Some(time),
+            hyper_dash: false,
         });
         offset += time_between_tiny;
     }
 }
 
 fn apply_hard_rock_fruit_offset(
-    fruit: &mut RenderObject, last_position: &mut Option<f64>,
-    last_start_time: &mut f64, rng: &mut LegacyRandom,
+    fruit: &mut RenderObject,
+    last_position: &mut Option<f64>,
+    last_start_time: &mut f64,
+    rng: &mut LegacyRandom,
 ) {
     let time_diff = fruit.start_time as f64 - *last_start_time;
     if time_diff < 500.0 && last_position.is_some() {
@@ -528,7 +630,11 @@ fn apply_hyper_dash(render_objects: &mut [RenderObject], circle_size: f64) {
             - render_objects[current_index].event_time_or_start().trunc()
             - 1000.0 / 60.0 / 4.0;
         let distance_to_next = (next_x - current_x).abs()
-            - if last_direction == direction { last_excess } else { half_catcher_width };
+            - if last_direction == direction {
+                last_excess
+            } else {
+                half_catcher_width
+            };
         let distance_to_hyper = time_to_next - distance_to_next;
 
         if distance_to_hyper < 0.0 {
@@ -549,11 +655,15 @@ fn catch_resolve_slider_timing(start_time: i64, timing_points: &[TimingPoint]) -
     let mut slider_velocity = 1.0;
 
     for point in timing_points {
-        if point.time > 0.0 { break; }
+        if point.time > 0.0 {
+            break;
+        }
         apply_timing_state(point, &mut beat_length, &mut slider_velocity);
     }
     for point in timing_points {
-        if point.time > start_time as f64 { break; }
+        if point.time > start_time as f64 {
+            break;
+        }
         apply_timing_state(point, &mut beat_length, &mut slider_velocity);
     }
     (beat_length, slider_velocity)

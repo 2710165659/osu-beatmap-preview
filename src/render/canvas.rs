@@ -350,7 +350,13 @@ impl Img {
 
     /// Thick polyline with optional round joints/caps (PIL joint="curve" + end ellipses).
     /// Pixels are overwritten (no blending), matching ImageDraw behaviour on an empty layer.
-    pub fn stroke_polyline(&mut self, pts: &[(f64, f64)], width: f64, color: Rgba, round_caps: bool) {
+    pub fn stroke_polyline(
+        &mut self,
+        pts: &[(f64, f64)],
+        width: f64,
+        color: Rgba,
+        round_caps: bool,
+    ) {
         if pts.is_empty() {
             return;
         }
@@ -439,7 +445,15 @@ impl Img {
     }
 
     /// Rounded rectangle fill (PIL rounded_rectangle).
-    pub fn fill_rounded_rect(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, radius: f64, color: Rgba) {
+    pub fn fill_rounded_rect(
+        &mut self,
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
+        radius: f64,
+        color: Rgba,
+    ) {
         let r = radius.min((x1 - x0) / 2.0).min((y1 - y0) / 2.0).max(0.0);
         let ya = y0.floor().max(0.0) as i64;
         let yb = y1.ceil().min(self.h as f64 - 1.0) as i64;

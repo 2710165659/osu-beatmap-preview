@@ -3,8 +3,8 @@
 //! 从统一的 `assets/skin.ini`（经 [`crate::render::skin`] 解析）中按键数选取
 //! 对应的 [Mania] 配置块，提取列宽 / 分隔线宽 / 判定线位置 / 列颜色。
 
-use crate::render::canvas::Rgba;
 use crate::parser::round_half_even;
+use crate::render::canvas::Rgba;
 
 use super::{GIF_HIT_TARGET_FROM_BOTTOM, LANE_BACKGROUND, LANE_WIDTH};
 

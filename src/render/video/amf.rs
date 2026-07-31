@@ -27,8 +27,8 @@
 //!
 //! AMF outputs Annex-B by default; the shared `mux` module parses it.
 
-use crate::render::canvas::Img;
 use crate::core::errors::{PreviewError, Result};
+use crate::render::canvas::Img;
 
 use super::mux::extract_nals_from_annexb;
 use super::{EncodedFrame, FrameEncoder, VIDEO_BITRATE};
@@ -98,7 +98,8 @@ struct AmfInterfaceVTable {
 #[repr(C)]
 struct AmfPropertyStorageVTable {
     base: AmfInterfaceVTable, // 0-2
-    set_property: unsafe extern "C" fn(AmfPtr, *const wchar_t, *const AmfVariantStruct) -> amf_int32,
+    set_property:
+        unsafe extern "C" fn(AmfPtr, *const wchar_t, *const AmfVariantStruct) -> amf_int32,
     get_property: unsafe extern "C" fn(AmfPtr, *const wchar_t, *mut AmfVariantStruct) -> amf_int32,
     // ... more methods we don't call; not listed to keep struct short.
 }
@@ -187,8 +188,7 @@ struct AmfBufferVTable {
 // ── AMF entry point types ──
 
 /// `AMFInit1(version, &factory)` — the entry point exported by amfrt64.dll.
-type AmfInitFn =
-    unsafe extern "C" fn(u64, *mut AmfPtr) -> amf_int32;
+type AmfInitFn = unsafe extern "C" fn(u64, *mut AmfPtr) -> amf_int32;
 
 /// The AMF factory interface (from AMFFactory1).
 /// Method 3: CreateContext(&context) → amf_int32
@@ -197,7 +197,8 @@ type AmfInitFn =
 struct AmfFactoryVTable {
     base: AmfInterfaceVTable, // 0-2
     create_context: unsafe extern "C" fn(AmfPtr, *mut AmfPtr) -> amf_int32,
-    create_component: unsafe extern "C" fn(AmfPtr, AmfPtr, *const wchar_t, *mut AmfPtr) -> amf_int32,
+    create_component:
+        unsafe extern "C" fn(AmfPtr, AmfPtr, *const wchar_t, *mut AmfPtr) -> amf_int32,
 }
 
 /// AMFContext: surface allocation.
@@ -205,8 +206,14 @@ struct AmfFactoryVTable {
 #[repr(C)]
 struct AmfContextVTable {
     base: AmfInterfaceVTable, // 0-2
-    alloc_surface:
-        unsafe extern "C" fn(AmfPtr, amf_int32, amf_int32, amf_int32, amf_int32, *mut AmfPtr) -> amf_int32,
+    alloc_surface: unsafe extern "C" fn(
+        AmfPtr,
+        amf_int32,
+        amf_int32,
+        amf_int32,
+        amf_int32,
+        *mut AmfPtr,
+    ) -> amf_int32,
     // ... many more methods (lock, unlock, etc.) we don't call.
 }
 
@@ -299,11 +306,21 @@ pub(crate) fn try_create(w: u32, h: u32, fps: u32) -> Result<Option<AmfEncoder>>
     // 5. context->AllocSurface(HOST, BGRA, w, h)
     let mut surface: AmfPtr = std::ptr::null_mut();
     let status = unsafe {
-        ((*context_vt).alloc_surface)(context, AMF_MEMORY_HOST, AMF_SURFACE_BGRA, w as amf_int32, h as amf_int32, &mut surface)
+        ((*context_vt).alloc_surface)(
+            context,
+            AMF_MEMORY_HOST,
+            AMF_SURFACE_BGRA,
+            w as amf_int32,
+            h as amf_int32,
+            &mut surface,
+        )
     };
     if status != AMF_OK || surface.is_null() {
         eprintln!("[video] AMF: AllocSurface failed: status={status}");
-        unsafe { amf_release(context); amf_release(factory) };
+        unsafe {
+            amf_release(context);
+            amf_release(factory)
+        };
         return Ok(None);
     }
     let surface_vt: *const AmfSurfaceVTable = unsafe { amf_vtable(surface) };
@@ -316,7 +333,11 @@ pub(crate) fn try_create(w: u32, h: u32, fps: u32) -> Result<Option<AmfEncoder>>
     };
     if status != AMF_OK || component.is_null() {
         eprintln!("[video] AMF: CreateComponent failed: status={status}");
-        unsafe { amf_release(surface); amf_release(context); amf_release(factory) };
+        unsafe {
+            amf_release(surface);
+            amf_release(context);
+            amf_release(factory)
+        };
         return Ok(None);
     }
 
@@ -325,7 +346,12 @@ pub(crate) fn try_create(w: u32, h: u32, fps: u32) -> Result<Option<AmfEncoder>>
     let prop_vt: *const AmfPropertyStorageVTable = unsafe { amf_vtable(component) };
     if prop_vt.is_null() {
         eprintln!("[video] AMF: component vtable null");
-        unsafe { amf_release(component); amf_release(surface); amf_release(context); amf_release(factory) };
+        unsafe {
+            amf_release(component);
+            amf_release(surface);
+            amf_release(context);
+            amf_release(factory)
+        };
         return Ok(None);
     }
 
@@ -353,10 +379,16 @@ pub(crate) fn try_create(w: u32, h: u32, fps: u32) -> Result<Option<AmfEncoder>>
 
     // 8. component->Init(BGRA, w, h)
     let comp_vt: *const AmfComponentVTable = unsafe { amf_vtable(component) };
-    let status = unsafe { ((*comp_vt).init)(component, AMF_SURFACE_BGRA, w as amf_int32, h as amf_int32) };
+    let status =
+        unsafe { ((*comp_vt).init)(component, AMF_SURFACE_BGRA, w as amf_int32, h as amf_int32) };
     if status != AMF_OK {
         eprintln!("[video] AMF: Init failed: status={status}");
-        unsafe { amf_release(component); amf_release(surface); amf_release(context); amf_release(factory) };
+        unsafe {
+            amf_release(component);
+            amf_release(surface);
+            amf_release(context);
+            amf_release(factory)
+        };
         return Ok(None);
     }
 

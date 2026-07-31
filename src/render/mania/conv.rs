@@ -3,8 +3,8 @@
 //! ports osu!lazer's ManiaBeatmapConverter.
 //! RNG call order and float32 round-trip points must match Python exactly.
 
-use crate::core::errors::{PreviewError, Result};
 use crate::common::legacy_random::LegacyRandom;
+use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, HitObjects, KvSection, ManiaHitObject, StandardHitObject};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
@@ -133,7 +133,10 @@ impl ConversionState<'_> {
         if allow_special && self.total_columns == 8 {
             return i32::min(6, (x * 7).div_euclid(512)) + 1;
         }
-        i32::min(self.total_columns - 1, (x * self.total_columns).div_euclid(512))
+        i32::min(
+            self.total_columns - 1,
+            (x * self.total_columns).div_euclid(512),
+        )
     }
 
     fn get_random_column(&mut self, lo: Option<i32>, hi: Option<i32>) -> i32 {
@@ -217,7 +220,9 @@ pub(crate) fn mania_convert(
     mods: Option<&ModSettings>,
 ) -> Result<Beatmap> {
     if beatmap.mode() != 0 {
-        return Err(PreviewError::new("source beatmap must be osu!standard (mode=0)"));
+        return Err(PreviewError::new(
+            "source beatmap must be osu!standard (mode=0)",
+        ));
     }
     if target_mode != 3 {
         return Err(PreviewError::new(
@@ -227,7 +232,9 @@ pub(crate) fn mania_convert(
 
     let objects = std_objects(beatmap);
     if objects.is_empty() {
-        return Err(PreviewError::new("standard beatmap has no hit objects to convert"));
+        return Err(PreviewError::new(
+            "standard beatmap has no hit objects to convert",
+        ));
     }
 
     let diff = &beatmap.difficulty;
@@ -946,9 +953,7 @@ fn slider_gen_random_multiple(
 ) -> Result<Pattern> {
     let t_cols = s.total_columns;
     let legacy = (4..=8).contains(&t_cols);
-    let interval = s
-        .rng
-        .next_range(1, t_cols - if legacy { 1 } else { 0 });
+    let interval = s.rng.next_range(1, t_cols - if legacy { 1 } else { 0 });
     let mut col = s.get_column(ho.x, true);
     let mut pattern = Pattern::new();
     for i in 0..(ctx.spans + 1) {
@@ -1026,7 +1031,8 @@ fn slider_gen_hold_and_normal(
         let t = ctx.start_time + i as i64 * ctx.seg_dur;
         if !(ignore_head && t == ctx.start_time) {
             for _ in 0..nc {
-                next_col = s.find_available_column(next_col, &[&row], None, None, false, Some(col))?;
+                next_col =
+                    s.find_available_column(next_col, &[&row], None, None, false, Some(col))?;
                 row.add(next_col, t, t);
             }
         }
@@ -1065,7 +1071,10 @@ fn slider_hitsound_at(ho: &StandardHitObject, ctx: &SliderCtx, time: i64) -> i32
     } else {
         (time - ctx.start_time).div_euclid(ctx.seg_dur)
     };
-    let index = i64::max(0, i64::min(index, ho.slider_edge_hitsounds.len() as i64 - 1));
+    let index = i64::max(
+        0,
+        i64::min(index, ho.slider_edge_hitsounds.len() as i64 - 1),
+    );
     ho.slider_edge_hitsounds[index as usize]
 }
 
@@ -1087,7 +1096,10 @@ fn slider_cap_hold_counts(t_cols: i32, p2: f64, p3: f64, p4: f64) -> (f64, f64, 
 
 // ── spinner generator ──
 
-fn spinner_generate(s: &mut ConversionState, ho: &StandardHitObject) -> Result<Vec<ManiaHitObject>> {
+fn spinner_generate(
+    s: &mut ConversionState,
+    ho: &StandardHitObject,
+) -> Result<Vec<ManiaHitObject>> {
     let t_cols = s.total_columns;
     let dur = ho.end_time - ho.start_time;
     let is_hold = dur >= 100;

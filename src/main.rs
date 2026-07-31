@@ -98,7 +98,10 @@ fn parse_args() -> Args {
                 no_log = true;
             }
             Long("version") => {
-                println!("osu-beatmap-preview v{} (built {})", VERSION, BUILD_TIMESTAMP);
+                println!(
+                    "osu-beatmap-preview v{} (built {})",
+                    VERSION, BUILD_TIMESTAMP
+                );
                 std::process::exit(0);
             }
             Short('h') | Long("help") => {
@@ -109,10 +112,7 @@ fn parse_args() -> Args {
                 print_usage_and_exit(2);
             }
             Value(val) => {
-                eprintln!(
-                    "error: unexpected argument: {}",
-                    val.to_string_lossy()
-                );
+                eprintln!("error: unexpected argument: {}", val.to_string_lossy());
                 print_usage_and_exit(2);
             }
             Long(unknown) => {

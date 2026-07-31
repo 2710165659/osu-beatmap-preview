@@ -42,8 +42,9 @@ impl AudioSourceJob {
         );
 
         let handle = std::thread::spawn(move || {
-            let osz_path =
-                crate::pipeline::downloader::download_beatmapset_archive(set_id, &cache_dir, no_cache)?;
+            let osz_path = crate::pipeline::downloader::download_beatmapset_archive(
+                set_id, &cache_dir, no_cache,
+            )?;
             prepare_audio_source(&beatmap, &osz_path, &cache_dir, no_cache)
         });
         Ok(Self { handle })

@@ -27,7 +27,12 @@ pub fn download_beatmap_file(bid: &str, temp_dir: &Path, no_cache: bool) -> Resu
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(20))
         .build();
-    crate::log::event("download-osu", "start", Some(bid), &format!("fetching {url}"));
+    crate::log::event(
+        "download-osu",
+        "start",
+        Some(bid),
+        &format!("fetching {url}"),
+    );
     let started = Instant::now();
     let response = agent
         .get(&url)
@@ -38,28 +43,38 @@ pub fn download_beatmap_file(bid: &str, temp_dir: &Path, no_cache: bool) -> Resu
         Ok(resp) => {
             let mut buf = Vec::new();
             resp.into_reader().read_to_end(&mut buf).map_err(|e| {
-                crate::log::event("download-osu", "error", Some(bid), &format!("read failed: {e}"));
+                crate::log::event(
+                    "download-osu",
+                    "error",
+                    Some(bid),
+                    &format!("read failed: {e}"),
+                );
                 PreviewError::download(format!("failed to download beatmap {bid}: {e}"))
             })?;
             buf
         }
         Err(ureq::Error::Status(404, _)) => {
-            crate::log::event("download-osu", "error", Some(bid), &format!("beatmap not found for bid {bid}"));
+            crate::log::event(
+                "download-osu",
+                "error",
+                Some(bid),
+                &format!("beatmap not found for bid {bid}"),
+            );
             return Err(PreviewError::download(format!(
                 "beatmap not found for bid {bid}"
-            )))
+            )));
         }
         Err(ureq::Error::Status(code, _)) => {
             crate::log::event("download-osu", "error", Some(bid), &format!("http {code}"));
             return Err(PreviewError::download(format!(
                 "failed to download beatmap {bid}: http {code}"
-            )))
+            )));
         }
         Err(e) => {
             crate::log::event("download-osu", "error", Some(bid), &e.to_string());
             return Err(PreviewError::download(format!(
                 "failed to download beatmap {bid}: {e}"
-            )))
+            )));
         }
     };
     let ms = started.elapsed().as_secs_f64() * 1000.0;
@@ -70,7 +85,10 @@ pub fn download_beatmap_file(bid: &str, temp_dir: &Path, no_cache: bool) -> Resu
         "download-osu",
         "done",
         Some(bid),
-        &format!("downloaded {:.1} KB in {ms:.0} ms", data.len() as f64 / 1024.0),
+        &format!(
+            "downloaded {:.1} KB in {ms:.0} ms",
+            data.len() as f64 / 1024.0
+        ),
     );
     crate::log::record_cache(crate::log::CacheKind::Osu, "downloaded");
     Ok(target_path)

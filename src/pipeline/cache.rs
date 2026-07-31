@@ -1,9 +1,9 @@
 //! Output caching helpers: file-name formatting, mtime-based cache validity,
 //! and deterministic-time checks.
 
+use crate::core::errors::{PreviewError, Result};
 use crate::core::models::KvSection;
 use crate::core::mods::ModSettings;
-use crate::core::errors::{PreviewError, Result};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -180,11 +180,8 @@ pub(crate) fn with_atomic_output<T>(
     let file_name = output_path
         .file_name()
         .ok_or_else(|| PreviewError::render("invalid output path: missing file name"))?;
-    let tmp_path = output_path.with_file_name(format!(
-        "{}.{}",
-        file_name.to_string_lossy(),
-        tmp_suffix
-    ));
+    let tmp_path =
+        output_path.with_file_name(format!("{}.{}", file_name.to_string_lossy(), tmp_suffix));
 
     // Clear any temp file left by a previous interrupted run.
     let _ = std::fs::remove_file(&tmp_path);
@@ -236,10 +233,7 @@ fn mp4_bytes_complete(data: &[u8]) -> bool {
     // earlier "moov" if the latest one does not align with EOF.
     let mut search_end = data.len();
     while search_end >= 4 {
-        let Some(rel) = data[..search_end]
-            .windows(4)
-            .rposition(|w| w == b"moov")
-        else {
+        let Some(rel) = data[..search_end].windows(4).rposition(|w| w == b"moov") else {
             return false;
         };
         if rel >= 4 {

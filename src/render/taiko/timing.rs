@@ -84,8 +84,7 @@ impl ScrollPositionMapper {
             .start_times
             .partition_point(|&s| (s as f64) <= clamped_time);
         let segment = &self.segments[idx.saturating_sub(1)];
-        segment.start_position
-            + (clamped_time - segment.start_time as f64) * segment.pixels_per_ms
+        segment.start_position + (clamped_time - segment.start_time as f64) * segment.pixels_per_ms
     }
 }
 
@@ -106,7 +105,10 @@ pub(crate) fn build_scroll_mapper(
 }
 
 fn pixels_per_ms(slider_multiplier: f64, scroll_speed: f64, display_beat_length: f64) -> f64 {
-    PIXELS_PER_SCROLL_MULTIPLIER_MS * SCROLL_LENGTH_RATIO * slider_multiplier * scroll_speed
+    PIXELS_PER_SCROLL_MULTIPLIER_MS
+        * SCROLL_LENGTH_RATIO
+        * slider_multiplier
+        * scroll_speed
         * 1000.0
         / display_beat_length
 }
@@ -395,7 +397,9 @@ pub(crate) fn build_timing_lines(
             let is_first_beat = beat_index == 0;
 
             if rounded_time >= 0
-                && (is_measure || beat_spacing >= min_beat_line_spacing || (show_bpm && is_first_beat))
+                && (is_measure
+                    || beat_spacing >= min_beat_line_spacing
+                    || (show_bpm && is_first_beat))
             {
                 merge_timing_line(
                     &mut line_by_time,
@@ -648,5 +652,9 @@ pub(crate) fn spacing_timing_points_for_png(timing_points: &[TimingPoint]) -> Ve
 }
 
 pub(crate) fn taiko_hit_objects(beatmap: &Beatmap) -> Vec<TaikoHitObject> {
-    beatmap.hit_objects.as_taiko().map(|v| v.to_vec()).unwrap_or_default()
+    beatmap
+        .hit_objects
+        .as_taiko()
+        .map(|v| v.to_vec())
+        .unwrap_or_default()
 }

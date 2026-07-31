@@ -59,9 +59,7 @@ pub fn path_position_at_distance(path: &SliderPath, target: f64) -> P {
         return *path.points.last().unwrap();
     }
     // bisect_right equivalent
-    let index = path
-        .cumulative_lengths
-        .partition_point(|&v| v <= target);
+    let index = path.cumulative_lengths.partition_point(|&v| v <= target);
     let previous_index = index.saturating_sub(1);
     let next_index = index.min(path.points.len() - 1);
     let previous = path.points[previous_index];
@@ -157,8 +155,8 @@ pub fn simplify_path(points: &[P], tolerance: f64) -> Vec<P> {
         let dist_sq = if line_len_sq < 0.0001 {
             (points[i].0 - sx).powi(2) + (points[i].1 - sy).powi(2)
         } else {
-            let t = (((points[i].0 - sx) * dx + (points[i].1 - sy) * dy) / line_len_sq)
-                .clamp(0.0, 1.0);
+            let t =
+                (((points[i].0 - sx) * dx + (points[i].1 - sy) * dy) / line_len_sq).clamp(0.0, 1.0);
             let px = sx + t * dx;
             let py = sy + t * dy;
             (points[i].0 - px).powi(2) + (points[i].1 - py).powi(2)
@@ -295,8 +293,7 @@ fn approximate_perfect_curve(points: &[P], lazer_semantics: bool) -> Vec<P> {
         let point_count = n;
         (0..point_count)
             .map(|index| {
-                let angle =
-                    start_angle + theta_range * index as f64 / (point_count - 1) as f64;
+                let angle = start_angle + theta_range * index as f64 / (point_count - 1) as f64;
                 (
                     centre.0 + angle.cos() * radius,
                     centre.1 + angle.sin() * radius,
@@ -375,7 +372,13 @@ fn approximate_catmull(points: &[P]) -> Vec<P> {
         let p2 = extended[index + 1];
         let p3 = extended[index + 2];
         for step in 0..CATMULL_DETAIL {
-            path.push(catmull_at(p0, p1, p2, p3, step as f64 / CATMULL_DETAIL as f64));
+            path.push(catmull_at(
+                p0,
+                p1,
+                p2,
+                p3,
+                step as f64 / CATMULL_DETAIL as f64,
+            ));
         }
     }
     path.push(*points.last().unwrap());

@@ -43,15 +43,10 @@ pub(crate) const CATCHER_BASE_SIZE: f64 = 106.75;
 pub(crate) const DEFAULT_BEAT_LENGTH: f64 = 500.0;
 pub(crate) const RNG_SEED: u32 = 1337;
 
-pub(crate) const BANANA_COLORS: [[u8; 3]; 3] =
-    [[255, 240, 0], [255, 192, 0], [214, 221, 28]];
+pub(crate) const BANANA_COLORS: [[u8; 3]; 3] = [[255, 240, 0], [255, 192, 0], [214, 221, 28]];
 
-pub(crate) const LAZER_COMBO_COLORS: [[u8; 3]; 4] = [
-    [255, 192, 0],
-    [0, 202, 0],
-    [18, 124, 255],
-    [242, 24, 57],
-];
+pub(crate) const LAZER_COMBO_COLORS: [[u8; 3]; 4] =
+    [[255, 192, 0], [0, 202, 0], [18, 124, 255], [242, 24, 57]];
 
 pub(crate) const GIF_ROW_COUNT: i64 = 2;
 pub(crate) const GIF_IMAGES_PER_ROW: i64 = 2;

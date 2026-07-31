@@ -1,22 +1,21 @@
 //! osu!mania PNG grid renderer.
 //! Port of beatmap_preview/mania/renderer.py.
 
-use crate::render::canvas::{Img, Rgba};
-use crate::render::composer::save_png;
 use crate::core::errors::Result;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
+use crate::render::canvas::{Img, Rgba};
+use crate::render::composer::save_png;
 use crate::render::text::{draw_text, text_size};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
-    mania_objects, resolve_key_count, COLUMN_GAP, IMAGE_BACKGROUND, LANE_BACKGROUND,
-    LANE_WIDTH, LEFT_PANEL_BACKGROUND, LEFT_PANEL_WIDTH,
-    NOTE_HEAD_HEIGHT, NOTE_SIDE_PADDING, PAGE_MARGIN_X, PAGE_MARGIN_Y, PIXELS_PER_MS,
-    RULER_TEXT, SV_TEXT_COLOR, SV_TEXT_FONT_SIZE, TOP_BUFFER,
+    mania_objects, resolve_key_count, COLUMN_GAP, IMAGE_BACKGROUND, LANE_BACKGROUND, LANE_WIDTH,
+    LEFT_PANEL_BACKGROUND, LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, NOTE_SIDE_PADDING, PAGE_MARGIN_X,
+    PAGE_MARGIN_Y, PIXELS_PER_MS, RULER_TEXT, SV_TEXT_COLOR, SV_TEXT_FONT_SIZE, TOP_BUFFER,
 };
 
 const LANE_GAP: i64 = 0;
@@ -81,9 +80,16 @@ pub(crate) fn render_mania_grid(
 
     // Trim leading silence: if first note is >= 5s in, start 1s before it,
     // aligned to the red-line beat grid.
-    let first_note_time = hit_objects.iter().map(|ho| ho.start_time).min().unwrap_or(0);
+    let first_note_time = hit_objects
+        .iter()
+        .map(|ho| ho.start_time)
+        .min()
+        .unwrap_or(0);
     let chart_start_time = if first_note_time >= 5000 {
-        crate::common::time_selection::snap_to_beat_grid(first_note_time - 1000, &beatmap.timing_points)
+        crate::common::time_selection::snap_to_beat_grid(
+            first_note_time - 1000,
+            &beatmap.timing_points,
+        )
     } else {
         0
     };
@@ -98,11 +104,15 @@ pub(crate) fn render_mania_grid(
     let beatmap_duration = hit_objects.iter().map(|ho| ho.end_time).max().unwrap_or(0);
     let chart_end_time = beatmap_duration + BOTTOM_PADDING_MS;
     let timing_points_for_render: Vec<TimingPoint> = if chart_start_time > 0 {
-        beatmap.timing_points.iter().map(|tp| {
-            let mut tp = *tp;
-            tp.time -= chart_start_time as f64;
-            tp
-        }).collect()
+        beatmap
+            .timing_points
+            .iter()
+            .map(|tp| {
+                let mut tp = *tp;
+                tp.time -= chart_start_time as f64;
+                tp
+            })
+            .collect()
     } else {
         beatmap.timing_points.clone()
     };
@@ -110,14 +120,23 @@ pub(crate) fn render_mania_grid(
         &timing_points_for_render,
         chart_end_time,
         beatmap.beat_divisor,
-        hit_objects.iter().map(|ho| ho.start_time).min().unwrap_or(0),
+        hit_objects
+            .iter()
+            .map(|ho| ho.start_time)
+            .min()
+            .unwrap_or(0),
     );
     let sv_changes = if cs_mode || !native_mania {
         Vec::new()
     } else {
         build_sv_changes(&timing_points_for_render, chart_end_time)
     };
-    let layout = build_png_layout(key_count, beatmap_duration, chart_end_time, chart_start_time)?;
+    let layout = build_png_layout(
+        key_count,
+        beatmap_duration,
+        chart_end_time,
+        chart_start_time,
+    )?;
 
     let mut image = Img::new(
         layout.image_width as u32,
@@ -273,7 +292,10 @@ fn draw_timing_line(image: &mut Img, timing_line: &TimingLine, layout: &RenderLa
     );
 
     if timing_line.show_label {
-        let label = format!("{:.1}s", (timing_line.time + layout.chart_start_time) as f64 / 1000.0);
+        let label = format!(
+            "{:.1}s",
+            (timing_line.time + layout.chart_start_time) as f64 / 1000.0
+        );
         let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
         let label_width = label_width as i64;
         let text_mid_y = label_height as f64 / 2.0;
@@ -304,8 +326,16 @@ fn draw_timing_line(image: &mut Img, timing_line: &TimingLine, layout: &RenderLa
             } else {
                 bpm_x = bpm_x.min(layout.image_width - PAGE_MARGIN_X - bpm_w);
             }
-            let bpm_y = (label_y + label_height as i64 + 3).min(PAGE_MARGIN_Y + layout.total_column_height - bpm_h as i64);
-            draw_text(image, bpm_x, bpm_y, bpm_label, TIME_LABEL_FONT_SIZE, RULER_TEXT);
+            let bpm_y = (label_y + label_height as i64 + 3)
+                .min(PAGE_MARGIN_Y + layout.total_column_height - bpm_h as i64);
+            draw_text(
+                image,
+                bpm_x,
+                bpm_y,
+                bpm_label,
+                TIME_LABEL_FONT_SIZE,
+                RULER_TEXT,
+            );
         }
     }
 }
@@ -370,7 +400,12 @@ fn draw_png_hit_object(
     }
 }
 
-fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64, beat_divisor: i32, first_note_time: i64) -> Vec<TimingLine> {
+fn build_timing_lines(
+    timing_points: &[TimingPoint],
+    chart_end_time: i64,
+    beat_divisor: i32,
+    first_note_time: i64,
+) -> Vec<TimingLine> {
     let base_points: Vec<&TimingPoint> = timing_points.iter().filter(|p| p.uninherited).collect();
     if base_points.is_empty() {
         return Vec::new();

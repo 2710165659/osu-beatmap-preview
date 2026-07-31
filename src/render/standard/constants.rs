@@ -60,12 +60,8 @@ pub(crate) const ARGON_BORDER_RATIO: f64 = 2.0 / 58.0;
 pub(crate) const ARGON_SLIDER_WIDTH_RATIO: f64 = 110.345 / 128.0;
 pub(crate) const ARGON_SLIDER_BORDER_PORTION: f64 = 0.2;
 pub(crate) const ARGON_SLIDER_BODY_ALPHA: f64 = 0.98;
-pub(crate) const ARGON_COMBO_COLORS: [[u8; 3]; 4] = [
-    [255, 192, 0],
-    [0, 202, 0],
-    [18, 124, 255],
-    [242, 24, 57],
-];
+pub(crate) const ARGON_COMBO_COLORS: [[u8; 3]; 4] =
+    [[255, 192, 0], [0, 202, 0], [18, 124, 255], [242, 24, 57]];
 pub(crate) const ARGON_SPINNER_PINK: [u8; 3] = [252, 97, 143];
 
 // cache ids for procedural pieces

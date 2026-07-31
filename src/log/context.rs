@@ -76,7 +76,8 @@ pub(crate) fn bid() -> Option<String> {
 /// 记录某类缓存的命中状态："hit" / "downloaded" / "miss" / "error"。
 pub fn record_cache(kind: CacheKind, state: &str) {
     with_context(|ctx| {
-        ctx.cache.insert(kind.as_str().to_string(), state.to_string());
+        ctx.cache
+            .insert(kind.as_str().to_string(), state.to_string());
     });
 }
 

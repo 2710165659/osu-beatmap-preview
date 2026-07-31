@@ -1,13 +1,13 @@
 //! osu!taiko GIF renderer: 4-segment animated preview with Overlapping scroll.
 
-use crate::render::canvas::Img;
-use crate::render::composer;
+use crate::common::time_selection::{PreviewSegmentTiming, PreviewTimeSelector};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TaikoHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
+use crate::render::canvas::Img;
+use crate::render::composer;
 use crate::render::text::{draw_text, text_size};
-use crate::common::time_selection::{PreviewSegmentTiming, PreviewTimeSelector};
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -460,7 +460,11 @@ fn draw_circle_object(
     } else {
         layout.normal_note_diameter
     };
-    let color = if is_rim { RIM_NOTE_COLOR } else { CENTRE_NOTE_COLOR };
+    let color = if is_rim {
+        RIM_NOTE_COLOR
+    } else {
+        CENTRE_NOTE_COLOR
+    };
 
     draw_note_disc(image, cache, color, diameter, center_x, center_y, false);
 }

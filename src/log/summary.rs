@@ -121,7 +121,12 @@ pub fn write_summary(rec: &SummaryRecord) {
     }
 
     let mut cache = Map::new();
-    for kind in [CacheKind::Osu, CacheKind::Osz, CacheKind::Audio, CacheKind::Output] {
+    for kind in [
+        CacheKind::Osu,
+        CacheKind::Osz,
+        CacheKind::Audio,
+        CacheKind::Output,
+    ] {
         if let Some(state) = ctx.cache.get(kind.as_str()) {
             cache.insert(kind.as_str().to_string(), Value::String(state.clone()));
         }
@@ -131,7 +136,10 @@ pub fn write_summary(rec: &SummaryRecord) {
     }
 
     if let Some(error) = &rec.error {
-        map.insert("error".to_string(), Value::String(truncate_chars(error, 2000)));
+        map.insert(
+            "error".to_string(),
+            Value::String(truncate_chars(error, 2000)),
+        );
     }
     if let Some(kind) = &rec.error_kind {
         map.insert("error_kind".to_string(), Value::String(kind.clone()));
