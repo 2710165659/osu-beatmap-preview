@@ -4,7 +4,7 @@
 //! Slider end-time computation (including timing-point lookups) is shared across
 //! standard, taiko, and catch.
 
-use crate::models::*;
+use crate::core::models::*;
 
 pub(crate) struct SliderFields {
     pub slider_type: String,

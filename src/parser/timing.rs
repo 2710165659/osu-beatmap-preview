@@ -1,6 +1,6 @@
 //! Timing point and break-period parsing.
 
-use crate::models::{BreakPeriod, TimingPoint};
+use crate::core::models::{BreakPeriod, TimingPoint};
 
 /// Parse `[TimingPoints]` lines into a sorted `Vec<TimingPoint>`.
 /// Returns `None` if the section is empty.

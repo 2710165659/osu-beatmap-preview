@@ -1,7 +1,7 @@
 //! Beatmap section parsing: split a .osu file into `[Section]` blocks,
 //! parse key-value pairs, format version, and combo colours.
 
-use crate::models::KvSection;
+use crate::core::models::KvSection;
 use std::collections::HashMap;
 
 /// Split raw .osu content into named sections (HashMap<section_name, Vec<lines>>).

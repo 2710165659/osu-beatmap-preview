@@ -1,7 +1,7 @@
 //! Shared helpers for beatmap conversion (standard → taiko/catch/mania).
 //! Used by each mode's conv.rs module.
 
-use crate::models::{Beatmap, StandardHitObject, TimingPoint};
+use crate::core::models::{Beatmap, StandardHitObject, TimingPoint};
 
 /// Monotonically advances through sorted timing points as objects are processed
 /// in time order, avoiding O(n×m) repeated linear scans.

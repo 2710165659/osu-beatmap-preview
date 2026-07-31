@@ -13,8 +13,8 @@ pub use hit_objects::round_half_even;
 pub use sections::{default_metadata, parse_combo_colors, parse_format_version, parse_key_value, split_sections};
 pub use timing::{parse_break_periods, parse_timing_points};
 
-use crate::errors::{PreviewError, Result};
-use crate::models::*;
+use crate::core::errors::{PreviewError, Result};
+use crate::core::models::*;
 use std::path::Path;
 use std::time::Instant;
 

@@ -1,26 +1,11 @@
-mod build_time;
-mod audio;
-mod cache;
-mod canvas;
-mod catch;
 mod common;
-mod composer;
-mod downloader;
-mod errors;
+mod core;
 mod log;
-mod mania;
-mod models;
-mod mods;
 mod parser;
-mod service;
-mod skin;
-mod standard;
-mod taiko;
-mod text;
-mod validate;
-mod video;
+mod pipeline;
+mod render;
 
-use errors::Result;
+use core::errors::Result;
 use lexopt::prelude::*;
 use std::path::PathBuf;
 
@@ -71,7 +56,7 @@ fn parse_args() -> Args {
             }
             Long("convert") => {
                 let v = take_value(&mut parser, "--convert");
-                if let Err(e) = validate::validate_convert_value(&v) {
+                if let Err(e) = core::validate::validate_convert_value(&v) {
                     eprintln!("error: {e}");
                     print_usage_and_exit(2);
                 }
@@ -82,7 +67,7 @@ fn parse_args() -> Args {
             }
             Long("fmt") | Long("format") => {
                 let v = take_value(&mut parser, "--fmt");
-                if let Err(e) = validate::validate_fmt_value(&v) {
+                if let Err(e) = core::validate::validate_fmt_value(&v) {
                     eprintln!("error: {e}");
                     print_usage_and_exit(2);
                 }
@@ -97,7 +82,7 @@ fn parse_args() -> Args {
                     eprintln!("error: --gap must be a number, got '{v}'");
                     print_usage_and_exit(2);
                 });
-                if let Err(e) = validate::validate_gap_value(val) {
+                if let Err(e) = core::validate::validate_gap_value(val) {
                     eprintln!("error: {e}");
                     print_usage_and_exit(2);
                 }
@@ -167,16 +152,16 @@ fn take_value(parser: &mut lexopt::Parser, name: &str) -> String {
 
 fn run(args: &Args) -> Result<serde_json::Value> {
     let mods_unvalidated = match &args.mods {
-        Some(mod_str) => Some(mods::parse_mods(mod_str)?),
+        Some(mod_str) => Some(core::mods::parse_mods(mod_str)?),
         None => None,
     };
 
     let times = match &args.time {
-        Some(raw) => Some(validate::parse_times(raw)?),
+        Some(raw) => Some(core::validate::parse_times(raw)?),
         None => None,
     };
 
-    service::generate_preview(
+    pipeline::service::generate_preview(
         &args.bid,
         args.fmt.as_deref(),
         args.convert.as_deref(),
@@ -252,7 +237,7 @@ fn main() {
         }
         Err(exc) => {
             let msg = match exc.kind() {
-                errors::ErrorKind::Other => format!("error: {exc}"),
+                core::errors::ErrorKind::Other => format!("error: {exc}"),
                 _ => exc.to_string(),
             };
             let payload = serde_json::json!({

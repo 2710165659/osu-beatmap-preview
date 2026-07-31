@@ -1,5 +1,5 @@
-use crate::errors::{PreviewError, Result};
-use crate::models::{Beatmap, BreakPeriod, TimingPoint};
+use crate::core::errors::{PreviewError, Result};
+use crate::core::models::{Beatmap, BreakPeriod, TimingPoint};
 
 pub const BREAK_GAP_MS: i64 = 2200;
 
