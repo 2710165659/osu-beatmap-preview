@@ -145,137 +145,153 @@ pub(crate) fn save_mp4_streamed(
         .ok_or_else(|| PreviewError::render("missing PPS in first encoded frame"))?;
 
     // ── mp4 writer ──
-    let file = std::fs::File::create(output_path)
-        .map_err(|e| PreviewError::render(format!("failed to write mp4: {e}")))?;
-    let writer = BufWriter::new(file);
-    let mp4_config = mp4::Mp4Config {
-        major_brand: mp4::FourCC::from(*b"isom"),
-        minor_version: 512,
-        compatible_brands: vec![
-            mp4::FourCC::from(*b"isom"),
-            mp4::FourCC::from(*b"iso2"),
-            mp4::FourCC::from(*b"avc1"),
-            mp4::FourCC::from(*b"mp41"),
-        ],
-        timescale: fps,
-    };
-    let mut mp4_writer = mp4::Mp4Writer::write_start(writer, &mp4_config)
-        .map_err(|e| PreviewError::render(format!("mp4 write_start failed: {e}")))?;
+    // Write to a sibling temp file and atomically replace the final path only
+    // after the MP4 is fully finalized, so an interrupted render never leaves
+    // a partial file that could be served from cache. The encoder is moved
+    // into the closure and returned so its `Drop` (which prints to stdout)
+    // can still be silenced after the rename.
+    let encoder = crate::cache::with_atomic_output(output_path, "mp4.tmp", |tmp_path| {
+        let file = std::fs::File::create(tmp_path)
+            .map_err(|e| PreviewError::render(format!("failed to write mp4: {e}")))?;
+        let writer = BufWriter::new(file);
+        let mp4_config = mp4::Mp4Config {
+            major_brand: mp4::FourCC::from(*b"isom"),
+            minor_version: 512,
+            compatible_brands: vec![
+                mp4::FourCC::from(*b"isom"),
+                mp4::FourCC::from(*b"iso2"),
+                mp4::FourCC::from(*b"avc1"),
+                mp4::FourCC::from(*b"mp41"),
+            ],
+            timescale: fps,
+        };
+        let mut mp4_writer = mp4::Mp4Writer::write_start(writer, &mp4_config)
+            .map_err(|e| PreviewError::render(format!("mp4 write_start failed: {e}")))?;
 
-    let track_config = mp4::TrackConfig {
-        track_type: mp4::TrackType::Video,
-        timescale: fps,
-        language: "und".to_string(),
-        media_conf: mp4::MediaConfig::AvcConfig(mp4::AvcConfig {
-            width: out_w as u16,
-            height: out_h as u16,
-            seq_param_set: sps,
-            pic_param_set: pps,
-        }),
-    };
-    mp4_writer
-        .add_track(&track_config)
-        .map_err(|e| PreviewError::render(format!("mp4 add_track failed: {e}")))?;
-
-    let audio_track_config = mp4::TrackConfig {
-        track_type: mp4::TrackType::Audio,
-        timescale: AUDIO_SAMPLE_RATE,
-        language: "und".to_string(),
-        media_conf: mp4::MediaConfig::AacConfig(mp4::AacConfig {
-            bitrate: AUDIO_BITRATE,
-            profile: mp4::AudioObjectType::AacLowComplexity,
-            freq_index: mp4::SampleFreqIndex::Freq48000,
-            chan_conf: mp4::ChannelConfig::Stereo,
-        }),
-    };
-    mp4_writer
-        .add_track(&audio_track_config)
-        .map_err(|e| PreviewError::render(format!("mp4 add audio track failed: {e}")))?;
-
-    // first sample (IDR, start_time = 0 ticks)
-    let sample = mp4::Mp4Sample {
-        start_time: 0,
-        duration: 1,
-        rendering_offset: 0,
-        is_sync: true,
-        bytes: Bytes::copy_from_slice(&first_encoded.slice),
-    };
-    mp4_writer
-        .write_sample(1, &sample)
-        .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
-
-    // ── render + compose in parallel chunks, encode sequentially ──
-    // compose_frame is moved into the parallel loop so it runs alongside render
-    // on rayon's thread pool — this eliminates the serial compose bottleneck
-    // (~5s for 4000 frames) that previously halved the GPU speedup.
-    let mut t_render = std::time::Duration::ZERO;
-    let mut t_encode = std::time::Duration::ZERO;
-    let mut t_mux = std::time::Duration::ZERO;
-    let chart_end = chart_end_ms;
-    for chunk_start in (1..frame_count).step_by(par_chunk_size) {
-        let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
-        let t0 = Instant::now();
-        let frames: Vec<Img> = (chunk_start..chunk_end)
-            .into_par_iter()
-            .map(|fi| {
-                let (pf, time) = render(fi);
-                // compose here, in parallel — avoids serial bottleneck
-                compose_frame(pf, time, chart_end, out_w, out_h)
-            })
-            .collect();
-        t_render += t0.elapsed();
-
-        for (i, comp) in (chunk_start..).zip(frames) {
-            let t2 = Instant::now();
-            let encoded = encoder.encode(&comp)?;
-            t_encode += t2.elapsed();
-
-            let t3 = Instant::now();
-            let sample = mp4::Mp4Sample {
-                start_time: i as u64,
-                duration: 1,
-                rendering_offset: 0,
-                is_sync: encoded.is_keyframe,
-                bytes: Bytes::copy_from_slice(&encoded.slice),
-            };
-            mp4_writer
-                .write_sample(1, &sample)
-                .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
-            t_mux += t3.elapsed();
-        }
-    }
-
-    let audio_wait_start = Instant::now();
-    let encoded_audio = audio_task
-        .join()
-        .map_err(|_| PreviewError::render("audio encoding worker panicked"))??;
-    let audio_wait = audio_wait_start.elapsed();
-    let mut audio_start = 0_u64;
-    for frame in encoded_audio.frames {
-        let sample = mp4::Mp4Sample {
-            start_time: audio_start,
-            duration: frame.duration,
-            rendering_offset: 0,
-            is_sync: true,
-            bytes: Bytes::from(frame.bytes),
+        let track_config = mp4::TrackConfig {
+            track_type: mp4::TrackType::Video,
+            timescale: fps,
+            language: "und".to_string(),
+            media_conf: mp4::MediaConfig::AvcConfig(mp4::AvcConfig {
+                width: out_w as u16,
+                height: out_h as u16,
+                seq_param_set: sps,
+                pic_param_set: pps,
+            }),
         };
         mp4_writer
-            .write_sample(2, &sample)
-            .map_err(|e| PreviewError::render(format!("mp4 audio write_sample failed: {e}")))?;
-        audio_start += frame.duration as u64;
-    }
-    eprintln!(
-        "[video] timing: render+compose={:.1}s encode={:.1}s mux={:.1}s audio-wait={:.1}s ({})",
-        t_render.as_secs_f64(),
-        t_encode.as_secs_f64(),
-        t_mux.as_secs_f64(),
-        audio_wait.as_secs_f64(),
-        encoder.name(),
-    );
+            .add_track(&track_config)
+            .map_err(|e| PreviewError::render(format!("mp4 add_track failed: {e}")))?;
 
-    mp4_writer
-        .write_end()
-        .map_err(|e| PreviewError::render(format!("mp4 write_end failed: {e}")))?;
+        let audio_track_config = mp4::TrackConfig {
+            track_type: mp4::TrackType::Audio,
+            timescale: AUDIO_SAMPLE_RATE,
+            language: "und".to_string(),
+            media_conf: mp4::MediaConfig::AacConfig(mp4::AacConfig {
+                bitrate: AUDIO_BITRATE,
+                profile: mp4::AudioObjectType::AacLowComplexity,
+                freq_index: mp4::SampleFreqIndex::Freq48000,
+                chan_conf: mp4::ChannelConfig::Stereo,
+            }),
+        };
+        mp4_writer
+            .add_track(&audio_track_config)
+            .map_err(|e| PreviewError::render(format!("mp4 add audio track failed: {e}")))?;
+
+        // first sample (IDR, start_time = 0 ticks)
+        let sample = mp4::Mp4Sample {
+            start_time: 0,
+            duration: 1,
+            rendering_offset: 0,
+            is_sync: true,
+            bytes: Bytes::copy_from_slice(&first_encoded.slice),
+        };
+        mp4_writer
+            .write_sample(1, &sample)
+            .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
+
+        // ── render + compose in parallel chunks, encode sequentially ──
+        // compose_frame is moved into the parallel loop so it runs alongside
+        // render on rayon's thread pool — this eliminates the serial compose
+        // bottleneck (~5s for 4000 frames) that previously halved the GPU
+        // speedup.
+        let mut t_render = std::time::Duration::ZERO;
+        let mut t_encode = std::time::Duration::ZERO;
+        let mut t_mux = std::time::Duration::ZERO;
+        let chart_end = chart_end_ms;
+        for chunk_start in (1..frame_count).step_by(par_chunk_size) {
+            let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
+            let t0 = Instant::now();
+            let frames: Vec<Img> = (chunk_start..chunk_end)
+                .into_par_iter()
+                .map(|fi| {
+                    let (pf, time) = render(fi);
+                    // compose here, in parallel — avoids serial bottleneck
+                    compose_frame(pf, time, chart_end, out_w, out_h)
+                })
+                .collect();
+            t_render += t0.elapsed();
+
+            for (i, comp) in (chunk_start..).zip(frames) {
+                let t2 = Instant::now();
+                let encoded = encoder.encode(&comp)?;
+                t_encode += t2.elapsed();
+
+                let t3 = Instant::now();
+                let sample = mp4::Mp4Sample {
+                    start_time: i as u64,
+                    duration: 1,
+                    rendering_offset: 0,
+                    is_sync: encoded.is_keyframe,
+                    bytes: Bytes::copy_from_slice(&encoded.slice),
+                };
+                mp4_writer
+                    .write_sample(1, &sample)
+                    .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
+                t_mux += t3.elapsed();
+            }
+        }
+
+        let audio_wait_start = Instant::now();
+        let encoded_audio = audio_task
+            .join()
+            .map_err(|_| PreviewError::render("audio encoding worker panicked"))??;
+        let audio_wait = audio_wait_start.elapsed();
+        let mut audio_start = 0_u64;
+        for frame in encoded_audio.frames {
+            let sample = mp4::Mp4Sample {
+                start_time: audio_start,
+                duration: frame.duration,
+                rendering_offset: 0,
+                is_sync: true,
+                bytes: Bytes::from(frame.bytes),
+            };
+            mp4_writer
+                .write_sample(2, &sample)
+                .map_err(|e| PreviewError::render(format!("mp4 audio write_sample failed: {e}")))?;
+            audio_start += frame.duration as u64;
+        }
+        eprintln!(
+            "[video] timing: render+compose={:.1}s encode={:.1}s mux={:.1}s audio-wait={:.1}s ({})",
+            t_render.as_secs_f64(),
+            t_encode.as_secs_f64(),
+            t_mux.as_secs_f64(),
+            audio_wait.as_secs_f64(),
+            encoder.name(),
+        );
+
+        mp4_writer
+            .write_end()
+            .map_err(|e| PreviewError::render(format!("mp4 write_end failed: {e}")))?;
+        // Recover the BufWriter and flush it so every byte is on disk before
+        // the temp file is renamed over the final path.
+        let mut writer = mp4_writer.into_writer();
+        std::io::Write::flush(&mut writer)
+            .map_err(|e| PreviewError::render(format!("mp4 flush failed: {e}")))?;
+        drop(writer);
+
+        Ok(encoder)
+    })?;
 
     // Explicitly drop the encoder before returning. The `nvenc` crate's Drop
     // impl uses `println!` (stdout) for debug messages ("Dropping bitstream

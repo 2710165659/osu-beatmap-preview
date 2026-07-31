@@ -60,22 +60,28 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
             [px[2] as usize >> 3];
     }
 
-    let file = std::fs::File::create(path)
-        .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
-    let writer = std::io::BufWriter::new(file);
-    let mut encoder = png::Encoder::new(writer, image.w, image.h);
-    encoder.set_color(png::ColorType::Indexed);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_palette(&palette_rgb);
-    encoder.set_compression(png::Compression::Default);
-    encoder.set_filter(png::FilterType::Paeth);
-    let mut writer = encoder
-        .write_header()
-        .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
-    writer
-        .write_image_data(&indexed)
-        .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
-    Ok(())
+    // Write to a sibling temp file and atomically replace the final path only
+    // after the PNG is fully encoded, so an interrupted render never leaves a
+    // partial file that could be served from cache.
+    crate::cache::with_atomic_output(path, "png.tmp", |tmp_path| {
+        let file = std::fs::File::create(tmp_path)
+            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
+        let writer = std::io::BufWriter::new(file);
+        let mut encoder = png::Encoder::new(writer, image.w, image.h);
+        encoder.set_color(png::ColorType::Indexed);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_palette(&palette_rgb);
+        encoder.set_compression(png::Compression::Default);
+        encoder.set_filter(png::FilterType::Paeth);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
+        writer
+            .write_image_data(&indexed)
+            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
+        drop(writer); // flush buffered bytes before the temp file is renamed
+        Ok(())
+    })
 }
 
 /// Posterize a channel to 5 bits (32 levels), replicating high bits so the
@@ -235,87 +241,93 @@ pub fn save_animated_gif_streamed(
 
     let (w, h) = (first_dims.0 as usize, first_dims.1 as usize);
 
-    let file = std::fs::File::create(path)
-        .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-    let writer = std::io::BufWriter::new(file);
-    let mut encoder = gif::Encoder::new(writer, w as u16, h as u16, &palette)
-        .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-    encoder
-        .set_repeat(gif::Repeat::Infinite)
-        .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+    // Write to a sibling temp file and atomically replace the final path only
+    // after every frame is encoded, so an interrupted render never leaves a
+    // partial file that could be served from cache.
+    crate::cache::with_atomic_output(path, "gif.tmp", |tmp_path| {
+        let file = std::fs::File::create(tmp_path)
+            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+        let writer = std::io::BufWriter::new(file);
+        let mut encoder = gif::Encoder::new(writer, w as u16, h as u16, &palette)
+            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+        encoder
+            .set_repeat(gif::Repeat::Infinite)
+            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
 
-    let delay = (frame_duration_ms / 10) as u16; // GIF delay unit = 10ms
+        let delay = (frame_duration_ms / 10) as u16; // GIF delay unit = 10ms
 
-    let mut prev_indexed: Vec<u8> = Vec::new();
-    let frame_bytes = w.saturating_mul(h).saturating_mul(4).max(1);
-    let par_chunk_size = (MAX_PAR_FRAME_BYTES / frame_bytes).clamp(1, PAR_CHUNK_SIZE);
+        let mut prev_indexed: Vec<u8> = Vec::new();
+        let frame_bytes = w.saturating_mul(h).saturating_mul(4).max(1);
+        let par_chunk_size = (MAX_PAR_FRAME_BYTES / frame_bytes).clamp(1, PAR_CHUNK_SIZE);
 
-    // ── render + encode in parallel chunks ──
-    for chunk_start in (0..frame_count).step_by(par_chunk_size) {
-        let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
+        // ── render + encode in parallel chunks ──
+        for chunk_start in (0..frame_count).step_by(par_chunk_size) {
+            let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
 
-        // Render this chunk in parallel; each thread calls `render(i)` independently.
-        let frames: Vec<Img> = (chunk_start..chunk_end)
-            .into_par_iter()
-            .map(&render)
-            .collect();
+            // Render this chunk in parallel; each thread calls `render(i)` independently.
+            let frames: Vec<Img> = (chunk_start..chunk_end)
+                .into_par_iter()
+                .map(&render)
+                .collect();
 
-        // Encode sequentially (delta frames must stay in order).
-        for (fi, frame) in (chunk_start..).zip(frames) {
-            let mut indexed = vec![0u8; w * h];
-            for (i, px) in frame.data.chunks_exact(4).enumerate().take(w * h) {
-                indexed[i] = lut[posterize(px[0]) as usize >> 3]
-                    [posterize(px[1]) as usize >> 3]
-                    [posterize(px[2]) as usize >> 3];
-            }
-            drop(frame);
-
-            let (rect, buffer, transparent) = if fi == 0 {
-                ((0usize, 0usize, w, h), indexed.clone(), None)
-            } else {
-                match find_delta_rect(&indexed, &prev_indexed, w, h) {
-                    None => ((0, 0, 1, 1), vec![transparent_idx], Some(transparent_idx)),
-                    Some((min_x, min_y, max_x, max_y)) => {
-                        let rw = max_x - min_x + 1;
-                        let rh = max_y - min_y + 1;
-                        let mut buf = Vec::with_capacity(rw * rh);
-                        for y in min_y..=max_y {
-                            let row = y * w;
-                            for x in min_x..=max_x {
-                                let v = indexed[row + x];
-                                buf.push(if v == prev_indexed[row + x] {
-                                    transparent_idx
-                                } else {
-                                    v
-                                });
-                            }
-                        }
-                        ((min_x, min_y, rw, rh), buf, Some(transparent_idx))
-                    }
+            // Encode sequentially (delta frames must stay in order).
+            for (fi, frame) in (chunk_start..).zip(frames) {
+                let mut indexed = vec![0u8; w * h];
+                for (i, px) in frame.data.chunks_exact(4).enumerate().take(w * h) {
+                    indexed[i] = lut[posterize(px[0]) as usize >> 3]
+                        [posterize(px[1]) as usize >> 3]
+                        [posterize(px[2]) as usize >> 3];
                 }
-            };
+                drop(frame);
 
-            let mut gframe = gif::Frame::<'_> {
-                width: rect.2 as u16,
-                height: rect.3 as u16,
-                left: rect.0 as u16,
-                top: rect.1 as u16,
-                delay,
-                dispose: gif::DisposalMethod::Keep,
-                transparent,
-                needs_user_input: false,
-                interlaced: false,
-                palette: None,
-                buffer: std::borrow::Cow::Owned(buffer),
-            };
-            gframe.make_lzw_pre_encoded();
-            encoder
-                .write_lzw_pre_encoded_frame(&gframe)
-                .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-            prev_indexed = indexed;
+                let (rect, buffer, transparent) = if fi == 0 {
+                    ((0usize, 0usize, w, h), indexed.clone(), None)
+                } else {
+                    match find_delta_rect(&indexed, &prev_indexed, w, h) {
+                        None => ((0, 0, 1, 1), vec![transparent_idx], Some(transparent_idx)),
+                        Some((min_x, min_y, max_x, max_y)) => {
+                            let rw = max_x - min_x + 1;
+                            let rh = max_y - min_y + 1;
+                            let mut buf = Vec::with_capacity(rw * rh);
+                            for y in min_y..=max_y {
+                                let row = y * w;
+                                for x in min_x..=max_x {
+                                    let v = indexed[row + x];
+                                    buf.push(if v == prev_indexed[row + x] {
+                                        transparent_idx
+                                    } else {
+                                        v
+                                    });
+                                }
+                            }
+                            ((min_x, min_y, rw, rh), buf, Some(transparent_idx))
+                        }
+                    }
+                };
+
+                let mut gframe = gif::Frame::<'_> {
+                    width: rect.2 as u16,
+                    height: rect.3 as u16,
+                    left: rect.0 as u16,
+                    top: rect.1 as u16,
+                    delay,
+                    dispose: gif::DisposalMethod::Keep,
+                    transparent,
+                    needs_user_input: false,
+                    interlaced: false,
+                    palette: None,
+                    buffer: std::borrow::Cow::Owned(buffer),
+                };
+                gframe.make_lzw_pre_encoded();
+                encoder
+                    .write_lzw_pre_encoded_frame(&gframe)
+                    .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+                prev_indexed = indexed;
+            }
         }
-    }
-    Ok(())
+        drop(encoder); // flush buffered bytes before the temp file is renamed
+        Ok(())
+    })
 }
 
 /// Find the bounding box of differing bytes between `cur` and `prev`.

@@ -133,12 +133,10 @@ pub fn generate_preview(
         audio_job,
     ) {
         Ok(path) => path,
-        Err(error) => {
-            if fmt == "mp4" {
-                let _ = std::fs::remove_file(&output_path);
-            }
-            return Err(error);
-        }
+        // Atomic writes mean a failed render never touches the final path, so
+        // a previously good cached output is preserved. The temp file (if
+        // any) was already cleaned up by the writer.
+        Err(error) => return Err(error),
     };
 
     let abs = preview_path
