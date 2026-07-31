@@ -700,6 +700,7 @@ dependencies = [
  "serde_json",
  "symphonia",
  "thiserror 2.0.18",
+ "time",
  "ureq",
  "vergen",
  "windows",

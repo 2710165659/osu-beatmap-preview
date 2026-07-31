@@ -14,6 +14,7 @@
 - **转谱**：Standard 可转为 Taiko / Catch / Mania 并预览。
 - **丰富的 Mod**：`EZ` `HR` `HD` `DA` `DT` `HT` `SW` `CS` `1K`–`10K` `DS` `IN` `HO`。
 - **高性能**：渲染速度快、内存占用低、输出文件体积小。详见 [批量渲染报告](docs/report.txt)。
+- **多进程安全日志**：共享写入 `render.log`（NDJSON 汇总，每谱面一行：时间、bid、渲染时长与谱面/环境信息）与 `progress.log`（可 `tail -f` 实时查看的阶段事件流），多进程并发写入同一文件不会交错。
 
 > 如果这个项目对你有帮助，欢迎点个 ⭐ Star 支持一下～
 
@@ -37,18 +38,26 @@
   "build-info": {
     "version": "1.0.3",
     "build_time": "2026-06-22T16:01:06.623636800Z"
+  },
+  "log": {
+    "progress": "C:/Users/.../AppData/Local/Temp/osu-beatmap-preview/logs/progress.log",
+    "render": "C:/Users/.../AppData/Local/Temp/osu-beatmap-preview/logs/render.log"
   }
 }
 ```
 
 > `preview-img` 字段为输出文件的绝对路径，格式由 `--fmt` 决定（`.gif` / `.png` / `.mp4`）。
+> `log` 字段为可选字段，只有日志启用时才存在，不影响现有解析。
 
 | 路径 | 说明 |
 | --- | --- |
 | 谱面缓存 | `<临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
 | 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_t<时间点>][_bpm<BPM值>].<fmt>` |
+| 日志文件 | `<临时目录>/osu-beatmap-preview/logs/` — `progress.log`（实时进度，`tail -f progress.log`）与 `render.log`（NDJSON 汇总） |
 | 批量脚本 | `batch_render.ps1` — 可批量渲染多个 bid 并生成对比 HTML |
+
+日志默认开启，可用 `--log-dir=<DIR>` 指定目录、`--no-log` 关闭；也可用环境变量 `OSU_PREVIEW_LOG_DIR` 覆盖目录。日志写入失败只降级到 stderr 提示，不影响渲染与 stdout 结果。
 
 > 缓存文件不会自动删除，占用过大时可手动清理临时目录。输出文件采用原子写入（先写临时文件、完成后才替换），渲染中断不会产生可被当作有效缓存的损坏文件。
 

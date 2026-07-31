@@ -3,6 +3,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::time::Instant;
 
 const OSZ_MIRRORS: [&str; 4] = [
     "https://mirror.nekoha.moe/api/download/{}?noVideo=1",
@@ -37,11 +38,29 @@ pub fn download_beatmapset_archive(
         .map_err(|e| PreviewError::download(format!("failed to create osz cache dir: {e}")))?;
     let target_path = temp_dir.join(format!("{set_id}.osz"));
     if !no_cache && valid_osz(&target_path) {
+        let size_mib = target_path
+            .metadata()
+            .map(|m| m.len() as f64 / MIB_BYTES as f64)
+            .unwrap_or(0.0);
+        crate::log::event(
+            "download-osz",
+            "done",
+            None,
+            &format!("set={set_id} cache hit ({size_mib:.1} MiB)"),
+        );
+        crate::log::record_cache(crate::log::CacheKind::Osz, "hit");
         return Ok(target_path);
     }
 
     let part_path = temp_dir.join(format!("{set_id}.osz.part"));
     let agent = build_agent();
+    crate::log::event(
+        "download-osz",
+        "start",
+        None,
+        &format!("set={set_id} trying {} mirrors", OSZ_MIRRORS.len()),
+    );
+    let started = Instant::now();
     let result = try_osz_mirrors(set_id, |url, attempt| {
         remove_if_exists(&part_path);
         download_osz_once(&agent, url, &part_path)
@@ -49,11 +68,18 @@ pub fn download_beatmapset_archive(
     });
     if let Err(failures) = result {
         remove_if_exists(&part_path);
+        crate::log::event(
+            "download-osz",
+            "error",
+            None,
+            &format!("set={set_id} {}", failures.join("; ")),
+        );
         return Err(PreviewError::download(format!(
             "failed to download beatmapset {set_id} from all mirrors: {}",
             failures.join("; ")
         )));
     }
+    let ms = started.elapsed().as_secs_f64() * 1000.0;
 
     if target_path.exists() {
         std::fs::remove_file(&target_path)
@@ -61,6 +87,17 @@ pub fn download_beatmapset_archive(
     }
     std::fs::rename(&part_path, &target_path)
         .map_err(|e| PreviewError::download(format!("failed to commit osz cache: {e}")))?;
+    let size_mib = target_path
+        .metadata()
+        .map(|m| m.len() as f64 / MIB_BYTES as f64)
+        .unwrap_or(0.0);
+    crate::log::event(
+        "download-osz",
+        "done",
+        None,
+        &format!("set={set_id} downloaded {size_mib:.1} MiB in {ms:.0} ms"),
+    );
+    crate::log::record_cache(crate::log::CacheKind::Osz, "downloaded");
     Ok(target_path)
 }
 

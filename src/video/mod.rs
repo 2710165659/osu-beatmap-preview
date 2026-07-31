@@ -110,6 +110,17 @@ pub(crate) fn save_mp4_streamed(
     let audio_task = std::thread::spawn(move || {
         let source = audio_job.wait()?;
         let encoded = encode_audio_segment(&source, chart_start_ms, frame_count, fps, speed)?;
+        crate::log::event(
+            "audio-encode",
+            "done",
+            None,
+            &format!(
+                "{} AAC frames from {} (lead-in={}ms)",
+                encoded.frames.len(),
+                source.path.display(),
+                source.lead_in_ms,
+            ),
+        );
         eprintln!(
             "[audio] encoded {} AAC frames from {} (lead-in={}ms)",
             encoded.frames.len(),
@@ -126,6 +137,12 @@ pub(crate) fn save_mp4_streamed(
 
     // ── pick the best available encoder backend ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
+    crate::log::event(
+        "video-backend",
+        "done",
+        None,
+        &format!("{} {}x{}@{}fps", encoder.name(), out_w, out_h, fps),
+    );
     eprintln!("[video] using {} backend ({}x{}@{}fps)", encoder.name(), out_w, out_h, fps);
 
     let frame_bytes = (out_w as usize)
@@ -279,6 +296,16 @@ pub(crate) fn save_mp4_streamed(
             audio_wait.as_secs_f64(),
             encoder.name(),
         );
+        crate::log::record_video_stats(crate::log::VideoStats {
+            backend: Some(encoder.name().to_string()),
+            resolution: Some(format!("{out_w}x{out_h}")),
+            fps: Some(fps),
+            frame_count: Some(frame_count),
+            render_compose_ms: Some(t_render.as_secs_f64() * 1000.0),
+            encode_ms: Some(t_encode.as_secs_f64() * 1000.0),
+            mux_ms: Some(t_mux.as_secs_f64() * 1000.0),
+            audio_ms: Some(audio_wait.as_secs_f64() * 1000.0),
+        });
 
         mp4_writer
             .write_end()

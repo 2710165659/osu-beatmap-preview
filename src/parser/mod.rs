@@ -16,14 +16,29 @@ pub use timing::{parse_break_periods, parse_timing_points};
 use crate::errors::{PreviewError, Result};
 use crate::models::*;
 use std::path::Path;
+use std::time::Instant;
 
 /// Parse a .osu file from disk.
 pub fn parse_beatmap(path: &Path) -> Result<Beatmap> {
+    let started = Instant::now();
     let bytes = std::fs::read(path)
         .map_err(|e| PreviewError::parse(format!("Failed to read beatmap file: {e}")))?;
     let content = String::from_utf8_lossy(&bytes);
     let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
-    parse_beatmap_str(content).ok_or_else(|| PreviewError::parse("Failed to parse beatmap."))
+    let beatmap = parse_beatmap_str(content)
+        .ok_or_else(|| PreviewError::parse("Failed to parse beatmap."))?;
+    let ms = started.elapsed().as_secs_f64() * 1000.0;
+    crate::log::event(
+        "parse",
+        "done",
+        None,
+        &format!(
+            "mode={} objects={} in {ms:.1} ms",
+            beatmap.mode(),
+            beatmap.hit_objects.len()
+        ),
+    );
+    Ok(beatmap)
 }
 
 fn parse_beatmap_str(content: &str) -> Option<Beatmap> {

@@ -31,9 +31,15 @@ impl AudioSourceJob {
         let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
             PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
         })?;
-        beatmap
+        let audio_filename = beatmap
             .audio_filename()
             .ok_or_else(|| PreviewError::parse("missing AudioFilename required for MP4 audio"))?;
+        crate::log::event(
+            "audio-prepare",
+            "start",
+            None,
+            &format!("set_id={set_id} audio={audio_filename}"),
+        );
 
         let handle = std::thread::spawn(move || {
             let osz_path =
@@ -95,6 +101,13 @@ pub(crate) fn prepare_audio_source(
             .metadata()
             .is_ok_and(|m| m.is_file() && m.len() > 0)
     {
+        crate::log::event(
+            "audio-prepare",
+            "done",
+            None,
+            &format!("audio cache hit: {}", target_path.display()),
+        );
+        crate::log::record_cache(crate::log::CacheKind::Audio, "hit");
         return Ok(AudioSource {
             path: target_path,
             lead_in_ms: beatmap.audio_lead_in_ms(),
@@ -104,6 +117,13 @@ pub(crate) fn prepare_audio_source(
     std::fs::create_dir_all(&set_cache)
         .map_err(|e| PreviewError::download(format!("failed to create audio cache dir: {e}")))?;
     extract_audio_entry(osz_path, &normalized, &target_path)?;
+    crate::log::event(
+        "audio-prepare",
+        "done",
+        None,
+        &format!("extracted audio: {}", target_path.display()),
+    );
+    crate::log::record_cache(crate::log::CacheKind::Audio, "downloaded");
     Ok(AudioSource {
         path: target_path,
         lead_in_ms: beatmap.audio_lead_in_ms(),

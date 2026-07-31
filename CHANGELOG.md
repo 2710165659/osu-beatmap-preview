@@ -11,6 +11,11 @@ All notable changes to this project will be documented in this file.
 - OpenH264 CPU 编码器使用约 500 kbps 的独立目标码率，在画质、文件体积和编码速度之间取得平衡。
 - 输出文件（PNG / GIF / MP4）改为原子写入：先写同目录临时文件，全部完成后才替换最终文件，渲染中断（如进程被强制关闭）不再在缓存路径留下损坏的半成品。缓存命中新增格式完整性校验，已损坏的旧缓存会被识别并自动重新渲染。
 
+### Added
+
+- 新增多进程安全日志系统：`render.log`（NDJSON 汇总，每谱面一行，含时间、bid、渲染时长、谱面信息与各阶段耗时）与 `progress.log`（可 `tail -f` 实时查看的阶段事件流），默认写入 `<临时目录>/osu-beatmap-preview/logs`。
+- 新增 `--log-dir=<DIR>`（覆盖日志目录）与 `--no-log`（关闭日志）参数，支持 `OSU_PREVIEW_LOG_DIR` 环境变量；stdout JSON 增加可选 `log` 字段，不影响现有解析。
+
 ## [1.0.6] - 2026.07.30
 
 ### Added
