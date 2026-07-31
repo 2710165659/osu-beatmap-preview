@@ -91,11 +91,15 @@ pub(crate) fn split_nals(annexb: &[u8]) -> Vec<&[u8]> {
 /// NAL types 6 (SEI), 9 (AUD), and 12 (filler data) are silently dropped —
 /// they are not needed for MP4 muxing and some hardware encoders emit them
 /// by default. Slice NALs (types 1–5) are concatenated with big-endian
-/// 4-byte length prefixes, matching the `mp4` crate's AVC sample format.
-pub(crate) fn extract_nals_from_annexb(annexb: &[u8]) -> (Option<Vec<u8>>, Option<Vec<u8>>, Vec<u8>) {
+/// 4-byte length prefixes, matching the `mp4` crate's AVC sample format. The
+/// final return value reports whether the access unit contains an IDR slice.
+pub(crate) fn extract_nals_from_annexb(
+    annexb: &[u8],
+) -> (Option<Vec<u8>>, Option<Vec<u8>>, Vec<u8>, bool) {
     let mut sps = None;
     let mut pps = None;
     let mut slice = Vec::new();
+    let mut is_keyframe = false;
     for nal in split_nals(annexb) {
         match nal_type(nal) {
             7 => sps = Some(nal.to_vec()),
@@ -103,12 +107,13 @@ pub(crate) fn extract_nals_from_annexb(annexb: &[u8]) -> (Option<Vec<u8>>, Optio
             // drop SEI(6), AUD(9), filler(12) — not needed for mp4
             6 | 9 | 12 => {}
             _ => {
+                is_keyframe |= nal_type(nal) == 5;
                 slice.extend_from_slice(&(nal.len() as u32).to_be_bytes());
                 slice.extend_from_slice(nal);
             }
         }
     }
-    (sps, pps, slice)
+    (sps, pps, slice, is_keyframe)
 }
 
 #[cfg(test)]
@@ -149,10 +154,19 @@ mod tests {
             0, 0, 0, 1, 0x09, 0x10, // AUD (type 9)
             0, 0, 0, 1, 0x65, 0xAA, // slice (type 5)
         ];
-        let (sps, pps, slice) = extract_nals_from_annexb(annexb);
+        let (sps, pps, slice, is_keyframe) = extract_nals_from_annexb(annexb);
         assert_eq!(sps, Some(vec![0x67, 0x01]));
         assert_eq!(pps, None);
+        assert!(is_keyframe);
         // slice should be length-prefixed: 4-byte BE len + 2-byte payload
         assert_eq!(slice, vec![0, 0, 0, 2, 0x65, 0xAA]);
+    }
+
+    #[test]
+    fn extract_reports_non_idr_slice_as_non_keyframe() {
+        let annexb: &[u8] = &[0, 0, 0, 1, 0x41, 0xAA];
+        let (_, _, slice, is_keyframe) = extract_nals_from_annexb(annexb);
+        assert!(!is_keyframe);
+        assert_eq!(slice, vec![0, 0, 0, 2, 0x41, 0xAA]);
     }
 }

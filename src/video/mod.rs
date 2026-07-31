@@ -52,12 +52,13 @@ const BLACK_OPAQUE: [u8; 4] = [0, 0, 0, 255];
 
 /// An encoded H.264 frame ready to be muxed into the MP4 container.
 ///
-/// `sps`/`pps` are `Some` only on the frame that carries them (the first IDR);
-/// subsequent frames pass `None`. `slice` is the length-prefixed slice NAL data.
+/// `sps`/`pps` are `Some` only on frames that carry them. `slice` is the
+/// length-prefixed slice NAL data, and `is_keyframe` reflects an actual IDR NAL.
 struct EncodedFrame {
     sps: Option<Vec<u8>>,
     pps: Option<Vec<u8>>,
     slice: Vec<u8>,
+    is_keyframe: bool,
 }
 
 /// A backend H.264 encoder that consumes composed RGBA frames and produces
@@ -127,7 +128,6 @@ pub(crate) fn save_mp4_streamed(
     let mut encoder = create_encoder(out_w, out_h, fps)?;
     eprintln!("[video] using {} backend ({}x{}@{}fps)", encoder.name(), out_w, out_h, fps);
 
-    let keyframe_period = (fps as usize * 2).max(1);
     let frame_bytes = (out_w as usize)
         .saturating_mul(out_h as usize)
         .saturating_mul(4)
@@ -226,8 +226,6 @@ pub(crate) fn save_mp4_streamed(
         t_render += t0.elapsed();
 
         for (i, comp) in (chunk_start..).zip(frames) {
-            let is_keyframe = i % keyframe_period == 0;
-
             let t2 = Instant::now();
             let encoded = encoder.encode(&comp)?;
             t_encode += t2.elapsed();
@@ -237,7 +235,7 @@ pub(crate) fn save_mp4_streamed(
                 start_time: i as u64,
                 duration: 1,
                 rendering_offset: 0,
-                is_sync: is_keyframe,
+                is_sync: encoded.is_keyframe,
                 bytes: Bytes::copy_from_slice(&encoded.slice),
             };
             mp4_writer

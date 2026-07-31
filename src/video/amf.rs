@@ -485,8 +485,13 @@ impl FrameEncoder for AmfEncoder {
 
         self.frame_idx += 1;
 
-        let (sps, pps, slice) = extract_nals_from_annexb(&self.annexb_buf);
-        Ok(EncodedFrame { sps, pps, slice })
+        let (sps, pps, slice, is_keyframe) = extract_nals_from_annexb(&self.annexb_buf);
+        Ok(EncodedFrame {
+            sps,
+            pps,
+            slice,
+            is_keyframe,
+        })
     }
 
     fn name(&self) -> &'static str {

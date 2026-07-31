@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 
 ---
+## [Unreleased]
+
+### Fixed
+
+- OpenH264 CPU 编码器现在定期生成真实 IDR 帧，并按实际 H.264 NAL 类型写入 MP4 同步样本索引，修复 Linux 视频无法跳转以及 QQ 只能显示首帧的问题。
+- OpenH264 CPU 编码器使用约 500 kbps 的独立目标码率，在画质、文件体积和编码速度之间取得平衡。
+
 ## [1.0.6] - 2026.07.30
 
 ### Added

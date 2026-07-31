@@ -2,20 +2,22 @@
 //! compiled in via the `source` feature). This is the always-available
 //! fallback when no GPU encoder (NVENC / AMF) can be initialized.
 //!
-//! Uses quality mode with a bounded QP. Rendering and encoding are performed
-//! in separate phases, so the encoder can use openh264's automatic thread
-//! count without competing with the Rayon render pool.
+//! Uses bitrate mode with a bounded QP. Rendering and encoding are performed in
+//! separate phases, so the encoder can use openh264's automatic thread count
+//! without competing with the Rayon render pool.
 
 use crate::canvas::Img;
 use crate::errors::{PreviewError, Result};
 use openh264::encoder::{
-    Complexity, EncodedBitStream, Encoder, EncoderConfig, FrameRate, QpRange, RateControlMode,
-    UsageType,
+    BitRate, Complexity, EncodedBitStream, Encoder, EncoderConfig, FrameRate, IntraFramePeriod,
+    QpRange, RateControlMode, UsageType,
 };
 use openh264::formats::{RgbaSliceU8, YUVBuffer};
 
 use super::mux::extract_nals_from_annexb;
 use super::{EncodedFrame, FrameEncoder};
+
+const CPU_VIDEO_BITRATE: u32 = 500_000;
 
 pub(crate) struct CpuEncoder {
     encoder: Encoder,
@@ -28,16 +30,16 @@ impl CpuEncoder {
         let config = EncoderConfig::new()
             .usage_type(UsageType::ScreenContentRealTime)
             .complexity(Complexity::Low)
-            .rate_control_mode(RateControlMode::Quality)
+            .rate_control_mode(RateControlMode::Bitrate)
+            .bitrate(BitRate::from_bps(CPU_VIDEO_BITRATE))
             .max_frame_rate(FrameRate::from_hz(fps as f32))
-            .qp(QpRange::new(28, 40))
+            .intra_frame_period(IntraFramePeriod::from_num_frames(fps.saturating_mul(2)))
+            .qp(QpRange::new(18, 42))
             .skip_frames(true)
             .scene_change_detect(true)
             .adaptive_quantization(false)
             .background_detection(false)
-            // 0 = openh264 automatic thread count. The render chunk has
-            // already joined before encode() is called, so this does not
-            // oversubscribe the render pool.
+            // 0 lets OpenH264 choose the encoder thread count.
             .num_threads(0);
         let api = openh264::OpenH264API::from_source();
         let encoder = Encoder::with_api_config(api, config)
@@ -64,8 +66,13 @@ impl FrameEncoder for CpuEncoder {
         self.annexb_buf.clear();
         collect_annexb(&bs, &mut self.annexb_buf);
 
-        let (sps, pps, slice) = extract_nals_from_annexb(&self.annexb_buf);
-        Ok(EncodedFrame { sps, pps, slice })
+        let (sps, pps, slice, is_keyframe) = extract_nals_from_annexb(&self.annexb_buf);
+        Ok(EncodedFrame {
+            sps,
+            pps,
+            slice,
+            is_keyframe,
+        })
     }
 
     fn name(&self) -> &'static str {
