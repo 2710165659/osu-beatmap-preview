@@ -152,6 +152,39 @@ struct AttemptMonitor {
     fallback_triggered: bool,
 }
 
+#[derive(Debug, Clone)]
+struct OszLogContext {
+    request_bid: String,
+    set_id: u64,
+}
+
+impl OszLogContext {
+    fn new(request_bid: &str, set_id: u64) -> Self {
+        Self {
+            request_bid: request_bid.to_string(),
+            set_id,
+        }
+    }
+
+    fn event(&self, status: &str, msg: impl AsRef<str>) {
+        crate::log::event(
+            "download-osz",
+            status,
+            Some(&self.request_bid),
+            &self.message(msg),
+        );
+    }
+
+    fn message(&self, msg: impl AsRef<str>) -> String {
+        format!(
+            "bid={} set={} {}",
+            self.request_bid,
+            self.set_id,
+            msg.as_ref()
+        )
+    }
+}
+
 impl AttemptMonitor {
     fn new() -> Self {
         Self {
@@ -218,10 +251,12 @@ impl AttemptMonitor {
 }
 
 pub fn download_beatmapset_archive(
+    request_bid: &str,
     set_id: u64,
     temp_dir: &Path,
     no_cache: bool,
 ) -> Result<PathBuf> {
+    let log = OszLogContext::new(request_bid, set_id);
     std::fs::create_dir_all(temp_dir)
         .map_err(|e| PreviewError::download(format!("failed to create osz cache dir: {e}")))?;
     let target_path = temp_dir.join(format!("{set_id}.osz"));
@@ -230,12 +265,7 @@ pub fn download_beatmapset_archive(
             .metadata()
             .map(|m| m.len() as f64 / MIB_BYTES as f64)
             .unwrap_or(0.0);
-        crate::log::event(
-            "download-osz",
-            "done",
-            None,
-            &format!("set={set_id} cache hit ({size_mib:.1} MiB)"),
-        );
+        log.event("done", format!("cache hit ({size_mib:.1} MiB)"));
         crate::log::record_cache(crate::log::CacheKind::Osz, "hit");
         crate::log::record_stage_status("download_osz_ms", "hit");
         return Ok(target_path);
@@ -244,12 +274,10 @@ pub fn download_beatmapset_archive(
     let preferred_ip = crate::pipeline::downloader::cf_ip::read_preferred_ip(temp_dir);
     crate::pipeline::downloader::cf_ip::spawn_refresh(temp_dir, preferred_ip.is_none());
     let candidates = build_candidates(preferred_ip);
-    crate::log::event(
-        "download-osz",
+    log.event(
         "start",
-        None,
-        &format!(
-            "set={set_id} race={} candidates={} preferred_ip={}",
+        format!(
+            "race={} candidates={} preferred_ip={}",
             MAX_ACTIVE_ATTEMPTS,
             candidates.len(),
             preferred_ip
@@ -259,17 +287,12 @@ pub fn download_beatmapset_archive(
     );
 
     let started = Instant::now();
-    let winner = match run_download_race(set_id, temp_dir, candidates) {
+    let winner = match run_download_race(&log, temp_dir, candidates) {
         Ok(winner) => winner,
         Err(failures) => {
             crate::pipeline::downloader::cf_ip::invalidate(temp_dir);
             crate::pipeline::downloader::cf_ip::spawn_refresh(temp_dir, true);
-            crate::log::event(
-                "download-osz",
-                "error",
-                None,
-                &format!("set={set_id} {}", failures.join("; ")),
-            );
+            log.event("error", failures.join("; "));
             return Err(PreviewError::download(format!(
                 "failed to download beatmapset {set_id} from all mirrors: {}",
                 failures.join("; ")
@@ -288,11 +311,9 @@ pub fn download_beatmapset_archive(
         .metadata()
         .map(|m| m.len() as f64 / MIB_BYTES as f64)
         .unwrap_or(0.0);
-    crate::log::event(
-        "download-osz",
+    log.event(
         "done",
-        None,
-        &format!("set={set_id} downloaded {size_mib:.1} MiB in {ms:.0} ms"),
+        format!("downloaded {size_mib:.1} MiB in {ms:.0} ms"),
     );
     crate::log::record_cache(crate::log::CacheKind::Osz, "downloaded");
     crate::log::record_stage("download_osz_ms", ms);
@@ -337,7 +358,7 @@ fn build_agent(preferred_ip: Option<Ipv4Addr>) -> ureq::Agent {
 }
 
 fn run_download_race(
-    set_id: u64,
+    log: &OszLogContext,
     temp_dir: &Path,
     mut candidates: Vec<MirrorCandidate>,
 ) -> std::result::Result<PathBuf, Vec<String>> {
@@ -350,7 +371,7 @@ fn run_download_race(
     let mut preferred_refresh_triggered = false;
 
     start_next_attempt(
-        set_id,
+        log,
         temp_dir,
         &mut candidates,
         &mut next_candidate,
@@ -362,7 +383,7 @@ fn run_download_race(
     loop {
         if Instant::now() >= deadline {
             for attempt in active.drain(..) {
-                cancel_attempt(attempt);
+                cancel_attempt(log, attempt);
             }
             failures.push("global download deadline exceeded".to_string());
             return Err(failures);
@@ -376,16 +397,17 @@ fn run_download_race(
                     &mut failures,
                     &mut preferred_refresh_triggered,
                     temp_dir,
+                    log,
                 );
                 if let HandledAttempt::Won(winner) = outcome {
                     for attempt in active.drain(..) {
-                        cancel_attempt(attempt);
+                        cancel_attempt(log, attempt);
                     }
                     return Ok(winner);
                 }
                 if matches!(outcome, HandledAttempt::Failed) {
                     start_next_attempt(
-                        set_id,
+                        log,
                         temp_dir,
                         &mut candidates,
                         &mut next_candidate,
@@ -401,16 +423,17 @@ fn run_download_race(
                         &mut failures,
                         &mut preferred_refresh_triggered,
                         temp_dir,
+                        log,
                     );
                     if let HandledAttempt::Won(winner) = outcome {
                         for attempt in active.drain(..) {
-                            cancel_attempt(attempt);
+                            cancel_attempt(log, attempt);
                         }
                         return Ok(winner);
                     }
                     if matches!(outcome, HandledAttempt::Failed) {
                         start_next_attempt(
-                            set_id,
+                            log,
                             temp_dir,
                             &mut candidates,
                             &mut next_candidate,
@@ -424,7 +447,7 @@ fn run_download_race(
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 for attempt in active.drain(..) {
-                    cancel_attempt(attempt);
+                    cancel_attempt(log, attempt);
                 }
                 failures.push("all download workers exited unexpectedly".to_string());
                 return Err(failures);
@@ -435,11 +458,9 @@ fn run_download_race(
         for attempt in &mut active {
             if attempt.progress.has_first_byte() && !attempt.first_byte_logged {
                 attempt.first_byte_logged = true;
-                crate::log::event(
-                    "download-osz",
+                log.event(
                     "first-byte",
-                    None,
-                    &format!(
+                    format!(
                         "attempt={} source={} after_ms={}",
                         attempt.id,
                         attempt.source.name(),
@@ -454,11 +475,9 @@ fn run_download_race(
                 let speed = attempt
                     .monitor
                     .recent_bytes_per_second(now, attempt.progress.bytes());
-                crate::log::event(
-                    "download-osz",
+                log.event(
                     "speed",
-                    None,
-                    &format!(
+                    format!(
                         "attempt={} source={} bytes={} speed_kib_s={:.1}",
                         attempt.id,
                         attempt.source.name(),
@@ -479,11 +498,9 @@ fn run_download_race(
             None
         };
         if let Some((attempt_id, reason)) = fallback {
-            crate::log::event(
-                "download-osz",
+            log.event(
                 "fallback",
-                None,
-                &format!(
+                format!(
                     "attempt={attempt_id} source={} reason={reason} active={}",
                     active
                         .iter()
@@ -496,11 +513,11 @@ fn run_download_race(
             if active.len() >= MAX_ACTIVE_ATTEMPTS {
                 if let Some(position) = slowest_attempt(&active, now) {
                     let attempt = active.swap_remove(position);
-                    cancel_attempt(attempt);
+                    cancel_attempt(log, attempt);
                 }
             }
             start_next_attempt(
-                set_id,
+                log,
                 temp_dir,
                 &mut candidates,
                 &mut next_candidate,
@@ -515,7 +532,7 @@ fn run_download_race(
                 return Err(failures);
             }
             start_next_attempt(
-                set_id,
+                log,
                 temp_dir,
                 &mut candidates,
                 &mut next_candidate,
@@ -528,7 +545,7 @@ fn run_download_race(
 }
 
 fn start_next_attempt(
-    set_id: u64,
+    log: &OszLogContext,
     temp_dir: &Path,
     candidates: &mut Vec<MirrorCandidate>,
     next_candidate: &mut usize,
@@ -544,7 +561,7 @@ fn start_next_attempt(
     *next_candidate += 1;
     let id = *next_id;
     *next_id += 1;
-    let path = attempt_path(temp_dir, set_id, id);
+    let path = attempt_path(temp_dir, log.set_id, id);
     remove_if_exists(&path);
     let cancel = Arc::new(AtomicBool::new(false));
     let progress = Arc::new(AttemptProgress::new());
@@ -552,13 +569,11 @@ fn start_next_attempt(
         cancel: cancel.clone(),
         progress: progress.clone(),
     };
-    let url = source.url(set_id);
+    let url = source.url(log.set_id);
     let agent = build_agent(source.preferred_ip());
-    crate::log::event(
-        "download-osz",
+    log.event(
         "attempt-start",
-        None,
-        &format!("attempt={id} source={} url={url}", source.name()),
+        format!("attempt={id} source={} url={url}", source.name()),
     );
     let worker_sender = sender.clone();
     let worker_path = path.clone();
@@ -612,6 +627,7 @@ fn handle_attempt_result(
     failures: &mut Vec<String>,
     preferred_refresh_triggered: &mut bool,
     temp_dir: &Path,
+    log: &OszLogContext,
 ) -> HandledAttempt {
     let Some(position) = active.iter().position(|attempt| attempt.id == message.id) else {
         return HandledAttempt::Ignored;
@@ -622,21 +638,17 @@ fn handle_attempt_result(
     let _ = attempt.handle.join();
     match message.result {
         Ok(()) => {
-            crate::log::event(
-                "download-osz",
+            log.event(
                 "winner",
-                None,
-                &format!("attempt={} source={} validated", attempt.id, source.name()),
+                format!("attempt={} source={} validated", attempt.id, source.name()),
             );
             HandledAttempt::Won(path)
         }
         Err(reason) => {
             remove_if_exists(&path);
-            crate::log::event(
-                "download-osz",
+            log.event(
                 "attempt-error",
-                None,
-                &format!("attempt={} source={} {reason}", attempt.id, source.name()),
+                format!("attempt={} source={} {reason}", attempt.id, source.name()),
             );
             if matches!(source, MirrorSource::OsuDirectPreferred(_))
                 && !*preferred_refresh_triggered
@@ -666,13 +678,11 @@ fn slowest_attempt(active: &[ActiveAttempt], now: Instant) -> Option<usize> {
         .map(|(position, _)| position)
 }
 
-fn cancel_attempt(attempt: ActiveAttempt) {
+fn cancel_attempt(log: &OszLogContext, attempt: ActiveAttempt) {
     attempt.cancel.store(true, Ordering::Relaxed);
-    crate::log::event(
-        "download-osz",
+    log.event(
         "attempt-cancelled",
-        None,
-        &format!("attempt={} source={}", attempt.id, attempt.source.name()),
+        format!("attempt={} source={}", attempt.id, attempt.source.name()),
     );
     thread::spawn(move || {
         let _ = attempt.handle.join();
@@ -1146,6 +1156,15 @@ mod tests {
                 "nekoha",
                 "catboy"
             ]
+        );
+    }
+
+    #[test]
+    fn osz_log_message_includes_request_bid_and_set_id() {
+        let context = OszLogContext::new("738063", 12345);
+        assert_eq!(
+            context.message("cache hit (1.0 MiB)"),
+            "bid=738063 set=12345 cache hit (1.0 MiB)"
         );
     }
 

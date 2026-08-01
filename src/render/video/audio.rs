@@ -27,10 +27,16 @@ pub(crate) struct AudioSourceJob {
 }
 
 impl AudioSourceJob {
-    pub(crate) fn start(beatmap: Beatmap, cache_dir: PathBuf, no_cache: bool) -> Result<Self> {
+    pub(crate) fn start(
+        request_bid: &str,
+        beatmap: Beatmap,
+        cache_dir: PathBuf,
+        no_cache: bool,
+    ) -> Result<Self> {
         let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
             PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
         })?;
+        let request_bid = request_bid.to_string();
         let audio_filename = beatmap
             .audio_filename()
             .ok_or_else(|| PreviewError::parse("missing AudioFilename required for MP4 audio"))?;
@@ -43,7 +49,10 @@ impl AudioSourceJob {
 
         let handle = std::thread::spawn(move || {
             let osz_path = crate::pipeline::downloader::download_beatmapset_archive(
-                set_id, &cache_dir, no_cache,
+                &request_bid,
+                set_id,
+                &cache_dir,
+                no_cache,
             )?;
             prepare_audio_source(&beatmap, &osz_path, &cache_dir, no_cache)
         });

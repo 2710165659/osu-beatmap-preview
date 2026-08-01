@@ -204,6 +204,7 @@ fn generate_preview_inner(
 
     let audio_job = if fmt == "mp4" {
         Some(AudioSourceJob::start(
+            bid,
             beatmap.clone(),
             temp_root.join("osz-download-cache"),
             no_cache,
