@@ -15,6 +15,7 @@ pub fn generate_preview(
     convert: Option<&str>,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
+    preview_30s: bool,
     gap: Option<f64>,
     no_cache: bool,
 ) -> Result<Value> {
@@ -25,11 +26,22 @@ pub fn generate_preview(
         fmt: fmt.map(str::to_string),
         convert: convert.map(str::to_string),
         times: times.clone(),
+        preview_30s,
         gap,
         no_cache,
         ..SummaryRecord::default()
     };
-    match generate_preview_inner(bid, fmt, convert, mods, times, gap, no_cache, &mut rec) {
+    match generate_preview_inner(
+        bid,
+        fmt,
+        convert,
+        mods,
+        times,
+        preview_30s,
+        gap,
+        no_cache,
+        &mut rec,
+    ) {
         Ok(value) => {
             rec.duration_ms = started.elapsed().as_secs_f64() * 1000.0;
             if rec.status.is_empty() {
@@ -56,6 +68,7 @@ fn generate_preview_inner(
     convert: Option<&str>,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
+    preview_30s: bool,
     gap: Option<f64>,
     no_cache: bool,
     rec: &mut SummaryRecord,
@@ -106,7 +119,7 @@ fn generate_preview_inner(
         fmt: &fmt,
         target_mode,
     };
-    let mods = validate::validate_with_context(&ctx, times.as_deref(), gap, mods)?;
+    let mods = validate::validate_with_context(&ctx, times.as_deref(), preview_30s, gap, mods)?;
     rec.mods = mods.as_ref().map(|m| m.tokens.join("+"));
 
     let mode_name = match target_mode {
@@ -130,6 +143,9 @@ fn generate_preview_inner(
         if !t.is_empty() {
             parts.push(cache::format_time_suffix(t));
         }
+    }
+    if preview_30s {
+        parts.push(cache::format_preview_30s_suffix().to_string());
     }
     if let Some(b) = gap {
         parts.push(format!("bpm{}", b));
@@ -214,6 +230,7 @@ fn generate_preview_inner(
         target_mode,
         mods,
         times,
+        preview_30s,
         gap,
         audio_job,
         bid,
@@ -340,13 +357,14 @@ trait ModeRenderer {
 
     /// Render an MP4 (H.264) video of the full chart to `output_path`.
     /// `times_ms` is either `None` (full chart, ±2s padding) or `Some([t1, t2])`
-    /// (explicit range); other lengths are rejected by validation. Returns the
-    /// output path.
+    /// (explicit range). `preview_30s` selects a PreviewTime-based 30s actual
+    /// duration clip. Invalid combinations are rejected by validation.
     fn render_video(
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
+        preview_30s: bool,
         output_path: &Path,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf>;
@@ -406,6 +424,7 @@ impl ModeRenderer for StandardRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
+        preview_30s: bool,
         output_path: &Path,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
@@ -413,6 +432,7 @@ impl ModeRenderer for StandardRenderer {
             beatmap,
             mods,
             times_ms,
+            preview_30s,
             output_path,
             audio_job,
         )?;
@@ -457,10 +477,18 @@ impl ModeRenderer for TaikoRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
+        preview_30s: bool,
         output_path: &Path,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::render::taiko::render_taiko_video(beatmap, mods, times_ms, output_path, audio_job)?;
+        crate::render::taiko::render_taiko_video(
+            beatmap,
+            mods,
+            times_ms,
+            preview_30s,
+            output_path,
+            audio_job,
+        )?;
         Ok(output_path.to_path_buf())
     }
 }
@@ -502,10 +530,18 @@ impl ModeRenderer for CatchRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
+        preview_30s: bool,
         output_path: &Path,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::render::catch::render_catch_video(beatmap, mods, times_ms, output_path, audio_job)?;
+        crate::render::catch::render_catch_video(
+            beatmap,
+            mods,
+            times_ms,
+            preview_30s,
+            output_path,
+            audio_job,
+        )?;
         Ok(output_path.to_path_buf())
     }
 }
@@ -547,10 +583,18 @@ impl ModeRenderer for ManiaRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         times_ms: Option<Vec<i64>>,
+        preview_30s: bool,
         output_path: &Path,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::render::mania::render_mania_video(beatmap, mods, times_ms, output_path, audio_job)?;
+        crate::render::mania::render_mania_video(
+            beatmap,
+            mods,
+            times_ms,
+            preview_30s,
+            output_path,
+            audio_job,
+        )?;
         Ok(output_path.to_path_buf())
     }
 }
@@ -640,6 +684,7 @@ fn render_preview_for_mode(
     target_mode: i32,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
+    preview_30s: bool,
     gap: Option<f64>,
     audio_job: Option<AudioSourceJob>,
     bid: &str,
@@ -676,7 +721,14 @@ fn render_preview_for_mode(
     } else if fmt == "mp4" {
         let audio_job =
             audio_job.ok_or_else(|| PreviewError::render("MP4 audio job was not started"))?;
-        renderer.render_video(&beatmap, mods_ref, times_ms, output_path, audio_job)
+        renderer.render_video(
+            &beatmap,
+            mods_ref,
+            times_ms,
+            preview_30s,
+            output_path,
+            audio_job,
+        )
     } else {
         renderer.render_png(&beatmap, mods_ref, output_path, gap)
     }

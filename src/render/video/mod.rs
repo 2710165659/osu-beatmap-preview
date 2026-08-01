@@ -23,10 +23,12 @@
 //! silently falls back to CPU.
 
 use crate::core::errors::{PreviewError, Result};
+use crate::core::models::Beatmap;
+use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
 use crate::render::video::audio::{
-    encode_audio_segment, AudioSourceJob, AUDIO_BITRATE, AUDIO_SAMPLE_RATE,
+    encode_audio_segment, full_video_start_time, AudioSourceJob, AUDIO_BITRATE, AUDIO_SAMPLE_RATE,
 };
 use bytes::Bytes;
 use rayon::prelude::*;
@@ -48,11 +50,95 @@ const PAR_CHUNK_SIZE: usize = 8;
 /// Bound transient RGBA frame memory for unusually large playfields.
 const MAX_PAR_FRAME_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) const VIDEO_BITRATE: u32 = 900_000;
+pub(crate) const VIDEO_END_PADDING_MS: i64 = 2_000;
+const PREVIEW_30S_ACTUAL_MS: i64 = 30_000;
 
 const LABEL_COLOR: [u8; 4] = [232, 232, 232, 255];
 const LABEL_FONT_SIZE: u32 = 24;
 const LABEL_PAD: i64 = 12;
 const BLACK_OPAQUE: [u8; 4] = [0, 0, 0, 255];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct VideoTimeRange {
+    pub(crate) start: i64,
+    pub(crate) end: i64,
+}
+
+pub(crate) fn resolve_video_time_range(
+    beatmap: &Beatmap,
+    first_object_ms: i64,
+    last_object_ms: i64,
+    times_ms: Option<&[i64]>,
+    preview_30s: bool,
+    speed: f64,
+) -> Result<VideoTimeRange> {
+    if preview_30s && times_ms.is_some() {
+        return Err(PreviewError::new(
+            "--preview-30s cannot be used together with --time",
+        ));
+    }
+
+    if let Some(times) = times_ms {
+        if times.len() != 2 {
+            return Err(PreviewError::new(
+                "--time for mp4 needs exactly 2 values t1+t2 (or omit for the full chart)",
+            ));
+        }
+        return validate_video_time_range(VideoTimeRange {
+            start: times[0],
+            end: times[1],
+        });
+    }
+
+    let full_start = full_video_start_time(first_object_ms, beatmap.audio_lead_in_ms());
+    let full_end = last_object_ms + VIDEO_END_PADDING_MS;
+    let full_range = validate_video_time_range(VideoTimeRange {
+        start: full_start,
+        end: full_end,
+    })?;
+
+    if !preview_30s {
+        return Ok(full_range);
+    }
+
+    let span = chart_span_for_actual_duration(PREVIEW_30S_ACTUAL_MS, speed)?;
+    if full_range.end - full_range.start <= span {
+        return Ok(full_range);
+    }
+
+    let mut start = preview_time_or_first_object(beatmap, first_object_ms).max(full_range.start);
+    if start + span > full_range.end {
+        start = full_range.end - span;
+    }
+    start = start.max(full_range.start);
+    validate_video_time_range(VideoTimeRange {
+        start,
+        end: start + span,
+    })
+}
+
+fn validate_video_time_range(range: VideoTimeRange) -> Result<VideoTimeRange> {
+    if range.end <= range.start {
+        return Err(PreviewError::new("mp4 time range is empty"));
+    }
+    Ok(range)
+}
+
+fn chart_span_for_actual_duration(actual_duration_ms: i64, speed: f64) -> Result<i64> {
+    if !speed.is_finite() || speed <= 0.0 {
+        return Err(PreviewError::render("invalid video speed multiplier"));
+    }
+    Ok(round_half_even(actual_duration_ms as f64 * speed).max(1))
+}
+
+fn preview_time_or_first_object(beatmap: &Beatmap, first_object_ms: i64) -> i64 {
+    beatmap
+        .general
+        .get("PreviewTime")
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|&preview_time| preview_time >= 0)
+        .unwrap_or(first_object_ms)
+}
 
 /// An encoded H.264 frame ready to be muxed into the MP4 container.
 ///
@@ -463,4 +549,126 @@ fn drop_stdout_silence<F: FnOnce()>(f: F) {
 #[cfg(not(windows))]
 fn drop_stdout_silence<F: FnOnce()>(f: F) {
     f();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::models::{HitObjects, KvSection};
+
+    fn beatmap_with_preview(preview_time: Option<&str>, lead_in: Option<&str>) -> Beatmap {
+        let mut general = KvSection::default();
+        if let Some(value) = preview_time {
+            general.insert("PreviewTime", value.to_string());
+        }
+        if let Some(value) = lead_in {
+            general.insert("AudioLeadIn", value.to_string());
+        }
+        Beatmap {
+            metadata: KvSection::default(),
+            difficulty: KvSection::default(),
+            general,
+            timing_points: Vec::new(),
+            hit_objects: HitObjects::Standard(Vec::new()),
+            break_periods: Vec::new(),
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
+
+    #[test]
+    fn preview_30s_uses_preview_time_when_available() {
+        let beatmap = beatmap_with_preview(Some("45000"), None);
+        let range = resolve_video_time_range(&beatmap, 10_000, 100_000, None, true, 1.0).unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 45_000,
+                end: 75_000
+            }
+        );
+    }
+
+    #[test]
+    fn preview_30s_falls_back_to_first_object_for_missing_invalid_or_negative_preview_time() {
+        for preview_time in [None, Some("abc"), Some("-1")] {
+            let beatmap = beatmap_with_preview(preview_time, None);
+            let range =
+                resolve_video_time_range(&beatmap, 10_000, 100_000, None, true, 1.0).unwrap();
+            assert_eq!(range.start, 10_000);
+            assert_eq!(range.end, 40_000);
+        }
+    }
+
+    #[test]
+    fn preview_30s_scales_chart_span_to_keep_actual_video_duration() {
+        let beatmap = beatmap_with_preview(Some("10000"), None);
+        let dt = resolve_video_time_range(&beatmap, 10_000, 100_000, None, true, 1.5).unwrap();
+        assert_eq!(
+            dt,
+            VideoTimeRange {
+                start: 10_000,
+                end: 55_000
+            }
+        );
+
+        let ht = resolve_video_time_range(&beatmap, 10_000, 100_000, None, true, 0.75).unwrap();
+        assert_eq!(
+            ht,
+            VideoTimeRange {
+                start: 10_000,
+                end: 32_500
+            }
+        );
+    }
+
+    #[test]
+    fn preview_30s_shifts_back_when_preview_tail_is_too_short() {
+        let beatmap = beatmap_with_preview(Some("40000"), None);
+        let range = resolve_video_time_range(&beatmap, 10_000, 50_000, None, true, 1.0).unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 22_000,
+                end: 52_000
+            }
+        );
+    }
+
+    #[test]
+    fn preview_30s_returns_short_clip_when_whole_chart_range_is_shorter_than_30s() {
+        let beatmap = beatmap_with_preview(Some("15000"), None);
+        let range = resolve_video_time_range(&beatmap, 10_000, 20_000, None, true, 1.0).unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 8_000,
+                end: 22_000
+            }
+        );
+    }
+
+    #[test]
+    fn explicit_time_range_is_preserved() {
+        let beatmap = beatmap_with_preview(Some("45000"), None);
+        let range =
+            resolve_video_time_range(&beatmap, 10_000, 100_000, Some(&[3_000, 9_000]), false, 1.0)
+                .unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 3_000,
+                end: 9_000
+            }
+        );
+    }
+
+    #[test]
+    fn preview_30s_conflicts_with_explicit_time_range() {
+        let beatmap = beatmap_with_preview(Some("45000"), None);
+        let err =
+            resolve_video_time_range(&beatmap, 10_000, 100_000, Some(&[3_000, 9_000]), true, 1.0)
+                .unwrap_err();
+        assert!(err.to_string().contains("--preview-30s"));
+    }
 }

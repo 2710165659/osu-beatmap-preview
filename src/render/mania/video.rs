@@ -3,16 +3,17 @@
 //! layout; the bottom segment label is dropped (the global top-right label is
 //! drawn by `video::save_mp4_streamed`).
 //!
-//! Time range: first note − 2s → last note + 2s, or `[t1, t2]` when
-//! `--time=t1+t2` is given. 15 fps, letterboxed to 16:9.
+//! Time range: first note − 2s → last note + 2s, `[t1, t2]` when
+//! `--time=t1+t2` is given, or a preview-time 30s clip when `--preview-30s`
+//! is given. 15 fps, letterboxed to 16:9.
 
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
-use crate::render::video::audio::{full_video_start_time, AudioSourceJob};
-use crate::render::video::save_mp4_streamed;
+use crate::render::video::audio::AudioSourceJob;
+use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::path::Path;
 
 use super::gif::{
@@ -30,6 +31,7 @@ pub(crate) fn render_mania_video(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
+    preview_30s: bool,
     output_path: &Path,
     audio_job: AudioSourceJob,
 ) -> Result<()> {
@@ -48,35 +50,26 @@ pub(crate) fn render_mania_video(
         return Err(PreviewError::render("mania beatmap has no hit objects"));
     }
 
-    let (start, end) = match &times_ms {
-        None => {
-            let first = original_objects
-                .iter()
-                .map(|h| h.start_time)
-                .min()
-                .unwrap_or(0);
-            let last = original_objects
-                .iter()
-                .map(|h| h.end_time)
-                .max()
-                .unwrap_or(0);
-            (
-                full_video_start_time(first, beatmap.audio_lead_in_ms()),
-                last + 2000,
-            )
-        }
-        Some(t) if t.len() == 2 => (t[0], t[1]),
-        Some(_) => {
-            return Err(PreviewError::new(
-                "--time for mp4 needs exactly 2 values t1+t2 (or omit for the full chart)",
-            ));
-        }
-    };
-    if end <= start {
-        return Err(PreviewError::new("mp4 time range is empty"));
-    }
-
     let speed = mods.map_or(1.0, |m| m.speed_multiplier);
+    let first = original_objects
+        .iter()
+        .map(|h| h.start_time)
+        .min()
+        .unwrap_or(0);
+    let last = original_objects
+        .iter()
+        .map(|h| h.end_time)
+        .max()
+        .unwrap_or(0);
+    let range = resolve_video_time_range(
+        beatmap,
+        first,
+        last,
+        times_ms.as_deref(),
+        preview_30s,
+        speed,
+    )?;
+    let (start, end) = (range.start, range.end);
     let total_ms = end - start;
     let fps = GIF_FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);

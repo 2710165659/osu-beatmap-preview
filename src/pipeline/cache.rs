@@ -83,6 +83,10 @@ pub fn format_time_suffix(times: &[f64]) -> String {
     )
 }
 
+pub fn format_preview_30s_suffix() -> &'static str {
+    "preview30s"
+}
+
 // ── output cache helpers ──
 
 /// Returns `Some(path)` if the cached output is still valid, `None` otherwise.
@@ -447,5 +451,10 @@ mod tests {
         assert_eq!(std::fs::read(&final_path).unwrap(), b"new");
         assert!(!tmp.exists());
         let _ = std::fs::remove_file(&final_path);
+    }
+
+    #[test]
+    fn preview_30s_suffix_is_stable() {
+        assert_eq!(format_preview_30s_suffix(), "preview30s");
     }
 }

@@ -48,12 +48,14 @@
 
 > `preview-img` 字段为输出文件的绝对路径，格式由 `--fmt` 决定（`.gif` / `.png` / `.mp4`）。
 > `log` 字段为可选字段，只有日志启用时才存在，不影响现有解析。
+>
+> MP4 默认渲染全谱；`--time=t1+t2` 可指定谱面时间范围；`--preview-30s` 会从 `.osu` 的 `PreviewTime` 附近渲染约 30 秒实际播放时长，若尾段不足则自动向前补足。
 
 | 路径 | 说明 |
 | --- | --- |
 | 谱面缓存 | `<临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
-| 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_t<时间点>][_bpm<BPM值>].<fmt>` |
+| 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_t<时间点>][_preview30s][_bpm<BPM值>].<fmt>` |
 | 日志文件 | `<临时目录>/osu-beatmap-preview/logs/` — `progress.log`（实时进度，`tail -f progress.log`）与 `render.log`（NDJSON 汇总） |
 | 批量脚本 | `batch_render.ps1` — 可批量渲染多个 bid 并生成对比 HTML |
 
@@ -72,7 +74,7 @@ cargo build --release
 # 产物: target/release/osu-beatmap-preview(.exe)
 ```
 
-> MP4 会根据 `.osu` 中的 `AudioFilename` 从 OSZ 提取并同步 MP3、OGG 或 WAV 音频；`AudioLeadIn` 控制全谱视频开始前的静音时长，`--time`、DT 和 HT 同样作用于音轨。
+> MP4 会根据 `.osu` 中的 `AudioFilename` 从 OSZ 提取并同步 MP3、OGG 或 WAV 音频；`AudioLeadIn` 控制全谱视频开始前的静音时长，`--time`、`--preview-30s`、DT 和 HT 同样作用于音轨。`--preview-30s` 的 30 秒指最终 MP4 的实际播放时长，因此 DT/HT 会改变覆盖的谱面时间跨度。
 
 > OSZ 下载、音频解码与 AAC 编码会和画面渲染并行进行，两个任务完成后统一封装为 MP4。
 

@@ -75,6 +75,7 @@ pub struct ValidateContext<'a> {
 pub fn validate_with_context(
     ctx: &ValidateContext,
     times: Option<&[f64]>,
+    preview_30s: bool,
     gap: Option<f64>,
     mods: Option<ModSettings>,
 ) -> Result<Option<ModSettings>> {
@@ -83,10 +84,20 @@ pub fn validate_with_context(
         return Err(PreviewError::new("bid must be numeric"));
     }
 
-    // --- --times rules ---
+    // --- --times / --preview-30s rules ---
     // mp4: 0 values (full chart ±2s) or exactly 2 (explicit [t1, t2]); else reject.
     // gif: any (≤4 by parse_times) time points.
     // standard png: time points allowed; other png modes: reject.
+    if preview_30s && ctx.fmt != "mp4" {
+        return Err(PreviewError::new(
+            "--preview-30s is only valid for mp4 output",
+        ));
+    }
+    if preview_30s && times.is_some() {
+        return Err(PreviewError::new(
+            "--preview-30s cannot be used together with --time",
+        ));
+    }
     if ctx.fmt == "mp4" {
         if let Some(ts) = times {
             if ts.len() != 2 {
@@ -124,4 +135,39 @@ pub fn validate_with_context(
     };
 
     Ok(mods)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx(fmt: &str, target_mode: i32) -> ValidateContext<'_> {
+        ValidateContext {
+            bid: "123",
+            fmt,
+            target_mode,
+        }
+    }
+
+    #[test]
+    fn preview_30s_is_valid_for_mp4_without_time() {
+        validate_with_context(&ctx("mp4", 0), None, true, None, None).unwrap();
+    }
+
+    #[test]
+    fn preview_30s_is_rejected_for_non_mp4_formats() {
+        let err = validate_with_context(&ctx("gif", 0), None, true, None, None).unwrap_err();
+        assert!(err.to_string().contains("mp4"));
+
+        let err = validate_with_context(&ctx("png", 0), None, true, None, None).unwrap_err();
+        assert!(err.to_string().contains("mp4"));
+    }
+
+    #[test]
+    fn preview_30s_is_rejected_with_time() {
+        let times = [10.0, 40.0];
+        let err =
+            validate_with_context(&ctx("mp4", 0), Some(&times), true, None, None).unwrap_err();
+        assert!(err.to_string().contains("--preview-30s"));
+    }
 }

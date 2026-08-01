@@ -45,7 +45,7 @@ The program prints a JSON object to stdout:
 | --- | --- |
 | Beatmap cache | `<temp>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ cache | `<temp>/osu-beatmap-preview/osz-download-cache/` (archives use `<set-id>.osz`; extracted audio is isolated under `<set-id>/<filename-hash>.<extension>`) |
-| Rendered output | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_t<time>][_bpm<bpm>].<fmt>` |
+| Rendered output | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_t<time>][_preview30s][_bpm<bpm>].<fmt>` |
 | Batch script | `batch_render.ps1`, which renders multiple beatmaps and creates an HTML comparison report |
 
 > Cache files are not deleted automatically. Remove the project directory from your system temporary folder when it is no longer needed.
@@ -60,8 +60,6 @@ The program prints a JSON object to stdout:
 cargo build --release
 # output: target/release/osu-beatmap-preview(.exe)
 ```
-
-> MP4 rendering reads `AudioFilename` from the `.osu` file and extracts MP3, OGG, or WAV audio from the OSZ. `AudioLeadIn` controls pre-song silence for full videos, while `--time`, DT, and HT are applied to both tracks.
 
 > OSZ download, audio decoding, and AAC encoding run concurrently with video rendering. The completed tracks are then muxed into the final MP4.
 

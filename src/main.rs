@@ -18,6 +18,7 @@ struct Args {
     mods: Option<String>,
     fmt: Option<String>,
     time: Option<String>,
+    preview_30s: bool,
     gap: Option<f64>,
     no_cache: bool,
     log_dir: Option<PathBuf>,
@@ -27,7 +28,7 @@ struct Args {
 fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko] \
-         [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--gap=<BPM>] \
+         [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--preview-30s] [--gap=<BPM>] \
          [--log-dir=<DIR>] [--no-log] [--no-cache]\
        osu-beatmap-preview --version"
     );
@@ -41,6 +42,7 @@ fn parse_args() -> Args {
     let mut mods: Option<String> = None;
     let mut fmt: Option<String> = None;
     let mut time: Option<String> = None;
+    let mut preview_30s: bool = false;
     let mut gap: Option<f64> = None;
     let mut no_cache: bool = false;
     let mut log_dir: Option<PathBuf> = None;
@@ -75,6 +77,9 @@ fn parse_args() -> Args {
             }
             Long("time") | Long("times") => {
                 time = Some(take_value(&mut parser, "--time"));
+            }
+            Long("preview-30s") => {
+                preview_30s = true;
             }
             Long("gap") => {
                 let v = take_value(&mut parser, "--gap");
@@ -132,6 +137,7 @@ fn parse_args() -> Args {
         mods,
         fmt,
         time,
+        preview_30s,
         gap,
         no_cache,
         log_dir,
@@ -167,6 +173,7 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         args.convert.as_deref(),
         mods_unvalidated,
         times,
+        args.preview_30s,
         args.gap,
         args.no_cache,
     )
