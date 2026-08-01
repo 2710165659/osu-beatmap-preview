@@ -50,12 +50,13 @@
 > `log` 字段为可选字段，只有日志启用时才存在，不影响现有解析。
 >
 > MP4 默认渲染全谱；`--time=t1+t2` 可指定谱面时间范围；`--preview-30s` 会从 `.osu` 的 `PreviewTime` 附近渲染约 30 秒实际播放时长，若尾段不足则自动向前补足。
+> GIF 默认保持多段预览；`--gif-clip` 会改为无时间标签的单屏连续 GIF，默认从 `.osu` 的 `PreviewTime` 渲染约 10 秒实际播放时长，尾段不足时向前补足；也可用 `--gif-clip --time=t1+t2` 指定区间。`--gif-clip-label` 同样启用单屏连续 GIF，但会显示时间标签；它与 `--gif-clip` 互斥。
 
 | 路径 | 说明 |
 | --- | --- |
 | 谱面缓存 | `<临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
-| 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_t<时间点>][_preview30s][_bpm<BPM值>].<fmt>` |
+| 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_gifclip][_t<时间点或区间>][_preview30s][_bpm<BPM值>].<fmt>` |
 | 日志文件 | `<临时目录>/osu-beatmap-preview/logs/` — `progress.log`（实时进度，`tail -f progress.log`）与 `render.log`（NDJSON 汇总） |
 | 批量脚本 | `batch_render.ps1` — 可批量渲染多个 bid 并生成对比 HTML |
 

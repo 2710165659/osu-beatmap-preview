@@ -40,12 +40,13 @@ The program prints a JSON object to stdout:
 ```
 
 > `preview-img` is an absolute path. Its extension follows `--fmt`: `.gif`, `.png`, or `.mp4`.
+> GIF keeps the existing multi-segment preview by default. `--gif-clip` renders a single-screen continuous GIF without a time label, defaulting to about 10 seconds of actual playback from `.osu` `PreviewTime`; if the tail is too short it shifts backward to fill the clip. Use `--gif-clip --time=t1+t2` for an explicit range. `--gif-clip-label` enables the same single-screen GIF with a time label and conflicts with `--gif-clip`.
 
 | Location | Description |
 | --- | --- |
 | Beatmap cache | `<temp>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ cache | `<temp>/osu-beatmap-preview/osz-download-cache/` (archives use `<set-id>.osz`; extracted audio is isolated under `<set-id>/<filename-hash>.<extension>`) |
-| Rendered output | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_t<time>][_preview30s][_bpm<bpm>].<fmt>` |
+| Rendered output | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_gifclip][_t<time-or-range>][_preview30s][_bpm<bpm>].<fmt>` |
 | Batch script | `batch_render.ps1`, which renders multiple beatmaps and creates an HTML comparison report |
 
 > Cache files are not deleted automatically. Remove the project directory from your system temporary folder when it is no longer needed.

@@ -1,6 +1,8 @@
-//! osu!taiko GIF renderer: 4-segment animated preview with Overlapping scroll.
+//! osu!taiko GIF renderer: multi-segment preview or single-screen clip.
 
-use crate::common::time_selection::{PreviewSegmentTiming, PreviewTimeSelector};
+use crate::common::time_selection::{
+    GifClipRange, GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector,
+};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TaikoHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
@@ -77,6 +79,23 @@ pub(crate) struct GifLayout {
 // ─── public API ───
 
 pub(crate) fn render_taiko_gif(
+    beatmap: &Beatmap,
+    mods: Option<&ModSettings>,
+    options: GifRenderOptions,
+    output_path: &Path,
+) -> Result<()> {
+    match options {
+        GifRenderOptions::Segments(times_ms) => {
+            render_taiko_segment_gif(beatmap, mods, times_ms, output_path)
+        }
+        GifRenderOptions::Clip {
+            range,
+            show_time_label,
+        } => render_taiko_clip_gif(beatmap, mods, range, show_time_label, output_path),
+    }
+}
+
+fn render_taiko_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
@@ -184,6 +203,79 @@ pub(crate) fn render_taiko_gif(
     composer::save_animated_gif_streamed(frame_count, render, output_path, frame_duration_ms)
 }
 
+fn render_taiko_clip_gif(
+    beatmap: &Beatmap,
+    mods: Option<&ModSettings>,
+    range: GifClipRange,
+    show_time_label: bool,
+    output_path: &Path,
+) -> Result<()> {
+    let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
+    if hit_objects.is_empty() {
+        return Err(PreviewError::render("taiko beatmap has no hit objects"));
+    }
+
+    let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
+    let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;
+    let timing_points = effective_timing_points(beatmap, mods);
+    let multiplier_lookup = MultiplierLookup {
+        points: build_multiplier_points(&timing_points, slider_multiplier),
+    };
+    let prepared_hit_objects = prepare_hit_objects(&hit_objects, &multiplier_lookup);
+    let time_range = compute_time_range() / speed_multiplier;
+    let mut layout = build_gif_layout_with_segments(time_range, 1);
+    if !show_time_label {
+        layout.image_height = PAGE_MARGIN_Y * 2 + GIF_ROW_HEIGHT;
+    }
+    let frame_count =
+        pyround((range.end - range.start) as f64 * GIF_FPS / (1000.0 * speed_multiplier)).max(1)
+            as usize;
+    let frame_duration_ms = pyround(1000.0 / GIF_FPS).max(1) as u32;
+
+    thread_local! {
+        static TAIKO_GIF_CLIP_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
+    }
+
+    let static_bg = {
+        let mut bg = Img::new(
+            layout.image_width as u32,
+            layout.image_height as u32,
+            IMAGE_BACKGROUND,
+        );
+        draw_row_background(&mut bg, &layout, 0);
+        bg
+    };
+
+    let render = move |frame_index: usize| -> Img {
+        let snapshot_time =
+            range.start + pyround(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS);
+        let mut canvas = static_bg.clone();
+        TAIKO_GIF_CLIP_CACHE.with(|cache| {
+            draw_hit_objects(
+                &mut canvas,
+                &prepared_hit_objects,
+                &layout,
+                0,
+                snapshot_time,
+                &mut *cache.borrow_mut(),
+            )
+        });
+        if show_time_label {
+            draw_time_label_range(
+                &mut canvas,
+                range.start,
+                range.end,
+                0,
+                &layout,
+                range.is_preview,
+            );
+        }
+        canvas
+    };
+
+    composer::save_animated_gif_streamed(frame_count, render, output_path, frame_duration_ms)
+}
+
 // ─── time range / multiplier ───
 
 pub(crate) fn compute_time_range() -> f64 {
@@ -262,14 +354,18 @@ pub(crate) fn prepare_hit_objects(
 // ─── layout ───
 
 pub(crate) fn build_gif_layout(time_range: f64) -> GifLayout {
+    build_gif_layout_with_segments(time_range, GIF_SEGMENT_COUNT)
+}
+
+pub(crate) fn build_gif_layout_with_segments(time_range: f64, segment_count: usize) -> GifLayout {
     let segment_width = gif_scroll_length_px();
     let left_panel_width = pyround(GIF_ROW_HEIGHT as f64 * DRUM_PANEL_WIDTH_RATIO);
     let right_panel_width = ROW_INNER_PADDING_X * 2 + segment_width;
 
     let image_width = PAGE_MARGIN_X * 2 + left_panel_width + right_panel_width;
     let image_height = PAGE_MARGIN_Y * 2
-        + GIF_SEGMENT_COUNT as i64 * GIF_ROW_HEIGHT
-        + (GIF_SEGMENT_COUNT as i64 - 1) * GIF_ROW_GAP
+        + segment_count as i64 * GIF_ROW_HEIGHT
+        + (segment_count as i64 - 1) * GIF_ROW_GAP
         + 50;
 
     let normal_note_diameter = pyround(GIF_ROW_HEIGHT as f64 * NORMAL_NOTE_SIZE_RATIO);
@@ -619,6 +715,53 @@ fn draw_time_label(
         "{} - {}",
         format_gif_time(start_time),
         format_gif_time(start_time + duration_ms)
+    );
+    let color = if is_preview {
+        GIF_PREVIEW_TIME_LABEL_COLOR
+    } else {
+        GIF_TIME_LABEL_COLOR
+    };
+    let note_color = if is_preview {
+        GIF_PREVIEW_TIME_LABEL_COLOR
+    } else {
+        GIF_TIME_LABEL_NOTE_COLOR
+    };
+    let (label_w, label_h) = text_size(&label, GIF_TIME_LABEL_FONT_SIZE);
+    let x = (PAGE_MARGIN_X as f64
+        + (layout.image_width - PAGE_MARGIN_X * 2 - label_w as i64) as f64 / 2.0)
+        .floor() as i64;
+    draw_text(image, x, y, &label, GIF_TIME_LABEL_FONT_SIZE, color);
+
+    if is_preview {
+        let note = "Preview Time";
+        let (note_w, _) = text_size(note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
+        let note_x = (PAGE_MARGIN_X as f64
+            + (layout.image_width - PAGE_MARGIN_X * 2 - note_w as i64) as f64 / 2.0)
+            .floor() as i64;
+        draw_text(
+            image,
+            note_x,
+            y + label_h as i64 + 4,
+            note,
+            GIF_TIME_LABEL_NOTE_FONT_SIZE,
+            note_color,
+        );
+    }
+}
+
+fn draw_time_label_range(
+    image: &mut Img,
+    start_time: i64,
+    end_time: i64,
+    row_index: i64,
+    layout: &GifLayout,
+    is_preview: bool,
+) {
+    let y = gif_row_top(row_index, layout) + layout.row_height + 5;
+    let label = format!(
+        "{} - {}",
+        format_gif_time(start_time),
+        format_gif_time(end_time)
     );
     let color = if is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR

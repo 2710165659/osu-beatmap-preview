@@ -75,6 +75,8 @@ pub struct ValidateContext<'a> {
 pub fn validate_with_context(
     ctx: &ValidateContext,
     times: Option<&[f64]>,
+    gif_clip: bool,
+    gif_clip_label: bool,
     preview_30s: bool,
     gap: Option<f64>,
     mods: Option<ModSettings>,
@@ -84,10 +86,21 @@ pub fn validate_with_context(
         return Err(PreviewError::new("bid must be numeric"));
     }
 
-    // --- --times / --preview-30s rules ---
+    // --- --times / --gif-clip / --preview-30s rules ---
     // mp4: 0 values (full chart ±2s) or exactly 2 (explicit [t1, t2]); else reject.
-    // gif: any (≤4 by parse_times) time points.
+    // gif: any (≤4 by parse_times) time points, or exactly 2 with --gif-clip.
     // standard png: time points allowed; other png modes: reject.
+    let gif_clip_mode = gif_clip || gif_clip_label;
+    if gif_clip && gif_clip_label {
+        return Err(PreviewError::new(
+            "--gif-clip and --gif-clip-label cannot be used together",
+        ));
+    }
+    if gif_clip_mode && ctx.fmt != "gif" {
+        return Err(PreviewError::new(
+            "--gif-clip and --gif-clip-label are only valid for GIF output",
+        ));
+    }
     if preview_30s && ctx.fmt != "mp4" {
         return Err(PreviewError::new(
             "--preview-30s is only valid for mp4 output",
@@ -103,6 +116,19 @@ pub fn validate_with_context(
             if ts.len() != 2 {
                 return Err(PreviewError::new(
                     "--time for mp4 needs exactly 2 values t1+t2 (or omit for the full chart)",
+                ));
+            }
+        }
+    } else if gif_clip_mode {
+        if let Some(ts) = times {
+            if ts.len() != 2 {
+                return Err(PreviewError::new(
+                    "--time with GIF clip output needs exactly 2 values t1+t2",
+                ));
+            }
+            if ts[1] <= ts[0] {
+                return Err(PreviewError::new(
+                    "--time range for GIF clip output is empty",
                 ));
             }
         }
@@ -151,15 +177,17 @@ mod tests {
 
     #[test]
     fn preview_30s_is_valid_for_mp4_without_time() {
-        validate_with_context(&ctx("mp4", 0), None, true, None, None).unwrap();
+        validate_with_context(&ctx("mp4", 0), None, false, false, true, None, None).unwrap();
     }
 
     #[test]
     fn preview_30s_is_rejected_for_non_mp4_formats() {
-        let err = validate_with_context(&ctx("gif", 0), None, true, None, None).unwrap_err();
+        let err = validate_with_context(&ctx("gif", 0), None, false, false, true, None, None)
+            .unwrap_err();
         assert!(err.to_string().contains("mp4"));
 
-        let err = validate_with_context(&ctx("png", 0), None, true, None, None).unwrap_err();
+        let err = validate_with_context(&ctx("png", 0), None, false, false, true, None, None)
+            .unwrap_err();
         assert!(err.to_string().contains("mp4"));
     }
 
@@ -167,7 +195,64 @@ mod tests {
     fn preview_30s_is_rejected_with_time() {
         let times = [10.0, 40.0];
         let err =
-            validate_with_context(&ctx("mp4", 0), Some(&times), true, None, None).unwrap_err();
+            validate_with_context(&ctx("mp4", 0), Some(&times), false, false, true, None, None)
+                .unwrap_err();
         assert!(err.to_string().contains("--preview-30s"));
+    }
+
+    #[test]
+    fn gif_clip_requires_gif_output() {
+        let err = validate_with_context(&ctx("png", 0), None, true, false, false, None, None)
+            .unwrap_err();
+        assert!(err.to_string().contains("--gif-clip"));
+
+        validate_with_context(&ctx("gif", 0), None, true, false, false, None, None).unwrap();
+    }
+
+    #[test]
+    fn gif_clip_time_requires_two_ascending_values() {
+        validate_with_context(
+            &ctx("gif", 0),
+            Some(&[10.0, 20.0]),
+            true,
+            false,
+            false,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let err = validate_with_context(
+            &ctx("gif", 0),
+            Some(&[10.0]),
+            true,
+            false,
+            false,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("exactly 2"));
+
+        let err = validate_with_context(
+            &ctx("gif", 0),
+            Some(&[20.0, 10.0]),
+            true,
+            false,
+            false,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn gif_clip_and_label_are_conflicting_clip_modes() {
+        validate_with_context(&ctx("gif", 0), None, false, true, false, None, None).unwrap();
+
+        let err =
+            validate_with_context(&ctx("gif", 0), None, true, true, false, None, None).unwrap_err();
+        assert!(err.to_string().contains("cannot be used together"));
     }
 }

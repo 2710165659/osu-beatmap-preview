@@ -23,6 +23,8 @@ pub struct SummaryRecord {
     pub convert: Option<String>,
     pub mods: Option<String>,
     pub times: Option<Vec<f64>>,
+    pub gif_clip: bool,
+    pub gif_clip_label: bool,
     pub preview_30s: bool,
     pub gap: Option<f64>,
     pub no_cache: bool,
@@ -79,6 +81,12 @@ pub fn write_summary(rec: &SummaryRecord) {
     insert_opt(&mut map, "mods", rec.mods.as_deref());
     if let Some(times) = &rec.times {
         map.insert("times".to_string(), json!(times));
+    }
+    if rec.gif_clip {
+        map.insert("gif_clip".to_string(), json!(true));
+    }
+    if rec.gif_clip_label {
+        map.insert("gif_clip_label".to_string(), json!(true));
     }
     if rec.preview_30s {
         map.insert("preview_30s".to_string(), json!(true));

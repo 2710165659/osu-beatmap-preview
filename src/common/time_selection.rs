@@ -2,6 +2,7 @@ use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, BreakPeriod, TimingPoint};
 
 pub const BREAK_GAP_MS: i64 = 2200;
+pub const GIF_CLIP_ACTUAL_MS: i64 = 10_000;
 
 #[derive(Debug, Clone)]
 pub struct PreviewSegmentTiming {
@@ -10,12 +11,95 @@ pub struct PreviewSegmentTiming {
     pub break_periods: Vec<BreakPeriod>,
 }
 
+#[derive(Debug, Clone)]
+pub struct GifClipRange {
+    pub start: i64,
+    pub end: i64,
+    pub is_preview: bool,
+    pub break_periods: Vec<BreakPeriod>,
+}
+
+#[derive(Debug, Clone)]
+pub enum GifRenderOptions {
+    Segments(Option<Vec<i64>>),
+    Clip {
+        range: GifClipRange,
+        show_time_label: bool,
+    },
+}
+
 pub fn times_to_milliseconds(times: Option<&[f64]>) -> Option<Vec<i64>> {
     times.map(|ts| {
         ts.iter()
             .map(|t| crate::parser::round_half_even(t * 1000.0))
             .collect()
     })
+}
+
+pub fn resolve_gif_clip_range(
+    beatmap: &Beatmap,
+    first_object_ms: i64,
+    last_object_ms: i64,
+    times_ms: Option<&[i64]>,
+    speed: f64,
+) -> Result<GifClipRange> {
+    if let Some(times) = times_ms {
+        if times.len() != 2 {
+            return Err(PreviewError::new(
+                "--time with --gif-clip needs exactly 2 values t1+t2",
+            ));
+        }
+        if times[1] <= times[0] {
+            return Err(PreviewError::new("--time range for --gif-clip is empty"));
+        }
+        return Ok(GifClipRange {
+            start: times[0],
+            end: times[1],
+            is_preview: false,
+            break_periods: break_periods_overlapping_segment(
+                &beatmap.break_periods,
+                times[0],
+                times[1] - times[0],
+            ),
+        });
+    }
+
+    let span = chart_span_for_actual_duration(GIF_CLIP_ACTUAL_MS, speed)?;
+    let preview_time = beatmap_preview_time(beatmap);
+    let mut start = preview_time.unwrap_or(first_object_ms);
+    let mut end = start + span;
+    if end > last_object_ms {
+        end = last_object_ms;
+        start = (end - span).max(first_object_ms);
+    }
+    if end <= start {
+        end = start + 1;
+    }
+    Ok(GifClipRange {
+        start,
+        end,
+        is_preview: preview_time.is_some(),
+        break_periods: break_periods_overlapping_segment(
+            &beatmap.break_periods,
+            start,
+            end - start,
+        ),
+    })
+}
+
+fn chart_span_for_actual_duration(actual_duration_ms: i64, speed: f64) -> Result<i64> {
+    if !speed.is_finite() || speed <= 0.0 {
+        return Err(PreviewError::render("invalid GIF speed multiplier"));
+    }
+    Ok(crate::parser::round_half_even(actual_duration_ms as f64 * speed).max(1))
+}
+
+fn beatmap_preview_time(beatmap: &Beatmap) -> Option<i64> {
+    beatmap
+        .general
+        .get("PreviewTime")
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|&preview_time| preview_time >= 0)
 }
 
 /// Simple xorshift seeded from system time — replaces Python's unseeded
@@ -280,7 +364,7 @@ fn does_not_overlap_existing(candidate: i64, segment_duration: i64, chosen: &[i6
     true
 }
 
-fn break_periods_overlapping_segment(
+pub fn break_periods_overlapping_segment(
     break_periods: &[BreakPeriod],
     segment_start_time: i64,
     segment_duration: i64,
@@ -309,4 +393,78 @@ pub fn snap_to_beat_grid(time: i64, timing_points: &[TimingPoint]) -> i64 {
     }
     let beats_from_red = (time - red_time) as f64 / beat_length;
     (red_time + (beats_from_red.floor() as i64 as f64 * beat_length) as i64).max(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::models::{HitObjects, KvSection};
+
+    fn beatmap_with_preview(preview_time: Option<&str>) -> Beatmap {
+        let mut general = KvSection::default();
+        if let Some(value) = preview_time {
+            general.insert("PreviewTime", value.to_string());
+        }
+        Beatmap {
+            metadata: KvSection::default(),
+            difficulty: KvSection::default(),
+            general,
+            timing_points: Vec::new(),
+            hit_objects: HitObjects::Standard(Vec::new()),
+            break_periods: Vec::new(),
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
+
+    #[test]
+    fn gif_clip_starts_at_preview_time_when_there_is_room() {
+        let beatmap = beatmap_with_preview(Some("45000"));
+        let range = resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 1.0).unwrap();
+        assert_eq!(range.start, 45_000);
+        assert_eq!(range.end, 55_000);
+        assert!(range.is_preview);
+    }
+
+    #[test]
+    fn gif_clip_falls_back_to_first_object_without_valid_preview_time() {
+        for preview_time in [None, Some("abc"), Some("-1")] {
+            let beatmap = beatmap_with_preview(preview_time);
+            let range = resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 1.0).unwrap();
+            assert_eq!(range.start, 10_000);
+            assert_eq!(range.end, 20_000);
+            assert!(!range.is_preview);
+        }
+    }
+
+    #[test]
+    fn gif_clip_shifts_back_to_fill_ten_seconds_at_tail() {
+        let beatmap = beatmap_with_preview(Some("95000"));
+        let range = resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 1.0).unwrap();
+        assert_eq!(range.start, 90_000);
+        assert_eq!(range.end, 100_000);
+        assert!(range.is_preview);
+    }
+
+    #[test]
+    fn gif_clip_scales_chart_span_for_speed_mods() {
+        let beatmap = beatmap_with_preview(Some("20000"));
+        let dt = resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 1.5).unwrap();
+        assert_eq!(dt.start, 20_000);
+        assert_eq!(dt.end, 35_000);
+
+        let ht = resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 0.75).unwrap();
+        assert_eq!(ht.start, 20_000);
+        assert_eq!(ht.end, 27_500);
+    }
+
+    #[test]
+    fn gif_clip_explicit_time_range_is_preserved() {
+        let beatmap = beatmap_with_preview(Some("45000"));
+        let range =
+            resolve_gif_clip_range(&beatmap, 10_000, 100_000, Some(&[3_000, 9_000]), 1.0).unwrap();
+        assert_eq!(range.start, 3_000);
+        assert_eq!(range.end, 9_000);
+        assert!(!range.is_preview);
+    }
 }

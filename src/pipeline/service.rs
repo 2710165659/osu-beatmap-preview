@@ -1,3 +1,4 @@
+use crate::common::time_selection::{resolve_gif_clip_range, GifRenderOptions};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, HitObjects};
 use crate::core::mods::ModSettings;
@@ -15,6 +16,8 @@ pub fn generate_preview(
     convert: Option<&str>,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
+    gif_clip: bool,
+    gif_clip_label: bool,
     preview_30s: bool,
     gap: Option<f64>,
     no_cache: bool,
@@ -26,6 +29,8 @@ pub fn generate_preview(
         fmt: fmt.map(str::to_string),
         convert: convert.map(str::to_string),
         times: times.clone(),
+        gif_clip,
+        gif_clip_label,
         preview_30s,
         gap,
         no_cache,
@@ -37,6 +42,8 @@ pub fn generate_preview(
         convert,
         mods,
         times,
+        gif_clip,
+        gif_clip_label,
         preview_30s,
         gap,
         no_cache,
@@ -68,12 +75,15 @@ fn generate_preview_inner(
     convert: Option<&str>,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
+    gif_clip: bool,
+    gif_clip_label: bool,
     preview_30s: bool,
     gap: Option<f64>,
     no_cache: bool,
     rec: &mut SummaryRecord,
 ) -> Result<Value> {
     let temp_root = std::env::temp_dir().join("osu-beatmap-preview");
+    let gif_clip_mode = gif_clip || gif_clip_label;
 
     // ── .osu 下载与解析 ──
     let t0 = Instant::now();
@@ -105,7 +115,7 @@ fn generate_preview_inner(
     let fmt: String = match fmt {
         Some(f) => f.to_string(),
         None => {
-            if target_mode == 0 {
+            if gif_clip_mode || target_mode == 0 {
                 "gif".to_string()
             } else {
                 "png".to_string()
@@ -119,7 +129,15 @@ fn generate_preview_inner(
         fmt: &fmt,
         target_mode,
     };
-    let mods = validate::validate_with_context(&ctx, times.as_deref(), preview_30s, gap, mods)?;
+    let mods = validate::validate_with_context(
+        &ctx,
+        times.as_deref(),
+        gif_clip,
+        gif_clip_label,
+        preview_30s,
+        gap,
+        mods,
+    )?;
     rec.mods = mods.as_ref().map(|m| m.tokens.join("+"));
 
     let mode_name = match target_mode {
@@ -139,7 +157,17 @@ fn generate_preview_inner(
             parts.push(cache::format_mod_suffix(m));
         }
     }
-    if let Some(t) = &times {
+    if gif_clip_mode {
+        parts.push(cache::format_gif_clip_suffix().to_string());
+        if gif_clip_label {
+            parts.push(cache::format_gif_clip_label_suffix().to_string());
+        }
+        if let Some(t) = &times {
+            if !t.is_empty() {
+                parts.push(cache::format_time_suffix(t));
+            }
+        }
+    } else if let Some(t) = &times {
         if !t.is_empty() {
             parts.push(cache::format_time_suffix(t));
         }
@@ -162,6 +190,7 @@ fn generate_preview_inner(
         &times,
         &fmt,
         target_mode,
+        gif_clip_mode,
         no_cache,
     );
     if let Some(cached_path) = cached {
@@ -231,6 +260,8 @@ fn generate_preview_inner(
         target_mode,
         mods,
         times,
+        gif_clip,
+        gif_clip_label,
         preview_30s,
         gap,
         audio_job,
@@ -343,7 +374,7 @@ trait ModeRenderer {
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
+        options: GifRenderOptions,
         output_path: &Path,
     ) -> Result<PathBuf>;
 
@@ -401,10 +432,10 @@ impl ModeRenderer for StandardRenderer {
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
+        options: GifRenderOptions,
         output_path: &Path,
     ) -> Result<PathBuf> {
-        crate::render::standard::render_standard_gif(beatmap, mods, times_ms, output_path)?;
+        crate::render::standard::render_standard_gif(beatmap, mods, options, output_path)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -456,10 +487,10 @@ impl ModeRenderer for TaikoRenderer {
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
+        options: GifRenderOptions,
         output_path: &Path,
     ) -> Result<PathBuf> {
-        crate::render::taiko::render_taiko_gif(beatmap, mods, times_ms, output_path)?;
+        crate::render::taiko::render_taiko_gif(beatmap, mods, options, output_path)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -509,10 +540,10 @@ impl ModeRenderer for CatchRenderer {
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
+        options: GifRenderOptions,
         output_path: &Path,
     ) -> Result<PathBuf> {
-        crate::render::catch::render_catch_gif(beatmap, mods, times_ms, output_path)?;
+        crate::render::catch::render_catch_gif(beatmap, mods, options, output_path)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -562,10 +593,10 @@ impl ModeRenderer for ManiaRenderer {
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
+        options: GifRenderOptions,
         output_path: &Path,
     ) -> Result<PathBuf> {
-        crate::render::mania::render_mania_gif(beatmap, mods, times_ms, output_path)?;
+        crate::render::mania::render_mania_gif(beatmap, mods, options, output_path)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -685,6 +716,8 @@ fn render_preview_for_mode(
     target_mode: i32,
     mods: Option<ModSettings>,
     times: Option<Vec<f64>>,
+    gif_clip: bool,
+    gif_clip_label: bool,
     preview_30s: bool,
     gap: Option<f64>,
     audio_job: Option<AudioSourceJob>,
@@ -718,7 +751,19 @@ fn render_preview_for_mode(
     }
 
     if fmt == "gif" {
-        renderer.render_gif(&beatmap, mods_ref, times_ms, output_path)
+        let gif_clip_mode = gif_clip || gif_clip_label;
+        let gif_options = if gif_clip_mode {
+            let (first, last) = object_time_bounds(&beatmap.hit_objects)
+                .ok_or_else(|| PreviewError::render("beatmap has no hit objects"))?;
+            let speed = mods_ref.map(|m| m.speed_multiplier).unwrap_or(1.0);
+            GifRenderOptions::Clip {
+                range: resolve_gif_clip_range(&beatmap, first, last, times_ms.as_deref(), speed)?,
+                show_time_label: gif_clip_label,
+            }
+        } else {
+            GifRenderOptions::Segments(times_ms)
+        };
+        renderer.render_gif(&beatmap, mods_ref, gif_options, output_path)
     } else if fmt == "mp4" {
         let audio_job =
             audio_job.ok_or_else(|| PreviewError::render("MP4 audio job was not started"))?;

@@ -87,6 +87,14 @@ pub fn format_preview_30s_suffix() -> &'static str {
     "preview30s"
 }
 
+pub fn format_gif_clip_suffix() -> &'static str {
+    "gifclip"
+}
+
+pub fn format_gif_clip_label_suffix() -> &'static str {
+    "label"
+}
+
 // ── output cache helpers ──
 
 /// Returns `Some(path)` if the cached output is still valid, `None` otherwise.
@@ -96,6 +104,7 @@ pub fn output_cache_hit(
     times: &Option<Vec<f64>>,
     fmt: &str,
     target_mode: i32,
+    gif_clip: bool,
     no_cache: bool,
 ) -> Option<PathBuf> {
     if no_cache {
@@ -130,7 +139,7 @@ pub fn output_cache_hit(
 
     // When random time selection is involved and the user did NOT pin ALL
     // required time points, the output is non-deterministic → never cache.
-    if !all_times_pinned(fmt, target_mode, times) {
+    if !all_times_pinned(fmt, target_mode, times, gif_clip) {
         return None;
     }
 
@@ -142,7 +151,11 @@ pub fn output_cache_hit(
 /// * GIF (all modes): needs 4 segments → cache only when `--time` gives all 4.
 /// * Standard PNG: needs 5 rows but `--time` accepts at most 4 → never cachable.
 /// * Taiko / Catch / Mania PNG: no time selection at all → always cachable.
-fn all_times_pinned(fmt: &str, target_mode: i32, times: &Option<Vec<f64>>) -> bool {
+fn all_times_pinned(fmt: &str, target_mode: i32, times: &Option<Vec<f64>>, gif_clip: bool) -> bool {
+    if gif_clip {
+        return fmt == "gif";
+    }
+
     // mp4 is always deterministic: full-chart (±2s) is fixed by the beatmap,
     // and an explicit [t1, t2] range is user-pinned.
     if fmt == "mp4" {
@@ -456,5 +469,22 @@ mod tests {
     #[test]
     fn preview_30s_suffix_is_stable() {
         assert_eq!(format_preview_30s_suffix(), "preview30s");
+    }
+
+    #[test]
+    fn gif_clip_suffix_is_stable() {
+        assert_eq!(format_gif_clip_suffix(), "gifclip");
+    }
+
+    #[test]
+    fn gif_clip_label_suffix_is_stable() {
+        assert_eq!(format_gif_clip_label_suffix(), "label");
+    }
+
+    #[test]
+    fn gif_clip_outputs_are_deterministic() {
+        assert!(all_times_pinned("gif", 0, &None, true));
+        assert!(all_times_pinned("gif", 1, &Some(vec![10.0, 20.0]), true));
+        assert!(!all_times_pinned("png", 0, &None, true));
     }
 }

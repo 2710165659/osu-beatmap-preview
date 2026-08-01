@@ -1,7 +1,7 @@
-//! osu!mania GIF renderer: 4-segment animated falling-note preview.
+//! osu!mania GIF renderer: multi-segment or single-screen falling-note preview.
 //! Port of beatmap_preview/mania/gif_renderer.py.
 
-use crate::common::time_selection::PreviewTimeSelector;
+use crate::common::time_selection::{GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
@@ -60,7 +60,7 @@ impl ScrollMap {
 pub(crate) fn render_mania_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
-    times_ms: Option<Vec<i64>>,
+    options: GifRenderOptions,
     output_path: &Path,
 ) -> Result<()> {
     let key_count = resolve_key_count(beatmap)?;
@@ -80,33 +80,64 @@ pub(crate) fn render_mania_gif(
 
     // DT/HT only changes how fast chart time advances; the GIF still plays 10s/segment.
     let speed_multiplier = mods.map_or(1.0, |m| m.speed_multiplier);
-    let gameplay_segment_duration = round_half_even(GIF_DURATION_MS as f64 * speed_multiplier);
-    let spans: Vec<(i64, i64)> = hit_objects
-        .iter()
-        .map(|ho| (ho.start_time, ho.end_time))
-        .collect();
-    let segment_timings = PreviewTimeSelector::new(
-        beatmap,
-        spans,
-        GIF_SEGMENT_COUNT as usize,
-        gameplay_segment_duration,
-        times_ms,
-    )?
-    .choose()?;
+    let (segment_timings, segment_duration, frame_count, show_time_label) = match options {
+        GifRenderOptions::Segments(times_ms) => {
+            let gameplay_segment_duration =
+                round_half_even(GIF_DURATION_MS as f64 * speed_multiplier);
+            let spans: Vec<(i64, i64)> = hit_objects
+                .iter()
+                .map(|ho| (ho.start_time, ho.end_time))
+                .collect();
+            let segment_timings = PreviewTimeSelector::new(
+                beatmap,
+                spans,
+                GIF_SEGMENT_COUNT as usize,
+                gameplay_segment_duration,
+                times_ms,
+            )?
+            .choose()?;
+            let frame_count = round_half_even((GIF_DURATION_MS * GIF_FPS) as f64 / 1000.0).max(1);
+            (
+                segment_timings,
+                gameplay_segment_duration,
+                frame_count,
+                true,
+            )
+        }
+        GifRenderOptions::Clip {
+            range,
+            show_time_label,
+        } => {
+            let segment_duration = range.end - range.start;
+            let frame_count = round_half_even(
+                segment_duration as f64 * GIF_FPS as f64 / (1000.0 * speed_multiplier),
+            )
+            .max(1);
+            (
+                vec![PreviewSegmentTiming {
+                    start_time: range.start,
+                    is_preview: range.is_preview,
+                    break_periods: range.break_periods,
+                }],
+                segment_duration,
+                frame_count,
+                show_time_label,
+            )
+        }
+    };
 
     let skin_config = load_mania_skin_config(key_count);
-    let layout = build_gif_layout(&skin_config);
+    let layout = build_gif_layout(&skin_config, segment_timings.len() as i64, show_time_label);
     let native_mania = is_native_mania(beatmap);
     // CS is Constant Scroll: keep the 33-speed time window but skip SV multipliers.
     let scroll_map = build_scroll_map(beatmap, &original_objects, cs_mode, native_mania);
     // time_range is the chart time span visible from judgement line to top at 33 speed.
     let time_range = compute_time_range(speed_multiplier, skin_config.hit_position);
     let pixels_per_scroll_unit = layout.scroll_length as f64 / time_range;
-    let frame_count = round_half_even((GIF_DURATION_MS * GIF_FPS) as f64 / 1000.0).max(1);
     let frame_duration_ms = round_half_even(1000.0 / GIF_FPS as f64).max(1);
     let max_segment_end = segment_timings
         .iter()
-        .map(|t| t.start_time + gameplay_segment_duration)
+        .map(|t| t.start_time + segment_duration)
         .max()
         .unwrap_or(0);
     let sv_changes = if cs_mode || !native_mania {
@@ -182,14 +213,18 @@ pub(crate) fn render_mania_gif(
     // 150 × format! + text_size + draw_text calls per segment — each frame
     // just alpha_composites the pre-built sprite.
     let label_y = PAGE_MARGIN_Y + layout.playfield_height + GIF_TIME_LABEL_TOP_GAP;
-    let pre_labels: Vec<PreLabel> = segment_timings
-        .iter()
-        .enumerate()
-        .map(|(si, st)| {
-            let seg_left = segment_left(si as i64, &layout);
-            build_pre_label(st, gameplay_segment_duration, &layout, seg_left, label_y)
-        })
-        .collect();
+    let pre_labels: Vec<PreLabel> = if show_time_label {
+        segment_timings
+            .iter()
+            .enumerate()
+            .map(|(si, st)| {
+                let seg_left = segment_left(si as i64, &layout);
+                build_pre_label(st, segment_duration, &layout, seg_left, label_y)
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     // Pre-render SV label sprites: format_sv_label is expensive (String alloc)
     // and the label text never changes, only its y position scrolls per frame.
@@ -246,11 +281,13 @@ pub(crate) fn render_mania_gif(
                     pixels_per_scroll_unit,
                 );
             }
-            // Blit pre-rendered time label sprite (no format!/text_size per frame).
-            let pl = &pre_labels[segment_index];
-            canvas.alpha_composite(&pl.sprite, pl.x, pl.y);
-            if let Some(ref note) = pl.note {
-                canvas.alpha_composite(&note.sprite, note.x, note.y);
+            if show_time_label {
+                // Blit pre-rendered time label sprite (no format!/text_size per frame).
+                let pl = &pre_labels[segment_index];
+                canvas.alpha_composite(&pl.sprite, pl.x, pl.y);
+                if let Some(ref note) = pl.note {
+                    canvas.alpha_composite(&note.sprite, note.x, note.y);
+                }
             }
         }
         canvas
@@ -264,7 +301,11 @@ pub(crate) fn render_mania_gif(
     )
 }
 
-fn build_gif_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
+fn build_gif_layout(
+    skin_config: &super::skin::ManiaSkinConfig,
+    segment_count: i64,
+    show_time_label: bool,
+) -> GifLayout {
     let column_left_offsets =
         build_column_left_offsets(&skin_config.column_widths, &skin_config.column_line_widths);
     let lane_area_width: i64 = skin_config.column_widths.iter().sum::<i64>()
@@ -279,13 +320,16 @@ fn build_gif_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
     // column width so wide columns don't get squashed-looking notes.
     let note_head_height =
         round_half_even(NOTE_HEAD_HEIGHT as f64 * average_column_width / LANE_WIDTH as f64).max(1);
-    let image_width = PAGE_MARGIN_X * 2
-        + GIF_SEGMENT_COUNT * segment_width
-        + (GIF_SEGMENT_COUNT - 1) * GIF_GRID_GAP;
-    let image_height =
-        PAGE_MARGIN_Y * 2 + playfield_height + GIF_TIME_LABEL_TOP_GAP + GIF_TIME_LABEL_HEIGHT;
+    let image_width =
+        PAGE_MARGIN_X * 2 + segment_count * segment_width + (segment_count - 1) * GIF_GRID_GAP;
+    let label_height = if show_time_label {
+        GIF_TIME_LABEL_TOP_GAP + GIF_TIME_LABEL_HEIGHT
+    } else {
+        0
+    };
+    let image_height = PAGE_MARGIN_Y * 2 + playfield_height + label_height;
     GifLayout {
-        segment_count: GIF_SEGMENT_COUNT,
+        segment_count,
         segment_width,
         playfield_height,
         lane_area_width,

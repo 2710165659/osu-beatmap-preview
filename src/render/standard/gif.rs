@@ -1,5 +1,6 @@
-//! osu!standard GIF renderer: 2×2 segment animated preview.
+//! osu!standard GIF renderer: 2×2 segment preview or single-screen clip.
 
+use crate::common::time_selection::{GifClipRange, GifRenderOptions};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -15,6 +16,23 @@ use super::draw_time_label;
 use super::objects::render_frame;
 
 pub(crate) fn render_standard_gif(
+    beatmap: &Beatmap,
+    mods: Option<&ModSettings>,
+    options: GifRenderOptions,
+    output_path: &Path,
+) -> Result<()> {
+    match options {
+        GifRenderOptions::Segments(times_ms) => {
+            render_standard_segment_gif(beatmap, mods, times_ms, output_path)
+        }
+        GifRenderOptions::Clip {
+            range,
+            show_time_label,
+        } => render_standard_clip_gif(beatmap, mods, range, show_time_label, output_path),
+    }
+}
+
+fn render_standard_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
@@ -110,6 +128,88 @@ pub(crate) fn render_standard_gif(
                     TIME_LABEL_COLOR
                 },
                 if row_timing.is_preview {
+                    PREVIEW_TIME_LABEL_COLOR
+                } else {
+                    TIME_LABEL_NOTE_COLOR
+                },
+            );
+        }
+        canvas
+    };
+
+    save_animated_gif_streamed(frame_count, render, output_path, frame_duration_ms)
+}
+
+fn render_standard_clip_gif(
+    beatmap: &Beatmap,
+    mods: Option<&ModSettings>,
+    range: GifClipRange,
+    show_time_label: bool,
+    output_path: &Path,
+) -> Result<()> {
+    let hit_objects = standard_objects(beatmap)?;
+    let hit_objects = apply_standard_object_mods(hit_objects, mods);
+    let context = build_render_context(beatmap, hit_objects, mods);
+    let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
+    let frame_count = (((range.end - range.start) as f64 * GIF_FPS as f64
+        / (1000.0 * speed_multiplier))
+        .round() as usize)
+        .max(1);
+    let frame_duration_ms = ((1000.0 / GIF_FPS as f64).round() as u32).max(1);
+    let canvas_w = HORIZONTAL_PAGE_MARGIN * 2 + IMAGE_WIDTH;
+    let label_height = if show_time_label {
+        TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
+    } else {
+        0
+    };
+    let canvas_h = VERTICAL_PAGE_MARGIN * 2 + IMAGE_HEIGHT + label_height;
+
+    let snapshot_times: Vec<i64> = (0..frame_count)
+        .map(|fi| range.start + py_round(fi as f64 * 1000.0 * speed_multiplier / GIF_FPS as f64))
+        .collect();
+    let visible_indexes = build_visible_indexes_by_snapshot(
+        &context.hit_objects,
+        &snapshot_times,
+        context.settings.preempt_ms,
+    );
+    let break_periods = range.break_periods.clone();
+
+    thread_local! {
+        static STD_GIF_CLIP_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
+    }
+
+    let render = move |frame_index: usize| -> Img {
+        let mut canvas = Img::new(canvas_w as u32, canvas_h as u32, CANVAS_BACKGROUND_COLOR);
+        let x = HORIZONTAL_PAGE_MARGIN;
+        let y = VERTICAL_PAGE_MARGIN;
+        let frame = STD_GIF_CLIP_CACHE.with(|cache| {
+            render_frame(
+                &context,
+                &mut *cache.borrow_mut(),
+                snapshot_times[frame_index],
+                &break_periods,
+                &visible_indexes[frame_index],
+            )
+        });
+        canvas.alpha_composite(&frame, x, y);
+        if show_time_label {
+            let label = format!(
+                "{} - {}",
+                format_mmssmmm(range.start),
+                format_mmssmmm(range.end)
+            );
+            draw_time_label(
+                &mut canvas,
+                &label,
+                x,
+                y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP,
+                range.is_preview.then_some("Preview Time"),
+                if range.is_preview {
+                    PREVIEW_TIME_LABEL_COLOR
+                } else {
+                    TIME_LABEL_COLOR
+                },
+                if range.is_preview {
                     PREVIEW_TIME_LABEL_COLOR
                 } else {
                     TIME_LABEL_NOTE_COLOR
