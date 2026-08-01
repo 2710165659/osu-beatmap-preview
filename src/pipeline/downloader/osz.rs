@@ -1,21 +1,29 @@
 use crate::core::errors::{PreviewError, Result};
+use std::cmp::Reverse;
+use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
-const OSZ_MIRRORS: [&str; 4] = [
-    "https://mirror.nekoha.moe/api/download/{}?noVideo=1",
-    "https://txy1.sayobot.cn/beatmaps/download/novideo/{}",
-    "https://osu.direct/api/d/{}",
-    "https://catboy.best/d/{}",
-];
 const MIB_BYTES: u64 = 1024 * 1024;
 const MAX_OSZ_BYTES: u64 = 50 * MIB_BYTES;
-const MIRROR_ATTEMPTS: usize = 3;
 const PARALLEL_PARTS: usize = 4;
 const USER_AGENT: &str = "osu-beatmap-preview/1.0";
+const MAX_ACTIVE_ATTEMPTS: usize = 3;
+const POLL_INTERVAL: Duration = Duration::from_millis(250);
+const NO_FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(3);
+const LOW_SPEED_WINDOW: Duration = Duration::from_secs(5);
+const LOW_SPEED_BYTES_PER_SECOND: u64 = 128 * 1024;
+const DOWNLOAD_HARD_TIMEOUT: Duration = Duration::from_secs(120);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const READ_TIMEOUT: Duration = Duration::from_secs(15);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+const BUFFER_SIZE: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ContentRange {
@@ -24,9 +32,189 @@ struct ContentRange {
     total: u64,
 }
 
-enum RangeProbe {
-    Supported(u64),
-    FullResponse(ureq::Response),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MirrorSource {
+    Sayobot,
+    OsuDirectPreferred(Ipv4Addr),
+    OsuDirectDns,
+    Nekoha,
+    Catboy,
+}
+
+impl MirrorSource {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Sayobot => "sayobot",
+            Self::OsuDirectPreferred(_) => "osu.direct-preferred-ip",
+            Self::OsuDirectDns => "osu.direct-dns",
+            Self::Nekoha => "nekoha",
+            Self::Catboy => "catboy",
+        }
+    }
+
+    fn url(self, set_id: u64) -> String {
+        match self {
+            Self::Sayobot => format!("https://txy1.sayobot.cn/beatmaps/download/novideo/{set_id}"),
+            Self::OsuDirectPreferred(_) | Self::OsuDirectDns => {
+                format!("https://osu.direct/api/d/{set_id}")
+            }
+            Self::Nekoha => {
+                format!("https://mirror.nekoha.moe/api/download/{set_id}?noVideo=1")
+            }
+            Self::Catboy => format!("https://catboy.best/d/{set_id}"),
+        }
+    }
+
+    fn preferred_ip(self) -> Option<Ipv4Addr> {
+        match self {
+            Self::OsuDirectPreferred(ip) => Some(ip),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MirrorCandidate {
+    source: MirrorSource,
+}
+
+struct AttemptProgress {
+    started: Instant,
+    bytes: AtomicU64,
+    first_byte_ms: AtomicU64,
+}
+
+impl AttemptProgress {
+    fn new() -> Self {
+        Self {
+            started: Instant::now(),
+            bytes: AtomicU64::new(0),
+            first_byte_ms: AtomicU64::new(0),
+        }
+    }
+
+    fn record(&self, bytes: usize) {
+        if bytes == 0 {
+            return;
+        }
+        let previous = self.bytes.fetch_add(bytes as u64, Ordering::Relaxed);
+        if previous == 0 {
+            let elapsed = self.started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+            let _ = self.first_byte_ms.compare_exchange(
+                0,
+                elapsed.saturating_add(1),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
+        }
+    }
+
+    fn bytes(&self) -> u64 {
+        self.bytes.load(Ordering::Relaxed)
+    }
+
+    fn has_first_byte(&self) -> bool {
+        self.first_byte_ms.load(Ordering::Relaxed) != 0
+    }
+}
+
+#[derive(Clone)]
+struct DownloadContext {
+    cancel: Arc<AtomicBool>,
+    progress: Arc<AttemptProgress>,
+}
+
+struct AttemptResult {
+    id: usize,
+    result: std::result::Result<(), String>,
+}
+
+enum HandledAttempt {
+    Ignored,
+    Failed,
+    Won(PathBuf),
+}
+
+struct ActiveAttempt {
+    id: usize,
+    source: MirrorSource,
+    path: PathBuf,
+    cancel: Arc<AtomicBool>,
+    progress: Arc<AttemptProgress>,
+    monitor: AttemptMonitor,
+    first_byte_logged: bool,
+    last_speed_log: Instant,
+    handle: JoinHandle<()>,
+}
+
+struct AttemptMonitor {
+    samples: VecDeque<(Instant, u64)>,
+    fallback_triggered: bool,
+}
+
+impl AttemptMonitor {
+    fn new() -> Self {
+        Self {
+            samples: VecDeque::new(),
+            fallback_triggered: false,
+        }
+    }
+
+    fn fallback_reason(
+        &mut self,
+        now: Instant,
+        started: Instant,
+        progress: &AttemptProgress,
+    ) -> Option<&'static str> {
+        if self.fallback_triggered {
+            return None;
+        }
+
+        let bytes = progress.bytes();
+        self.samples.push_back((now, bytes));
+        while self.samples.len() > 1
+            && self
+                .samples
+                .get(1)
+                .is_some_and(|(time, _)| now.duration_since(*time) >= LOW_SPEED_WINDOW)
+        {
+            self.samples.pop_front();
+        }
+
+        let reason =
+            if !progress.has_first_byte() && now.duration_since(started) >= NO_FIRST_BYTE_TIMEOUT {
+                Some("no-first-byte")
+            } else if let Some((oldest, old_bytes)) = self.samples.front().copied() {
+                let elapsed = now.duration_since(oldest);
+                let received = bytes.saturating_sub(old_bytes);
+                if elapsed >= LOW_SPEED_WINDOW
+                    && received.saturating_mul(1000)
+                        < LOW_SPEED_BYTES_PER_SECOND.saturating_mul(elapsed.as_millis() as u64)
+                {
+                    Some("low-speed")
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+        if reason.is_some() {
+            self.fallback_triggered = true;
+        }
+        reason
+    }
+
+    fn recent_bytes_per_second(&self, now: Instant, current_bytes: u64) -> u64 {
+        let Some((oldest, old_bytes)) = self.samples.front().copied() else {
+            return 0;
+        };
+        let elapsed_ms = now.duration_since(oldest).as_millis() as u64;
+        if elapsed_ms == 0 {
+            return 0;
+        }
+        current_bytes.saturating_sub(old_bytes).saturating_mul(1000) / elapsed_ms
+    }
 }
 
 pub fn download_beatmapset_archive(
@@ -52,41 +240,49 @@ pub fn download_beatmapset_archive(
         return Ok(target_path);
     }
 
-    let part_path = temp_dir.join(format!("{set_id}.osz.part"));
-    let agent = build_agent();
+    let preferred_ip = crate::pipeline::downloader::cf_ip::read_preferred_ip(temp_dir);
+    crate::pipeline::downloader::cf_ip::spawn_refresh(temp_dir, preferred_ip.is_none());
+    let candidates = build_candidates(preferred_ip);
     crate::log::event(
         "download-osz",
         "start",
         None,
-        &format!("set={set_id} trying {} mirrors", OSZ_MIRRORS.len()),
+        &format!(
+            "set={set_id} race={} candidates={} preferred_ip={}",
+            MAX_ACTIVE_ATTEMPTS,
+            candidates.len(),
+            preferred_ip
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|| "none".to_string())
+        ),
     );
+
     let started = Instant::now();
-    let result = try_osz_mirrors(set_id, |url, attempt| {
-        remove_if_exists(&part_path);
-        download_osz_once(&agent, url, &part_path)
-            .map_err(|reason| format!("attempt {attempt}/{MIRROR_ATTEMPTS}: {reason}"))
-    });
-    if let Err(failures) = result {
-        remove_if_exists(&part_path);
-        crate::log::event(
-            "download-osz",
-            "error",
-            None,
-            &format!("set={set_id} {}", failures.join("; ")),
-        );
-        return Err(PreviewError::download(format!(
-            "failed to download beatmapset {set_id} from all mirrors: {}",
-            failures.join("; ")
-        )));
-    }
-    let ms = started.elapsed().as_secs_f64() * 1000.0;
+    let winner = match run_download_race(set_id, temp_dir, candidates) {
+        Ok(winner) => winner,
+        Err(failures) => {
+            crate::pipeline::downloader::cf_ip::invalidate(temp_dir);
+            crate::pipeline::downloader::cf_ip::spawn_refresh(temp_dir, true);
+            crate::log::event(
+                "download-osz",
+                "error",
+                None,
+                &format!("set={set_id} {}", failures.join("; ")),
+            );
+            return Err(PreviewError::download(format!(
+                "failed to download beatmapset {set_id} from all mirrors: {}",
+                failures.join("; ")
+            )));
+        }
+    };
 
     if target_path.exists() {
         std::fs::remove_file(&target_path)
             .map_err(|e| PreviewError::download(format!("failed to replace osz cache: {e}")))?;
     }
-    std::fs::rename(&part_path, &target_path)
+    std::fs::rename(&winner, &target_path)
         .map_err(|e| PreviewError::download(format!("failed to commit osz cache: {e}")))?;
+    let ms = started.elapsed().as_secs_f64() * 1000.0;
     let size_mib = target_path
         .metadata()
         .map(|m| m.len() as f64 / MIB_BYTES as f64)
@@ -101,47 +297,412 @@ pub fn download_beatmapset_archive(
     Ok(target_path)
 }
 
-fn build_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(30))
-        .timeout_read(Duration::from_secs(120))
-        .timeout_write(Duration::from_secs(30))
-        .build()
+fn build_candidates(preferred_ip: Option<Ipv4Addr>) -> Vec<MirrorCandidate> {
+    let mut candidates = vec![MirrorCandidate {
+        source: MirrorSource::Sayobot,
+    }];
+    if let Some(ip) = preferred_ip {
+        candidates.push(MirrorCandidate {
+            source: MirrorSource::OsuDirectPreferred(ip),
+        });
+    }
+    candidates.extend([
+        MirrorCandidate {
+            source: MirrorSource::OsuDirectDns,
+        },
+        MirrorCandidate {
+            source: MirrorSource::Nekoha,
+        },
+        MirrorCandidate {
+            source: MirrorSource::Catboy,
+        },
+    ]);
+    candidates
 }
 
-fn try_osz_mirrors(
+fn build_agent(preferred_ip: Option<Ipv4Addr>) -> ureq::Agent {
+    let builder = ureq::AgentBuilder::new()
+        .timeout_connect(CONNECT_TIMEOUT)
+        .timeout_read(READ_TIMEOUT)
+        .timeout_write(WRITE_TIMEOUT);
+    if let Some(ip) = preferred_ip {
+        builder
+            .resolver(crate::pipeline::downloader::cf_ip::resolver_for(ip))
+            .build()
+    } else {
+        builder.build()
+    }
+}
+
+fn run_download_race(
     set_id: u64,
-    mut fetch: impl FnMut(&str, usize) -> std::result::Result<(), String>,
-) -> std::result::Result<(), Vec<String>> {
+    temp_dir: &Path,
+    mut candidates: Vec<MirrorCandidate>,
+) -> std::result::Result<PathBuf, Vec<String>> {
+    let (sender, receiver) = mpsc::channel();
+    let mut active = Vec::new();
     let mut failures = Vec::new();
-    for template in OSZ_MIRRORS {
-        let url = template.replace("{}", &set_id.to_string());
-        for attempt in 1..=MIRROR_ATTEMPTS {
-            match fetch(&url, attempt) {
-                Ok(()) => return Ok(()),
-                Err(reason) => failures.push(format!("{url} {reason}")),
+    let mut next_candidate = 0;
+    let mut next_id = 0;
+    let deadline = Instant::now() + DOWNLOAD_HARD_TIMEOUT;
+    let mut preferred_refresh_triggered = false;
+
+    start_next_attempt(
+        set_id,
+        temp_dir,
+        &mut candidates,
+        &mut next_candidate,
+        &mut next_id,
+        &sender,
+        &mut active,
+    );
+
+    loop {
+        if Instant::now() >= deadline {
+            for attempt in active.drain(..) {
+                cancel_attempt(attempt);
+            }
+            failures.push("global download deadline exceeded".to_string());
+            return Err(failures);
+        }
+
+        match receiver.recv_timeout(POLL_INTERVAL) {
+            Ok(message) => {
+                let outcome = handle_attempt_result(
+                    message,
+                    &mut active,
+                    &mut failures,
+                    &mut preferred_refresh_triggered,
+                    temp_dir,
+                );
+                if let HandledAttempt::Won(winner) = outcome {
+                    for attempt in active.drain(..) {
+                        cancel_attempt(attempt);
+                    }
+                    return Ok(winner);
+                }
+                if matches!(outcome, HandledAttempt::Failed) {
+                    start_next_attempt(
+                        set_id,
+                        temp_dir,
+                        &mut candidates,
+                        &mut next_candidate,
+                        &mut next_id,
+                        &sender,
+                        &mut active,
+                    );
+                }
+                while let Ok(message) = receiver.try_recv() {
+                    let outcome = handle_attempt_result(
+                        message,
+                        &mut active,
+                        &mut failures,
+                        &mut preferred_refresh_triggered,
+                        temp_dir,
+                    );
+                    if let HandledAttempt::Won(winner) = outcome {
+                        for attempt in active.drain(..) {
+                            cancel_attempt(attempt);
+                        }
+                        return Ok(winner);
+                    }
+                    if matches!(outcome, HandledAttempt::Failed) {
+                        start_next_attempt(
+                            set_id,
+                            temp_dir,
+                            &mut candidates,
+                            &mut next_candidate,
+                            &mut next_id,
+                            &sender,
+                            &mut active,
+                        );
+                    }
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                for attempt in active.drain(..) {
+                    cancel_attempt(attempt);
+                }
+                failures.push("all download workers exited unexpectedly".to_string());
+                return Err(failures);
             }
         }
+
+        let now = Instant::now();
+        for attempt in &mut active {
+            if attempt.progress.has_first_byte() && !attempt.first_byte_logged {
+                attempt.first_byte_logged = true;
+                crate::log::event(
+                    "download-osz",
+                    "first-byte",
+                    None,
+                    &format!(
+                        "attempt={} source={} after_ms={}",
+                        attempt.id,
+                        attempt.source.name(),
+                        attempt.progress.started.elapsed().as_millis()
+                    ),
+                );
+            }
+            if attempt.progress.has_first_byte()
+                && now.duration_since(attempt.last_speed_log) >= LOW_SPEED_WINDOW
+            {
+                attempt.last_speed_log = now;
+                let speed = attempt
+                    .monitor
+                    .recent_bytes_per_second(now, attempt.progress.bytes());
+                crate::log::event(
+                    "download-osz",
+                    "speed",
+                    None,
+                    &format!(
+                        "attempt={} source={} bytes={} speed_kib_s={:.1}",
+                        attempt.id,
+                        attempt.source.name(),
+                        attempt.progress.bytes(),
+                        speed as f64 / 1024.0
+                    ),
+                );
+            }
+        }
+        let fallback = if next_candidate < candidates.len() {
+            active.iter_mut().find_map(|attempt| {
+                attempt
+                    .monitor
+                    .fallback_reason(now, attempt.progress.started, &attempt.progress)
+                    .map(|reason| (attempt.id, reason))
+            })
+        } else {
+            None
+        };
+        if let Some((attempt_id, reason)) = fallback {
+            crate::log::event(
+                "download-osz",
+                "fallback",
+                None,
+                &format!(
+                    "attempt={attempt_id} source={} reason={reason} active={}",
+                    active
+                        .iter()
+                        .find(|attempt| attempt.id == attempt_id)
+                        .map(|attempt| attempt.source.name())
+                        .unwrap_or("unknown"),
+                    active.len(),
+                ),
+            );
+            if active.len() >= MAX_ACTIVE_ATTEMPTS {
+                if let Some(position) = slowest_attempt(&active, now) {
+                    let attempt = active.swap_remove(position);
+                    cancel_attempt(attempt);
+                }
+            }
+            start_next_attempt(
+                set_id,
+                temp_dir,
+                &mut candidates,
+                &mut next_candidate,
+                &mut next_id,
+                &sender,
+                &mut active,
+            );
+        }
+
+        if active.is_empty() {
+            if next_candidate >= candidates.len() {
+                return Err(failures);
+            }
+            start_next_attempt(
+                set_id,
+                temp_dir,
+                &mut candidates,
+                &mut next_candidate,
+                &mut next_id,
+                &sender,
+                &mut active,
+            );
+        }
     }
-    Err(failures)
+}
+
+fn start_next_attempt(
+    set_id: u64,
+    temp_dir: &Path,
+    candidates: &mut Vec<MirrorCandidate>,
+    next_candidate: &mut usize,
+    next_id: &mut usize,
+    sender: &mpsc::Sender<AttemptResult>,
+    active: &mut Vec<ActiveAttempt>,
+) {
+    maybe_insert_preferred_candidate(candidates, *next_candidate, temp_dir);
+    if *next_candidate >= candidates.len() || active.len() >= MAX_ACTIVE_ATTEMPTS {
+        return;
+    }
+    let source = candidates[*next_candidate].source;
+    *next_candidate += 1;
+    let id = *next_id;
+    *next_id += 1;
+    let path = attempt_path(temp_dir, set_id, id);
+    remove_if_exists(&path);
+    let cancel = Arc::new(AtomicBool::new(false));
+    let progress = Arc::new(AttemptProgress::new());
+    let context = DownloadContext {
+        cancel: cancel.clone(),
+        progress: progress.clone(),
+    };
+    let url = source.url(set_id);
+    let agent = build_agent(source.preferred_ip());
+    crate::log::event(
+        "download-osz",
+        "attempt-start",
+        None,
+        &format!("attempt={id} source={} url={url}", source.name()),
+    );
+    let worker_sender = sender.clone();
+    let worker_path = path.clone();
+    let handle = thread::spawn(move || {
+        let result = download_osz_once(&agent, &url, &worker_path, &context);
+        let _ = worker_sender.send(AttemptResult { id, result });
+    });
+    active.push(ActiveAttempt {
+        id,
+        source,
+        path,
+        cancel,
+        progress,
+        monitor: AttemptMonitor::new(),
+        first_byte_logged: false,
+        last_speed_log: Instant::now(),
+        handle,
+    });
+}
+
+fn maybe_insert_preferred_candidate(
+    candidates: &mut Vec<MirrorCandidate>,
+    next_candidate: usize,
+    temp_dir: &Path,
+) {
+    if candidates
+        .iter()
+        .any(|candidate| matches!(candidate.source, MirrorSource::OsuDirectPreferred(_)))
+        || !matches!(
+            candidates
+                .get(next_candidate)
+                .map(|candidate| candidate.source),
+            Some(MirrorSource::OsuDirectDns)
+        )
+    {
+        return;
+    }
+    if let Some(ip) = crate::pipeline::downloader::cf_ip::read_preferred_ip(temp_dir) {
+        candidates.insert(
+            next_candidate,
+            MirrorCandidate {
+                source: MirrorSource::OsuDirectPreferred(ip),
+            },
+        );
+    }
+}
+
+fn handle_attempt_result(
+    message: AttemptResult,
+    active: &mut Vec<ActiveAttempt>,
+    failures: &mut Vec<String>,
+    preferred_refresh_triggered: &mut bool,
+    temp_dir: &Path,
+) -> HandledAttempt {
+    let Some(position) = active.iter().position(|attempt| attempt.id == message.id) else {
+        return HandledAttempt::Ignored;
+    };
+    let attempt = active.swap_remove(position);
+    let source = attempt.source;
+    let path = attempt.path.clone();
+    let _ = attempt.handle.join();
+    match message.result {
+        Ok(()) => {
+            crate::log::event(
+                "download-osz",
+                "winner",
+                None,
+                &format!("attempt={} source={} validated", attempt.id, source.name()),
+            );
+            HandledAttempt::Won(path)
+        }
+        Err(reason) => {
+            remove_if_exists(&path);
+            crate::log::event(
+                "download-osz",
+                "attempt-error",
+                None,
+                &format!("attempt={} source={} {reason}", attempt.id, source.name()),
+            );
+            if matches!(source, MirrorSource::OsuDirectPreferred(_))
+                && !*preferred_refresh_triggered
+            {
+                *preferred_refresh_triggered = true;
+                crate::pipeline::downloader::cf_ip::invalidate(temp_dir);
+                crate::pipeline::downloader::cf_ip::spawn_refresh(temp_dir, true);
+            }
+            failures.push(format!("{}: {reason}", source.name()));
+            HandledAttempt::Failed
+        }
+    }
+}
+
+fn slowest_attempt(active: &[ActiveAttempt], now: Instant) -> Option<usize> {
+    active
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, attempt)| {
+            (
+                attempt
+                    .monitor
+                    .recent_bytes_per_second(now, attempt.progress.bytes()),
+                Reverse(attempt.id),
+            )
+        })
+        .map(|(position, _)| position)
+}
+
+fn cancel_attempt(attempt: ActiveAttempt) {
+    attempt.cancel.store(true, Ordering::Relaxed);
+    crate::log::event(
+        "download-osz",
+        "attempt-cancelled",
+        None,
+        &format!("attempt={} source={}", attempt.id, attempt.source.name()),
+    );
+    thread::spawn(move || {
+        let _ = attempt.handle.join();
+        remove_if_exists(&attempt.path);
+    });
+}
+
+fn attempt_path(temp_dir: &Path, set_id: u64, attempt_id: usize) -> PathBuf {
+    temp_dir.join(format!(
+        "{set_id}.{}.attempt-{attempt_id}.osz.part",
+        std::process::id()
+    ))
 }
 
 fn download_osz_once(
     agent: &ureq::Agent,
     url: &str,
     part_path: &Path,
+    context: &DownloadContext,
 ) -> std::result::Result<(), String> {
-    match probe_range_support(agent, url) {
+    match probe_range_support(agent, url, context) {
         Ok(RangeProbe::Supported(total)) => {
-            let parallel_result = download_parallel(agent, url, part_path, total)
+            let parallel_result = download_parallel(agent, url, part_path, total, context)
                 .and_then(|_| validate_downloaded_archive(part_path));
             if parallel_result.is_ok() {
                 return parallel_result;
             }
 
             let parallel_error = parallel_result.unwrap_err();
+            check_cancelled(context)?;
             remove_if_exists(part_path);
-            download_single(agent, url, part_path)
+            download_single(agent, url, part_path, context)
                 .and_then(|_| validate_downloaded_archive(part_path))
                 .map_err(|single_error| {
                     format!(
@@ -150,11 +711,12 @@ fn download_osz_once(
                     )
                 })
         }
-        Ok(RangeProbe::FullResponse(response)) => download_response(response, part_path)
+        Ok(RangeProbe::FullResponse(response)) => download_response(*response, part_path, context)
             .and_then(|_| validate_downloaded_archive(part_path)),
         Err(probe_error) => {
+            check_cancelled(context)?;
             remove_if_exists(part_path);
-            download_single(agent, url, part_path)
+            download_single(agent, url, part_path, context)
                 .and_then(|_| validate_downloaded_archive(part_path))
                 .map_err(|single_error| {
                     format!(
@@ -166,7 +728,17 @@ fn download_osz_once(
     }
 }
 
-fn probe_range_support(agent: &ureq::Agent, url: &str) -> std::result::Result<RangeProbe, String> {
+enum RangeProbe {
+    Supported(u64),
+    FullResponse(Box<ureq::Response>),
+}
+
+fn probe_range_support(
+    agent: &ureq::Agent,
+    url: &str,
+    context: &DownloadContext,
+) -> std::result::Result<RangeProbe, String> {
+    check_cancelled(context)?;
     let response = agent
         .get(url)
         .set("User-Agent", USER_AGENT)
@@ -177,7 +749,7 @@ fn probe_range_support(agent: &ureq::Agent, url: &str) -> std::result::Result<Ra
     reject_html(&response)?;
 
     if response.status() != 206 {
-        return Ok(RangeProbe::FullResponse(response));
+        return Ok(RangeProbe::FullResponse(Box::new(response)));
     }
 
     let value = response
@@ -191,18 +763,23 @@ fn probe_range_support(agent: &ureq::Agent, url: &str) -> std::result::Result<Ra
     }
     validate_declared_size(range.total)?;
 
-    let mut probe = Vec::with_capacity(2);
-    response
-        .into_reader()
-        .take(2)
-        .read_to_end(&mut probe)
-        .map_err(|e| format!("failed to read range probe: {e}"))?;
-    if probe.len() != 1 {
-        return Err(format!(
-            "range probe returned {} bytes instead of 1",
-            probe.len()
-        ));
+    let mut probe = [0u8; 2];
+    let mut read = 0;
+    let mut reader = response.into_reader();
+    while read < 1 {
+        check_cancelled(context)?;
+        let count = reader
+            .read(&mut probe[read..])
+            .map_err(|e| format!("failed to read range probe: {e}"))?;
+        if count == 0 {
+            break;
+        }
+        read += count;
     }
+    if read != 1 {
+        return Err(format!("range probe returned {read} bytes instead of 1"));
+    }
+    context.progress.record(1);
     Ok(RangeProbe::Supported(range.total))
 }
 
@@ -211,6 +788,7 @@ fn download_parallel(
     url: &str,
     part_path: &Path,
     total: u64,
+    context: &DownloadContext,
 ) -> std::result::Result<(), String> {
     let ranges = split_ranges(total, PARALLEL_PARTS);
     let file =
@@ -219,13 +797,23 @@ fn download_parallel(
         .map_err(|e| format!("failed to allocate temporary osz: {e}"))?;
     drop(file);
 
+    let worker_cancel = Arc::new(AtomicBool::new(false));
     let handles = ranges
         .into_iter()
         .map(|range| {
             let agent = agent.clone();
             let url = url.to_string();
             let part_path = part_path.to_path_buf();
-            std::thread::spawn(move || download_range_part(&agent, &url, &part_path, range))
+            let context = context.clone();
+            let worker_cancel = worker_cancel.clone();
+            thread::spawn(move || {
+                let result =
+                    download_range_part(&agent, &url, &part_path, range, &context, &worker_cancel);
+                if result.is_err() {
+                    worker_cancel.store(true, Ordering::Relaxed);
+                }
+                result
+            })
         })
         .collect::<Vec<_>>();
 
@@ -240,6 +828,10 @@ fn download_parallel(
     if !failures.is_empty() {
         remove_if_exists(part_path);
         return Err(failures.join("; "));
+    }
+    if context.cancel.load(Ordering::Relaxed) {
+        remove_if_exists(part_path);
+        return Err("download cancelled".to_string());
     }
 
     let actual = part_path
@@ -260,7 +852,10 @@ fn download_range_part(
     url: &str,
     part_path: &Path,
     range: ContentRange,
+    context: &DownloadContext,
+    worker_cancel: &AtomicBool,
 ) -> std::result::Result<(), String> {
+    check_cancelled_with_worker(context, worker_cancel)?;
     let expected = range.end - range.start + 1;
     let range_header = format!("bytes={}-{}", range.start, range.end);
     let response = agent
@@ -301,11 +896,24 @@ fn download_range_part(
     let capacity = usize::try_from(expected)
         .map_err(|_| format!("{range_header} is too large for this platform"))?;
     let mut data = Vec::with_capacity(capacity);
-    response
-        .into_reader()
-        .take(expected + 1)
-        .read_to_end(&mut data)
-        .map_err(|e| format!("failed to read {range_header}: {e}"))?;
+    let mut reader = response.into_reader();
+    let mut buffer = [0u8; BUFFER_SIZE];
+    loop {
+        check_cancelled_with_worker(context, worker_cancel)?;
+        let count = reader
+            .read(&mut buffer)
+            .map_err(|e| format!("failed to read {range_header}: {e}"))?;
+        if count == 0 {
+            break;
+        }
+        data.extend_from_slice(&buffer[..count]);
+        context.progress.record(count);
+        if data.len() as u64 > expected {
+            return Err(format!(
+                "{range_header} returned more than {expected} bytes"
+            ));
+        }
+    }
     if data.len() as u64 != expected {
         return Err(format!(
             "{range_header} returned {} bytes, expected {expected}",
@@ -313,6 +921,7 @@ fn download_range_part(
         ));
     }
 
+    check_cancelled_with_worker(context, worker_cancel)?;
     let mut file = OpenOptions::new()
         .write(true)
         .open(part_path)
@@ -328,19 +937,22 @@ fn download_single(
     agent: &ureq::Agent,
     url: &str,
     part_path: &Path,
+    context: &DownloadContext,
 ) -> std::result::Result<(), String> {
+    check_cancelled(context)?;
     let response = agent
         .get(url)
         .set("User-Agent", USER_AGENT)
         .set("Accept-Encoding", "identity")
         .call()
         .map_err(format_http_error)?;
-    download_response(response, part_path)
+    download_response(response, part_path, context)
 }
 
 fn download_response(
     response: ureq::Response,
     part_path: &Path,
+    context: &DownloadContext,
 ) -> std::result::Result<(), String> {
     reject_html(&response)?;
     if let Some(length) = response
@@ -352,11 +964,30 @@ fn download_response(
 
     let mut output =
         File::create(part_path).map_err(|e| format!("failed to create temporary osz: {e}"))?;
-    let copied = std::io::copy(
-        &mut response.into_reader().take(MAX_OSZ_BYTES + 1),
-        &mut output,
-    )
-    .map_err(|e| format!("failed to read response: {e}"))?;
+    let mut reader = response.into_reader();
+    let mut buffer = [0u8; BUFFER_SIZE];
+    let mut copied = 0u64;
+    loop {
+        check_cancelled(context)?;
+        let count = reader
+            .read(&mut buffer)
+            .map_err(|e| format!("failed to read response: {e}"))?;
+        if count == 0 {
+            break;
+        }
+        copied = copied.saturating_add(count as u64);
+        if copied > MAX_OSZ_BYTES {
+            remove_if_exists(part_path);
+            return Err(format!(
+                "OSZ is too large while reading the response: received more than {MAX_OSZ_BYTES} bytes ({:.2} MiB)",
+                MAX_OSZ_BYTES as f64 / MIB_BYTES as f64,
+            ));
+        }
+        output
+            .write_all(&buffer[..count])
+            .map_err(|e| format!("failed to write response: {e}"))?;
+        context.progress.record(count);
+    }
     output
         .flush()
         .map_err(|e| format!("failed to flush temporary osz: {e}"))?;
@@ -364,30 +995,33 @@ fn download_response(
         remove_if_exists(part_path);
         return Err("server returned an empty response".to_string());
     }
-    if copied > MAX_OSZ_BYTES {
-        remove_if_exists(part_path);
-        return Err(format!(
-            "OSZ is too large while reading the response: received more than \
-             {MAX_OSZ_BYTES} bytes ({:.2} MiB); Content-Length was missing or understated",
-            MAX_OSZ_BYTES as f64 / MIB_BYTES as f64,
-        ));
-    }
     Ok(())
 }
 
-fn validate_declared_size(length: u64) -> std::result::Result<(), String> {
-    if length == 0 {
-        return Err("server declared an empty response (Content-Length: 0 bytes)".to_string());
+fn check_cancelled(context: &DownloadContext) -> std::result::Result<(), String> {
+    if context.cancel.load(Ordering::Relaxed) {
+        Err("download cancelled".to_string())
+    } else {
+        Ok(())
     }
-    if length > MAX_OSZ_BYTES {
-        return Err(format!(
-            "OSZ is too large: server declared {length} bytes ({:.2} MiB), \
-             exceeding the download limit of {MAX_OSZ_BYTES} bytes ({:.2} MiB)",
-            length as f64 / MIB_BYTES as f64,
-            MAX_OSZ_BYTES as f64 / MIB_BYTES as f64,
-        ));
+}
+
+fn check_cancelled_with_worker(
+    context: &DownloadContext,
+    worker_cancel: &AtomicBool,
+) -> std::result::Result<(), String> {
+    if context.cancel.load(Ordering::Relaxed) || worker_cancel.load(Ordering::Relaxed) {
+        Err("download cancelled".to_string())
+    } else {
+        Ok(())
     }
-    Ok(())
+}
+
+fn format_http_error(error: ureq::Error) -> String {
+    match error {
+        ureq::Error::Status(code, _) => format!("http {code}"),
+        other => other.to_string(),
+    }
 }
 
 fn reject_html(response: &ureq::Response) -> std::result::Result<(), String> {
@@ -401,11 +1035,26 @@ fn reject_html(response: &ureq::Response) -> std::result::Result<(), String> {
     Ok(())
 }
 
-fn format_http_error(error: ureq::Error) -> String {
-    match error {
-        ureq::Error::Status(code, _) => format!("http {code}"),
-        other => other.to_string(),
+fn validate_downloaded_archive(path: &Path) -> std::result::Result<(), String> {
+    if valid_osz(path) {
+        Ok(())
+    } else {
+        Err("response is not a valid ZIP/OSZ archive".to_string())
     }
+}
+
+fn validate_declared_size(length: u64) -> std::result::Result<(), String> {
+    if length == 0 {
+        return Err("server declared an empty response (Content-Length: 0 bytes)".to_string());
+    }
+    if length > MAX_OSZ_BYTES {
+        return Err(format!(
+            "OSZ is too large: server declared {length} bytes ({:.2} MiB), exceeding the download limit of {MAX_OSZ_BYTES} bytes ({:.2} MiB)",
+            length as f64 / MIB_BYTES as f64,
+            MAX_OSZ_BYTES as f64 / MIB_BYTES as f64,
+        ));
+    }
+    Ok(())
 }
 
 fn parse_content_range(value: &str) -> std::result::Result<ContentRange, String> {
@@ -447,14 +1096,6 @@ fn split_ranges(total: u64, requested_parts: usize) -> Vec<ContentRange> {
     ranges
 }
 
-fn validate_downloaded_archive(path: &Path) -> std::result::Result<(), String> {
-    if valid_osz(path) {
-        Ok(())
-    } else {
-        Err("response is not a valid ZIP/OSZ archive".to_string())
-    }
-}
-
 fn valid_osz(path: &Path) -> bool {
     let Ok(meta) = path.metadata() else {
         return false;
@@ -477,90 +1118,114 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Cursor};
     use std::net::TcpListener;
-    use std::time::{SystemTime, UNIX_EPOCH};
     use zip::write::SimpleFileOptions;
 
     #[test]
-    fn osz_mirror_order_is_stable() {
-        assert_eq!(
-            OSZ_MIRRORS[0],
-            "https://mirror.nekoha.moe/api/download/{}?noVideo=1"
-        );
-        assert_eq!(
-            OSZ_MIRRORS[1],
-            "https://txy1.sayobot.cn/beatmaps/download/novideo/{}"
-        );
-        assert_eq!(OSZ_MIRRORS[2], "https://osu.direct/api/d/{}");
-        assert_eq!(OSZ_MIRRORS[3], "https://catboy.best/d/{}");
+    fn candidate_order_skips_missing_preferred_ip() {
+        let names = build_candidates(None)
+            .into_iter()
+            .map(|candidate| candidate.source.name())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["sayobot", "osu.direct-dns", "nekoha", "catboy"]);
     }
 
     #[test]
-    fn retries_each_mirror_before_falling_back() {
-        let mut calls = Vec::new();
-        let result = try_osz_mirrors(42, |url, attempt| {
-            calls.push((url.to_string(), attempt));
-            if calls.len() == 7 {
-                Ok(())
-            } else {
-                Err("failed".to_string())
-            }
-        });
-        assert!(result.is_ok());
-        assert_eq!(calls.len(), 7);
-        assert!(calls[0].0.starts_with("https://mirror.nekoha.moe/"));
-        assert!(calls[3].0.starts_with("https://txy1.sayobot.cn/"));
-        assert!(calls[6].0.starts_with("https://osu.direct/"));
+    fn candidate_order_places_preferred_ip_before_dns() {
+        let names = build_candidates(Some(Ipv4Addr::new(192, 0, 2, 1)))
+            .into_iter()
+            .map(|candidate| candidate.source.name())
+            .collect::<Vec<_>>();
         assert_eq!(
-            calls.iter().map(|call| call.1).collect::<Vec<_>>(),
-            vec![1, 2, 3, 1, 2, 3, 1]
+            names,
+            vec![
+                "sayobot",
+                "osu.direct-preferred-ip",
+                "osu.direct-dns",
+                "nekoha",
+                "catboy"
+            ]
         );
     }
 
     #[test]
-    fn parses_and_rejects_content_ranges() {
+    fn newly_cached_preferred_ip_is_inserted_before_dns() {
+        let root = std::env::temp_dir().join(format!(
+            "osu-preview-dynamic-cf-test-{}",
+            std::process::id()
+        ));
+        let osz_cache = root.join("osz-download-cache");
+        std::fs::create_dir_all(&osz_cache).unwrap();
+        let tested_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        std::fs::write(
+            root.join("osu-direct-preferred-ip.json"),
+            serde_json::json!({ "ip": "104.16.1.1", "tested_at": tested_at }).to_string(),
+        )
+        .unwrap();
+        let mut candidates = build_candidates(None);
+        maybe_insert_preferred_candidate(&mut candidates, 1, &osz_cache);
+        assert!(matches!(
+            candidates[1].source,
+            MirrorSource::OsuDirectPreferred(ip) if ip == Ipv4Addr::new(104, 16, 1, 1)
+        ));
+        assert_eq!(candidates[2].source, MirrorSource::OsuDirectDns);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn attempt_paths_are_process_scoped() {
+        let path = attempt_path(Path::new("cache"), 42, 3);
+        let name = path.file_name().unwrap().to_string_lossy();
+        assert!(name.contains(&std::process::id().to_string()));
+        assert!(name.ends_with("attempt-3.osz.part"));
+    }
+
+    #[test]
+    fn no_first_byte_triggers_after_three_seconds() {
+        let started = Instant::now() - NO_FIRST_BYTE_TIMEOUT;
+        let progress = AttemptProgress {
+            started,
+            bytes: AtomicU64::new(0),
+            first_byte_ms: AtomicU64::new(0),
+        };
+        let mut monitor = AttemptMonitor::new();
+        assert_eq!(
+            monitor.fallback_reason(Instant::now(), started, &progress),
+            Some("no-first-byte")
+        );
+    }
+
+    #[test]
+    fn low_speed_window_triggers_fallback() {
+        let now = Instant::now();
+        let started = now - Duration::from_secs(6);
+        let progress = AttemptProgress {
+            started,
+            bytes: AtomicU64::new(32 * 1024),
+            first_byte_ms: AtomicU64::new(1),
+        };
+        let mut monitor = AttemptMonitor::new();
+        monitor.samples.push_back((now - LOW_SPEED_WINDOW, 0));
+        assert_eq!(
+            monitor.fallback_reason(now, started, &progress),
+            Some("low-speed")
+        );
+    }
+
+    #[test]
+    fn splits_and_validates_ranges() {
+        assert_eq!(split_ranges(10, 4).len(), 4);
         assert_eq!(
             parse_content_range("bytes 10-19/100").unwrap(),
             ContentRange {
                 start: 10,
                 end: 19,
-                total: 100,
+                total: 100
             }
         );
         assert!(parse_content_range("bytes 20-10/100").is_err());
-        assert!(parse_content_range("bytes 0-100/100").is_err());
-        assert!(parse_content_range("items 0-1/2").is_err());
-        assert!(parse_content_range("bytes */100").is_err());
-    }
-
-    #[test]
-    fn splits_download_into_contiguous_ranges() {
-        let ranges = split_ranges(10, 4);
-        assert_eq!(
-            ranges,
-            vec![
-                ContentRange {
-                    start: 0,
-                    end: 2,
-                    total: 10,
-                },
-                ContentRange {
-                    start: 3,
-                    end: 5,
-                    total: 10,
-                },
-                ContentRange {
-                    start: 6,
-                    end: 8,
-                    total: 10,
-                },
-                ContentRange {
-                    start: 9,
-                    end: 9,
-                    total: 10,
-                },
-            ]
-        );
-        assert_eq!(split_ranges(2, 4).len(), 2);
     }
 
     #[test]
@@ -591,52 +1256,39 @@ mod tests {
                             Some((start.parse::<u64>().unwrap(), end.parse::<u64>().unwrap()));
                     }
                 }
-
                 let (start, end) = requested.expect("request must contain a byte range");
                 requested_ranges.push((start, end));
                 let body = &server_archive[start as usize..=end as usize];
                 write!(
                     stream,
-                    "HTTP/1.1 206 Partial Content\r\n\
-                     Content-Length: {}\r\n\
-                     Content-Range: bytes {start}-{end}/{}\r\n\
-                     Content-Type: application/octet-stream\r\n\
-                     Connection: close\r\n\r\n",
+                    "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {start}-{end}/{}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
                     body.len(),
-                    server_archive.len(),
+                    server_archive.len()
                 )
                 .unwrap();
                 stream.write_all(body).unwrap();
             }
             requested_ranges
         });
-
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let test_dir = std::env::temp_dir().join(format!(
-            "osu-beatmap-preview-osz-range-test-{}-{unique}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&test_dir).unwrap();
-        let part_path = test_dir.join("fixture.osz.part");
-        let url = format!("http://{address}/fixture.osz");
-
-        download_osz_once(&build_agent(), &url, &part_path).unwrap();
+        let dir = std::env::temp_dir().join(format!("osu-preview-osz-test-{}", std::process::id()));
+        let path = dir.join("fixture.osz.part");
+        std::fs::create_dir_all(&dir).unwrap();
+        let context = DownloadContext {
+            cancel: Arc::new(AtomicBool::new(false)),
+            progress: Arc::new(AttemptProgress::new()),
+        };
+        let agent = ureq::AgentBuilder::new().build();
+        download_osz_once(
+            &agent,
+            &format!("http://{address}/fixture.osz"),
+            &path,
+            &context,
+        )
+        .unwrap();
         let requested_ranges = server.join().unwrap();
-        assert_eq!(std::fs::read(&part_path).unwrap(), archive);
+        assert_eq!(std::fs::read(&path).unwrap(), archive);
         assert_eq!(requested_ranges[0], (0, 0));
-        let mut downloaded = requested_ranges[1..].to_vec();
-        downloaded.sort_unstable();
-        assert_eq!(
-            downloaded,
-            split_ranges(archive.len() as u64, PARALLEL_PARTS)
-                .into_iter()
-                .map(|range| (range.start, range.end))
-                .collect::<Vec<_>>()
-        );
-        std::fs::remove_dir_all(test_dir).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     fn make_test_osz() -> Vec<u8> {

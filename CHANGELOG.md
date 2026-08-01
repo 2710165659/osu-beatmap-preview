@@ -19,7 +19,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- 优化项目结构
+- 优化项目结构。
+- OSZ 下载改为智能镜像竞速，支持低速自动回退、最多 3 个来源并行，并为 osu.direct 自动选择和缓存 Cloudflare 优选 IP。
 
 ## [1.0.6] - 2026.07.30
 
