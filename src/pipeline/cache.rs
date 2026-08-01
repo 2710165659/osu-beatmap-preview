@@ -221,46 +221,62 @@ pub(crate) fn output_is_complete(path: &Path, fmt: &str) -> bool {
     }
 }
 
-/// MP4 check: the file must start with an `ftyp` brand box and end with a
-/// `moov` box whose size field aligns exactly with EOF. Our muxer writes the
-/// moov last, so a truncated render (killed mid-`mdat`) fails the alignment.
+/// MP4 check: the file must start with an `ftyp` brand box, all top-level boxes
+/// must align exactly to EOF, and both `moov` and `mdat` must be present. This
+/// accepts both faststart (`ftyp` + `moov` + `mdat`) and tail-indexed
+/// (`ftyp` + `mdat` + `moov`) files.
 fn mp4_bytes_complete(data: &[u8]) -> bool {
-    // First box must be ftyp (4-byte size + "ftyp" brand).
-    if data.len() < 16 || &data[4..8] != b"ftyp" {
+    if data.len() < 16 {
         return false;
     }
-    // Search backwards so the final box is checked first; keep looking for an
-    // earlier "moov" if the latest one does not align with EOF.
-    let mut search_end = data.len();
-    while search_end >= 4 {
-        let Some(rel) = data[..search_end].windows(4).rposition(|w| w == b"moov") else {
+    let mut pos = 0;
+    let mut seen_ftyp = false;
+    let mut seen_moov = false;
+    let mut seen_mdat = false;
+
+    while pos < data.len() {
+        if pos + 8 > data.len() {
             return false;
         };
-        if rel >= 4 {
-            let size_pos = rel - 4;
-            let size = u32::from_be_bytes([
-                data[size_pos],
-                data[size_pos + 1],
-                data[size_pos + 2],
-                data[size_pos + 3],
-            ]);
-            let box_start = size_pos as u64;
-            if size == 1 {
-                // 64-bit extended size: [size=1][type][largesize u64][payload]
-                if rel + 8 <= data.len() {
-                    let mut large = [0u8; 8];
-                    large.copy_from_slice(&data[rel..rel + 8]);
-                    if box_start + 16 + u64::from_be_bytes(large) == data.len() as u64 {
-                        return true;
-                    }
-                }
-            } else if box_start + u64::from(size) == data.len() as u64 {
-                return true;
-            }
+        let size32 = u32::from_be_bytes(data[pos..pos + 4].try_into().unwrap());
+        let typ = &data[pos + 4..pos + 8];
+        if pos == 0 && typ != b"ftyp" {
+            return false;
         }
-        search_end = rel;
+        let size = match size32 {
+            0 => data.len() - pos,
+            1 => {
+                if pos + 16 > data.len() {
+                    return false;
+                }
+                let large = u64::from_be_bytes(data[pos + 8..pos + 16].try_into().unwrap());
+                let Ok(large) = usize::try_from(large) else {
+                    return false;
+                };
+                if large < 16 {
+                    return false;
+                }
+                large
+            }
+            n if n >= 8 => n as usize,
+            _ => return false,
+        };
+        let Some(end) = pos.checked_add(size) else {
+            return false;
+        };
+        if end > data.len() {
+            return false;
+        }
+        match typ {
+            b"ftyp" => seen_ftyp = true,
+            b"moov" => seen_moov = true,
+            b"mdat" => seen_mdat = true,
+            _ => {}
+        }
+        pos = end;
     }
-    false
+
+    seen_ftyp && seen_moov && seen_mdat
 }
 
 /// GIF check: the trailer byte `0x3B` must be the last byte of the file.
@@ -306,6 +322,9 @@ mod tests {
         data.extend_from_slice(&[0, 0, 0, 24]); // ftyp box size
         data.extend_from_slice(b"ftyp");
         data.extend_from_slice(&[0u8; 16]); // brand payload
+        data.extend_from_slice(&[0, 0, 0, 12]); // mdat box size
+        data.extend_from_slice(b"mdat");
+        data.extend_from_slice(&[1u8; 4]); // media payload
         data.extend_from_slice(&[0, 0, 0, 12]); // moov box size
         data.extend_from_slice(b"moov");
         data.extend_from_slice(&[0u8; 4]); // payload
@@ -313,18 +332,30 @@ mod tests {
     }
 
     #[test]
-    fn mp4_complete_requires_ftyp_and_trailing_moov() {
+    fn mp4_complete_requires_aligned_ftyp_mdat_and_moov() {
         let complete = complete_mp4_bytes();
         assert!(mp4_bytes_complete(&complete));
 
-        // truncated: moov payload cut off → moov size no longer aligns with EOF
+        // faststart order is complete too: ftyp + moov + mdat.
+        let mut faststart = complete[..24].to_vec();
+        faststart.extend_from_slice(&complete[36..48]);
+        faststart.extend_from_slice(&complete[24..36]);
+        assert!(mp4_bytes_complete(&faststart));
+
+        // truncated: final box payload cut off, so the top-level boxes do not
+        // align to EOF.
         let mut truncated = complete.clone();
         truncated.truncate(complete.len() - 4);
         assert!(!mp4_bytes_complete(&truncated));
 
         // moov missing entirely
-        let no_moov = complete[..24].to_vec();
+        let no_moov = complete[..36].to_vec();
         assert!(!mp4_bytes_complete(&no_moov));
+
+        // mdat missing entirely
+        let mut no_mdat = complete[..24].to_vec();
+        no_mdat.extend_from_slice(&complete[36..]);
+        assert!(!mp4_bytes_complete(&no_mdat));
 
         // ftyp missing
         let mut no_ftyp = complete.clone();

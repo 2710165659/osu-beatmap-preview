@@ -326,6 +326,7 @@ pub(crate) fn save_mp4_streamed(
         std::io::Write::flush(&mut writer)
             .map_err(|e| PreviewError::render(format!("mp4 flush failed: {e}")))?;
         drop(writer);
+        mux::make_mp4_faststart(tmp_path)?;
 
         Ok(encoder)
     })?;

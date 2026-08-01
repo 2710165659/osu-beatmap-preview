@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - OpenH264 CPU 编码器现在定期生成真实 IDR 帧，并按实际 H.264 NAL 类型写入 MP4 同步样本索引，修复 Linux 视频无法跳转以及 QQ 只能显示首帧的问题。
+- MP4 封装完成后会内置执行 faststart 重排，将 `moov` 索引移动到文件前部并修正 chunk offset，修复 QQ 等聊天预览器只能播放前几秒或约 10 秒后停止的问题。
 - OpenH264 CPU 编码器使用约 500 kbps 的独立目标码率，在画质、文件体积和编码速度之间取得平衡。
 - 输出文件（PNG / GIF / MP4）改为原子写入：先写同目录临时文件，全部完成后才替换最终文件，渲染中断（如进程被强制关闭）不再在缓存路径留下损坏的半成品。缓存命中新增格式完整性校验，已损坏的旧缓存会被识别并自动重新渲染。
 
