@@ -19,8 +19,8 @@ mod tests;
 
 pub use config::{init, paths};
 pub use context::{
-    record_cache, record_output_bytes, record_stage, record_video_stats, set_bid, CacheKind,
-    VideoStats,
+    record_cache, record_output_bytes, record_stage, record_stage_status, record_video_stats,
+    set_bid, CacheKind, VideoStats,
 };
 pub use event::event;
 pub use summary::{write_summary, SummaryRecord};

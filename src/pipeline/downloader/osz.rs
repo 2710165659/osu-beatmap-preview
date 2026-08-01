@@ -237,6 +237,7 @@ pub fn download_beatmapset_archive(
             &format!("set={set_id} cache hit ({size_mib:.1} MiB)"),
         );
         crate::log::record_cache(crate::log::CacheKind::Osz, "hit");
+        crate::log::record_stage_status("download_osz_ms", "hit");
         return Ok(target_path);
     }
 
@@ -294,6 +295,7 @@ pub fn download_beatmapset_archive(
         &format!("set={set_id} downloaded {size_mib:.1} MiB in {ms:.0} ms"),
     );
     crate::log::record_cache(crate::log::CacheKind::Osz, "downloaded");
+    crate::log::record_stage("download_osz_ms", ms);
     Ok(target_path)
 }
 

@@ -101,8 +101,12 @@ pub fn write_summary(rec: &SummaryRecord) {
     insert_opt(&mut map, "download_osu_ms", rec.download_osu_ms.map(round1));
     insert_opt(&mut map, "parse_ms", rec.parse_ms.map(round1));
     insert_opt(&mut map, "render_ms", rec.render_ms.map(round1));
-    for (name, ms) in &ctx.stages_ms {
-        map.insert(name.clone(), json!(round1(*ms)));
+    for (name, value) in &ctx.stages {
+        let value = value
+            .as_f64()
+            .map(|ms| json!(round1(ms)))
+            .unwrap_or_else(|| value.clone());
+        map.insert(name.clone(), value);
     }
 
     if let Some(video) = &ctx.video {
@@ -110,6 +114,7 @@ pub fn write_summary(rec: &SummaryRecord) {
         insert_opt(&mut map, "resolution", video.resolution.as_deref());
         insert_opt(&mut map, "fps", video.fps);
         insert_opt(&mut map, "frame_count", video.frame_count);
+        insert_opt(&mut map, "video_ms", video.video_ms);
         insert_opt(&mut map, "render_compose_ms", video.render_compose_ms);
         insert_opt(&mut map, "encode_ms", video.encode_ms);
         insert_opt(&mut map, "mux_ms", video.mux_ms);

@@ -106,6 +106,7 @@ pub(crate) fn save_mp4_streamed(
     if frame_count == 0 {
         return Err(PreviewError::render("no frames to encode"));
     }
+    let video_started = Instant::now();
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
@@ -279,6 +280,15 @@ pub(crate) fn save_mp4_streamed(
             }
         }
 
+        let video_elapsed = video_started.elapsed();
+        if !audio_task.is_finished() {
+            crate::log::event(
+                "audio-wait",
+                "start",
+                None,
+                "video samples written; waiting for audio",
+            );
+        }
         let audio_wait_start = Instant::now();
         let encoded_audio = audio_task
             .join()
@@ -311,6 +321,7 @@ pub(crate) fn save_mp4_streamed(
             resolution: Some(format!("{out_w}x{out_h}")),
             fps: Some(fps),
             frame_count: Some(frame_count),
+            video_ms: Some(video_elapsed.as_secs_f64() * 1000.0),
             render_compose_ms: Some(t_render.as_secs_f64() * 1000.0),
             encode_ms: Some(t_encode.as_secs_f64() * 1000.0),
             mux_ms: Some(t_mux.as_secs_f64() * 1000.0),

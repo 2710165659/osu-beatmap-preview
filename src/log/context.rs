@@ -5,6 +5,8 @@
 use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
 
+use serde_json::{json, Value};
+
 /// 缓存类型，对应汇总 JSON 中 `cache` 对象的键。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheKind {
@@ -32,6 +34,7 @@ pub struct VideoStats {
     pub resolution: Option<String>,
     pub fps: Option<u32>,
     pub frame_count: Option<usize>,
+    pub video_ms: Option<f64>,
     pub render_compose_ms: Option<f64>,
     pub encode_ms: Option<f64>,
     pub mux_ms: Option<f64>,
@@ -42,7 +45,7 @@ pub struct VideoStats {
 struct Context {
     bid: Option<String>,
     cache: BTreeMap<String, String>,
-    stages_ms: BTreeMap<String, f64>,
+    stages: BTreeMap<String, Value>,
     video: Option<VideoStats>,
     output_bytes: Option<u64>,
 }
@@ -51,7 +54,7 @@ struct Context {
 #[derive(Debug, Default, Clone)]
 pub struct Snapshot {
     pub cache: BTreeMap<String, String>,
-    pub stages_ms: BTreeMap<String, f64>,
+    pub stages: BTreeMap<String, Value>,
     pub video: Option<VideoStats>,
     pub output_bytes: Option<u64>,
 }
@@ -85,9 +88,17 @@ pub fn record_cache(kind: CacheKind, state: &str) {
 pub fn record_stage(name: &str, ms: f64) {
     if ms.is_finite() && ms >= 0.0 {
         with_context(|ctx| {
-            ctx.stages_ms.insert(name.to_string(), ms);
+            ctx.stages.insert(name.to_string(), json!(ms));
         });
     }
+}
+
+/// 记录一个非数值阶段状态，写入汇总 JSON 的顶层字段。
+pub fn record_stage_status(name: &str, status: &str) {
+    with_context(|ctx| {
+        ctx.stages
+            .insert(name.to_string(), Value::String(status.to_string()));
+    });
 }
 
 /// 记录 MP4 编码统计。
@@ -103,7 +114,7 @@ pub fn record_output_bytes(bytes: u64) {
 pub(crate) fn snapshot() -> Snapshot {
     with_context(|ctx| Snapshot {
         cache: ctx.cache.clone(),
-        stages_ms: ctx.stages_ms.clone(),
+        stages: ctx.stages.clone(),
         video: ctx.video.clone(),
         output_bytes: ctx.output_bytes,
     })

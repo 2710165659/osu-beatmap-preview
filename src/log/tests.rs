@@ -121,12 +121,14 @@ fn summary_merges_context_cache_stages_and_video_stats() {
     record_cache(CacheKind::Osu, "downloaded");
     record_cache(CacheKind::Output, "hit");
     record_stage("download_osz_ms", 1234.56);
+    record_stage_status("download_osz_cache", "hit");
     record_output_bytes(999);
     record_video_stats(VideoStats {
         backend: Some("NVENC".to_string()),
         resolution: Some("1280x720".to_string()),
         fps: Some(15),
         frame_count: Some(1200),
+        video_ms: Some(111.23),
         encode_ms: Some(12.5),
         ..VideoStats::default()
     });
@@ -142,11 +144,13 @@ fn summary_merges_context_cache_stages_and_video_stats() {
     assert_eq!(value["cache"]["osu"], "downloaded");
     assert_eq!(value["cache"]["output"], "hit");
     assert_eq!(value["download_osz_ms"], 1234.6);
+    assert_eq!(value["download_osz_cache"], "hit");
     assert_eq!(value["output_bytes"], 999);
     assert_eq!(value["backend"], "NVENC");
     assert_eq!(value["resolution"], "1280x720");
     assert_eq!(value["fps"], 15);
     assert_eq!(value["frame_count"], 1200);
+    assert_eq!(value["video_ms"], 111.23);
     assert_eq!(value["encode_ms"], 12.5);
     let _ = std::fs::remove_dir_all(&dir);
 }
