@@ -47,15 +47,16 @@ pub fn parse_times(raw: &str) -> Result<Vec<f64>> {
     if parts.len() > 4 {
         return Err(PreviewError::new("--time accepts at most 4 time points"));
     }
+    if parts.is_empty() {
+        return Err(PreviewError::new("--time requires at least one time point"));
+    }
     let mut result = Vec::with_capacity(parts.len());
     for p in parts {
         let val: f64 = p
             .parse()
             .map_err(|_| PreviewError::new(format!("invalid time value: '{p}'")))?;
-        if val < 0.0 {
-            return Err(PreviewError::new(format!(
-                "time must be non-negative, got {val}"
-            )));
+        if !val.is_finite() {
+            return Err(PreviewError::new(format!("time must be finite, got {val}")));
         }
         result.push(val);
     }
@@ -173,6 +174,20 @@ mod tests {
             fmt,
             target_mode,
         }
+    }
+
+    #[test]
+    fn parse_times_accepts_negative_skin_times() {
+        assert_eq!(parse_times("-2").unwrap(), vec![-2.0]);
+        assert_eq!(parse_times("-2+10").unwrap(), vec![-2.0, 10.0]);
+        assert_eq!(parse_times("-0.5+1.25").unwrap(), vec![-0.5, 1.25]);
+    }
+
+    #[test]
+    fn parse_times_rejects_empty_and_non_finite_values() {
+        assert!(parse_times("").is_err());
+        assert!(parse_times("NaN").is_err());
+        assert!(parse_times("inf").is_err());
     }
 
     #[test]

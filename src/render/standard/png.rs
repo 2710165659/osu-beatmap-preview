@@ -1,5 +1,6 @@
 //! osu!standard PNG grid renderer: 5×8 gameplay snapshots.
 
+use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -15,10 +16,11 @@ pub(crate) fn render_standard_png(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
+    time_axis: TimeAxis,
 ) -> Result<Img> {
     let hit_objects = standard_objects(beatmap)?;
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
-    let context = build_render_context(beatmap, hit_objects, mods);
+    let context = build_render_context(beatmap, hit_objects, mods, time_axis);
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
@@ -70,7 +72,7 @@ pub(crate) fn render_standard_png(
             let is_preview_label = row_timing.is_preview;
             draw_time_label(
                 &mut canvas,
-                &format_mmssmmm(snapshot_time),
+                &format_mmssmmm(time_axis.to_display(snapshot_time)),
                 x,
                 y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP,
                 note,

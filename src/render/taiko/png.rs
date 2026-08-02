@@ -3,6 +3,7 @@
 //! 行切分以小节线为锚点：每行的起点对齐到一条小节线（measure line），
 //! 保证视觉上每行最左侧都是重拍位置。
 
+use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TaikoHitObject};
 use crate::core::mods::ModSettings;
@@ -57,6 +58,7 @@ pub(crate) fn render_taiko_grid(
     output_path: &Path,
     mods: Option<&ModSettings>,
     gap: Option<f64>,
+    time_axis: TimeAxis,
 ) -> Result<PathBuf> {
     let mut hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
@@ -111,6 +113,7 @@ pub(crate) fn render_taiko_grid(
         MIN_BEAT_LINE_SPACING,
         &kiai_sections,
         first_note_time,
+        time_axis.to_display(chart_start_time),
     );
     let layout = build_png_layout(
         effective_chart_end_time,
@@ -152,7 +155,7 @@ pub(crate) fn render_taiko_grid(
                 last_label_time = Some(tl.time);
             }
         }
-        draw_timing_line(&mut image, &tl, &layout);
+        draw_timing_line(&mut image, &tl, &layout, time_axis);
     }
 
     draw_sv_indicators(&mut image, &sv_changes, &layout);
@@ -341,7 +344,12 @@ fn png_row_chart_left(_layout: &RenderLayout, _row_index: i64) -> i64 {
 
 // ─── 节拍线绘制 ───
 
-fn draw_timing_line(image: &mut Img, timing_line: &TimingLine, layout: &RenderLayout) {
+fn draw_timing_line(
+    image: &mut Img,
+    timing_line: &TimingLine,
+    layout: &RenderLayout,
+    time_axis: TimeAxis,
+) {
     let (row_index, local_position) = layout.locate(timing_line.position);
     // 超出行宽的线（行尾与下一行行首之间的过渡区）不绘制
     if local_position > layout.max_row_width as f64 + 0.5 {
@@ -358,7 +366,7 @@ fn draw_timing_line(image: &mut Img, timing_line: &TimingLine, layout: &RenderLa
     }
 
     if timing_line.show_label {
-        draw_time_label(image, timing_line, line_x, line_y0, layout);
+        draw_time_label(image, timing_line, line_x, line_y0, layout, time_axis);
     }
 }
 
@@ -368,8 +376,11 @@ fn draw_time_label(
     line_x: i64,
     row_top: i64,
     layout: &RenderLayout,
+    time_axis: TimeAxis,
 ) {
-    let label = time_label_text(timing_line.time + layout.chart_start_time);
+    let label = crate::render::text::format_seconds_tenths(
+        time_axis.to_display(timing_line.time + layout.chart_start_time),
+    );
     let note: Option<&str> = if timing_line.is_kiai_start {
         Some("Kiai Start")
     } else {

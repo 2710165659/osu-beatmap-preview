@@ -6,6 +6,7 @@
 //! `--time=t1+t2` is given, or a preview-time 30s clip when `--preview-30s`
 //! is given. 15 fps, letterboxed to 16:9 by `video::save_mp4_streamed`.
 
+use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -26,6 +27,7 @@ pub(crate) fn render_catch_video(
     preview_30s: bool,
     output_path: &Path,
     audio_job: AudioSourceJob,
+    time_axis: TimeAxis,
 ) -> Result<()> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
@@ -69,5 +71,6 @@ pub(crate) fn render_catch_video(
         output_path,
         fps,
         audio_job,
+        time_axis,
     )
 }

@@ -1,7 +1,9 @@
 //! osu!mania GIF renderer: multi-segment or single-screen falling-note preview.
 //! Port of beatmap_preview/mania/gif_renderer.py.
 
-use crate::common::time_selection::{GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector};
+use crate::common::time_selection::{
+    GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector, TimeAxis,
+};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
@@ -80,8 +82,12 @@ pub(crate) fn render_mania_gif(
 
     // DT/HT only changes how fast chart time advances; the GIF still plays 10s/segment.
     let speed_multiplier = mods.map_or(1.0, |m| m.speed_multiplier);
-    let (segment_timings, segment_duration, frame_count, show_time_label) = match options {
-        GifRenderOptions::Segments(times_ms) => {
+    let (segment_timings, segment_duration, frame_count, show_time_label, time_axis) = match options
+    {
+        GifRenderOptions::Segments {
+            times_ms,
+            time_axis,
+        } => {
             let gameplay_segment_duration =
                 round_half_even(GIF_DURATION_MS as f64 * speed_multiplier);
             let spans: Vec<(i64, i64)> = hit_objects
@@ -102,6 +108,7 @@ pub(crate) fn render_mania_gif(
                 gameplay_segment_duration,
                 frame_count,
                 true,
+                time_axis,
             )
         }
         GifRenderOptions::Clip {
@@ -122,6 +129,7 @@ pub(crate) fn render_mania_gif(
                 segment_duration,
                 frame_count,
                 show_time_label,
+                range.time_axis,
             )
         }
     };
@@ -219,7 +227,7 @@ pub(crate) fn render_mania_gif(
             .enumerate()
             .map(|(si, st)| {
                 let seg_left = segment_left(si as i64, &layout);
-                build_pre_label(st, segment_duration, &layout, seg_left, label_y)
+                build_pre_label(st, segment_duration, &layout, seg_left, label_y, time_axis)
             })
             .collect()
     } else {
@@ -708,11 +716,14 @@ fn build_pre_label(
     layout: &GifLayout,
     seg_left: i64,
     y: i64,
+    time_axis: TimeAxis,
 ) -> PreLabel {
     let label = format!(
         "{} - {}",
-        format_gif_time(timing.start_time),
-        format_gif_time(timing.start_time + duration_ms)
+        crate::render::text::format_mmss_floor(time_axis.to_display(timing.start_time)),
+        crate::render::text::format_mmss_floor(
+            time_axis.to_display(timing.start_time + duration_ms)
+        )
     );
     let color = if timing.is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
@@ -775,11 +786,6 @@ fn draw_gif_sv_indicators_fast(
         let label_y = (y as f64 - label_h as f64 / 2.0).floor() as i64;
         canvas.alpha_composite(sprite, x, label_y);
     }
-}
-
-fn format_gif_time(ms: i64) -> String {
-    let total_seconds = ms.max(0) / 1000;
-    format!("{}:{:02}", total_seconds / 60, total_seconds % 60)
 }
 
 #[cfg(test)]

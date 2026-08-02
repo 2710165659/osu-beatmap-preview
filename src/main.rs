@@ -31,8 +31,9 @@ fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko] \
          [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--gif-clip] [--gif-clip-label] [--preview-30s] [--gap=<BPM>] \
-         [--log-dir=<DIR>] [--no-log] [--no-cache]\
-       osu-beatmap-preview --version"
+         [--log-dir=<DIR>] [--no-log] [--no-cache]\n\
+         osu-beatmap-preview --version\n\
+         --time uses first-object-relative gameplay time and accepts negative values"
     );
     std::process::exit(code)
 }

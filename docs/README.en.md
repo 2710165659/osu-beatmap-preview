@@ -33,7 +33,7 @@ Parameter aliases: `--mod` = `--mods`, `--format` = `--fmt`, `--times` = `--time
 | `--convert` | Conversion mode: `mania` / `ctb` / `taiko` / `standard` / `std`. Only available for Standard beatmaps. |
 | `--mods` | Mod combination joined with `+`, such as `hd+hr`; speed-changing Mods may include a value, such as `dt1.25`. |
 | `--fmt` | Output format: `gif` / `png` / `mp4`. When omitted, the default format for the mode is used. |
-| `--time` | Time point or time range, in seconds. |
+| `--time` | Time point or range on the gameplay skin timeline, in seconds. The first playable object is `0:00`; negative values are supported. |
 | `--gif-clip` | GIF only. Outputs a single-screen continuous GIF without time labels. |
 | `--gif-clip-label` | GIF only. Like `--gif-clip`, but shows time labels. |
 | `--preview-30s` | MP4 only. Renders about 30 seconds of actual playback near `PreviewTime`. |
@@ -43,7 +43,7 @@ Parameter aliases: `--mod` = `--mods`, `--format` = `--fmt`, `--times` = `--time
 | `--no-cache` | Skips download and output caches and forces a fresh render. |
 | `--version` | Prints the version and build time, then exits. |
 
-> `--time` specifies preview times in seconds. Regular GIF and Standard PNG accept 1-4 time points separated by `+`; when used with MP4, `--gif-clip`, or `--gif-clip-label`, it must contain exactly two time points representing the range from `t1` to `t2`.
+> `--time` uses the same timeline as osu!'s in-game song-progress skin components: the first playable object in the target mode after conversion is `0:00`, rather than the editor's absolute track time. Regular GIF and Standard PNG accept 1-4 time points; MP4, `--gif-clip`, and `--gif-clip-label` require a two-point range. Negative values select time before the first object; use the equals form, for example `--time=-2+10`. MP4 portions before the audio begins are silent.
 
 ### Examples
 
@@ -62,6 +62,9 @@ osu-beatmap-preview --bid=123456 --mods=hd+hr
 
 # Specify multiple GIF preview time points
 osu-beatmap-preview --bid=123456 --fmt=gif --time=10+25+60
+
+# Render a continuous GIF starting two seconds before the first object
+osu-beatmap-preview --bid=123456 --fmt=gif --gif-clip-label --time=-2+10
 
 # Specify a range for a continuous GIF without time labels
 osu-beatmap-preview --bid=123456 --fmt=gif --gif-clip --time=30+42
@@ -121,11 +124,11 @@ Use `--fmt=png` to output a static PNG image.
 
 ### GIF Animations
 
-Use `--fmt=gif` to output a GIF animation. By default, it outputs multiple preview segments; use `--time=t1+t2+...` to specify preview time points. `--gif-clip` outputs a single-screen continuous GIF without time labels; `--gif-clip-label` uses the same single-screen format but displays time labels. Without an explicit range, single-screen mode renders about 10 seconds near `.osu` `PreviewTime`; if the tail is too short, the range is shifted backward to fill the playback duration.
+Use `--fmt=gif` to output a GIF animation. By default, it outputs multiple preview segments; use `--time=t1+t2+...` to specify points on the gameplay skin timeline. `--gif-clip` outputs a single-screen continuous GIF without time labels; `--gif-clip-label` uses the same format with labels. Without an explicit range, segment selection still uses the absolute `.osu` `PreviewTime`, while labels are converted to first-object-relative time. If the tail is too short, the range is shifted backward.
 
 ### MP4 Videos
 
-Use `--fmt=mp4` to output a video with beatmap audio for all four modes. The default covers the full beatmap; use `--time=t1+t2` to specify a video range. `--preview-30s` renders about 30 seconds of actual playback near `.osu` `PreviewTime` and cannot be used with `--time`. If the preview time is near the end of the beatmap, the range is shifted backward to fill the playback duration.
+Use `--fmt=mp4` to output a video with beatmap audio for all four modes. The default covers the full beatmap; use `--time=t1+t2` to specify a range on the gameplay skin timeline. Negative time and the default full-chart padding are shown with negative labels, and portions before the audio file begins are silent. `--preview-30s` renders about 30 seconds near the absolute `.osu` `PreviewTime` and cannot be used with `--time`. If the preview is near the end, the range is shifted backward.
 
 ### Command-Line Output
 

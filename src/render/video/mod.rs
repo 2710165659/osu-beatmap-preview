@@ -22,6 +22,7 @@
 //! at build time or runtime never breaks compilation or execution — the encoder
 //! silently falls back to CPU.
 
+use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::parser::round_half_even;
@@ -118,7 +119,11 @@ pub(crate) fn resolve_video_time_range(
 }
 
 fn validate_video_time_range(range: VideoTimeRange) -> Result<VideoTimeRange> {
-    if range.end <= range.start {
+    let duration = range
+        .end
+        .checked_sub(range.start)
+        .ok_or_else(|| PreviewError::new("mp4 time range is outside the supported range"))?;
+    if duration <= 0 {
         return Err(PreviewError::new("mp4 time range is empty"));
     }
     Ok(range)
@@ -172,13 +177,12 @@ trait FrameEncoder {
 /// Stream `frame_count` frames produced by `render(i)` into an MP4 file at
 /// `output_path`.
 ///
-/// `render` returns the playfield frame and the current chart time (ms) used
-/// for the top-right "current / total" label. `chart_end_ms` is the absolute
-/// end time of the rendered span; the label shows the current frame's chart
-/// time against this end time so both values are on the same game time axis
-/// (e.g. 0:03 / 1:13). Frames are rendered in parallel chunks and encoded
-/// sequentially to preserve ordering; `fps` is both the encode frame rate and
-/// the MP4 timescale (1 tick per frame).
+/// `render` returns the playfield frame and the current absolute chart time
+/// (ms). `chart_end_ms` is also absolute; both are converted through
+/// `time_axis` before drawing the top-right "current / total" gameplay label.
+/// Frames are rendered in parallel chunks and encoded sequentially to preserve
+/// ordering; `fps` is both the encode frame rate and the MP4 timescale (1 tick
+/// per frame).
 pub(crate) fn save_mp4_streamed(
     frame_count: usize,
     chart_start_ms: i64,
@@ -188,6 +192,7 @@ pub(crate) fn save_mp4_streamed(
     output_path: &Path,
     fps: u32,
     audio_job: AudioSourceJob,
+    time_axis: TimeAxis,
 ) -> Result<()> {
     if frame_count == 0 {
         return Err(PreviewError::render("no frames to encode"));
@@ -249,7 +254,13 @@ pub(crate) fn save_mp4_streamed(
     let par_chunk_size = (MAX_PAR_FRAME_BYTES / frame_bytes).clamp(1, PAR_CHUNK_SIZE);
 
     // ── encode first frame, extract SPS/PPS for the mp4 track config ──
-    let first_comp = compose_frame(first_frame, first_time, chart_end_ms, out_w, out_h);
+    let first_comp = compose_frame(
+        first_frame,
+        time_axis.to_display(first_time),
+        time_axis.to_display(chart_end_ms),
+        out_w,
+        out_h,
+    );
     let first_encoded = encoder.encode(&first_comp)?;
     let sps = first_encoded
         .sps
@@ -332,7 +343,7 @@ pub(crate) fn save_mp4_streamed(
         let mut t_render = std::time::Duration::ZERO;
         let mut t_encode = std::time::Duration::ZERO;
         let mut t_mux = std::time::Duration::ZERO;
-        let chart_end = chart_end_ms;
+        let chart_end = time_axis.to_display(chart_end_ms);
         for chunk_start in (1..frame_count).step_by(par_chunk_size) {
             let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
             let t0 = Instant::now();
@@ -341,7 +352,7 @@ pub(crate) fn save_mp4_streamed(
                 .map(|fi| {
                     let (pf, time) = render(fi);
                     // compose here, in parallel — avoids serial bottleneck
-                    compose_frame(pf, time, chart_end, out_w, out_h)
+                    compose_frame(pf, time_axis.to_display(time), chart_end, out_w, out_h)
                 })
                 .collect();
             t_render += t0.elapsed();
@@ -476,9 +487,7 @@ fn letterbox_dims(pf_w: u32, pf_h: u32) -> (u32, u32) {
 }
 
 /// Place the playfield frame centered on a black 16:9 canvas and draw the
-/// "current / total" time label in the top-right corner. `current_ms` is the
-/// frame's absolute chart time; `end_ms` is the absolute end of the rendered
-/// span — both on the same game time axis.
+/// "current / total" gameplay-time label in the top-right corner.
 fn compose_frame(pf: Img, current_ms: i64, end_ms: i64, out_w: u32, out_h: u32) -> Img {
     let mut canvas = Img::new(out_w, out_h, BLACK_OPAQUE);
     let ox = ((out_w - pf.w) / 2) as i64;
@@ -500,8 +509,7 @@ fn compose_frame(pf: Img, current_ms: i64, end_ms: i64, out_w: u32, out_h: u32) 
 }
 
 fn format_mmss(ms: i64) -> String {
-    let s = ms.max(0) / 1000;
-    format!("{}:{:02}", s / 60, s % 60)
+    crate::render::text::format_mmss_floor(ms)
 }
 
 /// Temporarily redirect stdout → stderr so that third-party `println!` calls
@@ -661,6 +669,20 @@ mod tests {
                 end: 9_000
             }
         );
+    }
+
+    #[test]
+    fn explicit_time_range_rejects_unrepresentable_duration() {
+        let beatmap = beatmap_with_preview(None, None);
+        assert!(resolve_video_time_range(
+            &beatmap,
+            10_000,
+            100_000,
+            Some(&[i64::MIN, i64::MAX]),
+            false,
+            1.0,
+        )
+        .is_err());
     }
 
     #[test]

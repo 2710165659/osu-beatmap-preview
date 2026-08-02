@@ -368,6 +368,7 @@ pub(crate) fn build_timing_lines(
     min_beat_line_spacing: f64,
     kiai_sections: &[KiaiSection],
     first_note_time: i64,
+    display_offset_ms: i64,
 ) -> Vec<TimingLine> {
     let mut line_by_time: BTreeMap<i64, TimingLine> = BTreeMap::new();
     let mut last_bpm: Option<f64> = None;
@@ -453,7 +454,10 @@ pub(crate) fn build_timing_lines(
         }
     }
 
-    dedupe_display_labels(apply_kiai_flags(&line_by_time, kiai_sections))
+    dedupe_display_labels(
+        apply_kiai_flags(&line_by_time, kiai_sections),
+        display_offset_ms,
+    )
 }
 
 fn apply_kiai_flags(
@@ -482,11 +486,7 @@ fn apply_kiai_flags(
     lines
 }
 
-pub(crate) fn time_label_text(time: i64) -> String {
-    format!("{:.1}s", time as f64 / 1000.0)
-}
-
-fn dedupe_display_labels(lines: Vec<TimingLine>) -> Vec<TimingLine> {
+fn dedupe_display_labels(lines: Vec<TimingLine>, display_offset_ms: i64) -> Vec<TimingLine> {
     let mut deduped: Vec<TimingLine> = Vec::with_capacity(lines.len());
 
     for line in lines {
@@ -496,7 +496,11 @@ fn dedupe_display_labels(lines: Vec<TimingLine>) -> Vec<TimingLine> {
         }
 
         let previous = deduped.last().unwrap().clone();
-        let same_label = time_label_text(previous.time) == time_label_text(line.time);
+        let same_label = crate::render::text::format_seconds_tenths(
+            previous.time.saturating_add(display_offset_ms),
+        ) == crate::render::text::format_seconds_tenths(
+            line.time.saturating_add(display_offset_ms),
+        );
         if !previous.show_label || !same_label {
             deduped.push(line);
             continue;

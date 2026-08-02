@@ -1,6 +1,6 @@
 //! Render context, difficulty, skin, combo info, row timing, visible indexes.
 
-use crate::common::time_selection::PreviewTimeSelector;
+use crate::common::time_selection::{PreviewTimeSelector, TimeAxis};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, BreakPeriod, HitObjects, StandardHitObject};
 use crate::core::mods::ModSettings;
@@ -85,6 +85,7 @@ pub(crate) struct RenderContext {
     pub(crate) spinner_size: i64,
     pub(crate) slider_follow_size: i64,
     pub(crate) slider_ball_size: i64,
+    pub(crate) time_axis: TimeAxis,
 }
 
 pub(crate) struct RowTiming {
@@ -272,6 +273,7 @@ pub(crate) fn build_render_context(
     beatmap: &Beatmap,
     hit_objects: Vec<StandardHitObject>,
     mods: Option<&ModSettings>,
+    time_axis: TimeAxis,
 ) -> RenderContext {
     let skin = load_skin(beatmap);
     let settings = build_render_settings(beatmap, mods);
@@ -298,6 +300,7 @@ pub(crate) fn build_render_context(
             settings.circle_diameter as f64 * ARGON_SLIDER_WIDTH_RATIO * frame_layout.scale,
         )
         .max(1),
+        time_axis,
     }
 }
 

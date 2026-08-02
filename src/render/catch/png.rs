@@ -4,6 +4,7 @@
 //! 谱面总高度有上限（防止超长 / 高 AR 谱面导致内存爆炸），超出时
 //! 按比例压缩纵向密度。
 
+use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TimingPoint};
 use crate::core::mods::ModSettings;
@@ -193,6 +194,7 @@ pub(crate) fn render_catch_grid(
     beatmap: &Beatmap,
     output_path: &Path,
     mods: Option<&ModSettings>,
+    time_axis: TimeAxis,
 ) -> Result<PathBuf> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
@@ -270,7 +272,7 @@ pub(crate) fn render_catch_grid(
         }
         draw_timing_line_png(&mut image, &tl, &layout);
         if tl.show_label {
-            draw_timing_label_png(&mut image, &tl, &layout);
+            draw_timing_label_png(&mut image, &tl, &layout, time_axis);
         }
     }
 
@@ -353,13 +355,17 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
     }
 }
 
-fn draw_timing_label_png(image: &mut Img, timing_line: &TimingLine, layout: &RenderLayout) {
+fn draw_timing_label_png(
+    image: &mut Img,
+    timing_line: &TimingLine,
+    layout: &RenderLayout,
+    time_axis: TimeAxis,
+) {
     let (column_index, y) = locate_time(timing_line.time, layout);
     let border_right = column_left(column_index) + COLUMN_WIDTH;
     let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
-    let label = format!(
-        "{:.1}s",
-        (timing_line.time + layout.chart_start_time) as f64 / 1000.0
+    let label = crate::render::text::format_seconds_tenths(
+        time_axis.to_display(timing_line.time + layout.chart_start_time),
     );
     let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
     let label_x = (border_right + 4).min(layout.image_width - label_width as i64 - PAGE_MARGIN_X);

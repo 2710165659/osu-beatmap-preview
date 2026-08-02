@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- `--time` / `--times` 改为使用 osu! 游戏皮肤时间轴：转谱后目标模式首物件为 `0:00`，支持负时间；所有可见时间标签同步采用该时间轴，内部谱面与音频计算仍使用绝对时间。
 - 优化项目结构。
 - OSZ 下载改为智能镜像竞速，支持低速自动回退、最多 3 个来源并行，并为 osu.direct 自动选择和缓存 Cloudflare 优选 IP。
 

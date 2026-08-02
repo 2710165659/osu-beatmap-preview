@@ -6,6 +6,7 @@
 //! `--time=t1+t2` is given, or a preview-time 30s clip when `--preview-30s`
 //! is given. 15 fps, letterboxed to 16:9 by `video::save_mp4_streamed`.
 
+use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -30,6 +31,7 @@ pub(crate) fn render_standard_video(
     preview_30s: bool,
     output_path: &Path,
     audio_job: AudioSourceJob,
+    time_axis: TimeAxis,
 ) -> Result<()> {
     let hit_objects = standard_objects(beatmap)?;
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
@@ -45,7 +47,7 @@ pub(crate) fn render_standard_video(
     )?;
     let (start, end) = (range.start, range.end);
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
-    let context = build_render_context(beatmap, hit_objects, mods);
+    let context = build_render_context(beatmap, hit_objects, mods, time_axis);
     let total_ms = end - start;
     let fps = GIF_FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
@@ -89,5 +91,6 @@ pub(crate) fn render_standard_video(
         output_path,
         fps,
         audio_job,
+        time_axis,
     )
 }

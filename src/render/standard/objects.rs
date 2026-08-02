@@ -54,7 +54,7 @@ pub(crate) fn render_frame(
     }
 
     if let Some(current_break) = current_break_period(break_periods, snapshot_time) {
-        draw_break_overlay(&mut frame, current_break, snapshot_time);
+        draw_break_overlay(&mut frame, current_break, snapshot_time, context.time_axis);
     }
 
     frame
@@ -412,7 +412,12 @@ fn current_break_period<'a>(
         .find(|p| break_overlay_alpha(p, snapshot_time) > 0.0)
 }
 
-fn draw_break_overlay(frame: &mut Img, break_period: &BreakPeriod, snapshot_time: i64) {
+fn draw_break_overlay(
+    frame: &mut Img,
+    break_period: &BreakPeriod,
+    snapshot_time: i64,
+    time_axis: crate::common::time_selection::TimeAxis,
+) {
     let alpha = break_overlay_alpha(break_period, snapshot_time);
     if alpha <= 0.0 {
         return;
@@ -454,8 +459,8 @@ fn draw_break_overlay(frame: &mut Img, break_period: &BreakPeriod, snapshot_time
 
     let break_label = format!(
         "Break {} - {}",
-        crate::render::text::format_mmssmmm(break_period.start_time),
-        crate::render::text::format_mmssmmm(break_period.end_time)
+        crate::render::text::format_mmssmmm(time_axis.to_display(break_period.start_time)),
+        crate::render::text::format_mmssmmm(time_axis.to_display(break_period.end_time))
     );
     let info_y = py_round(center_y) + BREAK_OVERLAY_INFO_TOP_GAP;
     let info_color = [

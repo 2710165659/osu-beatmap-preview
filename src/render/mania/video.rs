@@ -7,6 +7,7 @@
 //! `--time=t1+t2` is given, or a preview-time 30s clip when `--preview-30s`
 //! is given. 15 fps, letterboxed to 16:9.
 
+use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -34,6 +35,7 @@ pub(crate) fn render_mania_video(
     preview_30s: bool,
     output_path: &Path,
     audio_job: AudioSourceJob,
+    time_axis: TimeAxis,
 ) -> Result<()> {
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
@@ -173,6 +175,7 @@ pub(crate) fn render_mania_video(
         output_path,
         fps,
         audio_job,
+        time_axis,
     )
 }
 

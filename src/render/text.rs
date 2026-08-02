@@ -141,9 +141,42 @@ pub fn render_text_sprite(text: &str, size: u32, color: Rgba) -> Img {
 }
 
 pub fn format_mmssmmm(ms: i64) -> String {
-    let ms = ms.max(0);
-    let minutes = ms / 60000;
-    let seconds = (ms % 60000) / 1000;
-    let millis = ms % 1000;
-    format!("{minutes:02}:{seconds:02}:{millis:03}")
+    let sign = if ms < 0 { "-" } else { "" };
+    let magnitude = ms.unsigned_abs();
+    let minutes = magnitude / 60000;
+    let seconds = (magnitude % 60000) / 1000;
+    let millis = magnitude % 1000;
+    format!("{sign}{minutes:02}:{seconds:02}:{millis:03}")
+}
+
+/// Format whole seconds like osu!'s gameplay progress component. Flooring is
+/// applied before formatting, so -0.5 seconds is displayed as -0:01.
+pub fn format_mmss_floor(ms: i64) -> String {
+    let total_seconds = ms.div_euclid(1000);
+    let sign = if total_seconds < 0 { "-" } else { "" };
+    let magnitude = total_seconds.unsigned_abs();
+    format!("{sign}{}:{:02}", magnitude / 60, magnitude % 60)
+}
+
+pub fn format_seconds_tenths(ms: i64) -> String {
+    format!("{:.1}s", ms as f64 / 1000.0)
+}
+
+#[cfg(test)]
+mod time_format_tests {
+    use super::*;
+
+    #[test]
+    fn formats_signed_millisecond_times() {
+        assert_eq!(format_mmssmmm(62_500), "01:02:500");
+        assert_eq!(format_mmssmmm(-2_500), "-00:02:500");
+        assert_eq!(format_mmssmmm(i64::MIN), "-153722867280912:55:808");
+    }
+
+    #[test]
+    fn formats_signed_gameplay_seconds() {
+        assert_eq!(format_mmss_floor(62_500), "1:02");
+        assert_eq!(format_mmss_floor(-500), "-0:01");
+        assert_eq!(format_seconds_tenths(-500), "-0.5s");
+    }
 }

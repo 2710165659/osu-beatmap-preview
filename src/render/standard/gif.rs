@@ -1,6 +1,6 @@
 //! osu!standard GIF renderer: 2×2 segment preview or single-screen clip.
 
-use crate::common::time_selection::{GifClipRange, GifRenderOptions};
+use crate::common::time_selection::{GifClipRange, GifRenderOptions, TimeAxis};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -22,9 +22,10 @@ pub(crate) fn render_standard_gif(
     output_path: &Path,
 ) -> Result<()> {
     match options {
-        GifRenderOptions::Segments(times_ms) => {
-            render_standard_segment_gif(beatmap, mods, times_ms, output_path)
-        }
+        GifRenderOptions::Segments {
+            times_ms,
+            time_axis,
+        } => render_standard_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
         GifRenderOptions::Clip {
             range,
             show_time_label,
@@ -36,6 +37,7 @@ fn render_standard_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
+    time_axis: TimeAxis,
     output_path: &Path,
 ) -> Result<()> {
     if let Some(times) = &times_ms {
@@ -46,7 +48,7 @@ fn render_standard_segment_gif(
 
     let hit_objects = standard_objects(beatmap)?;
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
-    let context = build_render_context(beatmap, hit_objects, mods);
+    let context = build_render_context(beatmap, hit_objects, mods, time_axis);
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let gameplay_segment_duration = py_round(GIF_DURATION_MS as f64 * speed_multiplier);
     let row_timings = choose_row_start_times(
@@ -113,8 +115,10 @@ fn render_standard_segment_gif(
             };
             let label = format!(
                 "{} - {}",
-                format_mmssmmm(row_timing.start_time),
-                format_mmssmmm(row_timing.start_time + gameplay_segment_duration)
+                format_mmssmmm(time_axis.to_display(row_timing.start_time)),
+                format_mmssmmm(
+                    time_axis.to_display(row_timing.start_time + gameplay_segment_duration)
+                )
             );
             draw_time_label(
                 &mut canvas,
@@ -149,7 +153,7 @@ fn render_standard_clip_gif(
 ) -> Result<()> {
     let hit_objects = standard_objects(beatmap)?;
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
-    let context = build_render_context(beatmap, hit_objects, mods);
+    let context = build_render_context(beatmap, hit_objects, mods, range.time_axis);
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let frame_count = (((range.end - range.start) as f64 * GIF_FPS as f64
         / (1000.0 * speed_multiplier))
@@ -195,8 +199,8 @@ fn render_standard_clip_gif(
         if show_time_label {
             let label = format!(
                 "{} - {}",
-                format_mmssmmm(range.start),
-                format_mmssmmm(range.end)
+                format_mmssmmm(range.time_axis.to_display(range.start)),
+                format_mmssmmm(range.time_axis.to_display(range.end))
             );
             draw_time_label(
                 &mut canvas,

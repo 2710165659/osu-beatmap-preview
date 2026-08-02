@@ -85,9 +85,10 @@ pub(crate) fn render_taiko_gif(
     output_path: &Path,
 ) -> Result<()> {
     match options {
-        GifRenderOptions::Segments(times_ms) => {
-            render_taiko_segment_gif(beatmap, mods, times_ms, output_path)
-        }
+        GifRenderOptions::Segments {
+            times_ms,
+            time_axis,
+        } => render_taiko_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
         GifRenderOptions::Clip {
             range,
             show_time_label,
@@ -99,6 +100,7 @@ fn render_taiko_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
+    time_axis: crate::common::time_selection::TimeAxis,
     output_path: &Path,
 ) -> Result<()> {
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
@@ -194,6 +196,7 @@ fn render_taiko_segment_gif(
                 segment_index as i64,
                 &layout,
                 segment_timing.is_preview,
+                time_axis,
             );
         }
 
@@ -268,6 +271,7 @@ fn render_taiko_clip_gif(
                 0,
                 &layout,
                 range.is_preview,
+                range.time_axis,
             );
         }
         canvas
@@ -709,12 +713,13 @@ fn draw_time_label(
     row_index: i64,
     layout: &GifLayout,
     is_preview: bool,
+    time_axis: crate::common::time_selection::TimeAxis,
 ) {
     let y = gif_row_top(row_index, layout) + layout.row_height + 5;
     let label = format!(
         "{} - {}",
-        format_gif_time(start_time),
-        format_gif_time(start_time + duration_ms)
+        crate::render::text::format_mmss_floor(time_axis.to_display(start_time)),
+        crate::render::text::format_mmss_floor(time_axis.to_display(start_time + duration_ms))
     );
     let color = if is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
@@ -756,12 +761,13 @@ fn draw_time_label_range(
     row_index: i64,
     layout: &GifLayout,
     is_preview: bool,
+    time_axis: crate::common::time_selection::TimeAxis,
 ) {
     let y = gif_row_top(row_index, layout) + layout.row_height + 5;
     let label = format!(
         "{} - {}",
-        format_gif_time(start_time),
-        format_gif_time(end_time)
+        crate::render::text::format_mmss_floor(time_axis.to_display(start_time)),
+        crate::render::text::format_mmss_floor(time_axis.to_display(end_time))
     );
     let color = if is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
@@ -794,9 +800,4 @@ fn draw_time_label_range(
             note_color,
         );
     }
-}
-
-fn format_gif_time(ms: i64) -> String {
-    let total_seconds = ms.max(0) / 1000;
-    format!("{}:{:02}", total_seconds / 60, total_seconds % 60)
 }

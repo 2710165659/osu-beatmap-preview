@@ -33,7 +33,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard|std] [--mods
 | `--convert` | 转谱模式，支持 `mania` / `ctb` / `taiko` / `standard` / `std`。仅 Standard 可用。 |
 | `--mods` | Mod 组合，用 `+` 连接，如 `hd+hr`；倍速类可带数值，如 `dt1.25`。 |
 | `--fmt` | 输出格式：`gif` / `png` / `mp4`。不填时按模式取默认值。 |
-| `--time` | 时间点或时间范围，单位秒。|
+| `--time` | 游戏皮肤时间轴上的时间点或范围，单位秒；目标模式首个可玩物件为 `0:00`，支持负数。|
 | `--gif-clip` | 仅 GIF 可用，输出单屏连续 GIF，不显示时间标签。 |
 | `--gif-clip-label` | 仅 GIF 可用，和 `--gif-clip` 同类，但会显示时间标签。 |
 | `--preview-30s` | 仅 MP4 可用，按 `PreviewTime` 附近渲染约 30 秒实际播放时长。 |
@@ -43,7 +43,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard|std] [--mods
 | `--no-cache` | 跳过下载缓存与输出缓存，强制重新渲染。 |
 | `--version` | 打印版本号与构建时间后退出。 |
 
-> `--time` 用于指定预览时间，单位为秒。普通 GIF 和 Standard PNG 可传入 1–4 个时间点，使用 `+` 分隔；MP4、`--gif-clip` 和 `--gif-clip-label` 使用 `--time` 时必须传入两个时间点，表示从 `t1` 到 `t2` 的区间。
+> `--time` 与 osu! 游戏内歌曲进度皮肤组件使用同一时间轴：转谱后的目标模式首个可玩物件为 `0:00`，不是编辑器左下角的绝对音轨时间。普通 GIF 和 Standard PNG 可传入 1–4 个时间点；MP4、`--gif-clip` 和 `--gif-clip-label` 必须传入两个时间点表示区间。负数表示首物件之前，建议使用等号形式，例如 `--time=-2+10`；早于音频起点的 MP4 部分输出静音。
 
 ### 示例
 
@@ -62,6 +62,9 @@ osu-beatmap-preview --bid=123456 --mods=hd+hr
 
 # 指定多个 GIF 预览时间点
 osu-beatmap-preview --bid=123456 --fmt=gif --time=10+25+60
+
+# 从首物件前 2 秒开始渲染连续 GIF
+osu-beatmap-preview --bid=123456 --fmt=gif --gif-clip-label --time=-2+10
 
 # 指定区间，输出无时间标签的连续 GIF
 osu-beatmap-preview --bid=123456 --fmt=gif --gif-clip --time=30+42
@@ -121,11 +124,11 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 
 ### GIF 动图
 
-使用 `--fmt=gif` 输出 GIF 动图。默认输出多段预览，可用 `--time=t1+t2+...` 指定预览时间点。`--gif-clip` 输出单屏连续 GIF，不显示时间标签；`--gif-clip-label` 同样输出单屏连续 GIF，但会显示时间标签。未指定区间时，单屏模式默认从 `.osu` 的 `PreviewTime` 附近渲染约 10 秒；尾段不足时会向前补足。
+使用 `--fmt=gif` 输出 GIF 动图。默认输出多段预览，可用 `--time=t1+t2+...` 指定游戏皮肤时间轴上的预览点。`--gif-clip` 输出单屏连续 GIF，不显示时间标签；`--gif-clip-label` 同样输出单屏连续 GIF，但会显示时间标签。未指定区间时，单屏模式仍按 `.osu` 的绝对 `PreviewTime` 选段，标签会换算为首物件相对时间；尾段不足时会向前补足。
 
 ### MP4 视频
 
-使用 `--fmt=mp4` 输出带谱面音频的视频，支持四种模式。默认渲染全谱面，也可用 `--time=t1+t2` 指定视频区间；`--preview-30s` 会从 `.osu` 的 `PreviewTime` 附近渲染约 30 秒实际播放时长，不能与 `--time` 同时使用。预览时间落在谱面尾段时，会向前补足播放时长。
+使用 `--fmt=mp4` 输出带谱面音频的视频，支持四种模式。默认渲染全谱面，也可用 `--time=t1+t2` 指定游戏皮肤时间轴上的视频区间；负时间或全谱默认 padding 会显示为负标签，落在音频文件前的部分为静音。`--preview-30s` 会从 `.osu` 的绝对 `PreviewTime` 附近渲染约 30 秒实际播放时长，不能与 `--time` 同时使用。预览时间落在谱面尾段时，会向前补足播放时长。
 
 ### 命令行输出
 

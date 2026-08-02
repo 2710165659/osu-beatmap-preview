@@ -3,7 +3,9 @@
 //! 单帧 683×384（16:9），playfield 的位置与缩放按游戏内 1080p 等比换算
 //! （见 constants.rs 中 GIF_PLAYFIELD_* 常量），上下左右留白与游戏一致。
 
-use crate::common::time_selection::{GifClipRange, GifRenderOptions, PreviewTimeSelector};
+use crate::common::time_selection::{
+    GifClipRange, GifRenderOptions, PreviewTimeSelector, TimeAxis,
+};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -80,9 +82,10 @@ pub(crate) fn render_catch_gif(
     output_path: &Path,
 ) -> Result<()> {
     match options {
-        GifRenderOptions::Segments(times_ms) => {
-            render_catch_segment_gif(beatmap, mods, times_ms, output_path)
-        }
+        GifRenderOptions::Segments {
+            times_ms,
+            time_axis,
+        } => render_catch_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
         GifRenderOptions::Clip {
             range,
             show_time_label,
@@ -94,6 +97,7 @@ fn render_catch_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
+    time_axis: TimeAxis,
     output_path: &Path,
 ) -> Result<()> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
@@ -158,6 +162,7 @@ fn render_catch_segment_gif(
                 frame_x,
                 frame_y,
                 segment_timing.is_preview,
+                time_axis,
             );
         }
         canvas
@@ -225,6 +230,7 @@ fn render_catch_clip_gif(
                 frame_x,
                 frame_y,
                 range.is_preview,
+                range.time_axis,
             );
         }
         canvas
@@ -312,11 +318,12 @@ fn draw_gif_time_label(
     frame_x: i64,
     frame_y: i64,
     is_preview: bool,
+    time_axis: TimeAxis,
 ) {
     let label = format!(
         "{} - {}",
-        format_mmss(start_time),
-        format_mmss(start_time + duration_ms)
+        crate::render::text::format_mmss_floor(time_axis.to_display(start_time)),
+        crate::render::text::format_mmss_floor(time_axis.to_display(start_time + duration_ms))
     );
     let color = if is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
@@ -355,8 +362,13 @@ fn draw_gif_time_label_range(
     frame_x: i64,
     frame_y: i64,
     is_preview: bool,
+    time_axis: TimeAxis,
 ) {
-    let label = format!("{} - {}", format_mmss(start_time), format_mmss(end_time));
+    let label = format!(
+        "{} - {}",
+        crate::render::text::format_mmss_floor(time_axis.to_display(start_time)),
+        crate::render::text::format_mmss_floor(time_axis.to_display(end_time))
+    );
     let color = if is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
     } else {
@@ -385,9 +397,4 @@ fn draw_gif_time_label_range(
             note_color,
         );
     }
-}
-
-fn format_mmss(ms: i64) -> String {
-    let total_seconds = ms.max(0) / 1000;
-    format!("{}:{:02}", total_seconds / 60, total_seconds % 60)
 }

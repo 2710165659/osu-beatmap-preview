@@ -1,6 +1,7 @@
 //! osu!mania PNG grid renderer.
 //! Port of beatmap_preview/mania/renderer.py.
 
+use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
@@ -62,6 +63,7 @@ pub(crate) fn render_mania_grid(
     beatmap: &Beatmap,
     output_path: &Path,
     mods: Option<&ModSettings>,
+    time_axis: TimeAxis,
 ) -> Result<PathBuf> {
     // key count comes straight from the beatmap CS (mods don't change native mania lanes)
     let key_count = resolve_key_count(beatmap)?;
@@ -160,7 +162,7 @@ pub(crate) fn render_mania_grid(
                 last_label_time = Some(tl.time);
             }
         }
-        draw_timing_line(&mut image, &tl, &layout);
+        draw_timing_line(&mut image, &tl, &layout, time_axis);
     }
     for sv_change in &sv_changes {
         draw_sv_indicator(&mut image, *sv_change, &layout);
@@ -274,7 +276,12 @@ fn draw_column_background(
     }
 }
 
-fn draw_timing_line(image: &mut Img, timing_line: &TimingLine, layout: &RenderLayout) {
+fn draw_timing_line(
+    image: &mut Img,
+    timing_line: &TimingLine,
+    layout: &RenderLayout,
+    time_axis: TimeAxis,
+) {
     let column_index =
         (timing_line.time.div_euclid(layout.time_per_column)).min(layout.column_count - 1);
     let local_time = timing_line.time - column_index * layout.time_per_column;
@@ -292,9 +299,8 @@ fn draw_timing_line(image: &mut Img, timing_line: &TimingLine, layout: &RenderLa
     );
 
     if timing_line.show_label {
-        let label = format!(
-            "{:.1}s",
-            (timing_line.time + layout.chart_start_time) as f64 / 1000.0
+        let label = crate::render::text::format_seconds_tenths(
+            time_axis.to_display(timing_line.time + layout.chart_start_time),
         );
         let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
         let label_width = label_width as i64;

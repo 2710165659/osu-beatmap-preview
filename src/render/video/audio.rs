@@ -566,6 +566,26 @@ mod tests {
     }
 
     #[test]
+    fn negative_chart_start_is_silent_until_audio_time_zero() {
+        let decoded = DecodedAudio {
+            sample_rate: 1_000,
+            stereo_samples: (0..100_i16)
+                .flat_map(|value| {
+                    let sample = 100 + value * 100;
+                    [sample, sample]
+                })
+                .collect(),
+        };
+        let mut output = [0_i16; 8];
+
+        fill_audio_frame(&mut output, 23_999, 24_003, &decoded, -500, 1.0, 0);
+
+        assert_eq!(&output[..2], &[0, 0]);
+        assert_eq!(&output[2..4], &[100, 100]);
+        assert!(output[4] > 100);
+    }
+
+    #[test]
     fn audio_lead_in_extends_full_video_start_without_shifting_audio() {
         assert_eq!(full_video_start_time(5_000, 0), 3_000);
         assert_eq!(full_video_start_time(5_000, 1_000), 3_000);
