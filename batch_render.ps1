@@ -56,11 +56,11 @@ $tasks.Add((New-Task "taiko" "2923535" "gif" $null "cs"))
 $tasks.Add((New-Task "catch" "3852338" "gif" $null "hr"))
 $tasks.Add((New-Task "catch" "3807626" "png" $null "ez"))
 $tasks.Add((New-Task "catch" "944502" "gif" $null "dt1.4"))
-# mania: 支持 IN HO（png/gif）、CS DS（gif）、K（key mod）
+# mania: 支持 IN HO（png/gif）、CS（gif）；DS 仅转谱为 mania 后可用
 $tasks.Add((New-Task "mania" "4312004"  "png" $null "in"))
 $tasks.Add((New-Task "mania" "4610729" "gif" $null "ho"))
 $tasks.Add((New-Task "mania" "5061439" "gif" $null "cs"))
-$tasks.Add((New-Task "mania" "4789195" "gif" $null "ds"))
+$tasks.Add((New-Task "convert" "5473947" "gif" "mania" "ds"))
 
 # ── 穿插：转谱示例（仅 standard 谱面可转），png + gif ──
 $tasks.Add((New-Task "convert" "738063"  "png" "taiko"))

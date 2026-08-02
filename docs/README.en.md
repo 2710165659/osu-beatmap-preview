@@ -6,14 +6,11 @@
 
 ## Features
 
-- **Single executable**: skin resources are embedded at compile time, with no runtime dependency.
-- **Cross-platform**: Windows / Linux / macOS.
-- **Four game modes**: `standard`, `taiko`, `catch`, and `mania`.
-- **Three output formats**: animated `gif`, static `png`, and `mp4` video with the beatmap audio.
-- **GPU-accelerated video encoding**: Windows automatically detects NVIDIA NVENC / AMD AMF hardware encoders and falls back to CPU `openh264` when no GPU is available. Linux / macOS use CPU encoding.
-- **Mod support**: `EZ` `HR` `HD` `DA` `DT` `HT` `SW` `CS` `1K`-`10K` `DS` `IN` `HO`.
-- **Efficient rendering**: fast rendering, low memory usage, and compact output files. See the [batch rendering report](report.txt).
-- **Multi-process-safe logs**: shared `render.log` (NDJSON summary, one line per beatmap with timing, bid, render duration, and beatmap/environment information) and `progress.log` (a stage event stream that can be followed with `tail -f`). Concurrent processes can write to the same files without interleaving entries.
+- **Single executable file**: All resources are embedded into the binary at compile time, with no external dependencies at runtime—ready to use out of the box.  
+- **Cross-platform**: Natively supports Windows, Linux, and macOS.  
+- **Full-featured**: Supports four game modes, MOD, conversions, and SV functionality.  
+- **Three output formats**: GIF animations, static PNG long images, and MP4 videos containing the original chart audio.  
+- **High performance**: Video encoding leverages GPU acceleration, and the overall processing pipeline is fast, memory-efficient, and produces small output files. See the [batch rendering report](report.txt) for details.
 
 > If this project is useful to you, please consider giving it a ⭐ Star.
 

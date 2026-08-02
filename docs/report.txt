@@ -1,98 +1,141 @@
+以下渲染不包含.osu或.osz下载时间。
+
 osu-beatmap-preview (Rust) 批量渲染报告
-生成时间: 2026-07-25 13:53:04
+生成时间: 2026-08-02 10:54:54
 任务总数: 90    成功: 90    失败: 0
-总耗时: 70863ms (70.9s)    峰值内存(单进程最大): 418.4MB
-CPU 统计: 平均 135.9%    最高 475.8%    总CPU时间 115.8s
+总耗时: 68065ms (68.1s)    峰值内存(单进程最大): 923.4MB
+CPU 统计: 平均 120.4%    最高 542.8%    总CPU时间 126.4s
 
   #  MODE    LABEL                                      STATUS        TIME   PEAKMEM        SIZE       %
 --------------------------------------------------------------------------------------------------------------
-  1  std     standard_738063.png                        success      392ms    72.4MB     384.3KB   91.7%
-  2  std     standard_2875069.png                       success      351ms      72MB     353.8KB   97.9%
-  3  std     standard_4897202.png                       success      314ms    71.9MB     347.2KB  104.5%
-  4  std     standard_1024742.png                       success      347ms    73.1MB       433KB   94.6%
-  5  std     standard_372245.png                        success      619ms    76.7MB    1229.8KB   93.4%
-  6  std     standard_1529760.png                       success     1867ms   126.3MB       617KB   97.1%
-  7  std     standard_5467386.png                       success      494ms    78.5MB     221.8KB   98.1%
-  8  std     standard_738063.gif                        success     1033ms   118.6MB    2000.8KB  258.7%
-  9  std     standard_2875069.gif                       success      898ms    95.6MB    1625.2KB  255.8%
- 10  std     standard_4897202.gif                       success      964ms    91.4MB    1970.6KB  202.6%
- 11  std     standard_1024742.gif                       success      979ms   107.8MB    2098.2KB  231.4%
- 12  std     standard_372245.gif                        success     1397ms    87.3MB    5946.2KB  272.9%
- 13  std     standard_1529760.gif                       success     3169ms   418.4MB    1716.1KB  475.8%
- 14  std     standard_5467386.gif                       success     1284ms     116MB    1096.6KB  356.6%
- 15  taiko   taiko_4242023.png                          success      151ms      78MB     161.7KB  103.5%
- 16  taiko   taiko_1418246.png                          success      284ms   112.5MB     406.9KB   93.5%
- 17  taiko   taiko_4590053.png                          success      130ms    56.9MB      92.2KB   72.1%
- 18  taiko   taiko_2923535.png                          success      214ms    80.2MB     293.1KB   87.6%
- 19  taiko   taiko_5651058.png                          success      402ms   227.6MB     411.8KB   93.3%
- 20  taiko   taiko_3726150.png                          success      215ms   109.5MB       161KB   87.2%
- 21  taiko   taiko_4242023.gif                          success      259ms    24.4MB     740.3KB  114.6%
- 22  taiko   taiko_1418246.gif                          success      280ms    26.3MB     970.1KB   89.3%
- 23  taiko   taiko_4590053.gif                          success      244ms    24.7MB     586.6KB  134.5%
- 24  taiko   taiko_2923535.gif                          success      308ms    28.1MB    1461.9KB    137%
- 25  taiko   taiko_5651058.gif                          success      274ms    24.5MB    1165.5KB   91.2%
- 26  taiko   taiko_3726150.gif                          success      246ms    23.7MB     536.8KB   88.9%
- 27  catch   catch_3852338.png                          success      151ms    56.4MB     259.2KB   82.8%
- 28  catch   catch_3807626.png                          success      306ms   154.5MB     773.4KB   91.9%
- 29  catch   catch_944502.png                           success      160ms      41MB     533.7KB   87.9%
- 30  catch   catch_2571609.png                          success      591ms   343.8MB    1202.5KB  105.8%
- 31  catch   catch_265177.png                           success      257ms    94.8MB     686.8KB   85.1%
- 32  catch   catch_3852338.gif                          success      661ms    54.2MB    1164.2KB  179.7%
- 33  catch   catch_3807626.gif                          success      662ms    56.4MB    1166.5KB  127.5%
- 34  catch   catch_944502.gif                           success      848ms    63.1MB    5127.6KB  180.6%
- 35  catch   catch_2571609.gif                          success      682ms    57.8MB     724.2KB  119.1%
- 36  catch   catch_265177.gif                           success      775ms    61.2MB    2453.7KB  167.3%
- 37  mania   mania_4312004.png                          success      381ms   239.1MB     263.3KB   94.3%
- 38  mania   mania_4610729.png                          success      153ms    77.3MB      63.8KB   81.7%
- 39  mania   mania_5061439.png                          success      121ms    62.7MB      69.8KB   90.4%
- 40  mania   mania_4789195.png                          success      279ms   152.3MB     395.7KB  100.8%
- 41  mania   mania_3793380.png                          success      248ms   124.3MB     238.8KB   81.9%
- 42  mania   mania_4665942.png                          success      199ms   117.3MB      85.5KB   86.4%
- 43  mania   mania_5354177.png                          success      249ms     144MB     106.2KB   87.9%
- 44  mania   mania_5221843.png                          success      121ms    55.1MB     116.3KB   90.4%
- 45  mania   mania_5369780.png                          success      279ms   157.7MB     110.8KB     84%
- 46  mania   mania_4972672.png                          success      383ms   248.3MB     164.1KB   89.8%
- 47  mania   mania_5013742.png                          success      383ms   260.3MB     102.4KB   93.8%
- 48  mania   mania_4312004.gif                          success     1815ms    65.9MB    2348.3KB  108.5%
- 49  mania   mania_4610729.gif                          success     1679ms    65.4MB    1035.7KB  117.3%
- 50  mania   mania_5061439.gif                          success     1705ms      65MB    1190.9KB  106.3%
- 51  mania   mania_4789195.gif                          success     1769ms      69MB    1664.1KB   99.8%
- 52  mania   mania_3793380.gif                          success     1521ms      67MB    1012.1KB  104.8%
- 53  mania   mania_4665942.gif                          success     1923ms    73.4MB    1415.6KB  115.4%
- 54  mania   mania_5354177.gif                          success     1737ms    68.6MB     730.6KB  108.8%
- 55  mania   mania_5221843.gif                          success     2142ms    79.7MB    1670.6KB  115.3%
- 56  mania   mania_5369780.gif                          success     2036ms    78.7MB     983.1KB  115.9%
- 57  mania   mania_4972672.gif                          success     2675ms    89.6MB    1365.5KB  109.2%
- 58  mania   mania_5013742.gif                          success     3632ms    87.4MB     818.9KB  107.6%
- 59  std     standard_738063_hd-hr.gif                  success      835ms     105MB     876.5KB  250.7%
- 60  std     standard_2875069_hr.png                    success      276ms    71.9MB       207KB   84.9%
- 61  std     standard_4897202_dt1.3.gif                 success      960ms    91.9MB    2083.9KB  224.6%
- 62  std     standard_1024742_daar9.5-dacs4.5.gif       success      912ms    97.6MB    1892.9KB  210.7%
- 63  std     standard_5467386_ez-hd.gif                 success     1641ms   167.8MB    1744.6KB  382.8%
- 64  taiko   taiko_4242023_hr.gif                       success      245ms    24.1MB     580.9KB  133.9%
- 65  taiko   taiko_1418246_dt.gif                       success      276ms    26.2MB    1045.7KB   96.2%
- 66  taiko   taiko_4590053_sw.png                       success      128ms    56.8MB      92.6KB   85.4%
- 67  taiko   taiko_2923535_cs.gif                       success      347ms    28.7MB    1742.7KB  130.6%
- 68  catch   catch_3852338_hr.gif                       success      635ms    53.3MB     715.4KB  125.5%
- 69  catch   catch_3807626_ez.png                       success      276ms    85.4MB     955.5KB   84.9%
- 70  catch   catch_944502_dt1.4.gif                     success      933ms    62.6MB    4009.9KB  164.1%
- 71  mania   mania_4312004_in.png                       success      473ms   239.1MB     265.5KB   95.8%
- 72  mania   mania_4610729_ho.gif                       success     1773ms    65.2MB     938.4KB  114.6%
- 73  mania   mania_5061439_cs.gif                       success     1743ms    65.4MB    1086.2KB    113%
- 74  mania   mania_4789195_ds.gif                       success     1824ms    70.1MB      1864KB  127.6%
- 75  convert taiko_738063_convert.png                   success      106ms    49.8MB      60.1KB  103.2%
- 76  convert taiko_2875069_convert.gif                  success      255ms    23.6MB     607.6KB   91.9%
- 77  convert catch_4897202_convert.png                  success      275ms   118.2MB     563.5KB   90.9%
- 78  convert catch_1024742_convert.gif                  success      746ms    59.7MB    1342.5KB  159.2%
- 79  convert mania_372245_convert.png                   success      168ms    87.6MB       121KB     93%
- 80  convert mania_1529760_convert.gif                  success      814ms    78.3MB     269.6KB  149.7%
- 81  convert taiko_5467386_convert.gif                  success      134ms    28.3MB      50.8KB  221.5%
- 82  convert taiko_260177_convert.png                   success      124ms    58.1MB      83.5KB   88.2%
- 83  convert catch_260177_convert.png                   success      262ms   144.3MB       250KB   95.4%
- 84  std     standard_738063_t30-40-50-60.gif           success     1132ms   118.7MB    1941.1KB  311.9%
- 85  std     standard_2875069_t10-25-60.gif             success     1004ms    94.1MB    1533.1KB  247.4%
- 86  std     standard_4897202_t45.gif                   success      990ms    94.9MB    1891.6KB  208.3%
- 87  convert mania_738063_convert_in.gif                success     2175ms    78.6MB    1612.2KB  146.6%
- 88  convert catch_2875069_convert_hr.gif               success      697ms    54.6MB       596KB    130%
- 89  std     standard_4897202_hd-dt1.25_t20-40.gif      success      914ms    97.6MB     945.1KB  230.8%
- 90  convert taiko_5467386_convert_hr_t15-30.gif        success      152ms    28.9MB      72.4KB   92.5%
+  1  std     standard_738063.png                        success      385ms    72.4MB     402.8KB   93.3%
+  2  std     standard_2875069.png                       success      340ms      72MB     320.3KB  101.1%
+  3  std     standard_4897202.png                       success      290ms    72.9MB     350.8KB   80.8%
+  4  std     standard_1024742.png                       success      339ms    73.1MB     407.1KB   87.6%
+  5  std     standard_372245.png                        success      721ms    76.9MB    1598.2KB   97.5%
+  6  std     standard_1529760.png                       success     1307ms    93.2MB     502.8KB   94.4%
+  7  std     standard_5467386.png                       success      505ms    78.8MB     221.2KB   92.8%
+  8  std     standard_738063.gif                        success     1136ms   120.4MB    1987.1KB  265.5%
+  9  std     standard_2875069.gif                       success      961ms    93.5MB    1650.3KB    239%
+ 10  std     standard_4897202.gif                       success      946ms    91.2MB      1796KB  224.6%
+ 11  std     standard_1024742.gif                       success      932ms   101.7MB    1876.3KB  246.4%
+ 12  std     standard_372245.gif                        success     1624ms   104.8MB    8076.1KB  302.1%
+ 13  std     standard_1529760.gif                       success     6091ms   923.4MB    4022.5KB  542.8%
+ 14  std     standard_5467386.gif                       success     1285ms   116.7MB      1032KB  325.9%
+ 15  taiko   taiko_4242023.png                          success       59ms     8.1MB     162.3KB   26.5%
+ 16  taiko   taiko_1418246.png                          success       59ms     8.5MB       410KB     53%
+ 17  taiko   taiko_4590053.png                          success       44ms     2.8MB        93KB   35.5%
+ 18  taiko   taiko_2923535.png                          success       57ms     9.3MB     293.3KB   54.8%
+ 19  taiko   taiko_5651058.png                          success       28ms     3.9MB     411.6KB   55.8%
+ 20  taiko   taiko_3726150.png                          success       58ms       4MB     160.5KB   26.9%
+ 21  taiko   taiko_4242023.gif                          success      276ms    24.4MB     925.8KB   96.2%
+ 22  taiko   taiko_1418246.gif                          success      278ms    26.6MB     805.4KB  174.2%
+ 23  taiko   taiko_4590053.gif                          success      246ms    23.8MB       709KB   95.3%
+ 24  taiko   taiko_2923535.gif                          success      305ms    28.3MB    1545.3KB  133.2%
+ 25  taiko   taiko_5651058.gif                          success      275ms    24.9MB     907.5KB  159.1%
+ 26  taiko   taiko_3726150.gif                          success      245ms    23.9MB     580.7KB  133.9%
+ 27  catch   catch_3852338.png                          success       61ms     8.1MB     259.7KB   25.6%
+ 28  catch   catch_3807626.png                          success       38ms     3.8MB     772.6KB   41.1%
+ 29  catch   catch_944502.png                           success       60ms     8.8MB     533.8KB     26%
+ 30  catch   catch_2571609.png                          success       39ms     3.6MB    1199.6KB   40.1%
+ 31  catch   catch_265177.png                           success       29ms       4MB     687.9KB  107.8%
+ 32  catch   catch_3852338.gif                          success      652ms    53.4MB    1145.5KB  112.6%
+ 33  catch   catch_3807626.gif                          success      715ms    56.7MB    1478.8KB  146.4%
+ 34  catch   catch_944502.gif                           success      873ms    62.8MB    5300.8KB  150.3%
+ 35  catch   catch_2571609.gif                          success      685ms    58.4MB     795.4KB    187%
+ 36  catch   catch_265177.gif                           success      779ms    61.4MB      2120KB  170.5%
+ 37  mania   mania_4312004.png                          success       57ms     8.9MB       265KB   54.8%
+ 38  mania   mania_4610729.png                          success       27ms     3.9MB      62.3KB   57.9%
+ 39  mania   mania_5061439.png                          success       28ms     3.9MB      69.9KB   55.8%
+ 40  mania   mania_4789195.png                          success       58ms     8.8MB     395.6KB   53.9%
+ 41  mania   mania_3793380.png                          success       28ms     3.9MB     238.5KB   55.8%
+ 42  mania   mania_4665942.png                          success       30ms     3.9MB      85.6KB  104.2%
+ 43  mania   mania_5354177.png                          success       57ms     8.6MB     106.1KB   27.4%
+ 44  mania   mania_5221843.png                          success       58ms     3.9MB     116.2KB   26.9%
+ 45  mania   mania_5369780.png                          success       71ms     7.4MB       112KB     44%
+ 46  mania   mania_4972672.png                          success       27ms       4MB     163.7KB      0%
+ 47  mania   mania_5013742.png                          success       56ms     8.6MB     102.5KB   27.9%
+ 48  mania   mania_4312004.gif                          success     1804ms    65.9MB    2144.5KB  125.6%
+ 49  mania   mania_4610729.gif                          success     1722ms    65.2MB     937.8KB  106.2%
+ 50  mania   mania_5061439.gif                          success     1714ms    65.1MB    1088.6KB  127.6%
+ 51  mania   mania_4789195.gif                          success     1806ms    68.9MB    1753.9KB  109.9%
+ 52  mania   mania_3793380.gif                          success     1723ms    67.1MB    1230.6KB  100.7%
+ 53  mania   mania_4665942.gif                          success     1875ms    73.1MB    1504.7KB   98.3%
+ 54  mania   mania_5354177.gif                          success     1716ms      69MB       835KB  103.8%
+ 55  mania   mania_5221843.gif                          success     2184ms    79.9MB      1669KB  105.2%
+ 56  mania   mania_5369780.gif                          success     2070ms    78.6MB    1066.7KB  120.8%
+ 57  mania   mania_4972672.gif                          success     2703ms    89.7MB      1351KB    133%
+ 58  mania   mania_5013742.gif                          success     3717ms    87.6MB    1024.4KB    116%
+ 59  std     standard_738063_hd-hr.gif                  success      843ms   107.9MB     878.6KB  274.3%
+ 60  std     standard_2875069_hr.png                    success      256ms    72.1MB     202.2KB    116%
+ 61  std     standard_4897202_dt1.3.gif                 success      966ms    94.2MB    1972.7KB  205.4%
+ 62  std     standard_1024742_daar9.5-dacs4.5.gif       success      915ms    95.8MB    1751.7KB  191.3%
+ 63  std     standard_5467386_ez-hd.gif                 success     1524ms   160.9MB    1610.4KB  382.4%
+ 64  taiko   taiko_4242023_hr.gif                       success      249ms    24.1MB     535.4KB   94.1%
+ 65  taiko   taiko_1418246_dt.gif                       success      273ms    26.3MB     782.9KB   97.3%
+ 66  taiko   taiko_4590053_sw.png                       success       27ms       4MB      93.2KB   57.9%
+ 67  taiko   taiko_2923535_cs.gif                       success      321ms    29.5MB    1476.9KB  141.2%
+ 68  catch   catch_3852338_hr.gif                       success      626ms      54MB     712.7KB  147.3%
+ 69  catch   catch_3807626_ez.png                       success       28ms     3.9MB     949.2KB   55.8%
+ 70  catch   catch_944502_dt1.4.gif                     success      885ms    63.8MB    5225.9KB  169.5%
+ 71  mania   mania_4312004_in.png                       success       56ms     7.5MB     265.4KB   55.8%
+ 72  mania   mania_4610729_ho.gif                       success     1700ms    65.1MB     989.1KB  114.9%
+ 73  mania   mania_5061439_cs.gif                       success     1705ms      65MB    1312.8KB  107.2%
+ 74  convert mania_5473947_convert_ds.gif               success     3456ms    92.6MB    1425.9KB  108.1%
+ 75  convert taiko_738063_convert.png                   success       29ms       4MB      59.7KB   53.9%
+ 76  convert taiko_2875069_convert.gif                  success      277ms    24.1MB       637KB   84.6%
+ 77  convert catch_4897202_convert.png                  success       40ms       4MB     558.7KB   39.1%
+ 78  convert catch_1024742_convert.gif                  success      714ms      63MB      1281KB  166.3%
+ 79  convert mania_372245_convert.png                   success       28ms       4MB     121.3KB   55.8%
+ 80  convert mania_1529760_convert.gif                  success      805ms    78.8MB     299.8KB    132%
+ 81  convert taiko_5467386_convert.gif                  success      153ms    28.6MB      60.5KB   81.7%
+ 82  convert taiko_260177_convert.png                   success       26ms       4MB      82.4KB   60.1%
+ 83  convert catch_260177_convert.png                   success       58ms     3.5MB     251.7KB   26.9%
+ 84  std     standard_738063_t30-40-50-60.gif           success       59ms      10MB      1964KB     53%
+ 85  std     standard_2875069_t10-25-60.gif             success      977ms   100.5MB    1538.7KB  255.9%
+ 86  std     standard_4897202_t45.gif                   success      966ms    97.4MB      1951KB    207%
+ 87  convert mania_738063_convert_in.gif                success     2177ms    78.8MB    1750.1KB  113.4%
+ 88  convert catch_2875069_convert_hr.gif               success      616ms    55.4MB     577.4KB  159.8%
+ 89  std     standard_4897202_hd-dt1.25_t20-40.gif      success      905ms   100.8MB     944.7KB  236.5%
+ 90  convert taiko_5467386_convert_hr_t15-30.gif        success      151ms    28.5MB      42.8KB  186.3%
+
+
+osu-beatmap-preview full MP4 benchmark
+Generated: 2026-08-02 10:40:05
+Binary: E:\MyCodes\rust\osu-beatmap-preview\target\release\osu-beatmap-preview.exe
+Output: C:\Users\27101\AppData\Local\Temp\osu-beatmap-preview\outputs\batch-video
+NoCache: False
+GPU sampling interval: 500ms
+GPU scope: process = Windows per-process GPU Engine; system = nvidia-smi whole GPU
+
+Tasks: 13  Success: 13  Failed: 0
+Total chart/video duration: 2098.066s
+Total wall time: 110635.2ms (110.64s)
+Overall average render cost: 52.73ms per chart-second
+Peak GPU: 46.0%  Peak process memory: 533.1MB
+
+GPU AVG includes download, audio preparation, rendering, and final mux wait.
+GPU ACTIVE AVG excludes samples at or below 0.5%.
+
+  # MODE   BID       STATUS     CHART(s)    WALL(ms)  ms/chart-s   GPU AVG   GPU ACTIVE   GPU PEAK      CPU    MEM MB   SIZE MB
+------------------------------------------------------------------------------------------------------------------------------------------------------
+  1 std    5242890   success      35.133      2315.1       65.89      0.0%         0.0%       0.0%   374.6%       5.3      4.09
+  2 std    4897202   success     149.467      5089.3       34.05     16.1%        20.7%      31.0%   241.0%     227.2     17.55
+  3 std    1024742   success     320.333     19376.0       60.49     26.1%        26.1%      41.0%   205.0%     533.1     38.79
+  4 taiko  5619629   success      94.600      1689.7       17.86     19.3%        19.3%      29.0%   172.0%      84.2      3.59
+  5 taiko  5175577   success     128.267      2222.1       17.32     28.5%        28.5%      30.0%   161.0%      88.6      8.86
+  6 taiko  1418246   success     286.333      4772.2       16.67     25.6%        28.8%      35.0%   120.5%     132.6     19.71
+  7 ctb    944502    success      41.467      1345.8       32.46     23.3%        23.3%      33.0%   174.1%      92.7      4.58
+  8 ctb    2103068   success      92.600      2216.4       23.93     13.2%        17.7%      24.0%   150.9%      96.6      6.63
+  9 ctb    2182842   success     241.933      5981.9       24.73     26.6%        26.6%      39.0%   142.4%     135.7     28.11
+ 10 mania  4624418   success      40.933      2385.9       58.29     18.0%        22.5%      37.0%   183.4%     122.0      1.41
+ 11 mania  5572554   success     142.267     11609.4       81.60     27.6%        30.5%      39.0%   109.3%     142.1      5.29
+ 12 mania  3562727   success      97.600      7458.7       76.42     26.5%        26.5%      37.0%   147.9%     134.1      2.98
+ 13 mania  4312004   success     427.133     44172.7      103.42     31.8%        32.2%      46.0%   104.0%     222.3     20.43
+
+Per-mode summary:
+  ctb    count= 3 duration=  376.000s wall=    9544.1ms cost=   25.38ms/chart-s avgGPU= 21.0%
+  mania  count= 4 duration=  707.933s wall=   65626.7ms cost=   92.70ms/chart-s avgGPU= 26.0%
+  std    count= 3 duration=  504.933s wall=   26780.4ms cost=   53.04ms/chart-s avgGPU= 14.1%
+  taiko  count= 3 duration=  509.200s wall=    8684.0ms cost=   17.05ms/chart-s avgGPU= 24.5%
+
