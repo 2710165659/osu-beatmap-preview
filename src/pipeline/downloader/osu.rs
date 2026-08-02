@@ -93,3 +93,89 @@ pub fn download_beatmap_file(bid: &str, temp_dir: &Path, no_cache: bool) -> Resu
     crate::log::record_cache(crate::log::CacheKind::Osu, "downloaded");
     Ok(target_path)
 }
+
+pub fn resolve_beatmap_set_id(bid: &str) -> Result<u64> {
+    let url = format!("https://osu.ppy.sh/beatmaps/{bid}");
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(20))
+        .build();
+    crate::log::event(
+        "resolve-set-id",
+        "start",
+        Some(bid),
+        &format!("following {url}"),
+    );
+
+    let response = agent
+        .head(&url)
+        .set("User-Agent", "osu-beatmap-preview/1.0")
+        .call()
+        .map_err(|error| {
+            crate::log::event("resolve-set-id", "error", Some(bid), &error.to_string());
+            PreviewError::download(format!(
+                "failed to resolve beatmap set for bid {bid}: {error}"
+            ))
+        })?;
+    let final_url = response.get_url();
+    let set_id = beatmap_set_id_from_url(final_url).ok_or_else(|| {
+        crate::log::event(
+            "resolve-set-id",
+            "error",
+            Some(bid),
+            &format!("unexpected redirect target: {final_url}"),
+        );
+        PreviewError::download(format!(
+            "failed to resolve beatmap set for bid {bid}: unexpected redirect target {final_url}"
+        ))
+    })?;
+
+    crate::log::event(
+        "resolve-set-id",
+        "done",
+        Some(bid),
+        &format!("set_id={set_id} redirect={final_url}"),
+    );
+    Ok(set_id)
+}
+
+fn beatmap_set_id_from_url(url: &str) -> Option<u64> {
+    let path = url.strip_prefix("https://osu.ppy.sh/beatmapsets/")?;
+    path.split(['/', '?', '#'])
+        .next()?
+        .parse::<u64>()
+        .ok()
+        .filter(|id| *id > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::beatmap_set_id_from_url;
+
+    #[test]
+    fn extracts_set_id_from_beatmap_redirect_url() {
+        assert_eq!(
+            beatmap_set_id_from_url("https://osu.ppy.sh/beatmapsets/1236927#osu/2628991"),
+            Some(1_236_927)
+        );
+        assert_eq!(
+            beatmap_set_id_from_url("https://osu.ppy.sh/beatmapsets/1236927/"),
+            Some(1_236_927)
+        );
+    }
+
+    #[test]
+    fn rejects_non_official_or_invalid_redirect_urls() {
+        assert_eq!(
+            beatmap_set_id_from_url("https://example.com/beatmapsets/1236927"),
+            None
+        );
+        assert_eq!(
+            beatmap_set_id_from_url("https://osu.ppy.sh/beatmapsets/not-a-number"),
+            None
+        );
+        assert_eq!(
+            beatmap_set_id_from_url("https://osu.ppy.sh/beatmapsets/0"),
+            None
+        );
+    }
+}

@@ -96,8 +96,13 @@ fn generate_preview_inner(
     rec.osu_bytes = beatmap_path.metadata().ok().map(|meta| meta.len());
 
     let t1 = Instant::now();
-    let beatmap = crate::parser::parse_beatmap(&beatmap_path)?;
+    let mut beatmap = crate::parser::parse_beatmap(&beatmap_path)?;
     rec.parse_ms = Some(t1.elapsed().as_secs_f64() * 1000.0);
+
+    if fmt == Some("mp4") && beatmap.beatmap_set_id().is_none() {
+        let set_id = crate::pipeline::downloader::resolve_beatmap_set_id(bid)?;
+        beatmap.metadata.insert("BeatmapSetID", set_id.to_string());
+    }
     fill_beatmap_info(&beatmap, rec);
 
     let mut target_mode = beatmap.mode();
