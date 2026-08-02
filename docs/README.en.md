@@ -125,7 +125,7 @@ Use `--fmt=gif` to output a GIF animation. By default, it outputs multiple previ
 
 ### MP4 Videos
 
-Use `--fmt=mp4` to output a video with beatmap audio for all four modes. The default covers the full beatmap; use `--time=t1+t2` to specify a range on the gameplay skin timeline. Negative time and the default full-chart padding are shown with negative labels, and portions before the audio file begins are silent. `--preview-30s` renders about 30 seconds near the absolute `.osu` `PreviewTime` and cannot be used with `--time`. If the preview is near the end, the range is shifted backward.
+Use `--fmt=mp4` to output a video with beatmap audio for all four modes. The default covers the full beatmap; use `--time=t1+t2` to specify a range on the gameplay skin timeline. The top-right label shows the current skin time on the left and the full playable duration from the first object through the last object's end on the right; the total is independent of the export range and padding. Negative time and the default full-chart padding are shown with negative labels, and portions before the audio file begins are silent. `--preview-30s` renders about 30 seconds near the absolute `.osu` `PreviewTime` and cannot be used with `--time`. If the preview is near the end, the range is shifted backward.
 
 ### Command-Line Output
 

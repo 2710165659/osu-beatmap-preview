@@ -178,15 +178,17 @@ trait FrameEncoder {
 /// `output_path`.
 ///
 /// `render` returns the playfield frame and the current absolute chart time
-/// (ms). `chart_end_ms` is also absolute; both are converted through
-/// `time_axis` before drawing the top-right "current / total" gameplay label.
+/// (ms). `last_object_ms` is the absolute end of the last playable object;
+/// both are converted through `time_axis` before drawing the top-right
+/// "current / total" gameplay label. The total is therefore independent of
+/// the selected export range and its leading/trailing padding.
 /// Frames are rendered in parallel chunks and encoded sequentially to preserve
 /// ordering; `fps` is both the encode frame rate and the MP4 timescale (1 tick
 /// per frame).
 pub(crate) fn save_mp4_streamed(
     frame_count: usize,
     chart_start_ms: i64,
-    chart_end_ms: i64,
+    last_object_ms: i64,
     speed: f64,
     render: impl Fn(usize) -> (Img, i64) + Send + Sync,
     output_path: &Path,
@@ -257,7 +259,7 @@ pub(crate) fn save_mp4_streamed(
     let first_comp = compose_frame(
         first_frame,
         time_axis.to_display(first_time),
-        time_axis.to_display(chart_end_ms),
+        time_axis.to_display(last_object_ms),
         out_w,
         out_h,
     );
@@ -343,7 +345,7 @@ pub(crate) fn save_mp4_streamed(
         let mut t_render = std::time::Duration::ZERO;
         let mut t_encode = std::time::Duration::ZERO;
         let mut t_mux = std::time::Duration::ZERO;
-        let chart_end = time_axis.to_display(chart_end_ms);
+        let gameplay_total = time_axis.to_display(last_object_ms);
         for chunk_start in (1..frame_count).step_by(par_chunk_size) {
             let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
             let t0 = Instant::now();
@@ -352,7 +354,7 @@ pub(crate) fn save_mp4_streamed(
                 .map(|fi| {
                     let (pf, time) = render(fi);
                     // compose here, in parallel — avoids serial bottleneck
-                    compose_frame(pf, time_axis.to_display(time), chart_end, out_w, out_h)
+                    compose_frame(pf, time_axis.to_display(time), gameplay_total, out_w, out_h)
                 })
                 .collect();
             t_render += t0.elapsed();
@@ -488,13 +490,13 @@ fn letterbox_dims(pf_w: u32, pf_h: u32) -> (u32, u32) {
 
 /// Place the playfield frame centered on a black 16:9 canvas and draw the
 /// "current / total" gameplay-time label in the top-right corner.
-fn compose_frame(pf: Img, current_ms: i64, end_ms: i64, out_w: u32, out_h: u32) -> Img {
+fn compose_frame(pf: Img, current_ms: i64, total_ms: i64, out_w: u32, out_h: u32) -> Img {
     let mut canvas = Img::new(out_w, out_h, BLACK_OPAQUE);
     let ox = ((out_w - pf.w) / 2) as i64;
     let oy = ((out_h - pf.h) / 2) as i64;
     canvas.alpha_composite(&pf, ox, oy);
 
-    let label = format!("{}/{}", format_mmss(current_ms), format_mmss(end_ms));
+    let label = format_progress_label(current_ms, total_ms);
     let (lw, _) = text_size(&label, LABEL_FONT_SIZE);
     let lx = out_w as i64 - lw as i64 - LABEL_PAD;
     draw_text(
@@ -506,6 +508,10 @@ fn compose_frame(pf: Img, current_ms: i64, end_ms: i64, out_w: u32, out_h: u32) 
         LABEL_COLOR,
     );
     canvas
+}
+
+fn format_progress_label(current_ms: i64, total_ms: i64) -> String {
+    format!("{}/{}", format_mmss(current_ms), format_mmss(total_ms))
 }
 
 fn format_mmss(ms: i64) -> String {
@@ -692,5 +698,21 @@ mod tests {
             resolve_video_time_range(&beatmap, 10_000, 100_000, Some(&[3_000, 9_000]), true, 1.0)
                 .unwrap_err();
         assert!(err.to_string().contains("--preview-30s"));
+    }
+
+    #[test]
+    fn progress_label_uses_current_skin_time_and_full_playable_duration() {
+        let time_axis = TimeAxis::new(12_500);
+        let total_ms = time_axis.to_display(102_500);
+
+        assert_eq!(total_ms, 90_000);
+        assert_eq!(
+            format_progress_label(time_axis.to_display(12_000), total_ms),
+            "-0:01/1:30"
+        );
+        assert_eq!(
+            format_progress_label(time_axis.to_display(92_500), total_ms),
+            "1:20/1:30"
+        );
     }
 }

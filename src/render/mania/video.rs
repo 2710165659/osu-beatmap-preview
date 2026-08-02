@@ -169,7 +169,7 @@ pub(crate) fn render_mania_video(
     save_mp4_streamed(
         frame_count,
         start,
-        end,
+        last,
         speed,
         render,
         output_path,
