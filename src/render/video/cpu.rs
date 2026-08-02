@@ -35,7 +35,12 @@ impl CpuEncoder {
             .max_frame_rate(FrameRate::from_hz(fps as f32))
             .intra_frame_period(IntraFramePeriod::from_num_frames(fps.saturating_mul(2)))
             .qp(QpRange::new(18, 42))
-            .skip_frames(true)
+            // A skipped frame produces no H.264 slice.  The MP4 muxer still
+            // has to account for the input frame's duration, and writing an
+            // empty sample creates a timestamp hole that strict players such
+            // as QQ Windows may stop on. Keep every input frame in the stream;
+            // rate control can still adjust QP toward the target bitrate.
+            .skip_frames(false)
             .scene_change_detect(true)
             .adaptive_quantization(false)
             .background_detection(false)

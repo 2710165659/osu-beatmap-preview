@@ -264,6 +264,12 @@ pub(crate) fn save_mp4_streamed(
         out_h,
     );
     let first_encoded = encoder.encode(&first_comp)?;
+    if first_encoded.slice.is_empty() {
+        return Err(PreviewError::render(format!(
+            "{} returned an empty H.264 sample for frame 0",
+            encoder.name()
+        )));
+    }
     let sps = first_encoded
         .sps
         .ok_or_else(|| PreviewError::render("missing SPS in first encoded frame"))?;
@@ -363,6 +369,12 @@ pub(crate) fn save_mp4_streamed(
                 let t2 = Instant::now();
                 let encoded = encoder.encode(&comp)?;
                 t_encode += t2.elapsed();
+                if encoded.slice.is_empty() {
+                    return Err(PreviewError::render(format!(
+                        "{} returned an empty H.264 sample for frame {i}",
+                        encoder.name()
+                    )));
+                }
 
                 let t3 = Instant::now();
                 let sample = mp4::Mp4Sample {
