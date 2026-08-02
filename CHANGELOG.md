@@ -3,25 +3,29 @@
 All notable changes to this project will be documented in this file.
 
 ---
-## [Unreleased]
+## [1.0.7] - 2026.08.02
 
 ### Fixed
 
 - OpenH264 CPU 编码器现在定期生成真实 IDR 帧，并按实际 H.264 NAL 类型写入 MP4 同步样本索引，修复 Linux 视频无法跳转以及 QQ 只能显示首帧的问题。
+- 修复 OpenH264 码率控制跳过视频帧后仍向 MP4 写入零长度 sample 的问题；现保证每个输入帧都有有效 H.264 数据，并在封装前拒绝空 sample，修复 QQ Windows 播放失败或中途停止。
 - MP4 封装完成后会内置执行 faststart 重排，将 `moov` 索引移动到文件前部并修正 chunk offset，修复 QQ 等聊天预览器只能播放前几秒或约 10 秒后停止的问题。
-- OpenH264 CPU 编码器使用约 500 kbps 的独立目标码率，在画质、文件体积和编码速度之间取得平衡。
 - 输出文件（PNG / GIF / MP4）改为原子写入：先写同目录临时文件，全部完成后才替换最终文件，渲染中断（如进程被强制关闭）不再在缓存路径留下损坏的半成品。缓存命中新增格式完整性校验，已损坏的旧缓存会被识别并自动重新渲染。
+- OSZ 下载进度日志现在会记录请求使用的 bid，便于区分同一谱面集内不同难度的渲染请求。
+- MP4 遇到 `.osu` 中缺失或无效的 `BeatmapSetID` 时，现在会根据 osu! 官方谱面页的重定向地址解析真实谱面集 ID，避免因无法下载 OSZ 音频而渲染失败。
 
 ### Added
 
 - 新增多进程安全日志系统：`render.log`（NDJSON 汇总，每谱面一行，含时间、bid、渲染时长、谱面信息与各阶段耗时）与 `progress.log`（可 `tail -f` 实时查看的阶段事件流），默认写入 `<临时目录>/osu-beatmap-preview/logs`。
 - 新增 `--log-dir=<DIR>`（覆盖日志目录）与 `--no-log`（关闭日志）参数，支持 `OSU_PREVIEW_LOG_DIR` 环境变量；stdout JSON 增加可选 `log` 字段，不影响现有解析。
-- 视频渲染支持从preview time开始固定30s画面输出。
-- gif渲染支持单游戏界面clip，默认10s。
+- 新增 `--preview-30s`，支持在 `.osu` 的 `PreviewTime` 附近输出约 30 秒 MP4 预览视频。
+- 新增 `--gif-clip` 与 `--gif-clip-label`，支持输出单屏连续 GIF；未指定时间区间时默认时长为 10 秒。
+- 渲染汇总日志新增 OSZ 下载耗时、缓存命中状态与视频处理耗时。
 
 ### Changed
 
 - `--time` / `--times` 改为使用 osu! 游戏皮肤时间轴：转谱后目标模式首物件为 `0:00`，支持负时间；所有可见时间标签同步采用该时间轴，MP4 右上角显示“当前皮肤时间 / 全谱可玩总时长”，内部谱面与音频计算仍使用绝对时间。
+- OpenH264 CPU 编码器改用约 500 kbps 的独立目标码率，在画质、文件体积和编码速度之间取得平衡。
 - 优化项目结构。
 - OSZ 下载改为智能镜像竞速，支持低速自动回退、最多 3 个来源并行，并为 osu.direct 自动选择和缓存 Cloudflare 优选 IP。
 
