@@ -2,6 +2,8 @@
 
 use crate::core::models::TimingPoint;
 
+pub(crate) const BPM_LABEL_COLOR: [u8; 4] = [255, 82, 82, 255];
+
 /// Return the active uninherited BPM at `time`, carrying the first red line
 /// backwards through leading silence just like osu! does.
 pub(crate) fn bpm_at(timing_points: &[TimingPoint], time: i64) -> Option<f64> {

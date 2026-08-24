@@ -29,7 +29,6 @@ pub(crate) const TIME_LABEL_HEIGHT: i64 = 76;
 pub(crate) const TIME_LABEL_TOP_GAP: i64 = 8;
 pub(crate) const TIME_LABEL_NOTE_TOP_GAP: i64 = 9;
 pub(crate) const TIME_LABEL_COLOR: Rgba = [232, 232, 232, 255];
-pub(crate) const TIME_LABEL_NOTE_COLOR: Rgba = [170, 170, 170, 255];
 pub(crate) const PREVIEW_TIME_LABEL_COLOR: Rgba = [95, 221, 108, 255];
 
 // ——— osu! source constants ———

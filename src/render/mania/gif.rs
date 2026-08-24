@@ -739,7 +739,9 @@ fn build_pre_label(
     } else {
         GIF_TIME_LABEL_COLOR
     };
-    let note_color = if timing.is_preview {
+    let note_color = if bpm.is_some() {
+        crate::render::timing::BPM_LABEL_COLOR
+    } else if timing.is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
     } else {
         GIF_TIME_LABEL_NOTE_COLOR
@@ -750,12 +752,7 @@ fn build_pre_label(
 
     let note = if timing.is_preview || bpm.is_some() {
         let bpm_label = bpm.map(crate::render::timing::format_bpm);
-        let note_text = match (timing.is_preview, bpm_label.as_deref()) {
-            (true, Some(bpm)) => format!("Preview Time | {bpm}"),
-            (true, None) => "Preview Time".to_owned(),
-            (false, Some(bpm)) => bpm.to_owned(),
-            (false, None) => unreachable!(),
-        };
+        let note_text = bpm_label.unwrap_or_else(|| "Preview Time".to_owned());
         let (note_w, _) = text_size(&note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE);
         let note_sprite = render_text_sprite(&note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE, note_color);
         let note_x = seg_left + (layout.segment_width - note_w as i64).div_euclid(2);

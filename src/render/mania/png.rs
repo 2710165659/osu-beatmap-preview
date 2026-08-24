@@ -306,13 +306,16 @@ fn draw_timing_line(
     );
 
     if timing_line.show_label {
-        let mut label = crate::render::text::format_seconds_tenths(
-            time_axis.to_display(timing_line.time + layout.chart_start_time),
-        );
-        if let Some(ref bpm_label) = timing_line.bpm_label {
-            label.push_str(" | ");
-            label.push_str(bpm_label);
-        }
+        let (label, color) = if let Some(ref bpm_label) = timing_line.bpm_label {
+            (bpm_label.clone(), crate::render::timing::BPM_LABEL_COLOR)
+        } else {
+            (
+                crate::render::text::format_seconds_tenths(
+                    time_axis.to_display(timing_line.time + layout.chart_start_time),
+                ),
+                RULER_TEXT,
+            )
+        };
         let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
         let label_width = label_width as i64;
         let text_mid_y = label_height as f64 / 2.0;
@@ -324,14 +327,7 @@ fn draw_timing_line(
             label_x = label_x.min(layout.image_width - PAGE_MARGIN_X - label_width);
         }
         let label_y = (chart_top as f64).max(y as f64 - text_mid_y).floor() as i64;
-        draw_text(
-            image,
-            label_x,
-            label_y,
-            &label,
-            TIME_LABEL_FONT_SIZE,
-            RULER_TEXT,
-        );
+        draw_text(image, label_x, label_y, &label, TIME_LABEL_FONT_SIZE, color);
     }
 }
 
@@ -476,7 +472,7 @@ fn build_timing_lines(
                     .map(|(&k, _)| k)
                     .unwrap_or(rounded);
                 if let Some(line) = ordered_unique.get_mut(&key) {
-                    line.bpm_label = Some(format!("{:.0}BPM", bpm.round()));
+                    line.bpm_label = Some(crate::render::timing::format_bpm(bpm));
                 }
             }
         }
@@ -496,7 +492,7 @@ fn build_timing_lines(
                 if let Some(line) = ordered_unique.get_mut(&k) {
                     // Only attach if not already labelled by a BPM change at the same time.
                     if line.bpm_label.is_none() {
-                        line.bpm_label = Some(format!("{:.0}BPM", bpm.round()));
+                        line.bpm_label = Some(crate::render::timing::format_bpm(bpm));
                     }
                 }
             }

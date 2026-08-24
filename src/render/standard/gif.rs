@@ -110,12 +110,7 @@ fn render_standard_segment_gif(
             canvas.alpha_composite(&frame, x, y);
             let bpm = crate::render::timing::bpm_at(&beatmap.timing_points, row_timing.start_time)
                 .map(crate::render::timing::format_bpm);
-            let note = match (row_timing.is_preview, bpm) {
-                (true, Some(bpm)) => Some(format!("Preview Time | {bpm}")),
-                (true, None) => Some("Preview Time".to_owned()),
-                (false, Some(bpm)) => Some(bpm),
-                (false, None) => None,
-            };
+            let note = bpm;
             let label = format!(
                 "{} - {}",
                 format_mmssmmm(time_axis.to_display(row_timing.start_time)),
@@ -134,11 +129,7 @@ fn render_standard_segment_gif(
                 } else {
                     TIME_LABEL_COLOR
                 },
-                if row_timing.is_preview {
-                    PREVIEW_TIME_LABEL_COLOR
-                } else {
-                    TIME_LABEL_NOTE_COLOR
-                },
+                crate::render::timing::BPM_LABEL_COLOR,
             );
         }
         canvas
@@ -207,12 +198,7 @@ fn render_standard_clip_gif(
             );
             let bpm = crate::render::timing::bpm_at(&beatmap.timing_points, range.start)
                 .map(crate::render::timing::format_bpm);
-            let note = match (range.is_preview, bpm) {
-                (true, Some(bpm)) => Some(format!("Preview Time | {bpm}")),
-                (true, None) => Some("Preview Time".to_owned()),
-                (false, Some(bpm)) => Some(bpm),
-                (false, None) => None,
-            };
+            let note = bpm;
             draw_time_label(
                 &mut canvas,
                 &label,
@@ -224,11 +210,7 @@ fn render_standard_clip_gif(
                 } else {
                     TIME_LABEL_COLOR
                 },
-                if range.is_preview {
-                    PREVIEW_TIME_LABEL_COLOR
-                } else {
-                    TIME_LABEL_NOTE_COLOR
-                },
+                crate::render::timing::BPM_LABEL_COLOR,
             );
         }
         canvas

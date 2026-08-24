@@ -64,33 +64,21 @@ pub(crate) fn render_standard_png(
                 &visible_groups[image_index],
             );
             canvas.alpha_composite(&frame, x, y);
-            let preview_note =
-                (image_index == 0 && row_timing.is_preview).then_some("Preview Time");
             let is_preview_label = row_timing.is_preview;
             let bpm_note = crate::render::timing::bpm_at(&beatmap.timing_points, snapshot_time)
                 .map(crate::render::timing::format_bpm);
-            let combined_note = match (preview_note, bpm_note.as_deref()) {
-                (Some(preview), Some(bpm)) => Some(format!("{preview} | {bpm}")),
-                (Some(preview), None) => Some(preview.to_owned()),
-                (None, Some(bpm)) => Some(bpm.to_owned()),
-                (None, None) => None,
-            };
             draw_time_label(
                 &mut canvas,
                 &format_mmssmmm(time_axis.to_display(snapshot_time)),
                 x,
                 y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP,
-                combined_note.as_deref(),
+                bpm_note.as_deref(),
                 if is_preview_label {
                     PREVIEW_TIME_LABEL_COLOR
                 } else {
                     TIME_LABEL_COLOR
                 },
-                if is_preview_label {
-                    PREVIEW_TIME_LABEL_COLOR
-                } else {
-                    TIME_LABEL_NOTE_COLOR
-                },
+                crate::render::timing::BPM_LABEL_COLOR,
             );
         }
     }

@@ -681,7 +681,9 @@ fn draw_time_label(
     } else {
         GIF_TIME_LABEL_COLOR
     };
-    let note_color = if is_preview {
+    let note_color = if bpm.is_some() {
+        crate::render::timing::BPM_LABEL_COLOR
+    } else if is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
     } else {
         GIF_TIME_LABEL_NOTE_COLOR
@@ -694,12 +696,7 @@ fn draw_time_label(
 
     if is_preview || bpm.is_some() {
         let bpm_label = bpm.map(crate::render::timing::format_bpm);
-        let note = match (is_preview, bpm_label.as_deref()) {
-            (true, Some(bpm)) => format!("Preview Time | {bpm}"),
-            (true, None) => "Preview Time".to_owned(),
-            (false, Some(bpm)) => bpm.to_owned(),
-            (false, None) => unreachable!(),
-        };
+        let note = bpm_label.unwrap_or_else(|| "Preview Time".to_owned());
         let (note_w, _) = text_size(&note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = (PAGE_MARGIN_X as f64
             + (layout.image_width - PAGE_MARGIN_X * 2 - note_w as i64) as f64 / 2.0)
@@ -736,7 +733,9 @@ fn draw_time_label_range(
     } else {
         GIF_TIME_LABEL_COLOR
     };
-    let note_color = if is_preview {
+    let note_color = if bpm.is_some() {
+        crate::render::timing::BPM_LABEL_COLOR
+    } else if is_preview {
         GIF_PREVIEW_TIME_LABEL_COLOR
     } else {
         GIF_TIME_LABEL_NOTE_COLOR
@@ -749,12 +748,7 @@ fn draw_time_label_range(
 
     if is_preview || bpm.is_some() {
         let bpm_label = bpm.map(crate::render::timing::format_bpm);
-        let note = match (is_preview, bpm_label.as_deref()) {
-            (true, Some(bpm)) => format!("Preview Time | {bpm}"),
-            (true, None) => "Preview Time".to_owned(),
-            (false, Some(bpm)) => bpm.to_owned(),
-            (false, None) => unreachable!(),
-        };
+        let note = bpm_label.unwrap_or_else(|| "Preview Time".to_owned());
         let (note_w, _) = text_size(&note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = (PAGE_MARGIN_X as f64
             + (layout.image_width - PAGE_MARGIN_X * 2 - note_w as i64) as f64 / 2.0)

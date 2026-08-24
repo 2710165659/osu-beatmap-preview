@@ -381,19 +381,27 @@ fn draw_time_label(
     layout: &RenderLayout,
     time_axis: TimeAxis,
 ) {
-    let mut label = crate::render::text::format_seconds_tenths(
-        time_axis.to_display(timing_line.time + layout.chart_start_time),
-    );
-    if let Some(bpm) = timing_line.bpm {
-        label.push_str(" | ");
-        label.push_str(&crate::render::timing::format_bpm(bpm));
-    }
+    let (label, bpm_color) = if let Some(bpm) = timing_line.bpm {
+        (
+            crate::render::timing::format_bpm(bpm),
+            Some(crate::render::timing::BPM_LABEL_COLOR),
+        )
+    } else {
+        (
+            crate::render::text::format_seconds_tenths(
+                time_axis.to_display(timing_line.time + layout.chart_start_time),
+            ),
+            None,
+        )
+    };
     let note: Option<&str> = if timing_line.is_kiai_start {
         Some("Kiai Start")
     } else {
         None
     };
-    let label_color = if timing_line.is_kiai {
+    let label_color = if let Some(color) = bpm_color {
+        color
+    } else if timing_line.is_kiai {
         ACCENT_LABEL_COLOR
     } else {
         RULER_TEXT_COLOR
