@@ -375,25 +375,40 @@ fn draw_timing_label_png(
     let (column_index, y) = locate_time(timing_line.time, layout);
     let border_right = column_left(column_index) + COLUMN_WIDTH;
     let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
-    let (label, color) = if let Some(bpm) = timing_line.bpm {
-        (
-            crate::render::timing::format_bpm(bpm),
-            crate::render::timing::BPM_LABEL_COLOR,
-        )
-    } else {
-        (
-            crate::render::text::format_seconds_tenths(
-                time_axis.to_display(timing_line.time + layout.chart_start_time),
-            ),
-            TIME_LABEL_COLOR,
-        )
-    };
+    let label = crate::render::text::format_seconds_tenths(
+        time_axis.to_display(timing_line.time + layout.chart_start_time),
+    );
     let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
     let label_x = (border_right + 4).min(layout.image_width - label_width as i64 - PAGE_MARGIN_X);
-    let label_y = (y as f64 - label_height as f64 / 2.0)
-        .max(PAGE_MARGIN_Y as f64)
-        .floor() as i64;
-    draw_text(image, label_x, label_y, &label, TIME_LABEL_FONT_SIZE, color);
+    let bpm_label = timing_line.bpm.map(crate::render::timing::format_bpm);
+    let bpm_height = bpm_label
+        .as_ref()
+        .map_or(0, |text| text_size(text, TIME_LABEL_FONT_SIZE).1 as i64 + 2);
+    let group_height = label_height as i64 + bpm_height;
+    let chart_bottom = PAGE_MARGIN_Y + layout.total_column_height;
+    let label_y = (y - group_height / 2)
+        .max(PAGE_MARGIN_Y)
+        .min(chart_bottom - group_height);
+    draw_text(
+        image,
+        label_x,
+        label_y,
+        &label,
+        TIME_LABEL_FONT_SIZE,
+        TIME_LABEL_COLOR,
+    );
+    if let Some(bpm_label) = bpm_label {
+        let (bpm_width, _) = text_size(&bpm_label, TIME_LABEL_FONT_SIZE);
+        let bpm_x = (border_right + 4).min(layout.image_width - bpm_width as i64 - PAGE_MARGIN_X);
+        draw_text(
+            image,
+            bpm_x,
+            label_y + label_height as i64 + 2,
+            &bpm_label,
+            TIME_LABEL_FONT_SIZE,
+            crate::render::timing::BPM_LABEL_COLOR,
+        );
+    }
 }
 
 fn draw_catch_object_png(image: &mut Img, catch_object: &RenderObject, layout: &RenderLayout) {

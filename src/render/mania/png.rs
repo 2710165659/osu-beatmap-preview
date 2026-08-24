@@ -306,19 +306,11 @@ fn draw_timing_line(
     );
 
     if timing_line.show_label {
-        let (label, color) = if let Some(ref bpm_label) = timing_line.bpm_label {
-            (bpm_label.clone(), crate::render::timing::BPM_LABEL_COLOR)
-        } else {
-            (
-                crate::render::text::format_seconds_tenths(
-                    time_axis.to_display(timing_line.time + layout.chart_start_time),
-                ),
-                RULER_TEXT,
-            )
-        };
+        let label = crate::render::text::format_seconds_tenths(
+            time_axis.to_display(timing_line.time + layout.chart_start_time),
+        );
         let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
         let label_width = label_width as i64;
-        let text_mid_y = label_height as f64 / 2.0;
         let mut label_x = column_left + layout.column_width + 4;
         if column_index < layout.column_count - 1 {
             let next_column_left = column_left + layout.column_width + COLUMN_GAP;
@@ -326,8 +318,45 @@ fn draw_timing_line(
         } else {
             label_x = label_x.min(layout.image_width - PAGE_MARGIN_X - label_width);
         }
-        let label_y = (chart_top as f64).max(y as f64 - text_mid_y).floor() as i64;
-        draw_text(image, label_x, label_y, &label, TIME_LABEL_FONT_SIZE, color);
+        let bpm_metrics = timing_line
+            .bpm_label
+            .as_ref()
+            .map(|bpm| text_size(bpm, TIME_LABEL_FONT_SIZE));
+        let bpm_height = bpm_metrics.map_or(0, |(_, height)| height as i64 + 3);
+        let group_height = label_height as i64 + bpm_height;
+        let chart_bottom = PAGE_MARGIN_Y + layout.total_column_height;
+        let label_y = (y - group_height / 2)
+            .max(chart_top)
+            .min(chart_bottom - group_height);
+        draw_text(
+            image,
+            label_x,
+            label_y,
+            &label,
+            TIME_LABEL_FONT_SIZE,
+            RULER_TEXT,
+        );
+
+        if let (Some(bpm_label), Some((bpm_width, _))) =
+            (timing_line.bpm_label.as_ref(), bpm_metrics)
+        {
+            let bpm_width = bpm_width as i64;
+            let mut bpm_x = column_left + layout.column_width + 4;
+            if column_index < layout.column_count - 1 {
+                let next_column_left = column_left + layout.column_width + COLUMN_GAP;
+                bpm_x = bpm_x.min(next_column_left - bpm_width - 4);
+            } else {
+                bpm_x = bpm_x.min(layout.image_width - PAGE_MARGIN_X - bpm_width);
+            }
+            draw_text(
+                image,
+                bpm_x,
+                label_y + label_height as i64 + 3,
+                bpm_label,
+                TIME_LABEL_FONT_SIZE,
+                crate::render::timing::BPM_LABEL_COLOR,
+            );
+        }
     }
 }
 

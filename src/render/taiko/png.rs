@@ -381,27 +381,15 @@ fn draw_time_label(
     layout: &RenderLayout,
     time_axis: TimeAxis,
 ) {
-    let (label, bpm_color) = if let Some(bpm) = timing_line.bpm {
-        (
-            crate::render::timing::format_bpm(bpm),
-            Some(crate::render::timing::BPM_LABEL_COLOR),
-        )
-    } else {
-        (
-            crate::render::text::format_seconds_tenths(
-                time_axis.to_display(timing_line.time + layout.chart_start_time),
-            ),
-            None,
-        )
-    };
+    let label = crate::render::text::format_seconds_tenths(
+        time_axis.to_display(timing_line.time + layout.chart_start_time),
+    );
     let note: Option<&str> = if timing_line.is_kiai_start {
         Some("Kiai Start")
     } else {
         None
     };
-    let label_color = if let Some(color) = bpm_color {
-        color
-    } else if timing_line.is_kiai {
+    let label_color = if timing_line.is_kiai {
         ACCENT_LABEL_COLOR
     } else {
         RULER_TEXT_COLOR
@@ -421,8 +409,9 @@ fn draw_time_label(
         label_color,
     );
 
+    let mut next_y = label_y + label_height as i64;
     if let Some(note) = note {
-        let (note_width, _) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
+        let (note_width, note_height) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = pyround(line_x as f64 - note_width as f64 / 2.0)
             .min(PAGE_MARGIN_X + layout.content_width - note_width as i64 - LABEL_RIGHT_PADDING)
             .max(PAGE_MARGIN_X);
@@ -434,6 +423,23 @@ fn draw_time_label(
             note,
             TIME_LABEL_NOTE_FONT_SIZE,
             ACCENT_LABEL_COLOR,
+        );
+        next_y = note_y + note_height as i64;
+    }
+
+    if let Some(bpm) = timing_line.bpm {
+        let bpm_label = crate::render::timing::format_bpm(bpm);
+        let (bpm_width, _) = text_size(&bpm_label, BPM_FONT_SIZE);
+        let bpm_x = pyround(line_x as f64 - bpm_width as f64 / 2.0)
+            .min(PAGE_MARGIN_X + layout.content_width - bpm_width as i64 - LABEL_RIGHT_PADDING)
+            .max(PAGE_MARGIN_X);
+        draw_text(
+            image,
+            bpm_x,
+            next_y + BPM_TOP_GAP,
+            &bpm_label,
+            BPM_FONT_SIZE,
+            crate::render::timing::BPM_LABEL_COLOR,
         );
     }
 }
