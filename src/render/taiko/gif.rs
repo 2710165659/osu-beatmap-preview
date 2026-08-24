@@ -104,6 +104,16 @@ fn render_taiko_segment_gif(
         .max()
         .unwrap();
     let scroll_mapper = build_scroll_mapper(&timing_points, chart_end_time, slider_multiplier, 0.0);
+    let timing_lines = build_gif_timing_lines(
+        &timing_points,
+        &scroll_mapper,
+        chart_end_time,
+        hit_objects
+            .iter()
+            .map(|object| object.start_time)
+            .min()
+            .unwrap_or(0),
+    );
     let time_range = compute_time_range() / speed_multiplier;
 
     let layout = build_gif_layout(time_range);
@@ -157,6 +167,14 @@ fn render_taiko_segment_gif(
             .take(segment_timings.len())
         {
             let snapshot_time = snapshot_times[frame_index];
+            draw_gif_timing_lines(
+                &mut canvas,
+                &timing_lines,
+                &scroll_mapper,
+                &layout,
+                segment_index as i64,
+                snapshot_time,
+            );
             TAIKO_GIF_CACHE.with(|cache| {
                 draw_hit_objects(
                     &mut canvas,
@@ -211,6 +229,16 @@ fn render_taiko_clip_gif(
         .max()
         .unwrap();
     let scroll_mapper = build_scroll_mapper(&timing_points, chart_end_time, slider_multiplier, 0.0);
+    let timing_lines = build_gif_timing_lines(
+        &timing_points,
+        &scroll_mapper,
+        chart_end_time,
+        hit_objects
+            .iter()
+            .map(|object| object.start_time)
+            .min()
+            .unwrap_or(0),
+    );
     let time_range = compute_time_range() / speed_multiplier;
     let mut layout = build_gif_layout_with_segments(time_range, 1);
     if !show_time_label {
@@ -239,6 +267,14 @@ fn render_taiko_clip_gif(
         let snapshot_time =
             range.start + pyround(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS);
         let mut canvas = static_bg.clone();
+        draw_gif_timing_lines(
+            &mut canvas,
+            &timing_lines,
+            &scroll_mapper,
+            &layout,
+            0,
+            snapshot_time,
+        );
         TAIKO_GIF_CLIP_CACHE.with(|cache| {
             draw_hit_objects(
                 &mut canvas,
@@ -354,6 +390,57 @@ pub(crate) fn draw_row_background(image: &mut Img, layout: &GifLayout, row_index
     );
 
     draw_judgement_line(image, layout, row_index);
+}
+
+fn build_gif_timing_lines(
+    timing_points: &[crate::core::models::TimingPoint],
+    scroll_mapper: &ScrollPositionMapper,
+    chart_end_time: i64,
+    first_note_time: i64,
+) -> Vec<TimingLine> {
+    let redline_sections = build_redline_sections(timing_points, chart_end_time);
+    let kiai_sections = build_kiai_sections(timing_points, chart_end_time);
+    build_timing_lines(
+        &redline_sections,
+        scroll_mapper,
+        0.0,
+        &kiai_sections,
+        first_note_time,
+        0,
+    )
+}
+
+/// Draw scrolling beat lines behind the notes. Measure lines use the same
+/// prominent white styling as the PNG renderer; ordinary beats remain grey.
+fn draw_gif_timing_lines(
+    image: &mut Img,
+    timing_lines: &[TimingLine],
+    scroll_mapper: &ScrollPositionMapper,
+    layout: &GifLayout,
+    row_index: i64,
+    snapshot_time: i64,
+) {
+    let left_bound = judgement_line_x(layout);
+    let right_bound = PAGE_MARGIN_X + layout.left_panel_width + layout.right_panel_width;
+    let row_top = gif_row_top(row_index, layout);
+    let row_bottom = row_top + layout.row_height;
+
+    for line in timing_lines {
+        let x = object_x(
+            line.time as f64,
+            snapshot_time as f64,
+            scroll_mapper,
+            layout,
+        );
+        if x < left_bound || x > right_bound {
+            continue;
+        }
+        if line.is_measure {
+            image.set_rect(x, row_top, x + 1, row_bottom, MEASURE_LINE_COLOR);
+        } else {
+            image.set_rect(x, row_top, x, row_bottom, BEAT_LINE_COLOR);
+        }
+    }
 }
 
 pub(crate) fn draw_hit_objects(
@@ -796,5 +883,40 @@ mod tests {
         let actual_offset = object_x(1000.0, 0.0, &mapper, &layout) - judgement_line_x(&layout);
 
         assert_eq!(actual_offset, expected_offset);
+    }
+
+    #[test]
+    fn gif_draws_measure_lines_in_white() {
+        let timing_points = [TimingPoint {
+            time: 0.0,
+            beat_length: 500.0,
+            meter: 4,
+            uninherited: true,
+            kiai_mode: false,
+        }];
+        let mapper = build_scroll_mapper(&timing_points, 2_000, 1.0, 0.0);
+        let layout = build_gif_layout_with_segments(compute_time_range(), 1);
+        let line = TimingLine {
+            time: 500,
+            position: mapper.position_at(500.0),
+            is_measure: true,
+            show_label: false,
+            is_kiai: false,
+            is_kiai_start: false,
+            bpm: None,
+        };
+        let mut image = Img::new(
+            layout.image_width as u32,
+            layout.image_height as u32,
+            IMAGE_BACKGROUND,
+        );
+
+        draw_gif_timing_lines(&mut image, &[line], &mapper, &layout, 0, 0);
+
+        let x = object_x(500.0, 0.0, &mapper, &layout) as u32;
+        assert_eq!(
+            image.get(x, gif_row_top(0, &layout) as u32),
+            MEASURE_LINE_COLOR
+        );
     }
 }

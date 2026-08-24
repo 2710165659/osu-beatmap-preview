@@ -12,6 +12,7 @@ use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::composer::save_png;
 use crate::render::text::{draw_text, text_size};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::constants::*;
@@ -71,6 +72,7 @@ fn build_layout(
     circle_size: f64,
     approach_rate: f64,
     chart_start_time: i64,
+    timing_lines: &[TimingLine],
 ) -> Result<RenderLayout> {
     if beatmap_duration >= MAX_SUPPORTED_DURATION_MS {
         return Err(PreviewError::render(
@@ -89,8 +91,11 @@ fn build_layout(
 
     let total_chart_height = rhe(beatmap_duration as f64 * pixels_per_ms).max(1);
     let max_area_height = resolve_max_area_height(beatmap_duration);
-    let column_count = ceil_div(total_chart_height, max_area_height).max(1);
-    let total_column_height = ceil_div(total_chart_height, column_count);
+    let aligned_height =
+        predominant_measure_aligned_height(timing_lines, pixels_per_ms, max_area_height)
+            .unwrap_or(max_area_height);
+    let total_column_height = total_chart_height.min(aligned_height).max(1);
+    let column_count = ceil_div(total_chart_height, total_column_height).max(1);
     let image_width = PAGE_MARGIN_X * 2 + column_count * (COLUMN_WIDTH + COLUMN_GAP) - COLUMN_GAP
         + LABEL_RIGHT_MARGIN;
     let image_height = PAGE_MARGIN_Y * 2 + total_column_height;
@@ -105,6 +110,36 @@ fn build_layout(
         pixels_per_ms,
         chart_start_time,
     })
+}
+
+/// Choose a per-map column height that is an integer multiple of the most
+/// common measure interval. This keeps the dominant white measure lines at the
+/// same vertical position in every column while retaining the existing height
+/// cap for long maps.
+fn predominant_measure_aligned_height(
+    timing_lines: &[TimingLine],
+    pixels_per_ms: f64,
+    max_area_height: i64,
+) -> Option<i64> {
+    let measures: Vec<i64> = timing_lines
+        .iter()
+        .filter(|line| line.is_measure)
+        .map(|line| line.time)
+        .collect();
+    let mut frequencies: BTreeMap<i64, usize> = BTreeMap::new();
+    for pair in measures.windows(2) {
+        let delta = pair[1] - pair[0];
+        if delta > 100 {
+            *frequencies.entry(delta).or_default() += 1;
+        }
+    }
+    let dominant_delta = frequencies
+        .into_iter()
+        .max_by_key(|(delta, count)| (*count, std::cmp::Reverse(*delta)))?
+        .0;
+    let interval_height = rhe(dominant_delta as f64 * pixels_per_ms).max(1);
+    let interval_count = max_area_height / interval_height;
+    (interval_count > 3).then_some(interval_count * interval_height)
 }
 
 fn column_left(column_index: i64) -> i64 {
@@ -256,6 +291,7 @@ pub(crate) fn render_catch_grid(
         difficulty.cs,
         difficulty.ar,
         chart_start_time,
+        &timing_lines,
     )?;
 
     let mut image = Img::new(
@@ -422,4 +458,25 @@ fn draw_catch_object_png(image: &mut Img, catch_object: &RenderObject, layout: &
     );
 
     draw_catch_object(image, catch_object, center_x, center_y, diameter);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn column_height_is_aligned_to_dominant_measure_interval() {
+        let timing_lines: Vec<TimingLine> = (0..10)
+            .map(|index| TimingLine {
+                time: index * 2_000,
+                is_measure: true,
+                show_label: true,
+                bpm: None,
+            })
+            .collect();
+
+        let height = predominant_measure_aligned_height(&timing_lines, 0.5, 5_500).unwrap();
+        assert_eq!(height, 5_000);
+        assert_eq!(height % 1_000, 0);
+    }
 }

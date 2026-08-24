@@ -31,7 +31,7 @@ pub(crate) const LEFT_PANEL_BACKGROUND: Rgba = [112, 112, 112, 255];
 pub(crate) const IMAGE_BACKGROUND: Rgba = [7, 7, 7, 255];
 pub(crate) const PLAYFIELD_BACKGROUND: Rgba = [7, 7, 7, 255];
 pub(crate) const PLAYFIELD_BORDER: Rgba = [34, 34, 34, 255];
-pub(crate) const MEASURE_LINE: Rgba = [87, 87, 87, 255];
+pub(crate) const MEASURE_LINE: Rgba = [235, 235, 235, 255];
 pub(crate) const BEAT_LINE: Rgba = [62, 62, 62, 255];
 
 pub(crate) const DROPLET_SCALE: f64 = 0.5;
