@@ -7,7 +7,7 @@ edition = "2021"
 vergen = { version = "9", features = ["build"] }
 
 [dependencies]
-ureq = "2"
+ureq = { version = "2", features = ["proxy-from-env"] }
 lexopt = "0.3"
 serde_json = { version = "1", features = ["preserve_order"] }
 time = { version = "0.3", default-features = false, features = ["formatting", "local-offset", "macros"] }

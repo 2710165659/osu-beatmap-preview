@@ -138,6 +138,10 @@ fn render_catch_segment_gif(
                 .collect()
         })
         .collect();
+    let segment_bpms: Vec<Option<f64>> = segment_timings
+        .iter()
+        .map(|timing| crate::render::timing::bpm_at(&beatmap.timing_points, timing.start_time))
+        .collect();
 
     // 按开始时间降序排序，先画晚出现的对象，后画早出现的（早的盖在上层）
     render_objects.sort_by_key(|o| std::cmp::Reverse(o.start_time));
@@ -163,6 +167,7 @@ fn render_catch_segment_gif(
                 frame_y,
                 segment_timing.is_preview,
                 time_axis,
+                segment_bpms[segment_index],
             );
         }
         canvas
@@ -206,6 +211,7 @@ fn render_catch_clip_gif(
             range.start + rhe(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS)
         })
         .collect();
+    let bpm = crate::render::timing::bpm_at(&beatmap.timing_points, range.start);
 
     let render = move |frame_index: usize| -> Img {
         let mut canvas = Img::new(
@@ -231,6 +237,7 @@ fn render_catch_clip_gif(
                 frame_y,
                 range.is_preview,
                 range.time_axis,
+                bpm,
             );
         }
         canvas
@@ -319,6 +326,7 @@ fn draw_gif_time_label(
     frame_y: i64,
     is_preview: bool,
     time_axis: TimeAxis,
+    bpm: Option<f64>,
 ) {
     let label = format!(
         "{} - {}",
@@ -340,15 +348,21 @@ fn draw_gif_time_label(
     let y = frame_y + GIF_IMAGE_HEIGHT + GIF_TIME_LABEL_TOP_GAP;
     draw_text(canvas, x, y, &label, GIF_TIME_LABEL_FONT_SIZE, color);
 
-    if is_preview {
-        let note = "Preview Time";
-        let (note_w, _) = text_size(note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
+    if is_preview || bpm.is_some() {
+        let bpm_label = bpm.map(crate::render::timing::format_bpm);
+        let note = match (is_preview, bpm_label.as_deref()) {
+            (true, Some(bpm)) => format!("Preview Time | {bpm}"),
+            (true, None) => "Preview Time".to_owned(),
+            (false, Some(bpm)) => bpm.to_owned(),
+            (false, None) => unreachable!(),
+        };
+        let (note_w, _) = text_size(&note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = frame_x + (GIF_IMAGE_WIDTH - note_w as i64) / 2;
         draw_text(
             canvas,
             note_x,
             y + label_h as i64 + GIF_TIME_LABEL_NOTE_TOP_GAP,
-            note,
+            &note,
             GIF_TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
@@ -363,6 +377,7 @@ fn draw_gif_time_label_range(
     frame_y: i64,
     is_preview: bool,
     time_axis: TimeAxis,
+    bpm: Option<f64>,
 ) {
     let label = format!(
         "{} - {}",
@@ -384,15 +399,21 @@ fn draw_gif_time_label_range(
     let y = frame_y + GIF_IMAGE_HEIGHT + GIF_TIME_LABEL_TOP_GAP;
     draw_text(canvas, x, y, &label, GIF_TIME_LABEL_FONT_SIZE, color);
 
-    if is_preview {
-        let note = "Preview Time";
-        let (note_w, _) = text_size(note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
+    if is_preview || bpm.is_some() {
+        let bpm_label = bpm.map(crate::render::timing::format_bpm);
+        let note = match (is_preview, bpm_label.as_deref()) {
+            (true, Some(bpm)) => format!("Preview Time | {bpm}"),
+            (true, None) => "Preview Time".to_owned(),
+            (false, Some(bpm)) => bpm.to_owned(),
+            (false, None) => unreachable!(),
+        };
+        let (note_w, _) = text_size(&note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = frame_x + (GIF_IMAGE_WIDTH - note_w as i64) / 2;
         draw_text(
             canvas,
             note_x,
             y + label_h as i64 + GIF_TIME_LABEL_NOTE_TOP_GAP,
-            note,
+            &note,
             GIF_TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );

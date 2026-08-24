@@ -164,7 +164,7 @@ pub(crate) fn build_catch_render_objects(
     for hit_object in hit_objects.iter() {
         if hit_object.hit_type & 8 != 0 {
             // 香蕉雨：颜色由香蕉自身随机决定，不影响 combo 颜色推进
-            build_banana_shower_objects(hit_object, &mut rng, &mut render_objects);
+            build_banana_shower_objects(hit_object, difficulty.cs, &mut rng, &mut render_objects);
             continue;
         }
 
@@ -241,6 +241,7 @@ fn stable_slider_end_x(hit_object: &CatchHitObject) -> f64 {
 
 fn build_banana_shower_objects(
     hit_object: &CatchHitObject,
+    circle_size: f64,
     rng: &mut LegacyRandom,
     out: &mut Vec<RenderObject>,
 ) {
@@ -255,6 +256,7 @@ fn build_banana_shower_objects(
         return;
     }
 
+    let first_banana = out.len();
     let mut current_time = to_float32(start_time as f64);
     while current_time <= end_time as f32 {
         let x = rng.next_double() * PLAYFIELD_WIDTH;
@@ -272,6 +274,84 @@ fn build_banana_shower_objects(
             hyper_dash: false,
         });
         current_time = to_float32(current_time as f64 + spacing as f64);
+    }
+    highlight_recommended_banana_route(&mut out[first_banana..], circle_size);
+}
+
+fn banana_transition_score(
+    from: &RenderObject,
+    to: &RenderObject,
+    catcher_width: f64,
+    half_catcher_width: f64,
+) -> Option<(f64, bool)> {
+    let distance = (from.x - to.x).abs();
+    let travel_time =
+        (to.event_time_or_start() - from.event_time_or_start() - 1000.0 / 60.0 / 4.0).max(0.0);
+    let walk_half = travel_time * BASE_WALK_SPEED + half_catcher_width;
+    let walk_full = travel_time * BASE_WALK_SPEED + catcher_width;
+    let dash_half = travel_time * BASE_DASH_SPEED + half_catcher_width;
+    let dash_full = travel_time * BASE_DASH_SPEED + catcher_width;
+
+    if distance <= walk_half {
+        Some((1.0, false))
+    } else if distance <= walk_full {
+        Some((
+            ((walk_full - distance) / half_catcher_width) / 2.0 + 0.5,
+            false,
+        ))
+    } else if distance <= dash_half {
+        Some((0.5, true))
+    } else if distance <= dash_full {
+        Some(((dash_full - distance) / half_catcher_width / 2.0, true))
+    } else {
+        None
+    }
+}
+
+/// Highlight the highest-scoring reachable route through a banana shower.
+/// White marks a walkable recommendation; pink marks a transition that needs dash.
+fn highlight_recommended_banana_route(bananas: &mut [RenderObject], circle_size: f64) {
+    if bananas.is_empty() {
+        return;
+    }
+
+    let catcher_scale = (1.0 - 0.7 * ((circle_size - 5.0) / 5.0)).abs();
+    let catcher_width = CATCHER_BASE_SIZE * catcher_scale * ALLOWED_CATCH_RANGE;
+    let half_catcher_width = catcher_width / 2.0 / ALLOWED_CATCH_RANGE;
+    let mut best_score = vec![1.0f64; bananas.len()];
+    let mut next = vec![None; bananas.len()];
+    let mut next_needs_dash = vec![false; bananas.len()];
+
+    for from in (0..bananas.len()).rev() {
+        for to in from + 1..bananas.len() {
+            let Some((edge_score, needs_dash)) = banana_transition_score(
+                &bananas[from],
+                &bananas[to],
+                catcher_width,
+                half_catcher_width,
+            ) else {
+                continue;
+            };
+            let candidate = edge_score + best_score[to];
+            if candidate > best_score[from] {
+                best_score[from] = candidate;
+                next[from] = Some(to);
+                next_needs_dash[from] = needs_dash;
+            }
+        }
+    }
+
+    let mut current = (0..bananas.len())
+        .max_by(|&a, &b| best_score[a].total_cmp(&best_score[b]))
+        .unwrap();
+    bananas[current].color = RECOMMENDED_BANANA_COLOR;
+    while let Some(selected) = next[current] {
+        bananas[selected].color = if next_needs_dash[current] {
+            RECOMMENDED_DASH_BANANA_COLOR
+        } else {
+            RECOMMENDED_BANANA_COLOR
+        };
+        current = selected;
     }
 }
 
@@ -676,5 +756,43 @@ fn apply_timing_state(point: &TimingPoint, beat_length: &mut f64, slider_velocit
         *slider_velocity = 1.0;
     } else {
         *slider_velocity = -100.0 / point.beat_length;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn banana(x: f64, time: i64) -> RenderObject {
+        RenderObject {
+            object_type: ObjType::Banana,
+            x,
+            start_time: time,
+            color: BANANA_COLORS[0],
+            scale_factor: BANANA_SCALE,
+            event_time: Some(time as f64),
+            hyper_dash: false,
+        }
+    }
+
+    #[test]
+    fn recommended_banana_route_skips_unreachable_decoys() {
+        let mut bananas = vec![banana(0.0, 0), banana(512.0, 100), banana(20.0, 200)];
+
+        highlight_recommended_banana_route(&mut bananas, 5.0);
+
+        assert_eq!(bananas[0].color, RECOMMENDED_BANANA_COLOR);
+        assert_eq!(bananas[1].color, BANANA_COLORS[0]);
+        assert_eq!(bananas[2].color, RECOMMENDED_BANANA_COLOR);
+    }
+
+    #[test]
+    fn recommended_banana_route_marks_dash_transitions_pink() {
+        let mut bananas = vec![banana(0.0, 0), banana(140.0, 100)];
+
+        highlight_recommended_banana_route(&mut bananas, 5.0);
+
+        assert_eq!(bananas[0].color, RECOMMENDED_BANANA_COLOR);
+        assert_eq!(bananas[1].color, RECOMMENDED_DASH_BANANA_COLOR);
     }
 }

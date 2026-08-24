@@ -227,7 +227,15 @@ pub(crate) fn render_mania_gif(
             .enumerate()
             .map(|(si, st)| {
                 let seg_left = segment_left(si as i64, &layout);
-                build_pre_label(st, segment_duration, &layout, seg_left, label_y, time_axis)
+                build_pre_label(
+                    st,
+                    segment_duration,
+                    &layout,
+                    seg_left,
+                    label_y,
+                    time_axis,
+                    crate::render::timing::bpm_at(&beatmap.timing_points, st.start_time),
+                )
             })
             .collect()
     } else {
@@ -717,6 +725,7 @@ fn build_pre_label(
     seg_left: i64,
     y: i64,
     time_axis: TimeAxis,
+    bpm: Option<f64>,
 ) -> PreLabel {
     let label = format!(
         "{} - {}",
@@ -739,10 +748,16 @@ fn build_pre_label(
     let sprite = render_text_sprite(&label, GIF_TIME_LABEL_FONT_SIZE, color);
     let x = seg_left + (layout.segment_width - label_w as i64).div_euclid(2);
 
-    let note = if timing.is_preview {
-        let note_text = "Preview Time";
-        let (note_w, _) = text_size(note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE);
-        let note_sprite = render_text_sprite(note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE, note_color);
+    let note = if timing.is_preview || bpm.is_some() {
+        let bpm_label = bpm.map(crate::render::timing::format_bpm);
+        let note_text = match (timing.is_preview, bpm_label.as_deref()) {
+            (true, Some(bpm)) => format!("Preview Time | {bpm}"),
+            (true, None) => "Preview Time".to_owned(),
+            (false, Some(bpm)) => bpm.to_owned(),
+            (false, None) => unreachable!(),
+        };
+        let (note_w, _) = text_size(&note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE);
+        let note_sprite = render_text_sprite(&note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE, note_color);
         let note_x = seg_left + (layout.segment_width - note_w as i64).div_euclid(2);
         Some(Box::new(PreLabel {
             sprite: note_sprite,

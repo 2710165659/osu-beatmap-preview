@@ -107,7 +107,7 @@ pub(crate) fn render_taiko_grid(
     let redline_sections = build_redline_sections(&timing_points, effective_chart_end_time);
     let kiai_sections = build_kiai_sections(&timing_points, effective_chart_end_time);
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
-    let timing_lines = build_timing_lines(
+    let mut timing_lines = build_timing_lines(
         &redline_sections,
         &mapper,
         MIN_BEAT_LINE_SPACING,
@@ -115,6 +115,9 @@ pub(crate) fn render_taiko_grid(
         first_note_time,
         time_axis.to_display(chart_start_time),
     );
+    if let Some(first_visible) = timing_lines.iter_mut().find(|line| line.show_label) {
+        first_visible.bpm = crate::render::timing::bpm_at(&timing_points, first_visible.time);
+    }
     let layout = build_png_layout(
         effective_chart_end_time,
         mapper.end_position(),
@@ -145,7 +148,7 @@ pub(crate) fn render_taiko_grid(
     let mut last_label_time: Option<i64> = None;
     for timing_line in timing_lines.iter().rev() {
         let mut tl = timing_line.clone();
-        if tl.show_label {
+        if tl.show_label && tl.bpm.is_none() {
             if let Some(prev) = last_label_time {
                 if (tl.time - prev).abs() < TIME_LABEL_MIN_INTERVAL_MS {
                     tl.show_label = false;
@@ -378,9 +381,13 @@ fn draw_time_label(
     layout: &RenderLayout,
     time_axis: TimeAxis,
 ) {
-    let label = crate::render::text::format_seconds_tenths(
+    let mut label = crate::render::text::format_seconds_tenths(
         time_axis.to_display(timing_line.time + layout.chart_start_time),
     );
+    if let Some(bpm) = timing_line.bpm {
+        label.push_str(" | ");
+        label.push_str(&crate::render::timing::format_bpm(bpm));
+    }
     let note: Option<&str> = if timing_line.is_kiai_start {
         Some("Kiai Start")
     } else {
@@ -406,13 +413,12 @@ fn draw_time_label(
         label_color,
     );
 
-    let mut next_y = label_y + label_height as i64;
     if let Some(note) = note {
-        let (note_width, note_height) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
+        let (note_width, _) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = pyround(line_x as f64 - note_width as f64 / 2.0)
             .min(PAGE_MARGIN_X + layout.content_width - note_width as i64 - LABEL_RIGHT_PADDING)
             .max(PAGE_MARGIN_X);
-        let note_y = next_y + TIME_LABEL_NOTE_TOP_GAP;
+        let note_y = label_y + label_height as i64 + TIME_LABEL_NOTE_TOP_GAP;
         draw_text(
             image,
             note_x,
@@ -421,22 +427,6 @@ fn draw_time_label(
             TIME_LABEL_NOTE_FONT_SIZE,
             ACCENT_LABEL_COLOR,
         );
-        next_y = note_y + note_height as i64;
-    }
-
-    if let Some(bpm) = timing_line.bpm {
-        let bpm_label = format!("{bpm:.0}BPM");
-        let (bpm_width, _) = text_size(&bpm_label, BPM_FONT_SIZE);
-        let bpm_x = pyround(line_x as f64 - bpm_width as f64 / 2.0)
-            .min(PAGE_MARGIN_X + layout.content_width - bpm_width as i64 - LABEL_RIGHT_PADDING)
-            .max(PAGE_MARGIN_X);
-        let bpm_y = next_y + BPM_TOP_GAP;
-        let bpm_color = if timing_line.is_kiai {
-            ACCENT_LABEL_COLOR
-        } else {
-            RULER_TEXT_COLOR
-        };
-        draw_text(image, bpm_x, bpm_y, &bpm_label, BPM_FONT_SIZE, bpm_color);
     }
 }
 

@@ -8,4 +8,5 @@ pub(crate) mod skin;
 pub(crate) mod standard;
 pub(crate) mod taiko;
 pub(crate) mod text;
+pub(crate) mod timing;
 pub(crate) mod video;

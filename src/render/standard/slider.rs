@@ -671,28 +671,5 @@ pub(crate) fn draw_ring_aa(
     thickness: f64,
     color: [u8; 4],
 ) {
-    if outer_r <= 0.0 || thickness <= 0.0 || color[3] == 0 {
-        return;
-    }
-    let inner_r = (outer_r - thickness).max(0.0);
-    let ya = (cy - outer_r - 1.0).floor().max(0.0) as i64;
-    let yb = (cy + outer_r + 1.0).ceil().min(img.h as f64 - 1.0) as i64;
-    let xa = (cx - outer_r - 1.0).floor().max(0.0) as i64;
-    let xb = (cx + outer_r + 1.0).ceil().min(img.w as f64 - 1.0) as i64;
-    for y in ya..=yb {
-        for x in xa..=xb {
-            let dx = x as f64 + 0.5 - cx;
-            let dy = y as f64 + 0.5 - cy;
-            let dist = (dx * dx + dy * dy).sqrt();
-            let cov =
-                (outer_r - dist + 0.5).clamp(0.0, 1.0) * (dist - inner_r + 0.5).clamp(0.0, 1.0);
-            if cov > 0.0 {
-                img.blend_px(
-                    x,
-                    y,
-                    [color[0], color[1], color[2], (color[3] as f64 * cov) as u8],
-                );
-            }
-        }
-    }
+    img.stroke_circle_aa(cx, cy, outer_r, thickness, color);
 }

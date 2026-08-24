@@ -118,7 +118,7 @@ pub(crate) fn render_mania_grid(
     } else {
         beatmap.timing_points.clone()
     };
-    let timing_lines = build_timing_lines(
+    let mut timing_lines = build_timing_lines(
         &timing_points_for_render,
         chart_end_time,
         beatmap.beat_divisor,
@@ -128,6 +128,13 @@ pub(crate) fn render_mania_grid(
             .min()
             .unwrap_or(0),
     );
+    if let Some(first_visible) = timing_lines.iter_mut().find(|line| line.show_label) {
+        if first_visible.bpm_label.is_none() {
+            first_visible.bpm_label =
+                crate::render::timing::bpm_at(&timing_points_for_render, first_visible.time)
+                    .map(crate::render::timing::format_bpm);
+        }
+    }
     let sv_changes = if cs_mode || !native_mania {
         Vec::new()
     } else {
@@ -299,9 +306,13 @@ fn draw_timing_line(
     );
 
     if timing_line.show_label {
-        let label = crate::render::text::format_seconds_tenths(
+        let mut label = crate::render::text::format_seconds_tenths(
             time_axis.to_display(timing_line.time + layout.chart_start_time),
         );
+        if let Some(ref bpm_label) = timing_line.bpm_label {
+            label.push_str(" | ");
+            label.push_str(bpm_label);
+        }
         let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
         let label_width = label_width as i64;
         let text_mid_y = label_height as f64 / 2.0;
@@ -321,28 +332,6 @@ fn draw_timing_line(
             TIME_LABEL_FONT_SIZE,
             RULER_TEXT,
         );
-
-        if let Some(ref bpm_label) = timing_line.bpm_label {
-            let (bpm_w, bpm_h) = text_size(bpm_label, TIME_LABEL_FONT_SIZE);
-            let bpm_w = bpm_w as i64;
-            let mut bpm_x = column_left + layout.column_width + 4;
-            if column_index < layout.column_count - 1 {
-                let next_column_left = column_left + layout.column_width + COLUMN_GAP;
-                bpm_x = bpm_x.min(next_column_left - bpm_w - 4);
-            } else {
-                bpm_x = bpm_x.min(layout.image_width - PAGE_MARGIN_X - bpm_w);
-            }
-            let bpm_y = (label_y + label_height as i64 + 3)
-                .min(PAGE_MARGIN_Y + layout.total_column_height - bpm_h as i64);
-            draw_text(
-                image,
-                bpm_x,
-                bpm_y,
-                bpm_label,
-                TIME_LABEL_FONT_SIZE,
-                RULER_TEXT,
-            );
-        }
     }
 }
 

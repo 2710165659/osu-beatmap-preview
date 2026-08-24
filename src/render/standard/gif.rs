@@ -108,10 +108,13 @@ fn render_standard_segment_gif(
                 )
             });
             canvas.alpha_composite(&frame, x, y);
-            let note = if row_timing.is_preview {
-                Some("Preview Time")
-            } else {
-                None
+            let bpm = crate::render::timing::bpm_at(&beatmap.timing_points, row_timing.start_time)
+                .map(crate::render::timing::format_bpm);
+            let note = match (row_timing.is_preview, bpm) {
+                (true, Some(bpm)) => Some(format!("Preview Time | {bpm}")),
+                (true, None) => Some("Preview Time".to_owned()),
+                (false, Some(bpm)) => Some(bpm),
+                (false, None) => None,
             };
             let label = format!(
                 "{} - {}",
@@ -125,7 +128,7 @@ fn render_standard_segment_gif(
                 &label,
                 x,
                 y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP,
-                note,
+                note.as_deref(),
                 if row_timing.is_preview {
                     PREVIEW_TIME_LABEL_COLOR
                 } else {
@@ -202,12 +205,20 @@ fn render_standard_clip_gif(
                 format_mmssmmm(range.time_axis.to_display(range.start)),
                 format_mmssmmm(range.time_axis.to_display(range.end))
             );
+            let bpm = crate::render::timing::bpm_at(&beatmap.timing_points, range.start)
+                .map(crate::render::timing::format_bpm);
+            let note = match (range.is_preview, bpm) {
+                (true, Some(bpm)) => Some(format!("Preview Time | {bpm}")),
+                (true, None) => Some("Preview Time".to_owned()),
+                (false, Some(bpm)) => Some(bpm),
+                (false, None) => None,
+            };
             draw_time_label(
                 &mut canvas,
                 &label,
                 x,
                 y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP,
-                range.is_preview.then_some("Preview Time"),
+                note.as_deref(),
                 if range.is_preview {
                     PREVIEW_TIME_LABEL_COLOR
                 } else {

@@ -34,11 +34,16 @@ pub(crate) const PLAYFIELD_BORDER: Rgba = [34, 34, 34, 255];
 pub(crate) const MEASURE_LINE: Rgba = [87, 87, 87, 255];
 pub(crate) const BEAT_LINE: Rgba = [62, 62, 62, 255];
 
-pub(crate) const DROPLET_SCALE: f64 = 0.8;
-pub(crate) const TINY_DROPLET_SCALE: f64 = 0.4;
-pub(crate) const BANANA_SCALE: f64 = 0.6;
+pub(crate) const DROPLET_SCALE: f64 = 0.5;
+pub(crate) const TINY_DROPLET_SCALE: f64 = 0.25;
+pub(crate) const BANANA_SCALE: f64 = 0.8;
 
 pub(crate) const CATCHER_BASE_SIZE: f64 = 106.75;
+pub(crate) const ALLOWED_CATCH_RANGE: f64 = 0.8;
+pub(crate) const BASE_WALK_SPEED: f64 = 0.5;
+pub(crate) const BASE_DASH_SPEED: f64 = 1.0;
+pub(crate) const RECOMMENDED_BANANA_COLOR: [u8; 3] = [255, 255, 255];
+pub(crate) const RECOMMENDED_DASH_BANANA_COLOR: [u8; 3] = [255, 128, 128];
 
 pub(crate) const DEFAULT_BEAT_LENGTH: f64 = 500.0;
 pub(crate) const RNG_SEED: u32 = 1337;

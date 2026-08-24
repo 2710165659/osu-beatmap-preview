@@ -122,6 +122,7 @@ struct TimingLine {
     time: i64,
     is_measure: bool,
     show_label: bool,
+    bpm: Option<f64>,
 }
 
 /// 红线分段：每段持有固定的 beat_length 与 meter。
@@ -168,7 +169,11 @@ fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec
     }
 
     let mut lines: Vec<TimingLine> = Vec::new();
+    let mut last_bpm: Option<f64> = None;
     for section in &sections {
+        let bpm = 60_000.0 / section.beat_length;
+        let show_bpm = last_bpm.is_none_or(|last| (last - bpm).abs() > 0.01);
+        last_bpm = Some(bpm);
         let mut beat_index: i64 = 0;
         loop {
             let time = section.start_time + beat_index as f64 * section.beat_length;
@@ -180,9 +185,15 @@ fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec
                     time: rhe(time),
                     is_measure: beat_index % section.meter as i64 == 0,
                     show_label: true,
+                    bpm: (show_bpm && beat_index == 0).then_some(bpm),
                 });
             }
             beat_index += 1;
+        }
+    }
+    if let Some(first_visible) = lines.iter_mut().find(|line| line.show_label) {
+        if first_visible.bpm.is_none() {
+            first_visible.bpm = crate::render::timing::bpm_at(timing_points, first_visible.time);
         }
     }
     lines
@@ -271,7 +282,7 @@ pub(crate) fn render_catch_grid(
             }
         }
         draw_timing_line_png(&mut image, &tl, &layout);
-        if tl.show_label {
+        if tl.show_label || tl.bpm.is_some() {
             draw_timing_label_png(&mut image, &tl, &layout, time_axis);
         }
     }
@@ -364,9 +375,13 @@ fn draw_timing_label_png(
     let (column_index, y) = locate_time(timing_line.time, layout);
     let border_right = column_left(column_index) + COLUMN_WIDTH;
     let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
-    let label = crate::render::text::format_seconds_tenths(
+    let mut label = crate::render::text::format_seconds_tenths(
         time_axis.to_display(timing_line.time + layout.chart_start_time),
     );
+    if let Some(bpm) = timing_line.bpm {
+        label.push_str(" | ");
+        label.push_str(&crate::render::timing::format_bpm(bpm));
+    }
     let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
     let label_x = (border_right + 4).min(layout.image_width - label_width as i64 - PAGE_MARGIN_X);
     let label_y = (y as f64 - label_height as f64 / 2.0)

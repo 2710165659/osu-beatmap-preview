@@ -5,8 +5,7 @@ mod parser;
 mod pipeline;
 mod render;
 
-
-pub use core::errors::{PreviewError, ErrorKind};
+pub use core::errors::{ErrorKind, PreviewError};
 
 #[derive(Debug, Clone)]
 pub struct PreviewOptions {
@@ -41,9 +40,7 @@ impl PreviewOptions {
     }
 }
 
-pub fn generate_preview(
-    options: PreviewOptions,
-) -> Result<serde_json::Value, PreviewError> {
+pub fn generate_preview(options: PreviewOptions) -> Result<serde_json::Value, PreviewError> {
     let mods = match &options.mods {
         Some(value) => Some(core::mods::parse_mods(value)?),
         None => None,

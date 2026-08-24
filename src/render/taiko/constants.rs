@@ -37,10 +37,8 @@ pub(crate) const LABEL_RIGHT_PADDING: i64 = 1;
 pub(crate) const MIN_BEAT_LINE_SPACING: f64 = 200.0;
 pub(crate) const TIME_LABEL_FONT_SIZE: u32 = 24;
 pub(crate) const TIME_LABEL_NOTE_FONT_SIZE: u32 = 17;
-pub(crate) const BPM_FONT_SIZE: u32 = 22;
 pub(crate) const TIME_LABEL_TOP_GAP: i64 = 0;
 pub(crate) const TIME_LABEL_NOTE_TOP_GAP: i64 = 5;
-pub(crate) const BPM_TOP_GAP: i64 = 5;
 pub(crate) const TIME_LABEL_MIN_INTERVAL_MS: i64 = 2000;
 pub(crate) const SV_TEXT_COLOR: Rgba = [255, 217, 102, 255];
 pub(crate) const SV_TEXT_FONT_SIZE: u32 = 15;
@@ -98,5 +96,3 @@ pub(crate) const HIT_SOUNDS_RIM: i32 = 2 | 8;
 pub(crate) const HIT_SOUNDS_STRONG: i32 = 4;
 pub(crate) const DRUMROLL_FLAG: i32 = 2;
 pub(crate) const SWELL_FLAG: i32 = 8;
-
-pub(crate) const MULTIPLIER_BASE_BEAT_LENGTH: f64 = 1000.0;

@@ -86,6 +86,10 @@ impl ScrollPositionMapper {
         let segment = &self.segments[idx.saturating_sub(1)];
         segment.start_position + (clamped_time - segment.start_time as f64) * segment.pixels_per_ms
     }
+
+    pub(crate) fn distance_between(&self, from_time: f64, to_time: f64) -> f64 {
+        self.position_at(to_time) - self.position_at(from_time)
+    }
 }
 
 // ─── scroll mapper ───
