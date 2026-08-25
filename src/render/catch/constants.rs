@@ -59,7 +59,6 @@ pub(crate) const GIF_ROW_COUNT: i64 = 2;
 pub(crate) const GIF_IMAGES_PER_ROW: i64 = 2;
 pub(crate) const GIF_SEGMENT_COUNT: usize = (GIF_ROW_COUNT * GIF_IMAGES_PER_ROW) as usize;
 pub(crate) const GIF_DURATION_MS: f64 = 5000.0;
-pub(crate) const GIF_FPS: f64 = 15.0;
 /// 单帧高度沿用 384，宽度使左右留白约 30px（playfield 宽 409.6，两侧各约 30）。
 pub(crate) const GIF_IMAGE_WIDTH: i64 = 470;
 pub(crate) const GIF_IMAGE_HEIGHT: i64 = 384;

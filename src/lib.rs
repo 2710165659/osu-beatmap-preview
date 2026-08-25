@@ -21,6 +21,8 @@ pub struct PreviewOptions {
 
     pub gap: Option<f64>,
     pub no_cache: bool,
+    /// GIF/MP4 输出帧率；`None` 使用内置默认值（15fps）。
+    pub fps: Option<u32>,
 }
 
 impl PreviewOptions {
@@ -36,6 +38,7 @@ impl PreviewOptions {
             preview_30s: false,
             gap: None,
             no_cache: false,
+            fps: None,
         }
     }
 }
@@ -62,5 +65,6 @@ pub fn generate_preview(options: PreviewOptions) -> Result<serde_json::Value, Pr
         options.preview_30s,
         options.gap,
         options.no_cache,
+        options.fps,
     )
 }

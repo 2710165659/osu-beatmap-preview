@@ -20,16 +20,17 @@ pub(crate) fn render_standard_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
     match options {
         GifRenderOptions::Segments {
             times_ms,
             time_axis,
-        } => render_standard_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
+        } => render_standard_segment_gif(beatmap, mods, times_ms, time_axis, output_path, fps),
         GifRenderOptions::Clip {
             range,
             show_time_label,
-        } => render_standard_clip_gif(beatmap, mods, range, show_time_label, output_path),
+        } => render_standard_clip_gif(beatmap, mods, range, show_time_label, output_path, fps),
     }
 }
 
@@ -39,6 +40,7 @@ fn render_standard_segment_gif(
     times_ms: Option<Vec<i64>>,
     time_axis: TimeAxis,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
     if let Some(times) = &times_ms {
         if times.len() > GIF_ROW_COUNT * GIF_IMAGES_PER_ROW {
@@ -61,15 +63,16 @@ fn render_standard_segment_gif(
     )?;
 
     let (canvas_w, canvas_h) = gif_canvas_size();
-    let frame_count = (((GIF_DURATION_MS * GIF_FPS) as f64 / 1000.0).round() as usize).max(1);
-    let frame_duration_ms = ((1000.0 / GIF_FPS as f64).round() as u32).max(1);
+    let gif_fps = fps as f64;
+    let frame_count = ((GIF_DURATION_MS as f64 * gif_fps / 1000.0).round() as usize).max(1);
+    let frame_duration_ms = ((1000.0 / gif_fps).round() as u32).max(1);
 
     let segment_snapshot_times: Vec<Vec<i64>> = row_timings
         .iter()
         .map(|rt| {
             (0..frame_count)
                 .map(|fi| {
-                    rt.start_time + py_round(fi as f64 * 1000.0 * speed_multiplier / GIF_FPS as f64)
+                    rt.start_time + py_round(fi as f64 * 1000.0 * speed_multiplier / gif_fps)
                 })
                 .collect()
         })
@@ -144,16 +147,17 @@ fn render_standard_clip_gif(
     range: GifClipRange,
     show_time_label: bool,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
     let hit_objects = standard_objects(beatmap)?;
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods, range.time_axis);
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let frame_count = (((range.end - range.start) as f64 * GIF_FPS as f64
-        / (1000.0 * speed_multiplier))
+    let gif_fps = fps as f64;
+    let frame_count = (((range.end - range.start) as f64 * gif_fps / (1000.0 * speed_multiplier))
         .round() as usize)
         .max(1);
-    let frame_duration_ms = ((1000.0 / GIF_FPS as f64).round() as u32).max(1);
+    let frame_duration_ms = ((1000.0 / gif_fps).round() as u32).max(1);
     let canvas_w = HORIZONTAL_PAGE_MARGIN * 2 + IMAGE_WIDTH;
     let label_height = if show_time_label {
         TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
@@ -163,7 +167,7 @@ fn render_standard_clip_gif(
     let canvas_h = VERTICAL_PAGE_MARGIN * 2 + IMAGE_HEIGHT + label_height;
 
     let snapshot_times: Vec<i64> = (0..frame_count)
-        .map(|fi| range.start + py_round(fi as f64 * 1000.0 * speed_multiplier / GIF_FPS as f64))
+        .map(|fi| range.start + py_round(fi as f64 * 1000.0 * speed_multiplier / gif_fps))
         .collect();
     let visible_indexes = build_visible_indexes_by_snapshot(
         &context.hit_objects,

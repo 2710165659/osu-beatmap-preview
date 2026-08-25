@@ -77,7 +77,6 @@ pub(crate) const TRACK_ACCENT_COLOR: Rgba = [254, 59, 1, 255];
 // GIF config
 pub(crate) const GIF_SEGMENT_COUNT: usize = 4;
 pub(crate) const GIF_DURATION_MS: f64 = 5000.0;
-pub(crate) const GIF_FPS: f64 = 15.0;
 pub(crate) const GIF_ROW_HEIGHT: i64 = 80;
 pub(crate) const GIF_ROW_GAP: i64 = 60;
 pub(crate) const GIF_TIME_LABEL_FONT_SIZE: u32 = 20;

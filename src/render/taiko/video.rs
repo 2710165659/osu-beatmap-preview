@@ -32,6 +32,7 @@ pub(crate) fn render_taiko_video(
     output_path: &Path,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
+    fps: u32,
 ) -> Result<()> {
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
@@ -51,7 +52,6 @@ pub(crate) fn render_taiko_video(
     )?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = GIF_FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;

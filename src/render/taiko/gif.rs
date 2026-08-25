@@ -55,16 +55,17 @@ pub(crate) fn render_taiko_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
     match options {
         GifRenderOptions::Segments {
             times_ms,
             time_axis,
-        } => render_taiko_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
+        } => render_taiko_segment_gif(beatmap, mods, times_ms, time_axis, output_path, fps),
         GifRenderOptions::Clip {
             range,
             show_time_label,
-        } => render_taiko_clip_gif(beatmap, mods, range, show_time_label, output_path),
+        } => render_taiko_clip_gif(beatmap, mods, range, show_time_label, output_path, fps),
     }
 }
 
@@ -74,6 +75,7 @@ fn render_taiko_segment_gif(
     times_ms: Option<Vec<i64>>,
     time_axis: crate::common::time_selection::TimeAxis,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
@@ -117,8 +119,9 @@ fn render_taiko_segment_gif(
     let time_range = compute_time_range() / speed_multiplier;
 
     let layout = build_gif_layout(time_range);
-    let frame_count = pyround(GIF_DURATION_MS * GIF_FPS / 1000.0).max(1) as usize;
-    let frame_duration_ms = pyround(1000.0 / GIF_FPS).max(1) as u32;
+    let gif_fps = fps as f64;
+    let frame_count = pyround(GIF_DURATION_MS * gif_fps / 1000.0).max(1) as usize;
+    let frame_duration_ms = pyround(1000.0 / gif_fps).max(1) as u32;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -126,7 +129,7 @@ fn render_taiko_segment_gif(
             (0..frame_count)
                 .map(|frame_index| {
                     timing.start_time
-                        + pyround(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS)
+                        + pyround(frame_index as f64 * 1000.0 * speed_multiplier / gif_fps)
                 })
                 .collect()
         })
@@ -213,6 +216,7 @@ fn render_taiko_clip_gif(
     range: GifClipRange,
     show_time_label: bool,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
@@ -244,10 +248,11 @@ fn render_taiko_clip_gif(
     if !show_time_label {
         layout.image_height = PAGE_MARGIN_Y * 2 + GIF_ROW_HEIGHT;
     }
+    let gif_fps = fps as f64;
     let frame_count =
-        pyround((range.end - range.start) as f64 * GIF_FPS / (1000.0 * speed_multiplier)).max(1)
+        pyround((range.end - range.start) as f64 * gif_fps / (1000.0 * speed_multiplier)).max(1)
             as usize;
-    let frame_duration_ms = pyround(1000.0 / GIF_FPS).max(1) as u32;
+    let frame_duration_ms = pyround(1000.0 / gif_fps).max(1) as u32;
 
     thread_local! {
         static TAIKO_GIF_CLIP_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
@@ -265,7 +270,7 @@ fn render_taiko_clip_gif(
 
     let render = move |frame_index: usize| -> Img {
         let snapshot_time =
-            range.start + pyround(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS);
+            range.start + pyround(frame_index as f64 * 1000.0 * speed_multiplier / gif_fps);
         let mut canvas = static_bg.clone();
         draw_gif_timing_lines(
             &mut canvas,

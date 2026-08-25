@@ -23,6 +23,7 @@ struct Args {
     preview_30s: bool,
     gap: Option<f64>,
     no_cache: bool,
+    fps: Option<u32>,
     log_dir: Option<PathBuf>,
     no_log: bool,
 }
@@ -30,7 +31,7 @@ struct Args {
 fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko] \
-         [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--gif-clip] [--gif-clip-label] [--preview-30s] [--gap=<BPM>] \
+         [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--gif-clip] [--gif-clip-label] [--preview-30s] [--gap=<BPM>] [--fps=<FPS>] \
          [--log-dir=<DIR>] [--no-log] [--no-cache]\n\
          osu-beatmap-preview --version\n\
          --time uses first-object-relative gameplay time and accepts negative values"
@@ -50,6 +51,7 @@ fn parse_args() -> Args {
     let mut preview_30s: bool = false;
     let mut gap: Option<f64> = None;
     let mut no_cache: bool = false;
+    let mut fps: Option<u32> = None;
     let mut log_dir: Option<PathBuf> = None;
     let mut no_log: bool = false;
 
@@ -107,6 +109,14 @@ fn parse_args() -> Args {
             Long("no-cache") => {
                 no_cache = true;
             }
+            Long("fps") => {
+                let v = take_value(&mut parser, "--fps");
+                let val: u32 = v.parse().unwrap_or_else(|_| {
+                    eprintln!("error: --fps must be a positive integer, got '{v}'");
+                    print_usage_and_exit(2);
+                });
+                fps = Some(val);
+            }
             Long("log-dir") => {
                 log_dir = Some(PathBuf::from(take_value(&mut parser, "--log-dir")));
             }
@@ -153,6 +163,7 @@ fn parse_args() -> Args {
         preview_30s,
         gap,
         no_cache,
+        fps,
         log_dir,
         no_log,
     }
@@ -191,6 +202,7 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         args.preview_30s,
         args.gap,
         args.no_cache,
+        args.fps,
     )
 }
 

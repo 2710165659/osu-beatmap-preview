@@ -16,7 +16,7 @@ use std::path::Path;
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, format_sv_label,
     is_native_mania, mania_objects, resolve_key_count, GIF_DEFAULT_HIT_POSITION, GIF_DURATION_MS,
-    GIF_FPS, GIF_FRAME_HEIGHT, GIF_GRID_GAP, GIF_JUDGEMENT_LINE, GIF_MAX_TIME_RANGE,
+    GIF_FRAME_HEIGHT, GIF_GRID_GAP, GIF_JUDGEMENT_LINE, GIF_MAX_TIME_RANGE,
     GIF_PREVIEW_TIME_LABEL_COLOR, GIF_SCROLL_SPEED, GIF_SEGMENT_COUNT, GIF_SEPARATOR_BACKGROUND,
     GIF_SEPARATOR_WIDTH, GIF_STAGE_TOP_PADDING, GIF_TIME_LABEL_COLOR, GIF_TIME_LABEL_FONT_SIZE,
     GIF_TIME_LABEL_HEIGHT, GIF_TIME_LABEL_NOTE_COLOR, GIF_TIME_LABEL_NOTE_FONT_SIZE,
@@ -64,7 +64,9 @@ pub(crate) fn render_mania_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
+    let gif_fps = fps as f64;
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
     let original_objects = mania_objects(beatmap);
@@ -102,7 +104,7 @@ pub(crate) fn render_mania_gif(
                 times_ms,
             )?
             .choose()?;
-            let frame_count = round_half_even((GIF_DURATION_MS * GIF_FPS) as f64 / 1000.0).max(1);
+            let frame_count = round_half_even(GIF_DURATION_MS as f64 * gif_fps / 1000.0).max(1);
             (
                 segment_timings,
                 gameplay_segment_duration,
@@ -117,7 +119,7 @@ pub(crate) fn render_mania_gif(
         } => {
             let segment_duration = range.end - range.start;
             let frame_count = round_half_even(
-                segment_duration as f64 * GIF_FPS as f64 / (1000.0 * speed_multiplier),
+                segment_duration as f64 * gif_fps / (1000.0 * speed_multiplier),
             )
             .max(1);
             (
@@ -142,7 +144,7 @@ pub(crate) fn render_mania_gif(
     // time_range is the chart time span visible from judgement line to top at 33 speed.
     let time_range = compute_time_range(speed_multiplier, skin_config.hit_position);
     let pixels_per_scroll_unit = layout.scroll_length as f64 / time_range;
-    let frame_duration_ms = round_half_even(1000.0 / GIF_FPS as f64).max(1);
+    let frame_duration_ms = round_half_even(1000.0 / gif_fps).max(1);
     let max_segment_end = segment_timings
         .iter()
         .map(|t| t.start_time + segment_duration)
@@ -164,7 +166,7 @@ pub(crate) fn render_mania_gif(
                 .map(|frame_index| {
                     timing.start_time
                         + round_half_even(
-                            frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS as f64,
+                            frame_index as f64 * 1000.0 * speed_multiplier / gif_fps,
                         )
                 })
                 .collect()

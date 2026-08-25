@@ -10,6 +10,8 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+pub const DEFAULT_FPS: u32 = 15;
+
 pub fn generate_preview(
     bid: &str,
     fmt: Option<&str>,
@@ -21,6 +23,7 @@ pub fn generate_preview(
     preview_30s: bool,
     gap: Option<f64>,
     no_cache: bool,
+    fps: Option<u32>,
 ) -> Result<Value> {
     log::set_bid(bid);
     let started = Instant::now();
@@ -47,6 +50,7 @@ pub fn generate_preview(
         preview_30s,
         gap,
         no_cache,
+        fps,
         &mut rec,
     ) {
         Ok(value) => {
@@ -80,10 +84,18 @@ fn generate_preview_inner(
     preview_30s: bool,
     gap: Option<f64>,
     no_cache: bool,
+    fps: Option<u32>,
     rec: &mut SummaryRecord,
 ) -> Result<Value> {
     let temp_root = std::env::temp_dir().join("osu-beatmap-preview");
     let gif_clip_mode = gif_clip || gif_clip_label;
+    if let Some(f) = fps {
+        if !(1..=60).contains(&f) {
+            return Err(PreviewError::new(format!(
+                "--fps must be between 1 and 60, got {f}"
+            )));
+        }
+    }
 
     // ── .osu 下载与解析 ──
     let t0 = Instant::now();
@@ -183,6 +195,12 @@ fn generate_preview_inner(
     if let Some(b) = gap {
         parts.push(format!("bpm{}", b));
     }
+    // 非默认帧率参与缓存键，避免命中旧帧率的产物
+    if let Some(f) = fps {
+        if f != DEFAULT_FPS {
+            parts.push(format!("fps{f}"));
+        }
+    }
     let output_path: PathBuf =
         temp_root
             .join("outputs")
@@ -271,6 +289,7 @@ fn generate_preview_inner(
         gap,
         audio_job,
         bid,
+        fps,
     ) {
         Ok(path) => path,
         // Atomic writes mean a failed render never touches the final path, so
@@ -386,6 +405,7 @@ trait ModeRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: u32,
     ) -> Result<PathBuf>;
 
     /// Render a static PNG to `output_path`. Returns the output path.
@@ -412,6 +432,7 @@ trait ModeRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         _time_axis: TimeAxis,
+        fps: u32,
     ) -> Result<PathBuf>;
 
     /// Optionally convert the beatmap before rendering. Default: clone (no conversion).
@@ -448,8 +469,9 @@ impl ModeRenderer for StandardRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: u32,
     ) -> Result<PathBuf> {
-        crate::render::standard::render_standard_gif(beatmap, mods, options, output_path)?;
+        crate::render::standard::render_standard_gif(beatmap, mods, options, output_path, fps)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -477,6 +499,7 @@ impl ModeRenderer for StandardRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        fps: u32,
     ) -> Result<PathBuf> {
         crate::render::standard::render_standard_video(
             beatmap,
@@ -486,6 +509,7 @@ impl ModeRenderer for StandardRenderer {
             output_path,
             audio_job,
             time_axis,
+            fps,
         )?;
         Ok(output_path.to_path_buf())
     }
@@ -509,8 +533,9 @@ impl ModeRenderer for TaikoRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: u32,
     ) -> Result<PathBuf> {
-        crate::render::taiko::render_taiko_gif(beatmap, mods, options, output_path)?;
+        crate::render::taiko::render_taiko_gif(beatmap, mods, options, output_path, fps)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -535,6 +560,7 @@ impl ModeRenderer for TaikoRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        fps: u32,
     ) -> Result<PathBuf> {
         crate::render::taiko::render_taiko_video(
             beatmap,
@@ -544,6 +570,7 @@ impl ModeRenderer for TaikoRenderer {
             output_path,
             audio_job,
             time_axis,
+            fps,
         )?;
         Ok(output_path.to_path_buf())
     }
@@ -567,8 +594,9 @@ impl ModeRenderer for CatchRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: u32,
     ) -> Result<PathBuf> {
-        crate::render::catch::render_catch_gif(beatmap, mods, options, output_path)?;
+        crate::render::catch::render_catch_gif(beatmap, mods, options, output_path, fps)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -593,6 +621,7 @@ impl ModeRenderer for CatchRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        fps: u32,
     ) -> Result<PathBuf> {
         crate::render::catch::render_catch_video(
             beatmap,
@@ -602,6 +631,7 @@ impl ModeRenderer for CatchRenderer {
             output_path,
             audio_job,
             time_axis,
+            fps,
         )?;
         Ok(output_path.to_path_buf())
     }
@@ -625,8 +655,9 @@ impl ModeRenderer for ManiaRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: u32,
     ) -> Result<PathBuf> {
-        crate::render::mania::render_mania_gif(beatmap, mods, options, output_path)?;
+        crate::render::mania::render_mania_gif(beatmap, mods, options, output_path, fps)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -651,6 +682,7 @@ impl ModeRenderer for ManiaRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        fps: u32,
     ) -> Result<PathBuf> {
         crate::render::mania::render_mania_video(
             beatmap,
@@ -660,6 +692,7 @@ impl ModeRenderer for ManiaRenderer {
             output_path,
             audio_job,
             time_axis,
+            fps,
         )?;
         Ok(output_path.to_path_buf())
     }
@@ -756,9 +789,11 @@ fn render_preview_for_mode(
     gap: Option<f64>,
     audio_job: Option<AudioSourceJob>,
     bid: &str,
+    fps: Option<u32>,
 ) -> Result<PathBuf> {
     let display_times_ms = crate::common::time_selection::times_to_milliseconds(times.as_deref())?;
     let mods_ref = mods.as_ref();
+    let fps = fps.unwrap_or(DEFAULT_FPS);
 
     renderer.validate(&beatmap)?;
 
@@ -809,7 +844,7 @@ fn render_preview_for_mode(
                 time_axis,
             }
         };
-        renderer.render_gif(&beatmap, mods_ref, gif_options, time_axis, output_path)
+        renderer.render_gif(&beatmap, mods_ref, gif_options, time_axis, output_path, fps)
     } else if fmt == "mp4" {
         let audio_job =
             audio_job.ok_or_else(|| PreviewError::render("MP4 audio job was not started"))?;
@@ -821,6 +856,7 @@ fn render_preview_for_mode(
             output_path,
             audio_job,
             time_axis,
+            fps,
         )
     } else {
         renderer.render_png(&beatmap, mods_ref, output_path, gap, time_axis, times_ms)

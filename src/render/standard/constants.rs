@@ -10,7 +10,6 @@ pub(crate) const PNG_IMAGES_PER_ROW: usize = 8;
 pub(crate) const GIF_ROW_COUNT: usize = 2;
 pub(crate) const GIF_IMAGES_PER_ROW: usize = 2;
 pub(crate) const GIF_DURATION_MS: i64 = 5000;
-pub(crate) const GIF_FPS: i64 = 15;
 pub(crate) const GIF_GRID_GAP: i64 = 20;
 
 // 单帧画面高度沿用 384，宽度使左右留白约 60px（playfield 宽 409.6，两侧各约 60）。

@@ -24,7 +24,7 @@ use super::gif::{
 use super::skin::load_mania_skin_config;
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
-    mania_objects, resolve_key_count, GIF_FPS, GIF_FRAME_HEIGHT, GIF_STAGE_TOP_PADDING,
+    mania_objects, resolve_key_count, GIF_FRAME_HEIGHT, GIF_STAGE_TOP_PADDING,
     IMAGE_BACKGROUND, LANE_WIDTH, LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, PAGE_MARGIN_X, PAGE_MARGIN_Y,
 };
 
@@ -36,6 +36,7 @@ pub(crate) fn render_mania_video(
     output_path: &Path,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
+    fps: u32,
 ) -> Result<()> {
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
@@ -73,7 +74,6 @@ pub(crate) fn render_mania_video(
     )?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = GIF_FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let skin_config = load_mania_skin_config(key_count);

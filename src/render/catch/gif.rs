@@ -80,16 +80,17 @@ pub(crate) fn render_catch_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
     match options {
         GifRenderOptions::Segments {
             times_ms,
             time_axis,
-        } => render_catch_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
+        } => render_catch_segment_gif(beatmap, mods, times_ms, time_axis, output_path, fps),
         GifRenderOptions::Clip {
             range,
             show_time_label,
-        } => render_catch_clip_gif(beatmap, mods, range, show_time_label, output_path),
+        } => render_catch_clip_gif(beatmap, mods, range, show_time_label, output_path, fps),
     }
 }
 
@@ -99,6 +100,7 @@ fn render_catch_segment_gif(
     times_ms: Option<Vec<i64>>,
     time_axis: TimeAxis,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
@@ -124,8 +126,9 @@ fn render_catch_segment_gif(
     .choose()?;
 
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);
-    let frame_count = rhe(GIF_DURATION_MS * GIF_FPS / 1000.0).max(1) as usize;
-    let frame_duration_ms = rhe(1000.0 / GIF_FPS).max(1) as u32;
+    let gif_fps = fps as f64;
+    let frame_count = rhe(GIF_DURATION_MS * gif_fps / 1000.0).max(1) as usize;
+    let frame_duration_ms = rhe(1000.0 / gif_fps).max(1) as u32;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -133,7 +136,7 @@ fn render_catch_segment_gif(
             (0..frame_count)
                 .map(|frame_index| {
                     timing.start_time
-                        + rhe(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS)
+                        + rhe(frame_index as f64 * 1000.0 * speed_multiplier / gif_fps)
                 })
                 .collect()
         })
@@ -182,6 +185,7 @@ fn render_catch_clip_gif(
     range: GifClipRange,
     show_time_label: bool,
     output_path: &Path,
+    fps: u32,
 ) -> Result<()> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
@@ -194,9 +198,10 @@ fn render_catch_clip_gif(
     let start_times: Vec<i64> = render_objects.iter().map(|o| o.start_time).collect();
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let frame_count = rhe((range.end - range.start) as f64 * GIF_FPS / (1000.0 * speed_multiplier))
+    let gif_fps = fps as f64;
+    let frame_count = rhe((range.end - range.start) as f64 * gif_fps / (1000.0 * speed_multiplier))
         .max(1) as usize;
-    let frame_duration_ms = rhe(1000.0 / GIF_FPS).max(1) as u32;
+    let frame_duration_ms = rhe(1000.0 / gif_fps).max(1) as u32;
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);
     let canvas_width = PAGE_MARGIN_X * 2 + GIF_IMAGE_WIDTH;
     let label_height = if show_time_label {
@@ -208,7 +213,7 @@ fn render_catch_clip_gif(
 
     let snapshot_times: Vec<i64> = (0..frame_count)
         .map(|frame_index| {
-            range.start + rhe(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS)
+            range.start + rhe(frame_index as f64 * 1000.0 * speed_multiplier / gif_fps)
         })
         .collect();
     let bpm = crate::render::timing::bpm_at(&beatmap.timing_points, range.start);

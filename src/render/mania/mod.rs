@@ -29,7 +29,6 @@ pub(crate) const NOTE_SIDE_PADDING: i64 = 2;
 // ── GIF constants ──
 pub(crate) const GIF_SEGMENT_COUNT: i64 = 4;
 pub(crate) const GIF_DURATION_MS: i64 = 10000;
-pub(crate) const GIF_FPS: i64 = 15;
 pub(crate) const GIF_SCROLL_SPEED: f64 = 33.0;
 pub(crate) const GIF_MAX_TIME_RANGE: f64 = 11485.0;
 pub(crate) const GIF_FRAME_HEIGHT: i64 = 768;

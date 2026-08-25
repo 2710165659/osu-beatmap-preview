@@ -15,7 +15,6 @@ use crate::render::video::audio::AudioSourceJob;
 use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::path::Path;
 
-use super::constants::GIF_FPS;
 use super::gif::{build_gif_layout, render_gif_frame};
 use super::objects::{build_catch_render_objects, effective_difficulty};
 use super::png::rhe;
@@ -28,6 +27,7 @@ pub(crate) fn render_catch_video(
     output_path: &Path,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
+    fps: u32,
 ) -> Result<()> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
@@ -49,7 +49,6 @@ pub(crate) fn render_catch_video(
     )?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = GIF_FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);
