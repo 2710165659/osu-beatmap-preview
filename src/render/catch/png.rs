@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use super::constants::*;
 use super::drawing::draw_catch_object;
 use super::objects::{
-    build_catch_render_objects, effective_difficulty, object_order, RenderObject,
+    build_catch_render_objects, effective_difficulty, object_order, ObjType, RenderObject,
 };
 
 #[inline]
@@ -323,6 +323,9 @@ pub(crate) fn render_catch_grid(
         }
     }
 
+    // Guide lines sit behind the fruit sprites, matching the legacy preview.
+    draw_edge_guides(&mut image, &render_objects, &layout);
+
     // 后发生的对象先画（早出现的盖在上层），同时刻按 类型 排序
     let mut sorted_objects: Vec<&RenderObject> = render_objects.iter().collect();
     sorted_objects.sort_by_key(|o| (-o.start_time, object_order(o.object_type)));
@@ -460,9 +463,110 @@ fn draw_catch_object_png(image: &mut Img, catch_object: &RenderObject, layout: &
     draw_catch_object(image, catch_object, center_x, center_y, diameter);
 }
 
+type LineSegment = ((f64, f64), (f64, f64));
+
+/// Split a guide at column boundaries so time continues from the top of one
+/// column to the bottom of the next instead of crossing the page diagonally.
+fn edge_guide_segments(
+    current: &RenderObject,
+    next: &RenderObject,
+    layout: &RenderLayout,
+) -> Vec<LineSegment> {
+    let start_time = current.event_time_or_start();
+    let end_time = next.event_time_or_start();
+    if end_time <= start_time || layout.pixels_per_ms <= 0.0 {
+        return Vec::new();
+    }
+
+    let column_duration = layout.total_column_height as f64 / layout.pixels_per_ms;
+    let start_column = (start_time / column_duration).floor() as i64;
+    let end_column = (end_time / column_duration).floor() as i64;
+    let chart_bottom = (PAGE_MARGIN_Y + layout.total_column_height) as f64;
+    let mut segments = Vec::new();
+
+    for column in start_column..=end_column {
+        if !(0..layout.column_count).contains(&column) {
+            continue;
+        }
+        let column_start = column as f64 * column_duration;
+        let column_end = (column + 1) as f64 * column_duration;
+        let segment_start = start_time.max(column_start);
+        let segment_end = end_time.min(column_end);
+        if segment_end <= segment_start {
+            continue;
+        }
+
+        let point_at = |time: f64| {
+            let progress = (time - start_time) / (end_time - start_time);
+            let object_x = current.x + (next.x - current.x) * progress;
+            let x = playfield_left(column) as f64 + object_x * layout.playfield_scale;
+            let local_height = (time - column_start) * layout.pixels_per_ms;
+            let y = chart_bottom - local_height;
+            (x, y)
+        };
+        segments.push((point_at(segment_start), point_at(segment_end)));
+    }
+
+    segments
+}
+
+fn draw_edge_guides(image: &mut Img, render_objects: &[RenderObject], layout: &RenderLayout) {
+    for (index, current) in render_objects.iter().enumerate() {
+        if !current.edge {
+            continue;
+        }
+        let Some(next) = render_objects[index + 1..].iter().find(|candidate| {
+            !matches!(
+                candidate.object_type,
+                ObjType::Banana | ObjType::TinyDroplet
+            )
+        }) else {
+            continue;
+        };
+
+        for (start, end) in edge_guide_segments(current, next, layout) {
+            image.draw_line(
+                start.0,
+                start.1,
+                end.0,
+                end.1,
+                EDGE_GUIDE_WIDTH,
+                EDGE_GUIDE_LINE,
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_layout(column_count: i64) -> RenderLayout {
+        RenderLayout {
+            column_count,
+            total_column_height: 100,
+            visible_playfield_width: PLAYFIELD_RENDER_WIDTH,
+            image_width: 1_000,
+            image_height: 130,
+            playfield_scale: 0.5,
+            object_scale: 0.5,
+            pixels_per_ms: 1.0,
+            chart_start_time: 0,
+        }
+    }
+
+    fn edge_fruit(x: f64, time: i64) -> RenderObject {
+        RenderObject {
+            object_type: ObjType::Fruit,
+            x,
+            start_time: time,
+            color: LAZER_COMBO_COLORS[0],
+            scale_factor: 1.0,
+            event_time: Some(time as f64),
+            hyper_dash: false,
+            edge: true,
+        }
+    }
 
     #[test]
     fn column_height_is_aligned_to_dominant_measure_interval() {
@@ -478,5 +582,36 @@ mod tests {
         let height = predominant_measure_aligned_height(&timing_lines, 0.5, 5_500).unwrap();
         assert_eq!(height, 5_000);
         assert_eq!(height % 1_000, 0);
+    }
+
+    #[test]
+    fn edge_guide_is_split_at_column_boundary() {
+        let current = edge_fruit(0.0, 90);
+        let next = edge_fruit(200.0, 110);
+
+        let segments = edge_guide_segments(&current, &next, &test_layout(2));
+
+        assert_eq!(segments.len(), 2);
+        let ((_, first_start_y), (first_end_x, first_end_y)) = segments[0];
+        let ((second_start_x, second_start_y), (_, second_end_y)) = segments[1];
+        assert_eq!(first_start_y, 25.0);
+        assert_eq!(first_end_y, 15.0);
+        assert_eq!(second_start_y, 115.0);
+        assert_eq!(second_end_y, 105.0);
+        assert!(second_start_x > first_end_x);
+    }
+
+    #[test]
+    fn edge_guide_draws_white_pixels_behind_objects() {
+        let layout = test_layout(1);
+        let current = edge_fruit(0.0, 10);
+        let mut next = edge_fruit(200.0, 20);
+        next.edge = false;
+        let mut image = Img::new(400, 130, IMAGE_BACKGROUND);
+
+        draw_edge_guides(&mut image, &[current, next], &layout);
+
+        // Midpoint: x = playfield_left(0) + 100 * 0.5, y = 115 - 15.
+        assert_eq!(image.get(97, 100), EDGE_GUIDE_LINE);
     }
 }

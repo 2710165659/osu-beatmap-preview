@@ -48,6 +48,8 @@ pub(crate) struct RenderObject {
     pub(crate) scale_factor: f64,
     pub(crate) event_time: Option<f64>,
     pub(crate) hyper_dash: bool,
+    /// A wide, almost-hyperdash transition that benefits from a white guide line.
+    pub(crate) edge: bool,
 }
 
 impl RenderObject {
@@ -228,6 +230,7 @@ pub(crate) fn build_fruit_object(
         scale_factor: 1.0,
         event_time,
         hyper_dash: false,
+        edge: false,
     }
 }
 
@@ -272,6 +275,7 @@ fn build_banana_shower_objects(
             scale_factor: BANANA_SCALE,
             event_time: Some(current_time as f64),
             hyper_dash: false,
+            edge: false,
         });
         current_time = to_float32(current_time as f64 + spacing as f64);
     }
@@ -406,6 +410,7 @@ fn build_juice_stream_objects(
                     scale_factor: DROPLET_SCALE,
                     event_time: Some(event.time),
                     hyper_dash: false,
+                    edge: false,
                 });
             }
             EventType::LegacyLastTick => {}
@@ -647,6 +652,7 @@ fn build_tiny_droplets_between(
             scale_factor: TINY_DROPLET_SCALE,
             event_time: Some(time),
             hyper_dash: false,
+            edge: false,
         });
         offset += time_between_tiny;
     }
@@ -722,6 +728,12 @@ fn apply_hyper_dash(render_objects: &mut [RenderObject], circle_size: f64) {
             last_excess = half_catcher_width;
         } else {
             last_excess = distance_to_hyper.min(half_catcher_width).max(0.0);
+            // Match the legacy osubot catch preview: mark long jumps that are
+            // within 20px of becoming a hyperdash so the grid can connect the
+            // two palpable objects with a white guide line.
+            if distance_to_next > 2.0 * half_catcher_width && distance_to_hyper < 20.0 {
+                render_objects[current_index].edge = true;
+            }
         }
 
         last_direction = direction;
@@ -763,6 +775,19 @@ fn apply_timing_state(point: &TimingPoint, beat_length: &mut f64, slider_velocit
 mod tests {
     use super::*;
 
+    fn fruit(x: f64, time: i64) -> RenderObject {
+        RenderObject {
+            object_type: ObjType::Fruit,
+            x,
+            start_time: time,
+            color: LAZER_COMBO_COLORS[0],
+            scale_factor: 1.0,
+            event_time: Some(time as f64),
+            hyper_dash: false,
+            edge: false,
+        }
+    }
+
     fn banana(x: f64, time: i64) -> RenderObject {
         RenderObject {
             object_type: ObjType::Banana,
@@ -772,6 +797,7 @@ mod tests {
             scale_factor: BANANA_SCALE,
             event_time: Some(time as f64),
             hyper_dash: false,
+            edge: false,
         }
     }
 
@@ -794,5 +820,15 @@ mod tests {
 
         assert_eq!(bananas[0].color, RECOMMENDED_BANANA_COLOR);
         assert_eq!(bananas[1].color, RECOMMENDED_DASH_BANANA_COLOR);
+    }
+
+    #[test]
+    fn large_near_hyper_transition_is_marked_as_edge() {
+        let mut fruits = vec![fruit(0.0, 0), fruit(200.0, 190)];
+
+        apply_hyper_dash(&mut fruits, 5.0);
+
+        assert!(!fruits[0].hyper_dash);
+        assert!(fruits[0].edge);
     }
 }

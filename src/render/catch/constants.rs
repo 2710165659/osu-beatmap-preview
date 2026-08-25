@@ -33,6 +33,8 @@ pub(crate) const PLAYFIELD_BACKGROUND: Rgba = [7, 7, 7, 255];
 pub(crate) const PLAYFIELD_BORDER: Rgba = [34, 34, 34, 255];
 pub(crate) const MEASURE_LINE: Rgba = [235, 235, 235, 255];
 pub(crate) const BEAT_LINE: Rgba = [62, 62, 62, 255];
+pub(crate) const EDGE_GUIDE_LINE: Rgba = [255, 255, 255, 255];
+pub(crate) const EDGE_GUIDE_WIDTH: f64 = 3.0;
 
 pub(crate) const DROPLET_SCALE: f64 = 0.5;
 pub(crate) const TINY_DROPLET_SCALE: f64 = 0.25;
