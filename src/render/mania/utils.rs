@@ -5,35 +5,22 @@ use crate::core::errors::PreviewError;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::parser::round_half_even;
 use crate::render::canvas::Rgba;
+use crate::config::palette::mania_utils::*;
 use std::collections::BTreeMap;
 
 const MAX_KEY_COUNT: i32 = 18;
 
 pub(crate) fn lane_palette(key_count: i32) -> Vec<Rgba> {
-    const W: Rgba = [0xe9, 0xee, 0xf4, 255]; // #e9eef4
-    const B: Rgba = [0xbc, 0xdb, 0xf1, 255]; // #bcdbf1
-    const G: Rgba = [0xcc, 0xfc, 0xb2, 255]; // #ccfcb2
-    const Y: Rgba = [0xff, 0xe2, 0x74, 255]; // #ffe274
-    const R: Rgba = [0xff, 0x7a, 0x5c, 255]; // #ff7a5c
+    let (w, b, g, y, r) = (MANIA_COLOR_W, MANIA_COLOR_B, MANIA_COLOR_G, MANIA_COLOR_Y, MANIA_COLOR_R);
     match key_count {
-        1 => vec![W],
-        2 => vec![W, W],
-        3 => vec![W, B, W],
-        4 => vec![W, B, B, W],
-        5 => vec![W, G, Y, G, W],
-        6 => vec![W, G, W, W, G, W],
-        7 => vec![W, G, W, Y, W, G, W],
-        8 => vec![B, W, G, W, W, G, W, B],
-        9 => vec![B, W, G, W, Y, W, G, W, B],
-        10 => vec![B, W, G, W, Y, Y, W, G, W, B],
-        11 => vec![B, W, G, W, Y, R, Y, W, G, W, B],
-        12 => vec![Y, B, W, G, W, Y, Y, W, G, W, B, Y],
-        13 => vec![Y, B, W, G, W, Y, R, Y, W, G, W, B, Y],
-        14 => vec![W, Y, B, W, G, W, Y, Y, W, G, W, B, Y, W],
-        15 => vec![W, Y, B, W, G, W, Y, R, Y, W, G, W, B, Y, W],
-        16 => vec![G, W, Y, B, W, G, W, Y, Y, W, G, W, B, Y, W, G],
-        17 => vec![G, W, Y, B, W, G, W, Y, R, Y, W, G, W, B, Y, W, G],
-        18 => vec![B, G, W, Y, B, W, G, W, Y, Y, W, G, W, B, Y, W, G, B],
+        1 => vec![w], 2 => vec![w, w], 3 => vec![w, b, w], 4 => vec![w, b, b, w],
+        5 => vec![w, g, y, g, w], 6 => vec![w, g, w, w, g, w], 7 => vec![w, g, w, y, w, g, w],
+        8 => vec![b, w, g, w, w, g, w, b], 9 => vec![b, w, g, w, y, w, g, w, b],
+        10 => vec![b, w, g, w, y, y, w, g, w, b], 11 => vec![b, w, g, w, y, r, y, w, g, w, b],
+        12 => vec![y, b, w, g, w, y, y, w, g, w, b, y], 13 => vec![y, b, w, g, w, y, r, y, w, g, w, b, y],
+        14 => vec![w, y, b, w, g, w, y, y, w, g, w, b, y, w], 15 => vec![w, y, b, w, g, w, y, r, y, w, g, w, b, y, w],
+        16 => vec![g, w, y, b, w, g, w, y, y, w, g, w, b, y, w, g], 17 => vec![g, w, y, b, w, g, w, y, r, y, w, g, w, b, y, w, g],
+        18 => vec![b, g, w, y, b, w, g, w, y, y, w, g, w, b, y, w, g, b],
         _ => unreachable!("key count clamped to [1, 18]"),
     }
 }

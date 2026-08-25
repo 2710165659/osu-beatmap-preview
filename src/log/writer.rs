@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 
 /// 行上限：保持单次写可原子完成的经验安全值。
-pub const MAX_LINE_BYTES: usize = 4096;
+pub(crate) use crate::config::logging::writer::*;
 
 pub fn append_line(path: &Path, line: &str) {
     let mut buf = Vec::with_capacity(line.len() + 1);

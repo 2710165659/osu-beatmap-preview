@@ -5,6 +5,7 @@
 
 use crate::core::errors::{PreviewError, Result};
 use crate::render::canvas::Img;
+use crate::config::video::composer::*;
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -147,9 +148,7 @@ fn build_png_lut(nq: &color_quant::NeuQuant) -> [[[u8; 32]; 32]; 32] {
 
 /// GIF parallel-render chunk size: balance memory (~8 frames × ~2 MB)
 /// against parallelism (keep all cores busy).
-const PAR_CHUNK_SIZE: usize = 8;
 /// Prevent unusually large canvases from multiplying peak memory by eight.
-const MAX_PAR_FRAME_BYTES: usize = 64 * 1024 * 1024;
 
 /// Stream `frame_count` frames produced by `render(i)` into a looping GIF.
 ///
@@ -213,16 +212,15 @@ pub fn save_animated_gif_streamed(
     // Reserve one index for GIF delta-frame transparency. Keeping 127 actual
     // colors makes the largest emitted index 127, so LZW can use a 7-bit
     // initial code instead of being forced to 8 bits by index 255.
-    const GIF_PALETTE_COLORS: usize = 127;
-    let nq = color_quant::NeuQuant::new(10, GIF_PALETTE_COLORS, &sample);
-    let mut palette: Vec<u8> = Vec::with_capacity((GIF_PALETTE_COLORS + 1) * 3);
+    let nq = color_quant::NeuQuant::new(10, PALETTE_COLORS, &sample);
+    let mut palette: Vec<u8> = Vec::with_capacity((PALETTE_COLORS + 1) * 3);
     for px in nq.color_map_rgba().chunks_exact(4) {
         palette.extend_from_slice(&px[..3]);
     }
-    while palette.len() < (GIF_PALETTE_COLORS + 1) * 3 {
+    while palette.len() < (PALETTE_COLORS + 1) * 3 {
         palette.extend_from_slice(&[0, 0, 0]);
     }
-    let transparent_idx: u8 = GIF_PALETTE_COLORS as u8;
+    let transparent_idx: u8 = PALETTE_COLORS as u8;
 
     // Precompute a 32³ 3D LUT mapping posterized RGB → palette index.
     // posterize() reduces each channel to 16 distinct values (0x00..0xFF step 0x11);

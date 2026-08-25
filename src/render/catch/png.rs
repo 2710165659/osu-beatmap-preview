@@ -48,17 +48,17 @@ fn pixels_per_ms_for_ar(approach_rate: f64, playfield_scale: f64) -> f64 {
 
 fn resolve_max_area_height(beatmap_duration: i64) -> i64 {
     if beatmap_duration < 60_000 {
-        MAX_AREA_HEIGHT_0_TO_1_MIN
+        MAX_AREA_HEIGHT_0_TO_1_MINUTES
     } else if beatmap_duration < 2 * 60_000 {
-        MAX_AREA_HEIGHT_1_TO_2_MIN
+        MAX_AREA_HEIGHT_1_TO_2_MINUTES
     } else if beatmap_duration < 3 * 60_000 {
-        MAX_AREA_HEIGHT_2_TO_3_MIN
+        MAX_AREA_HEIGHT_2_TO_3_MINUTES
     } else if beatmap_duration < 4 * 60_000 {
-        MAX_AREA_HEIGHT_3_TO_4_MIN
+        MAX_AREA_HEIGHT_3_TO_4_MINUTES
     } else if beatmap_duration < 5 * 60_000 {
-        MAX_AREA_HEIGHT_4_TO_5_MIN
+        MAX_AREA_HEIGHT_4_TO_5_MINUTES
     } else {
-        MAX_AREA_HEIGHT_5_TO_6_MIN
+        MAX_AREA_HEIGHT_5_TO_6_MINUTES
     }
 }
 
@@ -77,7 +77,7 @@ fn build_layout(
             "songs longer than 10 minutes are not supported",
         ));
     }
-    let playfield_scale = PLAYFIELD_RENDER_WIDTH as f64 / PLAYFIELD_WIDTH;
+    let playfield_scale = PLAYFIELD_DISPLAY_WIDTH as f64 / PLAYFIELD_WIDTH;
     let object_scale = super::objects::circle_scale(circle_size);
 
     // 纵向密度上限：限制谱面总像素高度，防止高 AR + 长曲导致内存爆炸
@@ -97,7 +97,7 @@ fn build_layout(
     Ok(RenderLayout {
         column_count,
         total_column_height,
-        visible_playfield_width: PLAYFIELD_RENDER_WIDTH,
+        visible_playfield_width: PLAYFIELD_DISPLAY_WIDTH,
         image_width,
         image_height,
         playfield_scale,
@@ -349,9 +349,9 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
     let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
 
     if timing_line.is_measure {
-        image.set_rect(left, y, right, y + 1, MEASURE_LINE);
+        image.set_rect(left, y, right, y + 1, MEASURE_LINE_COLOR);
     } else {
-        image.set_rect(left, y, right, y, BEAT_LINE);
+        image.set_rect(left, y, right, y, BEAT_LINE_COLOR);
     }
 }
 

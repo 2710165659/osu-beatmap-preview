@@ -15,11 +15,10 @@ mod video;
 pub(crate) use gif::render_standard_gif;
 pub(crate) use png::render_standard_png;
 pub(crate) use video::render_standard_video;
+pub(crate) use crate::config::layout::standard::png::*;
 
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
-use constants::*;
-
 /// Draw text centered horizontally within `IMAGE_WIDTH` at `(x, y)`.
 pub(crate) fn draw_centered_text(
     canvas: &mut Img,

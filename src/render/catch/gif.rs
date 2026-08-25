@@ -1,7 +1,7 @@
 //! osu!catch GIF 渲染器：2×2 分段动画预览或单屏区间预览。
 //!
 //! 单帧 683×384（16:9），playfield 的位置与缩放按游戏内 1080p 等比换算
-//! （见 constants.rs 中 GIF_PLAYFIELD_* 常量），上下左右留白与游戏一致。
+//! （见 `config::layout::catch::gif` 中的 playfield 配置），上下左右留白与游戏一致。
 
 use crate::common::time_selection::{
     GifClipRange, GifRenderOptions, PreviewTimeSelector, TimeAxis,
@@ -13,8 +13,8 @@ use crate::render::canvas::Img;
 use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::{draw_text, text_size};
 use std::path::Path;
+use crate::config::layout::catch::gif::*;
 
-use super::constants::*;
 use super::drawing::{draw_catch_object, object_diameter};
 use super::objects::{build_catch_render_objects, effective_difficulty, RenderObject};
 use super::png::rhe;
@@ -35,9 +35,9 @@ pub(crate) struct GifLayout {
 }
 
 pub(crate) fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayout {
-    let playfield_scale = GIF_PLAYFIELD_SCALE;
-    let playfield_left = (GIF_IMAGE_WIDTH as f64 - PLAYFIELD_WIDTH * playfield_scale) / 2.0;
-    let playfield_top = GIF_PLAYFIELD_TOP;
+    let playfield_scale = PLAYFIELD_SCALE;
+    let playfield_left = (IMAGE_WIDTH as f64 - PLAYFIELD_WIDTH * playfield_scale) / 2.0;
+    let playfield_top = PLAYFIELD_TOP;
     let object_scale = super::objects::circle_scale(circle_size);
 
     // 下落速度：AR 时间窗对应「起始高度→接手」的可视下落距离
@@ -45,12 +45,12 @@ pub(crate) fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayou
     let visible_fall_height = (STABLE_CATCHER_Y - STABLE_FRUIT_START_Y) * playfield_scale;
     let pixels_per_ms = visible_fall_height / time_range;
 
-    let row_height = GIF_IMAGE_HEIGHT + GIF_TIME_LABEL_TOP_GAP + GIF_TIME_LABEL_HEIGHT;
+    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
     let canvas_width = PAGE_MARGIN_X * 2
-        + GIF_IMAGES_PER_ROW * GIF_IMAGE_WIDTH
-        + (GIF_IMAGES_PER_ROW - 1) * GIF_GRID_GAP;
+        + IMAGES_PER_ROW * IMAGE_WIDTH
+        + (IMAGES_PER_ROW - 1) * GRID_GAP;
     let canvas_height =
-        PAGE_MARGIN_Y * 2 + GIF_ROW_COUNT * row_height + (GIF_ROW_COUNT - 1) * GIF_GRID_GAP;
+        PAGE_MARGIN_Y * 2 + ROW_COUNT * row_height + (ROW_COUNT - 1) * GRID_GAP;
 
     GifLayout {
         canvas_width,
@@ -65,11 +65,11 @@ pub(crate) fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayou
 
 /// 第 segment_index 段在画布上的左上角。
 fn frame_origin(segment_index: usize) -> (i64, i64) {
-    let row_index = segment_index as i64 / GIF_IMAGES_PER_ROW;
-    let col_index = segment_index as i64 % GIF_IMAGES_PER_ROW;
-    let row_height = GIF_IMAGE_HEIGHT + GIF_TIME_LABEL_TOP_GAP + GIF_TIME_LABEL_HEIGHT;
-    let x = PAGE_MARGIN_X + col_index * (GIF_IMAGE_WIDTH + GIF_GRID_GAP);
-    let y = PAGE_MARGIN_Y + row_index * (row_height + GIF_GRID_GAP);
+    let row_index = segment_index as i64 / IMAGES_PER_ROW;
+    let col_index = segment_index as i64 % IMAGES_PER_ROW;
+    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
+    let x = PAGE_MARGIN_X + col_index * (IMAGE_WIDTH + GRID_GAP);
+    let y = PAGE_MARGIN_Y + row_index * (row_height + GRID_GAP);
     (x, y)
 }
 
@@ -109,7 +109,7 @@ fn render_catch_segment_gif(
     let mut render_objects = build_catch_render_objects(beatmap, hit_objects, mods, &difficulty)?;
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let gameplay_segment_duration = rhe(GIF_DURATION_MS * speed_multiplier);
+    let gameplay_segment_duration = rhe(DURATION_MS * speed_multiplier);
     let spans: Vec<(i64, i64)> = hit_objects
         .iter()
         .map(|h| (h.start_time, h.end_time))
@@ -117,15 +117,15 @@ fn render_catch_segment_gif(
     let segment_timings = PreviewTimeSelector::new(
         beatmap,
         spans,
-        GIF_SEGMENT_COUNT,
+        SEGMENT_COUNT,
         gameplay_segment_duration,
         times_ms,
     )?
     .choose()?;
 
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);
-    let frame_count = rhe(GIF_DURATION_MS * GIF_FPS / 1000.0).max(1) as usize;
-    let frame_duration_ms = rhe(1000.0 / GIF_FPS).max(1) as u32;
+    let frame_count = rhe(DURATION_MS * FPS / 1000.0).max(1) as usize;
+    let frame_duration_ms = rhe(1000.0 / FPS).max(1) as u32;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -133,7 +133,7 @@ fn render_catch_segment_gif(
             (0..frame_count)
                 .map(|frame_index| {
                     timing.start_time
-                        + rhe(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS)
+                        + rhe(frame_index as f64 * 1000.0 * speed_multiplier / FPS)
                 })
                 .collect()
         })
@@ -189,21 +189,21 @@ fn render_catch_clip_gif(
     let start_times: Vec<i64> = render_objects.iter().map(|o| o.start_time).collect();
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let frame_count = rhe((range.end - range.start) as f64 * GIF_FPS / (1000.0 * speed_multiplier))
+    let frame_count = rhe((range.end - range.start) as f64 * FPS / (1000.0 * speed_multiplier))
         .max(1) as usize;
-    let frame_duration_ms = rhe(1000.0 / GIF_FPS).max(1) as u32;
+    let frame_duration_ms = rhe(1000.0 / FPS).max(1) as u32;
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);
-    let canvas_width = PAGE_MARGIN_X * 2 + GIF_IMAGE_WIDTH;
+    let canvas_width = PAGE_MARGIN_X * 2 + IMAGE_WIDTH;
     let label_height = if show_time_label {
-        GIF_TIME_LABEL_TOP_GAP + GIF_TIME_LABEL_HEIGHT
+        TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
     } else {
         0
     };
-    let canvas_height = PAGE_MARGIN_Y * 2 + GIF_IMAGE_HEIGHT + label_height;
+    let canvas_height = PAGE_MARGIN_Y * 2 + IMAGE_HEIGHT + label_height;
 
     let snapshot_times: Vec<i64> = (0..frame_count)
         .map(|frame_index| {
-            range.start + rhe(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS)
+            range.start + rhe(frame_index as f64 * 1000.0 * speed_multiplier / FPS)
         })
         .collect();
 
@@ -247,8 +247,8 @@ pub(crate) fn render_gif_frame(
     layout: &GifLayout,
 ) -> Img {
     let mut frame = Img::new(
-        GIF_IMAGE_WIDTH as u32,
-        GIF_IMAGE_HEIGHT as u32,
+        IMAGE_WIDTH as u32,
+        IMAGE_HEIGHT as u32,
         PLAYFIELD_BACKGROUND,
     );
 
@@ -259,7 +259,7 @@ pub(crate) fn render_gif_frame(
         rhe(playfield_left),
         0,
         rhe(playfield_right),
-        GIF_IMAGE_HEIGHT,
+        IMAGE_HEIGHT,
         PLAYFIELD_BACKGROUND,
     );
 
@@ -275,7 +275,7 @@ pub(crate) fn render_gif_frame(
     );
 
     // 可见时间窗：对象在 [snapshot, snapshot + 下落时间窗 + 余量] 内才可能出现在帧中
-    let fall_window_ms = (GIF_IMAGE_HEIGHT as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
+    let fall_window_ms = (IMAGE_HEIGHT as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
     // start_times_desc 为降序；找到可见区间 [lo, hi)
     let lo = start_times_desc.partition_point(|&t| t > snapshot_time + fall_window_ms);
     let hi = start_times_desc.partition_point(|&t| t >= snapshot_time - 2000);
@@ -326,30 +326,30 @@ fn draw_gif_time_label(
         crate::render::text::format_mmss_floor(time_axis.to_display(start_time + duration_ms))
     );
     let color = if is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+        PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_COLOR
+        TIME_LABEL_COLOR
     };
     let note_color = if is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+        PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_NOTE_COLOR
+        TIME_LABEL_NOTE_COLOR
     };
-    let (label_w, label_h) = text_size(&label, GIF_TIME_LABEL_FONT_SIZE);
-    let x = frame_x + (GIF_IMAGE_WIDTH - label_w as i64) / 2;
-    let y = frame_y + GIF_IMAGE_HEIGHT + GIF_TIME_LABEL_TOP_GAP;
-    draw_text(canvas, x, y, &label, GIF_TIME_LABEL_FONT_SIZE, color);
+    let (label_w, label_h) = text_size(&label, TIME_LABEL_FONT_SIZE);
+    let x = frame_x + (IMAGE_WIDTH - label_w as i64) / 2;
+    let y = frame_y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP;
+    draw_text(canvas, x, y, &label, TIME_LABEL_FONT_SIZE, color);
 
     if is_preview {
         let note = "Preview Time";
-        let (note_w, _) = text_size(note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
-        let note_x = frame_x + (GIF_IMAGE_WIDTH - note_w as i64) / 2;
+        let (note_w, _) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
+        let note_x = frame_x + (IMAGE_WIDTH - note_w as i64) / 2;
         draw_text(
             canvas,
             note_x,
-            y + label_h as i64 + GIF_TIME_LABEL_NOTE_TOP_GAP,
+            y + label_h as i64 + TIME_LABEL_NOTE_TOP_GAP,
             note,
-            GIF_TIME_LABEL_NOTE_FONT_SIZE,
+            TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
     }
@@ -370,30 +370,30 @@ fn draw_gif_time_label_range(
         crate::render::text::format_mmss_floor(time_axis.to_display(end_time))
     );
     let color = if is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+        PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_COLOR
+        TIME_LABEL_COLOR
     };
     let note_color = if is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+        PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_NOTE_COLOR
+        TIME_LABEL_NOTE_COLOR
     };
-    let (label_w, label_h) = text_size(&label, GIF_TIME_LABEL_FONT_SIZE);
-    let x = frame_x + (GIF_IMAGE_WIDTH - label_w as i64) / 2;
-    let y = frame_y + GIF_IMAGE_HEIGHT + GIF_TIME_LABEL_TOP_GAP;
-    draw_text(canvas, x, y, &label, GIF_TIME_LABEL_FONT_SIZE, color);
+    let (label_w, label_h) = text_size(&label, TIME_LABEL_FONT_SIZE);
+    let x = frame_x + (IMAGE_WIDTH - label_w as i64) / 2;
+    let y = frame_y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP;
+    draw_text(canvas, x, y, &label, TIME_LABEL_FONT_SIZE, color);
 
     if is_preview {
         let note = "Preview Time";
-        let (note_w, _) = text_size(note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
-        let note_x = frame_x + (GIF_IMAGE_WIDTH - note_w as i64) / 2;
+        let (note_w, _) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
+        let note_x = frame_x + (IMAGE_WIDTH - note_w as i64) / 2;
         draw_text(
             canvas,
             note_x,
-            y + label_h as i64 + GIF_TIME_LABEL_NOTE_TOP_GAP,
+            y + label_h as i64 + TIME_LABEL_NOTE_TOP_GAP,
             note,
-            GIF_TIME_LABEL_NOTE_FONT_SIZE,
+            TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
     }

@@ -7,6 +7,7 @@ use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
+use crate::config::layout::mania::png::*;
 use crate::render::composer::save_png;
 use crate::render::text::{draw_text, text_size};
 use std::collections::BTreeMap;
@@ -14,30 +15,9 @@ use std::path::{Path, PathBuf};
 
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
-    mania_objects, resolve_key_count, COLUMN_GAP, IMAGE_BACKGROUND, LANE_BACKGROUND, LANE_WIDTH,
-    LEFT_PANEL_BACKGROUND, LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, NOTE_SIDE_PADDING, PAGE_MARGIN_X,
-    PAGE_MARGIN_Y, PIXELS_PER_MS, RULER_TEXT, SV_TEXT_COLOR, SV_TEXT_FONT_SIZE, TOP_BUFFER,
+    mania_objects, resolve_key_count,
 };
 
-const LANE_GAP: i64 = 0;
-const LANE_SEPARATOR: Rgba = [32, 32, 32, 255];
-const TIME_LABEL_FONT_SIZE: u32 = 20;
-const TIME_LABEL_MIN_INTERVAL_MS: i64 = 2000;
-
-const MAX_AREA_HEIGHT_0_TO_1_MIN: i64 = 4000;
-const MAX_AREA_HEIGHT_1_TO_2_MIN: i64 = 5500;
-const MAX_AREA_HEIGHT_2_TO_3_MIN: i64 = 7000;
-const MAX_AREA_HEIGHT_3_TO_4_MIN: i64 = 8500;
-const MAX_AREA_HEIGHT_4_TO_5_MIN: i64 = 10000;
-const MAX_AREA_HEIGHT_5_TO_6_MIN: i64 = 11500;
-const FIXED_COLUMN_COUNT_6_TO_10_MIN: i64 = 30;
-const MAX_SUPPORTED_DURATION_MS: i64 = 10 * 60 * 1000;
-const BOTTOM_PADDING_MS: i64 = 2000;
-
-// ── colors (PNG-specific) ──
-const MEASURE_LINE: Rgba = [83, 83, 83, 255];
-const BEAT_LINE: Rgba = [56, 56, 56, 255];
-const SUBDIVISION_LINE: Rgba = [34, 34, 34, 255];
 
 #[derive(Clone)]
 struct TimingLine {
@@ -214,7 +194,7 @@ fn calculate_column_count(beatmap_duration: i64, total_chart_height: i64) -> Res
         ));
     }
     if beatmap_duration >= 6 * 60 * 1000 {
-        return Ok(FIXED_COLUMN_COUNT_6_TO_10_MIN);
+        return Ok(FIXED_COLUMN_COUNT_6_TO_10_MINUTES);
     }
     let max_area_height = resolve_max_area_height(beatmap_duration);
     Ok(ceil_div(total_chart_height, max_area_height).max(1))
@@ -222,17 +202,17 @@ fn calculate_column_count(beatmap_duration: i64, total_chart_height: i64) -> Res
 
 fn resolve_max_area_height(beatmap_duration: i64) -> i64 {
     if beatmap_duration < 60 * 1000 {
-        MAX_AREA_HEIGHT_0_TO_1_MIN
+        MAX_AREA_HEIGHT_0_TO_1_MINUTES
     } else if beatmap_duration < 2 * 60 * 1000 {
-        MAX_AREA_HEIGHT_1_TO_2_MIN
+        MAX_AREA_HEIGHT_1_TO_2_MINUTES
     } else if beatmap_duration < 3 * 60 * 1000 {
-        MAX_AREA_HEIGHT_2_TO_3_MIN
+        MAX_AREA_HEIGHT_2_TO_3_MINUTES
     } else if beatmap_duration < 4 * 60 * 1000 {
-        MAX_AREA_HEIGHT_3_TO_4_MIN
+        MAX_AREA_HEIGHT_3_TO_4_MINUTES
     } else if beatmap_duration < 5 * 60 * 1000 {
-        MAX_AREA_HEIGHT_4_TO_5_MIN
+        MAX_AREA_HEIGHT_4_TO_5_MINUTES
     } else {
-        MAX_AREA_HEIGHT_5_TO_6_MIN
+        MAX_AREA_HEIGHT_5_TO_6_MINUTES
     }
 }
 
@@ -319,7 +299,7 @@ fn draw_timing_line(
             label_y,
             &label,
             TIME_LABEL_FONT_SIZE,
-            RULER_TEXT,
+            RULER_TEXT_COLOR,
         );
 
         if let Some(ref bpm_label) = timing_line.bpm_label {
@@ -340,7 +320,7 @@ fn draw_timing_line(
                 bpm_y,
                 bpm_label,
                 TIME_LABEL_FONT_SIZE,
-                RULER_TEXT,
+                RULER_TEXT_COLOR,
             );
         }
     }
@@ -454,9 +434,9 @@ fn build_timing_lines(
                     TimingLine {
                         time: round_half_even(current),
                         color: if is_bar {
-                            MEASURE_LINE
+                            MEASURE_LINE_COLOR
                         } else if is_beat {
-                            BEAT_LINE
+                            BEAT_LINE_COLOR
                         } else {
                             SUBDIVISION_LINE
                         },

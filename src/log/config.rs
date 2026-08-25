@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-pub const PROGRESS_FILE: &str = "progress.log";
-pub const RENDER_FILE: &str = "render.log";
+pub(crate) use crate::config::logging::config::*;
 
 #[derive(Clone)]
 pub struct LogConfig {

@@ -27,6 +27,7 @@ use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
+use crate::config::video::video::*;
 use crate::render::text::{draw_text, text_size};
 use crate::render::video::audio::{
     encode_audio_segment, full_video_start_time, AudioSourceJob, AUDIO_BITRATE, AUDIO_SAMPLE_RATE,
@@ -47,17 +48,7 @@ mod mux;
 mod nvenc;
 
 /// Parallel-render chunk size (matches GIF: ~8 frames at once).
-const PAR_CHUNK_SIZE: usize = 8;
 /// Bound transient RGBA frame memory for unusually large playfields.
-const MAX_PAR_FRAME_BYTES: usize = 64 * 1024 * 1024;
-pub(crate) const VIDEO_BITRATE: u32 = 900_000;
-pub(crate) const VIDEO_END_PADDING_MS: i64 = 2_000;
-const PREVIEW_30S_ACTUAL_MS: i64 = 30_000;
-
-const LABEL_COLOR: [u8; 4] = [232, 232, 232, 255];
-const LABEL_FONT_SIZE: u32 = 24;
-const LABEL_PAD: i64 = 12;
-const BLACK_OPAQUE: [u8; 4] = [0, 0, 0, 255];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct VideoTimeRange {

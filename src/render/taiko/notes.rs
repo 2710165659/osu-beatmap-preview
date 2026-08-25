@@ -4,7 +4,7 @@ use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use std::collections::HashMap;
 
-use super::constants::*;
+use crate::config::layout::taiko::png::*;
 
 // ─── 工具 ───
 
@@ -25,7 +25,6 @@ pub(crate) struct RenderCache {
 // ─── 行背景（程序化，替代原 taiko-bar-left/right 图片） ───
 
 /// 左侧鼓面板宽度与行高的比例（原图 362×400 的纵横比）。
-pub(crate) const DRUM_PANEL_WIDTH_RATIO: f64 = 362.0 / 400.0;
 
 /// 绘制左侧鼓面板：红色竖条 + 米色鼓面圆，模拟 classic 皮肤的 taiko-bar-left。
 pub(crate) fn draw_drum_panel(image: &mut Img, x: i64, y: i64, w: i64, h: i64) {

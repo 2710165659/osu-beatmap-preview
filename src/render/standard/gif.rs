@@ -9,8 +9,8 @@ use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::format_mmssmmm;
 use std::cell::RefCell;
 use std::path::Path;
+use crate::config::layout::standard::gif::*;
 
-use super::constants::*;
 use super::context::*;
 use super::draw_time_label;
 use super::objects::render_frame;
@@ -41,7 +41,7 @@ fn render_standard_segment_gif(
     output_path: &Path,
 ) -> Result<()> {
     if let Some(times) = &times_ms {
-        if times.len() > GIF_ROW_COUNT * GIF_IMAGES_PER_ROW {
+        if times.len() > ROW_COUNT * IMAGES_PER_ROW {
             return Err(PreviewError::new("--times accepts at most 4 time points"));
         }
     }
@@ -50,26 +50,26 @@ fn render_standard_segment_gif(
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods, time_axis);
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let gameplay_segment_duration = py_round(GIF_DURATION_MS as f64 * speed_multiplier);
+    let gameplay_segment_duration = py_round(DURATION_MS as f64 * speed_multiplier);
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
-        GIF_ROW_COUNT * GIF_IMAGES_PER_ROW,
+        ROW_COUNT * IMAGES_PER_ROW,
         2,
         gameplay_segment_duration,
         times_ms,
     )?;
 
     let (canvas_w, canvas_h) = gif_canvas_size();
-    let frame_count = (((GIF_DURATION_MS * GIF_FPS) as f64 / 1000.0).round() as usize).max(1);
-    let frame_duration_ms = ((1000.0 / GIF_FPS as f64).round() as u32).max(1);
+    let frame_count = (((DURATION_MS * FPS) as f64 / 1000.0).round() as usize).max(1);
+    let frame_duration_ms = ((1000.0 / FPS as f64).round() as u32).max(1);
 
     let segment_snapshot_times: Vec<Vec<i64>> = row_timings
         .iter()
         .map(|rt| {
             (0..frame_count)
                 .map(|fi| {
-                    rt.start_time + py_round(fi as f64 * 1000.0 * speed_multiplier / GIF_FPS as f64)
+                    rt.start_time + py_round(fi as f64 * 1000.0 * speed_multiplier / FPS as f64)
                 })
                 .collect()
         })
@@ -155,11 +155,11 @@ fn render_standard_clip_gif(
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods, range.time_axis);
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let frame_count = (((range.end - range.start) as f64 * GIF_FPS as f64
+    let frame_count = (((range.end - range.start) as f64 * FPS as f64
         / (1000.0 * speed_multiplier))
         .round() as usize)
         .max(1);
-    let frame_duration_ms = ((1000.0 / GIF_FPS as f64).round() as u32).max(1);
+    let frame_duration_ms = ((1000.0 / FPS as f64).round() as u32).max(1);
     let canvas_w = HORIZONTAL_PAGE_MARGIN * 2 + IMAGE_WIDTH;
     let label_height = if show_time_label {
         TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
@@ -169,7 +169,7 @@ fn render_standard_clip_gif(
     let canvas_h = VERTICAL_PAGE_MARGIN * 2 + IMAGE_HEIGHT + label_height;
 
     let snapshot_times: Vec<i64> = (0..frame_count)
-        .map(|fi| range.start + py_round(fi as f64 * 1000.0 * speed_multiplier / GIF_FPS as f64))
+        .map(|fi| range.start + py_round(fi as f64 * 1000.0 * speed_multiplier / FPS as f64))
         .collect();
     let visible_indexes = build_visible_indexes_by_snapshot(
         &context.hit_objects,

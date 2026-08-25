@@ -10,6 +10,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::constants::*;
+use crate::config::layout::standard::gif::{
+    GRID_GAP as GIF_GRID_GAP,
+    IMAGES_PER_ROW as GIF_IMAGES_PER_ROW,
+    ROW_COUNT as GIF_ROW_COUNT,
+};
 use super::slider::SliderRenderData;
 
 // ——— helpers ———
@@ -341,12 +346,12 @@ pub(crate) fn choose_row_start_times(
 
 pub(crate) fn png_canvas_size() -> (i64, i64) {
     let width = HORIZONTAL_PAGE_MARGIN * 2
-        + PNG_IMAGES_PER_ROW as i64 * IMAGE_WIDTH
-        + (PNG_IMAGES_PER_ROW as i64 - 1) * INTRA_ROW_IMAGE_GAP;
+        + IMAGES_PER_ROW as i64 * IMAGE_WIDTH
+        + (IMAGES_PER_ROW as i64 - 1) * INTRA_ROW_IMAGE_GAP;
     let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
     let height = VERTICAL_PAGE_MARGIN * 2
-        + PNG_ROW_COUNT as i64 * row_height
-        + (PNG_ROW_COUNT as i64 - 1) * INTER_ROW_GAP;
+        + ROW_COUNT as i64 * row_height
+        + (ROW_COUNT as i64 - 1) * INTER_ROW_GAP;
     (width, height)
 }
 

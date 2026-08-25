@@ -13,6 +13,7 @@
 //! - 超冲时再叠 1.15d、InnerRadius 0.08 的超冲色环
 
 use crate::render::canvas::Img;
+use crate::config::effects::catch_drawing::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -20,9 +21,9 @@ use std::rc::Rc;
 use super::constants::*;
 use super::objects::{ObjType, RenderObject};
 
+/// CircularBlob 默认噪声参数（lazer 未覆盖默认值）。
 const HALF_PI: f64 = std::f64::consts::FRAC_PI_2;
 const TWO_PI: f64 = std::f64::consts::TAU;
-/// CircularBlob 默认噪声参数（lazer 未覆盖默认值）。
 const BLOB_FREQUENCY: f64 = 1.5;
 const BLOB_AMPLITUDE: f64 = 0.3;
 /// 每种对象预生成的随机形状变体数（按对象时间散列选取）。
@@ -95,7 +96,6 @@ struct BlobLayer {
 /// 将多层 blob 的加色贡献累加进一个 sprite：
 /// blob sprite 渲染缩放：先以 0.5× 渲染，再 Lanczos 回目标尺寸。
 /// 像素计算量降至 ¼，噪声光斑边缘经 Lanczos 平滑后视觉差异很小。
-const BLOB_SPRITE_SCALE: f64 = 0.5;
 
 /// rgb 通道存 src-over 混合后的颜色（非预乘），alpha 通道存累计覆盖。
 fn build_blob_sprite(base_diameter: f64, layers: &[BlobLayer], seed: u64) -> Img {

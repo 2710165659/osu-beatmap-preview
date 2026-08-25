@@ -24,9 +24,9 @@ pub(crate) fn render_standard_png(
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
-        PNG_ROW_COUNT,
-        PNG_IMAGES_PER_ROW,
-        PNG_MS_PER_IMAGE,
+        ROW_COUNT,
+        IMAGES_PER_ROW,
+        MS_PER_IMAGE,
         times_ms,
     )?;
 
@@ -35,8 +35,8 @@ pub(crate) fn render_standard_png(
     let mut cache = RenderCache::default();
 
     for (row_index, row_timing) in row_timings.iter().enumerate() {
-        let snapshot_times: Vec<i64> = (0..PNG_IMAGES_PER_ROW)
-            .map(|i| row_timing.start_time + i as i64 * PNG_MS_PER_IMAGE)
+        let snapshot_times: Vec<i64> = (0..IMAGES_PER_ROW)
+            .map(|i| row_timing.start_time + i as i64 * MS_PER_IMAGE)
             .collect();
         let visible_groups = build_visible_indexes_by_snapshot(
             &context.hit_objects,
@@ -46,7 +46,7 @@ pub(crate) fn render_standard_png(
         let y = VERTICAL_PAGE_MARGIN
             + row_index as i64
                 * (IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT + INTER_ROW_GAP);
-        for image_index in 0..PNG_IMAGES_PER_ROW {
+        for image_index in 0..IMAGES_PER_ROW {
             let snapshot_time = snapshot_times[image_index];
             let x =
                 HORIZONTAL_PAGE_MARGIN + image_index as i64 * (IMAGE_WIDTH + INTRA_ROW_IMAGE_GAP);

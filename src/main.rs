@@ -1,4 +1,5 @@
 mod common;
+mod config;
 mod core;
 mod log;
 mod parser;

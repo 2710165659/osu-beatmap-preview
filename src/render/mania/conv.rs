@@ -12,23 +12,20 @@ use crate::parser::round_half_even;
 use crate::common::conversion::{std_objects, TimingCursor};
 
 const SOURCE_MODE_KEY: &str = "PreviewSourceMode";
+const P_FORCE_NOT_STACK: u32 = 1;
+const P_KEEP_SINGLE: u32 = 2;
+const P_MIRROR: u32 = 4;
+const P_GATHERED: u32 = 8;
+const P_STAIR: u32 = 16;
+const P_REVERSE: u32 = 32;
+const P_CYCLE: u32 = 64;
+const P_LOW_PROBABILITY: u32 = 128;
+const P_FORCE_STACK: u32 = 256;
+const P_REVERSE_STAIR: u32 = 512;
+const HIT_WHISTLE: i32 = 2;
+const HIT_FINISH: i32 = 4;
+const HIT_CLAP: i32 = 8;
 
-// pattern type bit flags
-const P_FORCE_NOT_STACK: u32 = 1 << 0;
-const P_KEEP_SINGLE: u32 = 1 << 1;
-const P_MIRROR: u32 = 1 << 2;
-const P_GATHERED: u32 = 1 << 3;
-const P_STAIR: u32 = 1 << 4;
-const P_REVERSE: u32 = 1 << 5;
-const P_CYCLE: u32 = 1 << 6;
-const P_LOW_PROBABILITY: u32 = 1 << 7;
-const P_FORCE_STACK: u32 = 1 << 8;
-// extra bit for stair direction tracking (not part of pattern logic)
-const P_REVERSE_STAIR: u32 = 1 << 9;
-
-const HIT_WHISTLE: i32 = 1 << 1;
-const HIT_FINISH: i32 = 1 << 2;
-const HIT_CLAP: i32 = 1 << 3;
 
 // ── pattern ──
 

@@ -17,7 +17,7 @@ use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::cell::RefCell;
 use std::path::Path;
 
-use super::constants::*;
+use crate::config::layout::taiko::mp4::*;
 use super::gif::{
     build_gif_layout, build_multiplier_points, compute_time_range, draw_hit_objects,
     draw_row_background, prepare_hit_objects, pyround, GifLayout, MultiplierLookup,
@@ -52,7 +52,7 @@ pub(crate) fn render_taiko_video(
     )?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = GIF_FPS as u32;
+    let fps = FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;
@@ -113,6 +113,6 @@ pub(crate) fn render_taiko_video(
 /// (no 4-row stack, no inter-row gap, no bottom label strip).
 fn build_video_layout(time_range: f64) -> GifLayout {
     let mut layout = build_gif_layout(time_range);
-    layout.image_height = PAGE_MARGIN_Y * 2 + GIF_ROW_HEIGHT;
+    layout.image_height = PAGE_MARGIN_Y * 2 + ROW_HEIGHT;
     layout
 }

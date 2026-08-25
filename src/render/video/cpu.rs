@@ -16,8 +16,7 @@ use openh264::formats::{RgbaSliceU8, YUVBuffer};
 
 use super::mux::extract_nals_from_annexb;
 use super::{EncodedFrame, FrameEncoder};
-
-const CPU_VIDEO_BITRATE: u32 = 500_000;
+use crate::config::video::video_cpu::*;
 
 pub(crate) struct CpuEncoder {
     encoder: Encoder,

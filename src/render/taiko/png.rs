@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::constants::*;
+use crate::config::layout::taiko::png::*;
 use super::notes::{cached_roll_tail, draw_note_disc, draw_track_background, RenderCache};
 use super::timing::*;
 
@@ -102,7 +103,7 @@ pub(crate) fn render_taiko_grid(
         &spacing_timing_points,
         effective_chart_end_time,
         slider_multiplier,
-        gap.unwrap_or(SPACING_BPM),
+        gap.unwrap_or(SPACING_PER_BPM),
     );
     let redline_sections = build_redline_sections(&timing_points, effective_chart_end_time);
     let kiai_sections = build_kiai_sections(&timing_points, effective_chart_end_time);
@@ -208,7 +209,7 @@ fn build_png_layout(
     chart_start_time: i64,
 ) -> RenderLayout {
     let base_row_width = resolve_base_row_width(beatmap_duration);
-    let bpm_width_multiplier = if SPACING_BPM > 0.0 {
+    let bpm_width_multiplier = if SPACING_PER_BPM > 0.0 {
         1.0
     } else {
         resolve_row_width_bpm_multiplier(redline_sections)
@@ -259,38 +260,38 @@ fn build_png_layout(
 
 fn resolve_base_row_width(beatmap_duration: i64) -> i64 {
     if beatmap_duration < 60_000 {
-        return BASE_ROW_WIDTH_0_TO_1_MIN;
+        return BASE_ROW_WIDTH_0_TO_1_MINUTES;
     }
     if beatmap_duration < 2 * 60_000 {
-        return BASE_ROW_WIDTH_1_TO_2_MIN;
+        return BASE_ROW_WIDTH_1_TO_2_MINUTES;
     }
     if beatmap_duration < 3 * 60_000 {
-        return BASE_ROW_WIDTH_2_TO_3_MIN;
+        return BASE_ROW_WIDTH_2_TO_3_MINUTES;
     }
     if beatmap_duration < 4 * 60_000 {
-        return BASE_ROW_WIDTH_3_TO_4_MIN;
+        return BASE_ROW_WIDTH_3_TO_4_MINUTES;
     }
     if beatmap_duration < 5 * 60_000 {
-        return BASE_ROW_WIDTH_4_TO_5_MIN;
+        return BASE_ROW_WIDTH_4_TO_5_MINUTES;
     }
     if beatmap_duration < 6 * 60_000 {
-        return BASE_ROW_WIDTH_5_TO_6_MIN;
+        return BASE_ROW_WIDTH_5_TO_6_MINUTES;
     }
-    BASE_ROW_WIDTH_6_TO_10_MIN
+    BASE_ROW_WIDTH_6_TO_10_MINUTES
 }
 
 fn resolve_row_width_bpm_multiplier(redline_sections: &[RedlineSection]) -> f64 {
     let main_bpm = resolve_main_bpm(redline_sections);
     if main_bpm < 180.0 {
-        return ROW_WIDTH_BPM_0_TO_180;
+        return ROW_WIDTH_MULTIPLIER_BPM_0_TO_180;
     }
     if main_bpm < 240.0 {
-        return ROW_WIDTH_BPM_180_TO_240;
+        return ROW_WIDTH_MULTIPLIER_BPM_180_TO_240;
     }
     if main_bpm < 300.0 {
-        return ROW_WIDTH_BPM_240_TO_300;
+        return ROW_WIDTH_MULTIPLIER_BPM_240_TO_300;
     }
-    ROW_WIDTH_BPM_300_PLUS
+    ROW_WIDTH_MULTIPLIER_BPM_300_PLUS
 }
 
 fn resolve_main_bpm(redline_sections: &[RedlineSection]) -> f64 {

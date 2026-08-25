@@ -6,13 +6,11 @@ use crate::core::models::{Beatmap, HitObjects, StandardHitObject, TaikoHitObject
 use crate::core::mods::ModSettings;
 
 use crate::common::conversion::{almost_equals, std_objects, TimingCursor};
+use super::constants::*;
 
 // C# constant is 1.4f; keep it as a float32 value.
 const VELOCITY_MULTIPLIER: f64 = 1.4f32 as f64;
 const OSU_BASE_SCORING_DISTANCE: f64 = 100.0;
-
-const DRUMROLL_FLAG: i32 = 2;
-const SWELL_FLAG: i32 = 8;
 
 /// Pre-computed per-slider values shared between duration and hit-conversion
 /// checks, avoiding the duplicate computation that lazer does for stable compat.

@@ -14,9 +14,10 @@ use std::cell::RefCell;
 use std::path::Path;
 
 use super::constants::*;
+use crate::config::layout::taiko::gif::*;
 use super::notes::{
     cached_note_disc, cached_roll_tail, draw_drum_panel, draw_note_disc, draw_track_background,
-    paste_clipped, RenderCache, DRUM_PANEL_WIDTH_RATIO,
+    paste_clipped, RenderCache,
 };
 use super::timing::*;
 
@@ -28,11 +29,11 @@ pub(crate) fn pyround(v: f64) -> i64 {
 // ─── GIF helpers ───
 
 fn gif_judgement_line_offset() -> i64 {
-    pyround(GIF_REFERENCE_JUDGEMENT_X * GIF_ROW_HEIGHT as f64 / GIF_TAIKO_BASE_HEIGHT)
+    pyround(REFERENCE_JUDGEMENT_X * ROW_HEIGHT as f64 / TAIKO_BASE_HEIGHT)
 }
 
 fn gif_scroll_length_px() -> i64 {
-    pyround(GIF_REFERENCE_SCROLL_LENGTH * GIF_ROW_HEIGHT as f64 / GIF_TAIKO_BASE_HEIGHT)
+    pyround(REFERENCE_SCROLL_LENGTH * ROW_HEIGHT as f64 / TAIKO_BASE_HEIGHT)
 }
 
 // ─── multiplier / prepared objects ───
@@ -109,7 +110,7 @@ fn render_taiko_segment_gif(
     }
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let gameplay_segment_duration = pyround(GIF_DURATION_MS * speed_multiplier);
+    let gameplay_segment_duration = pyround(DURATION_MS * speed_multiplier);
 
     let spans: Vec<(i64, i64)> = hit_objects
         .iter()
@@ -118,7 +119,7 @@ fn render_taiko_segment_gif(
     let segment_timings: Vec<PreviewSegmentTiming> = PreviewTimeSelector::new(
         beatmap,
         spans,
-        GIF_SEGMENT_COUNT,
+        SEGMENT_COUNT,
         gameplay_segment_duration,
         times_ms,
     )?
@@ -134,8 +135,8 @@ fn render_taiko_segment_gif(
     let time_range = compute_time_range() / speed_multiplier;
 
     let layout = build_gif_layout(time_range);
-    let frame_count = pyround(GIF_DURATION_MS * GIF_FPS / 1000.0).max(1) as usize;
-    let frame_duration_ms = pyround(1000.0 / GIF_FPS).max(1) as u32;
+    let frame_count = pyround(DURATION_MS * FPS / 1000.0).max(1) as usize;
+    let frame_duration_ms = pyround(1000.0 / FPS).max(1) as u32;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -143,7 +144,7 @@ fn render_taiko_segment_gif(
             (0..frame_count)
                 .map(|frame_index| {
                     timing.start_time
-                        + pyround(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS)
+                        + pyround(frame_index as f64 * 1000.0 * speed_multiplier / FPS)
                 })
                 .collect()
         })
@@ -228,12 +229,12 @@ fn render_taiko_clip_gif(
     let time_range = compute_time_range() / speed_multiplier;
     let mut layout = build_gif_layout_with_segments(time_range, 1);
     if !show_time_label {
-        layout.image_height = PAGE_MARGIN_Y * 2 + GIF_ROW_HEIGHT;
+        layout.image_height = PAGE_MARGIN_Y * 2 + ROW_HEIGHT;
     }
     let frame_count =
-        pyround((range.end - range.start) as f64 * GIF_FPS / (1000.0 * speed_multiplier)).max(1)
+        pyround((range.end - range.start) as f64 * FPS / (1000.0 * speed_multiplier)).max(1)
             as usize;
-    let frame_duration_ms = pyround(1000.0 / GIF_FPS).max(1) as u32;
+    let frame_duration_ms = pyround(1000.0 / FPS).max(1) as u32;
 
     thread_local! {
         static TAIKO_GIF_CLIP_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
@@ -251,7 +252,7 @@ fn render_taiko_clip_gif(
 
     let render = move |frame_index: usize| -> Img {
         let snapshot_time =
-            range.start + pyround(frame_index as f64 * 1000.0 * speed_multiplier / GIF_FPS);
+            range.start + pyround(frame_index as f64 * 1000.0 * speed_multiplier / FPS);
         let mut canvas = static_bg.clone();
         TAIKO_GIF_CLIP_CACHE.with(|cache| {
             draw_hit_objects(
@@ -283,8 +284,8 @@ fn render_taiko_clip_gif(
 // ─── time range / multiplier ───
 
 pub(crate) fn compute_time_range() -> f64 {
-    let in_length = GIF_ASPECT * GIF_STABLE_GAMEFIELD_HEIGHT - GIF_STABLE_HIT_LOCATION;
-    in_length / 100.0 * 1000.0 / GIF_VELOCITY_MULTIPLIER
+    let in_length = ASPECT_RATIO * STABLE_GAMEFIELD_HEIGHT - STABLE_HIT_LOCATION;
+    in_length / 100.0 * 1000.0 / VELOCITY_MULTIPLIER
 }
 
 pub(crate) fn build_multiplier_points(
@@ -358,26 +359,26 @@ pub(crate) fn prepare_hit_objects(
 // ─── layout ───
 
 pub(crate) fn build_gif_layout(time_range: f64) -> GifLayout {
-    build_gif_layout_with_segments(time_range, GIF_SEGMENT_COUNT)
+    build_gif_layout_with_segments(time_range, SEGMENT_COUNT)
 }
 
 pub(crate) fn build_gif_layout_with_segments(time_range: f64, segment_count: usize) -> GifLayout {
     let segment_width = gif_scroll_length_px();
-    let left_panel_width = pyround(GIF_ROW_HEIGHT as f64 * DRUM_PANEL_WIDTH_RATIO);
+    let left_panel_width = pyround(ROW_HEIGHT as f64 * DRUM_PANEL_WIDTH_RATIO);
     let right_panel_width = ROW_INNER_PADDING_X * 2 + segment_width;
 
     let image_width = PAGE_MARGIN_X * 2 + left_panel_width + right_panel_width;
     let image_height = PAGE_MARGIN_Y * 2
-        + segment_count as i64 * GIF_ROW_HEIGHT
-        + (segment_count as i64 - 1) * GIF_ROW_GAP
+        + segment_count as i64 * ROW_HEIGHT
+        + (segment_count as i64 - 1) * ROW_GAP
         + 50;
 
-    let normal_note_diameter = pyround(GIF_ROW_HEIGHT as f64 * NORMAL_NOTE_SIZE_RATIO);
+    let normal_note_diameter = pyround(ROW_HEIGHT as f64 * NORMAL_NOTE_SIZE_RATIO);
     let big_note_diameter = pyround(normal_note_diameter as f64 * BIG_NOTE_SCALE);
 
     GifLayout {
         segment_width,
-        row_height: GIF_ROW_HEIGHT,
+        row_height: ROW_HEIGHT,
         left_panel_width,
         right_panel_width,
         image_width,
@@ -389,7 +390,7 @@ pub(crate) fn build_gif_layout_with_segments(time_range: f64, segment_count: usi
 }
 
 fn gif_row_top(row_index: i64, layout: &GifLayout) -> i64 {
-    PAGE_MARGIN_Y + row_index * (layout.row_height + GIF_ROW_GAP)
+    PAGE_MARGIN_Y + row_index * (layout.row_height + ROW_GAP)
 }
 
 fn gif_row_center_y(row_index: i64, layout: &GifLayout) -> i64 {
@@ -410,7 +411,7 @@ fn draw_judgement_line(image: &mut Img, layout: &GifLayout, row_index: i64) {
         row_top,
         line_x + 1,
         row_top + layout.row_height,
-        GIF_JUDGEMENT_LINE_COLOR,
+        JUDGEMENT_LINE_COLOR,
     );
 }
 
@@ -722,24 +723,24 @@ fn draw_time_label(
         crate::render::text::format_mmss_floor(time_axis.to_display(start_time + duration_ms))
     );
     let color = if is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+        PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_COLOR
+        TIME_LABEL_COLOR
     };
     let note_color = if is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+        PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_NOTE_COLOR
+        TIME_LABEL_NOTE_COLOR
     };
-    let (label_w, label_h) = text_size(&label, GIF_TIME_LABEL_FONT_SIZE);
+    let (label_w, label_h) = text_size(&label, TIME_LABEL_FONT_SIZE);
     let x = (PAGE_MARGIN_X as f64
         + (layout.image_width - PAGE_MARGIN_X * 2 - label_w as i64) as f64 / 2.0)
         .floor() as i64;
-    draw_text(image, x, y, &label, GIF_TIME_LABEL_FONT_SIZE, color);
+    draw_text(image, x, y, &label, TIME_LABEL_FONT_SIZE, color);
 
     if is_preview {
         let note = "Preview Time";
-        let (note_w, _) = text_size(note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
+        let (note_w, _) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = (PAGE_MARGIN_X as f64
             + (layout.image_width - PAGE_MARGIN_X * 2 - note_w as i64) as f64 / 2.0)
             .floor() as i64;
@@ -748,7 +749,7 @@ fn draw_time_label(
             note_x,
             y + label_h as i64 + 4,
             note,
-            GIF_TIME_LABEL_NOTE_FONT_SIZE,
+            TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
     }
@@ -770,24 +771,24 @@ fn draw_time_label_range(
         crate::render::text::format_mmss_floor(time_axis.to_display(end_time))
     );
     let color = if is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+        PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_COLOR
+        TIME_LABEL_COLOR
     };
     let note_color = if is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+        PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_NOTE_COLOR
+        TIME_LABEL_NOTE_COLOR
     };
-    let (label_w, label_h) = text_size(&label, GIF_TIME_LABEL_FONT_SIZE);
+    let (label_w, label_h) = text_size(&label, TIME_LABEL_FONT_SIZE);
     let x = (PAGE_MARGIN_X as f64
         + (layout.image_width - PAGE_MARGIN_X * 2 - label_w as i64) as f64 / 2.0)
         .floor() as i64;
-    draw_text(image, x, y, &label, GIF_TIME_LABEL_FONT_SIZE, color);
+    draw_text(image, x, y, &label, TIME_LABEL_FONT_SIZE, color);
 
     if is_preview {
         let note = "Preview Time";
-        let (note_w, _) = text_size(note, GIF_TIME_LABEL_NOTE_FONT_SIZE);
+        let (note_w, _) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = (PAGE_MARGIN_X as f64
             + (layout.image_width - PAGE_MARGIN_X * 2 - note_w as i64) as f64 / 2.0)
             .floor() as i64;
@@ -796,7 +797,7 @@ fn draw_time_label_range(
             note_x,
             y + label_h as i64 + 4,
             note,
-            GIF_TIME_LABEL_NOTE_FONT_SIZE,
+            TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
     }

@@ -5,8 +5,7 @@
 
 use crate::parser::round_half_even;
 use crate::render::canvas::Rgba;
-
-use super::{GIF_HIT_TARGET_FROM_BOTTOM, LANE_BACKGROUND, LANE_WIDTH};
+use crate::config::layout::mania::png::*;
 
 /// 单个键数对应的 mania 皮肤配置。
 pub(crate) struct ManiaSkinConfig {
@@ -117,18 +116,18 @@ fn parse_colour(raw: &str, fallback: Rgba) -> Rgba {
 /// 坐标系中距底部的距离。
 fn parse_hit_position(raw: Option<&str>) -> f64 {
     let Some(raw) = raw else {
-        return GIF_HIT_TARGET_FROM_BOTTOM as f64;
+        return HIT_TARGET_FROM_BOTTOM as f64;
     };
     match raw.trim().parse::<f64>() {
         Ok(v) => (480.0 - v.clamp(240.0, 480.0)) * 1.6,
-        Err(_) => GIF_HIT_TARGET_FROM_BOTTOM as f64,
+        Err(_) => HIT_TARGET_FROM_BOTTOM as f64,
     }
 }
 
 /// 缺省配置：等宽列、无分隔线、默认判定线位置。
 fn default_skin_config(keys: i32) -> ManiaSkinConfig {
     ManiaSkinConfig {
-        hit_position: GIF_HIT_TARGET_FROM_BOTTOM as f64,
+        hit_position: HIT_TARGET_FROM_BOTTOM as f64,
         column_widths: vec![LANE_WIDTH; keys as usize],
         column_line_widths: vec![0; keys as usize + 1],
         column_colours: vec![LANE_BACKGROUND; keys as usize],

@@ -16,6 +16,7 @@ use crate::render::canvas::{Img, Rgba};
 use crate::render::video::audio::AudioSourceJob;
 use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::path::Path;
+use crate::config::layout::mania::mp4::*;
 
 use super::gif::{
     build_column_left_offsets, build_scroll_map, compute_time_range, draw_gif_hit_object,
@@ -24,8 +25,7 @@ use super::gif::{
 use super::skin::load_mania_skin_config;
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
-    mania_objects, resolve_key_count, GIF_FPS, GIF_FRAME_HEIGHT, GIF_STAGE_TOP_PADDING,
-    IMAGE_BACKGROUND, LANE_WIDTH, LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, PAGE_MARGIN_X, PAGE_MARGIN_Y,
+    mania_objects, resolve_key_count,
 };
 
 pub(crate) fn render_mania_video(
@@ -73,7 +73,7 @@ pub(crate) fn render_mania_video(
     )?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = GIF_FPS as u32;
+    let fps = FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let skin_config = load_mania_skin_config(key_count);
@@ -187,9 +187,9 @@ fn build_video_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
     let lane_area_width: i64 = skin_config.column_widths.iter().sum::<i64>()
         + skin_config.column_line_widths.iter().sum::<i64>();
     let segment_width = LEFT_PANEL_WIDTH * 2 + lane_area_width;
-    let playfield_height = GIF_FRAME_HEIGHT;
+    let playfield_height = FRAME_HEIGHT;
     let hit_position_y = round_half_even(playfield_height as f64 - skin_config.hit_position);
-    let scroll_length = (hit_position_y - GIF_STAGE_TOP_PADDING).max(1);
+    let scroll_length = (hit_position_y - STAGE_TOP_PADDING).max(1);
     let average_column_width = skin_config.column_widths.iter().sum::<i64>() as f64
         / skin_config.column_widths.len() as f64;
     let note_head_height =

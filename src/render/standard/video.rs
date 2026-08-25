@@ -16,8 +16,8 @@ use crate::render::video::audio::AudioSourceJob;
 use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::cell::RefCell;
 use std::path::Path;
+use crate::config::layout::standard::mp4::*;
 
-use super::constants::GIF_FPS;
 use super::context::{
     apply_standard_object_mods, build_render_context, build_visible_indexes_by_snapshot,
     standard_objects, RenderCache,
@@ -49,7 +49,7 @@ pub(crate) fn render_standard_video(
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods, time_axis);
     let total_ms = end - start;
-    let fps = GIF_FPS as u32;
+    let fps = FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let break_periods = beatmap.break_periods.clone();

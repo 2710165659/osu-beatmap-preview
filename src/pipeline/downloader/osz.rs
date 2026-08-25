@@ -10,20 +10,7 @@ use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-const MIB_BYTES: u64 = 1024 * 1024;
-const MAX_OSZ_BYTES: u64 = 50 * MIB_BYTES;
-const PARALLEL_PARTS: usize = 4;
-const USER_AGENT: &str = "osu-beatmap-preview/1.0";
-const MAX_ACTIVE_ATTEMPTS: usize = 3;
-const POLL_INTERVAL: Duration = Duration::from_millis(250);
-const NO_FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(3);
-const LOW_SPEED_WINDOW: Duration = Duration::from_secs(5);
-const LOW_SPEED_BYTES_PER_SECOND: u64 = 128 * 1024;
-const DOWNLOAD_HARD_TIMEOUT: Duration = Duration::from_secs(120);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const READ_TIMEOUT: Duration = Duration::from_secs(15);
-const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
-const BUFFER_SIZE: usize = 64 * 1024;
+use crate::config::network::downloader_osz::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ContentRange {

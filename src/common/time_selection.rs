@@ -69,7 +69,6 @@ pub enum GifRenderOptions {
 pub fn times_to_milliseconds(times: Option<&[f64]>) -> Result<Option<Vec<i64>>> {
     const I64_MIN_AS_F64: f64 = -9_223_372_036_854_775_808.0;
     const I64_MAX_EXCLUSIVE_AS_F64: f64 = 9_223_372_036_854_775_808.0;
-
     times
         .map(|ts| {
             ts.iter()
