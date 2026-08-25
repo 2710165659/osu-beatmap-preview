@@ -108,7 +108,10 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | OSZ cache | `<temp>/osu-beatmap-preview/osz-download-cache/` (archives use `<set-id>.osz`; extracted audio is isolated under `<set-id>/<filename-hash>.<extension>`) |
 | Preferred IP cache | `<temp>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
 | Output file | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_gifclip][_t<time-or-range>][_preview30s][_bpm<BPM>].<fmt>` |
-| Log files | `<temp>/osu-beatmap-preview/logs/` - `progress.log` (live progress, `tail -f`) and `render.log` (NDJSON summary) |
+| Configuration directory | `<temp>/osu-beatmap-preview/config/` |
+| Log files | `<temp>/osu-beatmap-preview/logs/` — `progress.log` (live progress, `tail -f`) and `render.log` (NDJSON summary) |
+
+These directories are defined by the top-level `paths` entries in `assets/default_config.yml`; `%TEMP%` is expanded to the platform temporary directory at runtime. The configuration directory is reserved for now and is not created or loaded automatically.
 
 ### Images (PNG)
 

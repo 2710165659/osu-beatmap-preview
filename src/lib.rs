@@ -6,8 +6,8 @@ mod parser;
 mod pipeline;
 mod render;
 
-
 pub use core::errors::{PreviewError, ErrorKind};
+pub use log::{init, paths};
 
 #[derive(Debug, Clone)]
 pub struct PreviewOptions {
@@ -45,6 +45,16 @@ impl PreviewOptions {
 pub fn generate_preview(
     options: PreviewOptions,
 ) -> Result<serde_json::Value, PreviewError> {
+    if let Some(value) = options.convert.as_deref() {
+        core::validate::validate_convert_value(value)?;
+    }
+    if let Some(value) = options.format.as_deref() {
+        core::validate::validate_fmt_value(value)?;
+    }
+    if let Some(value) = options.gap {
+        core::validate::validate_gap_value(value)?;
+    }
+
     let mods = match &options.mods {
         Some(value) => Some(core::mods::parse_mods(value)?),
         None => None,

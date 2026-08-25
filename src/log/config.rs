@@ -17,9 +17,7 @@ static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 
 /// 默认日志目录：`<临时目录>/osu-beatmap-preview/logs`。
 pub fn default_log_dir() -> PathBuf {
-    std::env::temp_dir()
-        .join("osu-beatmap-preview")
-        .join("logs")
+    crate::config::resolve_path(crate::config::paths::LOG_DIR)
 }
 
 /// 初始化日志（幂等）。`log_dir` 为空时依次回退到 `OSU_PREVIEW_LOG_DIR`

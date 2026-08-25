@@ -17,6 +17,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let module = module.as_str().ok_or("module name must be a string")?;
         let sections = sections.as_mapping().ok_or("module must be a mapping")?;
         generated.push_str(&format!("#[allow(dead_code)]\npub mod {module} {{\n"));
+        if module == "paths" {
+            generate_entries_from_mapping(&mut generated, sections, &[module])?;
+            generated.push_str("}\n");
+            continue;
+        }
         for (section, entries) in sections {
             let section = section.as_str().ok_or("section name must be a string")?;
             generated.push_str(&format!("#[allow(dead_code)]\npub mod {section} {{\n"));
@@ -47,6 +52,14 @@ fn generate_entries(
     path: &[&str],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let entries = raw_entries.as_mapping().ok_or("section must be a mapping")?;
+    generate_entries_from_mapping(generated, entries, path)
+}
+
+fn generate_entries_from_mapping(
+    generated: &mut String,
+    entries: &serde_yaml::Mapping,
+    path: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
     for (name, raw_entry) in entries {
         let name = name.as_str().ok_or("constant name must be a string")?;
         generated.push_str(&generate_constant(path, name, raw_entry)?);

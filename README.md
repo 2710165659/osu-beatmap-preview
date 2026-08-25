@@ -108,7 +108,10 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
 | 优选 IP 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
 | 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_gifclip][_t<时间点或区间>][_preview30s][_bpm<BPM值>].<fmt>` |
+| 配置文件夹 | `<临时目录>/osu-beatmap-preview/config/` |
 | 日志文件 | `<临时目录>/osu-beatmap-preview/logs/` — `progress.log`（实时进度，`tail -f`）与 `render.log`（NDJSON 汇总） |
+
+上述目录由 `assets/default_config.yml` 顶层 `paths` 配置项定义；路径中的 `%TEMP%` 会在运行时展开为当前系统临时目录。配置文件夹目前仅为预留目录，不会自动创建或加载外部配置。
 
 ### 图片（PNG）
 

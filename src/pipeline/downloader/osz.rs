@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::config::network::downloader_osz::*;
 
@@ -1117,6 +1117,7 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Cursor};
     use std::net::TcpListener;
+    use std::time::Duration;
     use zip::write::SimpleFileOptions;
 
     #[test]

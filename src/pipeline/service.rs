@@ -82,14 +82,15 @@ fn generate_preview_inner(
     no_cache: bool,
     rec: &mut SummaryRecord,
 ) -> Result<Value> {
-    let temp_root = std::env::temp_dir().join("osu-beatmap-preview");
+    let cache_root = crate::config::resolve_path(crate::config::paths::CACHE_DIR);
+    let output_root = crate::config::resolve_path(crate::config::paths::OUTPUT_DIR);
     let gif_clip_mode = gif_clip || gif_clip_label;
 
     // ── .osu 下载与解析 ──
     let t0 = Instant::now();
     let beatmap_path = crate::pipeline::downloader::download_beatmap_file(
         bid,
-        &temp_root.join("osu-download-cache"),
+        &cache_root.join("osu-download-cache"),
         no_cache,
     )?;
     rec.download_osu_ms = Some(t0.elapsed().as_secs_f64() * 1000.0);
@@ -183,10 +184,7 @@ fn generate_preview_inner(
     if let Some(b) = gap {
         parts.push(format!("bpm{}", b));
     }
-    let output_path: PathBuf =
-        temp_root
-            .join("outputs")
-            .join(format!("{}.{}", parts.join("_"), fmt));
+    let output_path: PathBuf = output_root.join(format!("{}.{}", parts.join("_"), fmt));
 
     // ── image cache check ──
     let cached = cache::output_cache_hit(
@@ -240,7 +238,7 @@ fn generate_preview_inner(
         Some(AudioSourceJob::start(
             bid,
             beatmap.clone(),
-            temp_root.join("osz-download-cache"),
+            cache_root.join("osz-download-cache"),
             no_cache,
         )?)
     } else {
