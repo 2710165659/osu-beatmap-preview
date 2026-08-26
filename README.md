@@ -17,7 +17,7 @@
 ## 使用
 
 ```bash
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>]
 ```
 
 ### 参数
@@ -32,6 +32,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--duration-time` | 仅 MP4 可用，输出时长（秒）。默认 `600`。 |
 | `--no-log` | 关闭日志。 |
 | `--no-cache` | 跳过下载缓存与输出缓存，强制重新渲染。 |
+| `--config` | 配置文件路径，或 JSON/YAML 格式的配置对象。嵌套映射递归合并；数组和标量整体替换，未传入字段保留默认值。 |
 | `--version` | 打印版本号与构建时间后退出。 |
 
 > MP4 数值起始时间使用游戏时间轴：转谱后的目标模式首个可玩物件为 `0:00`，不是编辑器左下角的绝对音轨时间。支持负数，早于音频起点的部分输出静音。
@@ -93,10 +94,20 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
 | 优选 IP 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
 | 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_video-start...-duration...].<fmt>` |
-| 配置文件夹 | `<临时目录>/osu-beatmap-preview/config/` |
+| 配置文件夹 | 二进制文件同级目录 |
 | 日志文件 | `<临时目录>/osu-beatmap-preview/logs/` — `progress.log`（实时进度，`tail -f`）与 `render.log`（NDJSON 汇总） |
 
-上述目录由 `assets/default_config.yml` 顶层 `paths` 配置项定义；路径中的 `%TEMP%` 会在运行时展开为当前系统临时目录。配置文件夹目前仅为预留目录，不会自动创建或加载外部配置。
+上述目录由 `assets/default_config.yml` 顶层 `paths` 配置项定义；默认 `CONFIG_DIR: "./"` 表示二进制文件所在目录。程序会尝试读取二进制文件同级的 `config.yml`，其后再应用 `--config` 覆盖。配置文件不存在时继续使用默认值；存在但格式错误会导致启动失败。
+
+配置来源按“内置默认值 < `CONFIG_DIR/config.yml` < `--config`”合并。`--config` 可以是文件路径，也可以直接传入 JSON/YAML 对象，例如：
+
+配置字段必须来自内置配置；未知字段、顶层非对象和无法转换的类型会导致启动失败。数字和布尔值也接受可安全转换的字符串形式。
+
+```bash
+osu-beatmap-preview --bid=123456 --config='{"layout":{"standard":{"gif":{"ROW_COUNT":1}}}}'
+osu-beatmap-preview --bid=123456 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'
+osu-beatmap-preview --bid=123456 --config=C:/path/to/config.yml
+```
 
 ### 图片（PNG）
 

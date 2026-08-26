@@ -5,8 +5,6 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::config::network::downloader_cf_ip::*;
-
 pub fn read_preferred_ip(temp_dir: &Path) -> Option<Ipv4Addr> {
     let path = cache_path(temp_dir);
     let text = std::fs::read_to_string(path).ok()?;
@@ -14,12 +12,18 @@ pub fn read_preferred_ip(temp_dir: &Path) -> Option<Ipv4Addr> {
     let ip = value.get("ip")?.as_str()?.parse::<Ipv4Addr>().ok()?;
     let tested_at = value.get("tested_at")?.as_u64()?;
     let now = unix_seconds();
-    if now < tested_at || now - tested_at > CACHE_TTL.as_secs() {
+    if now < tested_at
+        || now - tested_at
+            > crate::config::current()
+                .network
+                .downloader_cf_ip
+                .CACHE_TTL
+                .as_secs()
+    {
         return None;
     }
     Some(ip)
 }
-
 pub fn spawn_refresh(temp_dir: &Path, force: bool) {
     let temp_dir = temp_dir.to_path_buf();
     if !force && read_preferred_ip(&temp_dir).is_some() {
@@ -50,7 +54,7 @@ pub fn resolver_for(preferred_ip: Ipv4Addr) -> impl ureq::Resolver {
 fn refresh(temp_dir: &Path, force: bool) -> io::Result<()> {
     let root = cache_root(temp_dir);
     std::fs::create_dir_all(&root)?;
-    let lock_path = root.join(LOCK_FILE);
+    let lock_path = root.join(&crate::config::current().network.downloader_cf_ip.LOCK_FILE);
     let Some(_lock) = acquire_lock(lock_path)? else {
         return Ok(());
     };
@@ -68,7 +72,12 @@ fn refresh(temp_dir: &Path, force: bool) -> io::Result<()> {
     let tcp = probe_tcp_candidates();
     let mut finalists = tcp;
     finalists.sort_by_key(|(_, latency)| *latency);
-    finalists.truncate(HTTP_CANDIDATES);
+    finalists.truncate(
+        crate::config::current()
+            .network
+            .downloader_cf_ip
+            .HTTP_CANDIDATES,
+    );
 
     let winner = probe_http_candidates(finalists)?
         .into_iter()
@@ -96,9 +105,14 @@ fn probe_tcp_candidates() -> Vec<(Ipv4Addr, Duration)> {
         let sender = sender.clone();
         thread::spawn(move || {
             let started = std::time::Instant::now();
-            let result =
-                TcpStream::connect_timeout(&SocketAddr::new(IpAddr::V4(ip), 443), TCP_TIMEOUT)
-                    .map(|_| (ip, started.elapsed()));
+            let result = TcpStream::connect_timeout(
+                &SocketAddr::new(IpAddr::V4(ip), 443),
+                crate::config::current()
+                    .network
+                    .downloader_cf_ip
+                    .TCP_TIMEOUT,
+            )
+            .map(|_| (ip, started.elapsed()));
             if let Ok(result) = result {
                 let _ = sender.send(result);
             }
@@ -117,8 +131,18 @@ fn probe_http_candidates(
         thread::spawn(move || {
             let agent = ureq::AgentBuilder::new()
                 .resolver(resolver_for(ip))
-                .timeout_connect(HTTP_TIMEOUT)
-                .timeout(HTTP_TIMEOUT)
+                .timeout_connect(
+                    crate::config::current()
+                        .network
+                        .downloader_cf_ip
+                        .HTTP_TIMEOUT,
+                )
+                .timeout(
+                    crate::config::current()
+                        .network
+                        .downloader_cf_ip
+                        .HTTP_TIMEOUT,
+                )
                 .build();
             let started = std::time::Instant::now();
             let usable = match agent
@@ -141,7 +165,10 @@ fn probe_http_candidates(
 
 fn build_candidates() -> Vec<Ipv4Addr> {
     let seed = unix_seconds() as u32 ^ std::process::id();
-    CLOUDFLARE_IPV4_RANGES
+    crate::config::current()
+        .network
+        .downloader_cf_ip
+        .CLOUDFLARE_IPV4_RANGES
         .iter()
         .enumerate()
         .flat_map(|(index, range)| sample_range(range, seed.wrapping_add(index as u32)))
@@ -173,13 +200,14 @@ fn sample_range(cidr: &str, seed: u32) -> Vec<Ipv4Addr> {
 }
 
 fn cache_path(temp_dir: &Path) -> PathBuf {
-    cache_root(temp_dir).join(CACHE_FILE)
+    cache_root(temp_dir).join(&crate::config::current().network.downloader_cf_ip.CACHE_FILE)
 }
 
 fn write_cache(temp_dir: &Path, ip: Ipv4Addr) -> io::Result<()> {
     let root = cache_root(temp_dir);
     let path = cache_path(temp_dir);
-    let tmp = root.join(format!("{CACHE_FILE}.{}.tmp", std::process::id()));
+    let cache_file = &crate::config::current().network.downloader_cf_ip.CACHE_FILE;
+    let tmp = root.join(format!("{cache_file}.{}.tmp", std::process::id()));
     let content =
         serde_json::json!({ "ip": ip.to_string(), "tested_at": unix_seconds() }).to_string();
     std::fs::write(&tmp, content)?;
@@ -267,7 +295,13 @@ mod tests {
 
     #[test]
     fn samples_are_ipv4_addresses_inside_ranges() {
-        for (range, sample) in CLOUDFLARE_IPV4_RANGES.iter().zip(std::iter::repeat(0)) {
+        for (range, sample) in crate::config::current()
+            .network
+            .downloader_cf_ip
+            .CLOUDFLARE_IPV4_RANGES
+            .iter()
+            .zip(std::iter::repeat(0))
+        {
             assert_eq!(sample_range(range, sample).len(), 2);
         }
     }
@@ -281,7 +315,15 @@ mod tests {
         let ip = Ipv4Addr::new(104, 16, 1, 1);
         write_cache(&osz_cache, ip).unwrap();
         assert_eq!(read_preferred_ip(&osz_cache), Some(ip));
-        assert!(root.join(CACHE_FILE).is_file());
+        assert!(root
+            .join(
+                crate::config::current()
+                    .network
+                    .downloader_cf_ip
+                    .CACHE_FILE
+                    .as_str()
+            )
+            .is_file());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -293,10 +335,26 @@ mod tests {
         ));
         let osz_cache = root.join("osz-download-cache");
         std::fs::create_dir_all(&osz_cache).unwrap();
-        std::fs::write(root.join(CACHE_FILE), "not-json").unwrap();
+        std::fs::write(
+            root.join(
+                crate::config::current()
+                    .network
+                    .downloader_cf_ip
+                    .CACHE_FILE
+                    .as_str(),
+            ),
+            "not-json",
+        )
+        .unwrap();
         assert_eq!(read_preferred_ip(&osz_cache), None);
         std::fs::write(
-            root.join(CACHE_FILE),
+            root.join(
+                crate::config::current()
+                    .network
+                    .downloader_cf_ip
+                    .CACHE_FILE
+                    .as_str(),
+            ),
             serde_json::json!({ "ip": "104.16.1.1", "tested_at": 1 }).to_string(),
         )
         .unwrap();

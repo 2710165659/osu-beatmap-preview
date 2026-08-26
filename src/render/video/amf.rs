@@ -31,7 +31,7 @@ use crate::core::errors::{PreviewError, Result};
 use crate::render::canvas::Img;
 
 use super::mux::extract_nals_from_annexb;
-use super::{EncodedFrame, FrameEncoder, VIDEO_BITRATE};
+use super::{EncodedFrame, FrameEncoder};
 
 use libloading::Library;
 use std::ffi::c_void;
@@ -362,7 +362,10 @@ pub(crate) fn try_create(w: u32, h: u32, fps: u32) -> Result<Option<AmfEncoder>>
         (wstr("QualityPreset"), 1), // AMF_VIDEO_ENCODER_QUALITY_PRESET_SPEED
         (wstr("Profile"), 100),     // AMF_VIDEO_ENCODER_PROFILE_HIGH
         (wstr("ProfileLevel"), 41), // Level 4.1
-        (wstr("TargetBitrate"), VIDEO_BITRATE as i64),
+        (
+            wstr("TargetBitrate"),
+            crate::config::current().video.video.VIDEO_BITRATE as i64,
+        ),
         (wstr("RateControlMethod"), 1), // CBR
         (wstr("BPicturesPattern"), 0),  // No B-frames
         (wstr("IDRPeriod"), keyframe_period),

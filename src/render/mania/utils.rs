@@ -1,7 +1,6 @@
 //! Shared mania helpers: key-count resolution, mod applications, SV changes,
 //! lane palette, and timing utilities.
 
-use crate::config::palette::mania_utils::*;
 use crate::core::errors::PreviewError;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::parser::round_half_even;
@@ -12,11 +11,11 @@ const MAX_KEY_COUNT: i32 = 18;
 
 pub(crate) fn lane_palette(key_count: i32) -> Vec<Rgba> {
     let (w, b, g, y, r) = (
-        MANIA_COLOR_W,
-        MANIA_COLOR_B,
-        MANIA_COLOR_G,
-        MANIA_COLOR_Y,
-        MANIA_COLOR_R,
+        crate::config::current().palette.mania_utils.MANIA_COLOR_W,
+        crate::config::current().palette.mania_utils.MANIA_COLOR_B,
+        crate::config::current().palette.mania_utils.MANIA_COLOR_G,
+        crate::config::current().palette.mania_utils.MANIA_COLOR_Y,
+        crate::config::current().palette.mania_utils.MANIA_COLOR_R,
     );
     match key_count {
         1 => vec![w],

@@ -43,9 +43,132 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         generated.push_str("}\n");
     }
+    // Keep the generated schema separate from the legacy constants while the
+    // consumers are migrated to the runtime snapshot.
+    let source_value: Value = serde_yaml::from_str(&source)?;
+    generate_runtime_schema(&mut generated, &source_value)?;
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").ok_or("OUT_DIR missing")?);
     fs::write(out_dir.join("config_constants.rs"), generated)?;
     Ok(())
+}
+
+fn generate_runtime_schema(
+    generated: &mut String,
+    root: &Value,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mapping = root.as_mapping().ok_or("root must be a mapping")?;
+    generated.push_str("\n#[derive(Clone, Debug, serde::Deserialize)]\n#[serde(deny_unknown_fields)]\n#[allow(dead_code, non_snake_case, non_camel_case_types)]\npub struct RuntimeConfig {\n");
+    for (key, value) in mapping {
+        let key = key.as_str().ok_or("config key must be a string")?;
+        let ty = runtime_type_name(&[key], value)?;
+        generated.push_str(&format!("    pub {key}: {ty},\n"));
+    }
+    generated.push_str("}\n");
+    for (key, value) in mapping {
+        let key = key.as_str().ok_or("config key must be a string")?;
+        generate_runtime_struct(generated, &[key], value)?;
+    }
+    Ok(())
+}
+
+fn generate_runtime_struct(
+    generated: &mut String,
+    path: &[&str],
+    value: &Value,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(mapping) = value.as_mapping() else {
+        return Ok(());
+    };
+    let name = runtime_type_name(path, value)?;
+    for (key, child) in mapping {
+        let key = key.as_str().ok_or("config key must be a string")?;
+        let mut child_path = path.to_vec();
+        child_path.push(key);
+        generate_runtime_struct(generated, &child_path, child)?;
+    }
+    generated.push_str(&format!(
+        "\n#[derive(Clone, Debug, serde::Deserialize)]\n#[serde(deny_unknown_fields)]\n#[allow(dead_code, non_snake_case, non_camel_case_types)]\npub struct {name} {{\n"
+    ));
+    for (key, child) in mapping {
+        let key = key.as_str().ok_or("config key must be a string")?;
+        let mut child_path = path.to_vec();
+        child_path.push(key);
+        let ty = runtime_field_type(&child_path, child)?;
+        if let Some(kind) = special_kind(path, key) {
+            if kind == "duration_ms" {
+                generated.push_str(&format!(
+                    "    #[serde(deserialize_with = \"crate::config::deserialize_duration_ms\")]\n"
+                ));
+            } else if kind == "duration_secs" {
+                generated.push_str(&format!(
+                    "    #[serde(deserialize_with = \"crate::config::deserialize_duration_secs\")]\n"
+                ));
+            }
+        }
+        generated.push_str(&format!("    pub {key}: {ty},\n"));
+    }
+    generated.push_str("}\n");
+    Ok(())
+}
+
+fn runtime_field_type(path: &[&str], value: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    if let Some(kind) = special_kind(&path[..path.len() - 1], path[path.len() - 1]) {
+        if matches!(kind, "duration_ms" | "duration_secs") {
+            return Ok("std::time::Duration".to_string());
+        }
+    }
+    Ok(match value {
+        Value::Mapping(_) => runtime_type_name(path, value)?,
+        Value::Number(number) if number.is_f64() => "f64".to_string(),
+        Value::Number(_) => integer_type(&path[..path.len() - 1], path[path.len() - 1]).to_string(),
+        _ => runtime_scalar_type(value),
+    })
+}
+
+fn runtime_type_name(path: &[&str], value: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    if !value.is_mapping() {
+        return Ok(runtime_scalar_type(value));
+    }
+    let mut name = String::new();
+    for part in path {
+        let mut chars = part.chars();
+        if let Some(first) = chars.next() {
+            name.push(first.to_ascii_uppercase());
+            name.extend(chars);
+        }
+    }
+    Ok(format!("{name}Config"))
+}
+
+fn runtime_scalar_type(value: &Value) -> String {
+    match value {
+        Value::Bool(_) => "bool".to_string(),
+        Value::String(_) => "String".to_string(),
+        Value::Number(number) if number.is_f64() => "f64".to_string(),
+        Value::Number(_) => "i64".to_string(),
+        Value::Sequence(values) => {
+            if values.iter().all(|v| matches!(v, Value::String(_))) {
+                "Vec<String>".to_string()
+            } else if values.iter().all(is_byte_value) {
+                format!("[u8; {}]", values.len())
+            } else if values
+                .iter()
+                .all(|v| matches!(v, Value::Sequence(inner) if inner.iter().all(is_byte_value)))
+            {
+                let width = values
+                    .first()
+                    .and_then(|v| match v {
+                        Value::Sequence(inner) => Some(inner.len()),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                format!("Vec<[u8; {width}]>")
+            } else {
+                "Vec<serde_json::Value>".to_string()
+            }
+        }
+        Value::Null | Value::Mapping(_) | Value::Tagged(_) => "serde_json::Value".to_string(),
+    }
 }
 
 fn generate_entries(

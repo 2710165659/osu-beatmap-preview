@@ -3,7 +3,6 @@
 //! resides in memory at once.  Frames are rendered in parallel chunks (rayon)
 //! and encoded sequentially to preserve delta-frame ordering.
 
-use crate::config::video::composer::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::render::canvas::Img;
 use rayon::prelude::*;
@@ -212,15 +211,20 @@ pub fn save_animated_gif_streamed(
     // Reserve one index for GIF delta-frame transparency. Keeping 127 actual
     // colors makes the largest emitted index 127, so LZW can use a 7-bit
     // initial code instead of being forced to 8 bits by index 255.
-    let nq = color_quant::NeuQuant::new(10, PALETTE_COLORS, &sample);
-    let mut palette: Vec<u8> = Vec::with_capacity((PALETTE_COLORS + 1) * 3);
+    let nq = color_quant::NeuQuant::new(
+        10,
+        crate::config::current().video.composer.PALETTE_COLORS,
+        &sample,
+    );
+    let mut palette: Vec<u8> =
+        Vec::with_capacity((crate::config::current().video.composer.PALETTE_COLORS + 1) * 3);
     for px in nq.color_map_rgba().chunks_exact(4) {
         palette.extend_from_slice(&px[..3]);
     }
-    while palette.len() < (PALETTE_COLORS + 1) * 3 {
+    while palette.len() < (crate::config::current().video.composer.PALETTE_COLORS + 1) * 3 {
         palette.extend_from_slice(&[0, 0, 0]);
     }
-    let transparent_idx: u8 = PALETTE_COLORS as u8;
+    let transparent_idx: u8 = crate::config::current().video.composer.PALETTE_COLORS as u8;
 
     // Precompute a 32³ 3D LUT mapping posterized RGB → palette index.
     // posterize() reduces each channel to 16 distinct values (0x00..0xFF step 0x11);
@@ -250,7 +254,9 @@ pub fn save_animated_gif_streamed(
 
         let mut prev_indexed: Vec<u8> = Vec::new();
         let frame_bytes = w.saturating_mul(h).saturating_mul(4).max(1);
-        let par_chunk_size = (MAX_PAR_FRAME_BYTES / frame_bytes).clamp(1, PAR_CHUNK_SIZE);
+        let par_chunk_size = (crate::config::current().video.composer.MAX_PAR_FRAME_BYTES
+            / frame_bytes)
+            .clamp(1, crate::config::current().video.composer.PAR_CHUNK_SIZE);
 
         // ── render + encode in parallel chunks ──
         for chunk_start in (0..frame_count).step_by(par_chunk_size) {

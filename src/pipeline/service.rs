@@ -71,8 +71,9 @@ fn generate_preview_inner(
     no_cache: bool,
     rec: &mut SummaryRecord,
 ) -> Result<Value> {
-    let cache_root = crate::config::resolve_path(crate::config::paths::CACHE_DIR);
-    let output_root = crate::config::resolve_path(crate::config::paths::OUTPUT_DIR);
+    let runtime_config = crate::config::current();
+    let cache_root = crate::config::resolve_path(runtime_config.paths.CACHE_DIR.as_str());
+    let output_root = crate::config::resolve_path(runtime_config.paths.OUTPUT_DIR.as_str());
     // ── .osu 下载与解析 ──
     let t0 = Instant::now();
     let beatmap_path = crate::pipeline::downloader::download_beatmap_file(

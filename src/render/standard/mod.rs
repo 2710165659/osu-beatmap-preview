@@ -12,7 +12,6 @@ mod png;
 pub(crate) mod slider;
 mod video;
 
-pub(crate) use crate::config::layout::standard::png::*;
 pub(crate) use gif::render_standard_gif;
 pub(crate) use png::render_standard_png;
 pub(crate) use video::render_standard_video;
@@ -29,7 +28,7 @@ pub(crate) fn draw_centered_text(
     color: [u8; 4],
 ) {
     let (text_w, _) = text_size(text, size);
-    let text_x = x + (IMAGE_WIDTH - text_w as i64) / 2;
+    let text_x = x + (crate::config::current().layout.standard.png.IMAGE_WIDTH - text_w as i64) / 2;
     draw_text(canvas, text_x, y, text, size, color);
 }
 
@@ -43,16 +42,44 @@ pub(crate) fn draw_time_label(
     label_color: [u8; 4],
     note_color: [u8; 4],
 ) {
-    draw_centered_text(canvas, label, x, y, TIME_LABEL_FONT_SIZE, label_color);
+    draw_centered_text(
+        canvas,
+        label,
+        x,
+        y,
+        crate::config::current()
+            .layout
+            .standard
+            .png
+            .TIME_LABEL_FONT_SIZE,
+        label_color,
+    );
     if let Some(note_text) = note {
-        let (_, label_h) = text_size(label, TIME_LABEL_FONT_SIZE);
-        let note_y = y + label_h as i64 + TIME_LABEL_NOTE_TOP_GAP;
+        let (_, label_h) = text_size(
+            label,
+            crate::config::current()
+                .layout
+                .standard
+                .png
+                .TIME_LABEL_FONT_SIZE,
+        );
+        let note_y = y
+            + label_h as i64
+            + crate::config::current()
+                .layout
+                .standard
+                .png
+                .TIME_LABEL_NOTE_TOP_GAP;
         draw_centered_text(
             canvas,
             note_text,
             x,
             note_y,
-            TIME_LABEL_NOTE_FONT_SIZE,
+            crate::config::current()
+                .layout
+                .standard
+                .png
+                .TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
     }

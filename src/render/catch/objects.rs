@@ -125,7 +125,7 @@ pub(crate) fn catch_time_range(approach_rate: f64) -> f64 {
 // ─── stateless colors ───
 
 pub(crate) fn banana_color(seed: i64) -> [u8; 3] {
-    BANANA_COLORS[stateless_next_int(3, seed, 0) as usize]
+    crate::config::current().layout.catch.png.BANANA_COLORS[stateless_next_int(3, seed, 0) as usize]
 }
 
 // ─── object expansion ───
@@ -142,7 +142,7 @@ pub(crate) fn build_catch_render_objects(
 ) -> Result<Vec<RenderObject>> {
     let beatmap_format_version = beatmap.format_version();
     let mut render_objects: Vec<RenderObject> = Vec::new();
-    let mut rng = LegacyRandom::new(RNG_SEED);
+    let mut rng = LegacyRandom::new(crate::config::current().layout.catch.png.RNG_SEED);
     let hard_rock_offsets = mods.is_some_and(|m| m.hard_rock);
     let mut last_position: Option<f64> = None;
     let mut last_start_time = 0.0f64;
@@ -154,7 +154,7 @@ pub(crate) fn build_catch_render_objects(
     } else if !skin_combo_colors.is_empty() {
         skin_combo_colors
     } else {
-        &LAZER_COMBO_COLORS
+        &crate::config::current().layout.catch.png.LAZER_COMBO_COLORS
     };
 
     // combo 颜色追踪：首个对象固定取第 0 组色，之后 new_combo 时前进 1 + combo_offset
@@ -257,7 +257,7 @@ fn build_banana_shower_objects(
 
     let mut current_time = to_float32(start_time as f64);
     while current_time <= end_time as f32 {
-        let x = rng.next_double() * PLAYFIELD_WIDTH;
+        let x = rng.next_double() * crate::config::current().layout.catch.png.PLAYFIELD_WIDTH;
         rng.next();
         rng.next();
         rng.next();
@@ -267,7 +267,7 @@ fn build_banana_shower_objects(
             x,
             start_time: rhe(current_time as f64),
             color: banana_color(current_time as i64),
-            scale_factor: BANANA_SCALE,
+            scale_factor: crate::config::current().layout.catch.png.BANANA_SCALE,
             event_time: Some(current_time as f64),
             hyper_dash: false,
         });
@@ -323,7 +323,7 @@ fn build_juice_stream_objects(
                     x,
                     start_time: st,
                     color: combo_color,
-                    scale_factor: DROPLET_SCALE,
+                    scale_factor: crate::config::current().layout.catch.png.DROPLET_SCALE,
                     event_time: Some(event.time),
                     hyper_dash: false,
                 });
@@ -347,7 +347,9 @@ fn build_juice_stream_objects(
                 // Python: offset = rng.next(-20, 20)
                 // which is: int(-20 + rng.next_double() * 40)
                 let offset = (-20.0 + rng.next_double() * 40.0) as i32 as f64;
-                obj.x = (obj.x + offset).max(0.0).min(PLAYFIELD_WIDTH);
+                obj.x = (obj.x + offset)
+                    .max(0.0)
+                    .min(crate::config::current().layout.catch.png.PLAYFIELD_WIDTH);
             }
             ObjType::Droplet => {
                 rng.next();
@@ -564,7 +566,7 @@ fn build_tiny_droplets_between(
             x,
             start_time: rhe(time),
             color: combo_color,
-            scale_factor: TINY_DROPLET_SCALE,
+            scale_factor: crate::config::current().layout.catch.png.TINY_DROPLET_SCALE,
             event_time: Some(time),
             hyper_dash: false,
         });
@@ -591,15 +593,19 @@ fn apply_hard_rock_fruit_offset(
 
 fn apply_random_offset(position: f64, max_offset: f64, rng: &mut LegacyRandom) -> f64 {
     let offset = rng.next_double() * max_offset * 2.0 - max_offset;
-    (position + offset).clamp(0.0, PLAYFIELD_WIDTH)
+    (position + offset).clamp(
+        0.0,
+        crate::config::current().layout.catch.png.PLAYFIELD_WIDTH,
+    )
 }
 
 fn apply_offset(position: f64, amount: f64) -> f64 {
-    (position + amount).min(PLAYFIELD_WIDTH)
+    (position + amount).min(crate::config::current().layout.catch.png.PLAYFIELD_WIDTH)
 }
 
 fn apply_hyper_dash(render_objects: &mut [RenderObject], circle_size: f64) {
-    let catcher_width = CATCHER_BASE_SIZE * circle_scale(circle_size);
+    let catcher_width =
+        crate::config::current().layout.catch.png.CATCHER_BASE_SIZE * circle_scale(circle_size);
     let half_catcher_width = catcher_width / 2.0;
     let mut last_direction = 0i32;
     let mut last_excess = half_catcher_width;

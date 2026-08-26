@@ -9,12 +9,7 @@ use crate::render::canvas::Img;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::constants::*;
 use super::slider::SliderRenderData;
-use crate::config::layout::standard::gif::{
-    GRID_GAP as GIF_GRID_GAP, IMAGES_PER_ROW as GIF_IMAGES_PER_ROW, ROW_COUNT as GIF_ROW_COUNT,
-    SHOW_TIME_LABEL as GIF_SHOW_TIME_LABEL,
-};
 
 // ——— helpers ———
 
@@ -121,11 +116,26 @@ pub(crate) fn apply_standard_object_mods(
     hit_objects
         .into_iter()
         .map(|mut ho| {
-            ho.y = PLAYFIELD_HEIGHT as i32 - ho.y;
+            ho.y = crate::config::current()
+                .layout
+                .standard
+                .png
+                .PLAYFIELD_HEIGHT as i32
+                - ho.y;
             ho.slider_points = ho
                 .slider_points
                 .iter()
-                .map(|&(x, y)| (x, PLAYFIELD_HEIGHT as i32 - y))
+                .map(|&(x, y)| {
+                    (
+                        x,
+                        crate::config::current()
+                            .layout
+                            .standard
+                            .png
+                            .PLAYFIELD_HEIGHT as i32
+                            - y,
+                    )
+                })
                 .collect();
             ho
         })
@@ -174,8 +184,12 @@ pub(crate) fn build_render_settings(
 ) -> RenderSettings {
     let difficulty = effective_difficulty(beatmap, mods);
     let scale = (1.0 - 0.7 * ((difficulty.circle_size - 5.0) / 5.0)) / 2.0
-        * BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE;
-    let circle_radius = OBJECT_RADIUS * scale;
+        * crate::config::current()
+            .layout
+            .standard
+            .png
+            .BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE;
+    let circle_radius = crate::config::current().layout.standard.png.OBJECT_RADIUS * scale;
     let circle_diameter = py_round(circle_radius * 2.0).max(1);
     let preempt_ms = difficulty_range_int(difficulty.approach_rate, 1800, 1200, 450);
     let hidden = mods.map(|m| m.hidden).unwrap_or(false);
@@ -212,13 +226,31 @@ fn difficulty_range_int(difficulty: f64, minimum: i64, middle: i64, maximum: i64
 /// （与 storyboard 对齐的历史偏移）。本帧 683×384 恰为游戏空间的一半，
 /// 因此缩放为 0.8，上下左右留白与游戏内完全等比。
 pub(crate) fn build_frame_layout() -> FrameLayout {
-    let scale = PLAYFIELD_VIEWPORT_RATIO;
-    let playfield_width = PLAYFIELD_WIDTH * scale;
-    let playfield_height = PLAYFIELD_HEIGHT * scale;
+    let scale = crate::config::current()
+        .layout
+        .standard
+        .png
+        .PLAYFIELD_VIEWPORT_RATIO;
+    let playfield_width = crate::config::current().layout.standard.png.PLAYFIELD_WIDTH * scale;
+    let playfield_height = crate::config::current()
+        .layout
+        .standard
+        .png
+        .PLAYFIELD_HEIGHT
+        * scale;
     FrameLayout {
-        playfield_left: (IMAGE_WIDTH as f64 - playfield_width) / 2.0,
-        playfield_top: (IMAGE_HEIGHT as f64 - playfield_height) / 2.0
-            + PLAYFIELD_STORYBOARD_SHIFT * scale,
+        playfield_left: (crate::config::current().layout.standard.png.IMAGE_WIDTH as f64
+            - playfield_width)
+            / 2.0,
+        playfield_top: (crate::config::current().layout.standard.png.IMAGE_HEIGHT as f64
+            - playfield_height)
+            / 2.0
+            + crate::config::current()
+                .layout
+                .standard
+                .png
+                .PLAYFIELD_STORYBOARD_SHIFT
+                * scale,
         scale,
     }
 }
@@ -264,7 +296,12 @@ pub(crate) fn load_skin(beatmap: &Beatmap) -> Skin {
     } else if !skin_config.combo_colors.is_empty() {
         skin_config.combo_colors.clone()
     } else {
-        ARGON_COMBO_COLORS.to_vec()
+        crate::config::current()
+            .layout
+            .standard
+            .png
+            .ARGON_COMBO_COLORS
+            .to_vec()
     };
     Skin {
         digit_crops,
@@ -293,15 +330,42 @@ pub(crate) fn build_render_context(
         frame_layout,
         frame_circle_diameter,
         slider_body_width: py_round(
-            settings.circle_diameter as f64 * ARGON_SLIDER_WIDTH_RATIO * frame_layout.scale,
+            settings.circle_diameter as f64
+                * crate::config::current()
+                    .layout
+                    .standard
+                    .png
+                    .ARGON_SLIDER_WIDTH_RATIO
+                * frame_layout.scale,
         )
         .max(1),
-        spinner_size: py_round(PLAYFIELD_WIDTH.min(PLAYFIELD_HEIGHT) * 0.95 * frame_layout.scale)
-            .max(1),
+        spinner_size: py_round(
+            crate::config::current()
+                .layout
+                .standard
+                .png
+                .PLAYFIELD_WIDTH
+                .min(
+                    crate::config::current()
+                        .layout
+                        .standard
+                        .png
+                        .PLAYFIELD_HEIGHT,
+                )
+                * 0.95
+                * frame_layout.scale,
+        )
+        .max(1),
         slider_follow_size: py_round(settings.circle_diameter as f64 * 2.4 * frame_layout.scale)
             .max(1),
         slider_ball_size: py_round(
-            settings.circle_diameter as f64 * ARGON_SLIDER_WIDTH_RATIO * frame_layout.scale,
+            settings.circle_diameter as f64
+                * crate::config::current()
+                    .layout
+                    .standard
+                    .png
+                    .ARGON_SLIDER_WIDTH_RATIO
+                * frame_layout.scale,
         )
         .max(1),
         time_axis,
@@ -344,43 +408,115 @@ pub(crate) fn choose_row_start_times(
 // ——— canvas sizes ———
 
 pub(crate) fn png_canvas_size() -> (i64, i64) {
-    let width = HORIZONTAL_PAGE_MARGIN * 2
-        + IMAGES_PER_ROW as i64 * IMAGE_WIDTH
-        + (IMAGES_PER_ROW as i64 - 1) * INTRA_ROW_IMAGE_GAP;
-    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
-    let height = VERTICAL_PAGE_MARGIN * 2
-        + ROW_COUNT as i64 * row_height
-        + (ROW_COUNT as i64 - 1) * INTER_ROW_GAP;
+    let width = crate::config::current()
+        .layout
+        .standard
+        .png
+        .HORIZONTAL_PAGE_MARGIN
+        * 2
+        + crate::config::current().layout.standard.png.IMAGES_PER_ROW as i64
+            * crate::config::current().layout.standard.png.IMAGE_WIDTH
+        + (crate::config::current().layout.standard.png.IMAGES_PER_ROW as i64 - 1)
+            * crate::config::current()
+                .layout
+                .standard
+                .png
+                .INTRA_ROW_IMAGE_GAP;
+    let row_height = crate::config::current().layout.standard.png.IMAGE_HEIGHT
+        + crate::config::current()
+            .layout
+            .standard
+            .png
+            .TIME_LABEL_TOP_GAP
+        + crate::config::current()
+            .layout
+            .standard
+            .png
+            .TIME_LABEL_HEIGHT;
+    let height = crate::config::current()
+        .layout
+        .standard
+        .png
+        .VERTICAL_PAGE_MARGIN
+        * 2
+        + crate::config::current().layout.standard.png.ROW_COUNT as i64 * row_height
+        + (crate::config::current().layout.standard.png.ROW_COUNT as i64 - 1)
+            * crate::config::current().layout.standard.png.INTER_ROW_GAP;
     (width, height)
 }
 
 pub(crate) fn gif_canvas_size() -> (i64, i64) {
-    let row_height = IMAGE_HEIGHT
-        + if GIF_SHOW_TIME_LABEL {
-            TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
+    let row_height = crate::config::current().layout.standard.png.IMAGE_HEIGHT
+        + if crate::config::current().layout.standard.gif.SHOW_TIME_LABEL {
+            crate::config::current()
+                .layout
+                .standard
+                .png
+                .TIME_LABEL_TOP_GAP
+                + crate::config::current()
+                    .layout
+                    .standard
+                    .png
+                    .TIME_LABEL_HEIGHT
         } else {
             0
         };
-    let width = HORIZONTAL_PAGE_MARGIN * 2
-        + GIF_IMAGES_PER_ROW as i64 * IMAGE_WIDTH
-        + (GIF_IMAGES_PER_ROW as i64 - 1) * GIF_GRID_GAP;
-    let height = VERTICAL_PAGE_MARGIN * 2
-        + GIF_ROW_COUNT as i64 * row_height
-        + (GIF_ROW_COUNT as i64 - 1) * GIF_GRID_GAP;
+    let width = crate::config::current()
+        .layout
+        .standard
+        .png
+        .HORIZONTAL_PAGE_MARGIN
+        * 2
+        + crate::config::current().layout.standard.gif.IMAGES_PER_ROW as i64
+            * crate::config::current().layout.standard.png.IMAGE_WIDTH
+        + (crate::config::current().layout.standard.gif.IMAGES_PER_ROW as i64 - 1)
+            * crate::config::current().layout.standard.gif.GRID_GAP;
+    let height = crate::config::current()
+        .layout
+        .standard
+        .png
+        .VERTICAL_PAGE_MARGIN
+        * 2
+        + crate::config::current().layout.standard.gif.ROW_COUNT as i64 * row_height
+        + (crate::config::current().layout.standard.gif.ROW_COUNT as i64 - 1)
+            * crate::config::current().layout.standard.gif.GRID_GAP;
     (width, height)
 }
 
 pub(crate) fn gif_frame_origin(segment_index: usize) -> (i64, i64) {
-    let row_index = (segment_index / GIF_IMAGES_PER_ROW) as i64;
-    let image_index = (segment_index % GIF_IMAGES_PER_ROW) as i64;
-    let row_height = IMAGE_HEIGHT
-        + if GIF_SHOW_TIME_LABEL {
-            TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
+    let row_index =
+        (segment_index / crate::config::current().layout.standard.gif.IMAGES_PER_ROW) as i64;
+    let image_index =
+        (segment_index % crate::config::current().layout.standard.gif.IMAGES_PER_ROW) as i64;
+    let row_height = crate::config::current().layout.standard.png.IMAGE_HEIGHT
+        + if crate::config::current().layout.standard.gif.SHOW_TIME_LABEL {
+            crate::config::current()
+                .layout
+                .standard
+                .png
+                .TIME_LABEL_TOP_GAP
+                + crate::config::current()
+                    .layout
+                    .standard
+                    .png
+                    .TIME_LABEL_HEIGHT
         } else {
             0
         };
-    let x = HORIZONTAL_PAGE_MARGIN + image_index * (IMAGE_WIDTH + GIF_GRID_GAP);
-    let y = VERTICAL_PAGE_MARGIN + row_index * (row_height + GIF_GRID_GAP);
+    let x = crate::config::current()
+        .layout
+        .standard
+        .png
+        .HORIZONTAL_PAGE_MARGIN
+        + image_index
+            * (crate::config::current().layout.standard.png.IMAGE_WIDTH
+                + crate::config::current().layout.standard.gif.GRID_GAP);
+    let y = crate::config::current()
+        .layout
+        .standard
+        .png
+        .VERTICAL_PAGE_MARGIN
+        + row_index * (row_height + crate::config::current().layout.standard.gif.GRID_GAP);
     (x, y)
 }
 
@@ -430,12 +566,27 @@ pub(crate) fn build_visible_indexes_by_snapshot(
 
 pub(crate) fn visible_end_time(hit_object: &StandardHitObject) -> i64 {
     if hit_object.hit_type & 2 != 0 {
-        return hit_object.end_time + SLIDER_FADE_OUT_MS;
+        return hit_object.end_time
+            + crate::config::current()
+                .layout
+                .standard
+                .png
+                .SLIDER_FADE_OUT_MS;
     }
     if hit_object.hit_type & 8 != 0 {
-        return hit_object.end_time + SPINNER_FADE_OUT_MS;
+        return hit_object.end_time
+            + crate::config::current()
+                .layout
+                .standard
+                .png
+                .SPINNER_FADE_OUT_MS;
     }
-    hit_object.start_time + POST_HIT_FADE_MS
+    hit_object.start_time
+        + crate::config::current()
+            .layout
+            .standard
+            .png
+            .POST_HIT_FADE_MS
 }
 
 // ——— coordinate transform ———

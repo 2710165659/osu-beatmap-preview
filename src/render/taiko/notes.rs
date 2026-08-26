@@ -4,8 +4,6 @@ use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use std::collections::HashMap;
 
-use crate::config::layout::taiko::png::*;
-
 // ─── 工具 ───
 
 #[inline]
@@ -35,8 +33,20 @@ pub(crate) fn draw_drum_panel(image: &mut Img, x: i64, y: i64, w: i64, h: i64) {
     image.fill_rect(x, y, x + w - 1, y + h - 1, [30, 30, 30, 255]);
     // 左右红色饰条（约占面板宽度的 12%）
     let stripe = ((w as f64 * 0.12) as i64).max(2);
-    image.fill_rect(x, y, x + stripe - 1, y + h - 1, TRACK_ACCENT_COLOR);
-    image.fill_rect(x + w - stripe, y, x + w - 1, y + h - 1, TRACK_ACCENT_COLOR);
+    image.fill_rect(
+        x,
+        y,
+        x + stripe - 1,
+        y + h - 1,
+        crate::config::current().layout.taiko.png.TRACK_ACCENT_COLOR,
+    );
+    image.fill_rect(
+        x + w - stripe,
+        y,
+        x + w - 1,
+        y + h - 1,
+        crate::config::current().layout.taiko.png.TRACK_ACCENT_COLOR,
+    );
     // 中央鼓面：米色圆 + 深色描边
     let cx = x as f64 + w as f64 / 2.0;
     let cy = y as f64 + h as f64 / 2.0;
@@ -59,9 +69,31 @@ pub(crate) fn draw_track_background(image: &mut Img, x: i64, y: i64, w: i64, h: 
     if w <= 0 || h <= 0 {
         return;
     }
-    image.fill_rect(x, y, x + w - 1, y + h - 1, TRACK_BACKGROUND_COLOR);
-    image.fill_rect(x, y, x + w - 1, y, TRACK_EDGE_COLOR);
-    image.fill_rect(x, y + h - 1, x + w - 1, y + h - 1, TRACK_EDGE_COLOR);
+    image.fill_rect(
+        x,
+        y,
+        x + w - 1,
+        y + h - 1,
+        crate::config::current()
+            .layout
+            .taiko
+            .png
+            .TRACK_BACKGROUND_COLOR,
+    );
+    image.fill_rect(
+        x,
+        y,
+        x + w - 1,
+        y,
+        crate::config::current().layout.taiko.png.TRACK_EDGE_COLOR,
+    );
+    image.fill_rect(
+        x,
+        y + h - 1,
+        x + w - 1,
+        y + h - 1,
+        crate::config::current().layout.taiko.png.TRACK_EDGE_COLOR,
+    );
 }
 
 /// Classic-2013 style note: solid AA disc, light ring border, 1px dark outer
@@ -72,14 +104,35 @@ pub(crate) fn build_note_disc(color: [u8; 3], diameter: i64, swell_marker: bool)
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
     let r = c;
-    let ring = (d as f64 * NOTE_RING_THICKNESS_RATIO).max(1.0);
+    let ring = (d as f64
+        * crate::config::current()
+            .layout
+            .taiko
+            .png
+            .NOTE_RING_THICKNESS_RATIO)
+        .max(1.0);
     let fill: [u8; 4] = [color[0], color[1], color[2], 255];
-    img.fill_circle_aa(c, c, r, NOTE_EDGE_COLOR);
-    img.fill_circle_aa(c, c, r - 1.0, NOTE_RING_COLOR);
+    img.fill_circle_aa(
+        c,
+        c,
+        r,
+        crate::config::current().layout.taiko.png.NOTE_EDGE_COLOR,
+    );
+    img.fill_circle_aa(
+        c,
+        c,
+        r - 1.0,
+        crate::config::current().layout.taiko.png.NOTE_RING_COLOR,
+    );
     img.fill_circle_aa(c, c, r - 1.0 - ring, fill);
     if swell_marker {
         let inner_r = (r - 1.0 - ring) * 0.55;
-        img.fill_circle_aa(c, c, inner_r, NOTE_RING_COLOR);
+        img.fill_circle_aa(
+            c,
+            c,
+            inner_r,
+            crate::config::current().layout.taiko.png.NOTE_RING_COLOR,
+        );
         img.fill_circle_aa(c, c, inner_r - ring.max(1.0), fill);
     }
     img

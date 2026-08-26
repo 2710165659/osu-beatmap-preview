@@ -5,7 +5,6 @@
 //! Time range is controlled by `--time-points` and `--duration-time`.
 
 use crate::common::time_selection::TimeAxis;
-use crate::config::layout::catch::mp4::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -41,7 +40,7 @@ pub(crate) fn render_catch_video(
     let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = FPS as u32;
+    let fps = crate::config::current().layout.catch.mp4.FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);

@@ -17,7 +17,6 @@ use super::notes::{
     paste_clipped, RenderCache,
 };
 use super::timing::*;
-use crate::config::layout::taiko::gif::*;
 
 #[inline]
 pub(crate) fn pyround(v: f64) -> i64 {
@@ -27,11 +26,27 @@ pub(crate) fn pyround(v: f64) -> i64 {
 // ─── GIF helpers ───
 
 fn gif_judgement_line_offset() -> i64 {
-    pyround(REFERENCE_JUDGEMENT_X * ROW_HEIGHT as f64 / TAIKO_BASE_HEIGHT)
+    pyround(
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .REFERENCE_JUDGEMENT_X
+            * crate::config::current().layout.taiko.gif.ROW_HEIGHT as f64
+            / crate::config::current().layout.taiko.gif.TAIKO_BASE_HEIGHT,
+    )
 }
 
 fn gif_scroll_length_px() -> i64 {
-    pyround(REFERENCE_SCROLL_LENGTH * ROW_HEIGHT as f64 / TAIKO_BASE_HEIGHT)
+    pyround(
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .REFERENCE_SCROLL_LENGTH
+            * crate::config::current().layout.taiko.gif.ROW_HEIGHT as f64
+            / crate::config::current().layout.taiko.gif.TAIKO_BASE_HEIGHT,
+    )
 }
 
 // ─── multiplier / prepared objects ───
@@ -104,7 +119,8 @@ fn render_taiko_segment_gif(
     }
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let gameplay_segment_duration = pyround(DURATION_MS * speed_multiplier);
+    let gameplay_segment_duration =
+        pyround(crate::config::current().layout.taiko.gif.DURATION_MS * speed_multiplier);
 
     let spans: Vec<(i64, i64)> = hit_objects
         .iter()
@@ -113,7 +129,7 @@ fn render_taiko_segment_gif(
     let segment_timings: Vec<PreviewSegmentTiming> = PreviewTimeSelector::new(
         beatmap,
         spans,
-        ROW_COUNT as usize,
+        crate::config::current().layout.taiko.gif.ROW_COUNT as usize,
         gameplay_segment_duration,
         times_ms,
     )?
@@ -129,8 +145,14 @@ fn render_taiko_segment_gif(
     let time_range = compute_time_range() / speed_multiplier;
 
     let layout = build_gif_layout(time_range);
-    let frame_count = pyround(DURATION_MS * FPS / 1000.0).max(1) as usize;
-    let frame_duration_ms = pyround(1000.0 / FPS).max(1) as u32;
+    let frame_count = pyround(
+        crate::config::current().layout.taiko.gif.DURATION_MS
+            * crate::config::current().layout.taiko.gif.FPS
+            / 1000.0,
+    )
+    .max(1) as usize;
+    let frame_duration_ms =
+        pyround(1000.0 / crate::config::current().layout.taiko.gif.FPS).max(1) as u32;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -138,7 +160,10 @@ fn render_taiko_segment_gif(
             (0..frame_count)
                 .map(|frame_index| {
                     timing.start_time
-                        + pyround(frame_index as f64 * 1000.0 * speed_multiplier / FPS)
+                        + pyround(
+                            frame_index as f64 * 1000.0 * speed_multiplier
+                                / crate::config::current().layout.taiko.gif.FPS,
+                        )
                 })
                 .collect()
         })
@@ -158,7 +183,7 @@ fn render_taiko_segment_gif(
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
-            IMAGE_BACKGROUND,
+            crate::config::current().layout.taiko.gif.IMAGE_BACKGROUND,
         );
         for segment_index in 0..segment_timings.len() {
             draw_row_background(&mut bg, &layout, segment_index as i64);
@@ -184,7 +209,7 @@ fn render_taiko_segment_gif(
         }
 
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
-            if SHOW_TIME_LABEL {
+            if crate::config::current().layout.taiko.gif.SHOW_TIME_LABEL {
                 draw_time_label(
                     &mut canvas,
                     segment_timing.start_time,
@@ -206,8 +231,23 @@ fn render_taiko_segment_gif(
 // ─── time range / multiplier ───
 
 pub(crate) fn compute_time_range() -> f64 {
-    let in_length = ASPECT_RATIO * STABLE_GAMEFIELD_HEIGHT - STABLE_HIT_LOCATION;
-    in_length / 100.0 * 1000.0 / VELOCITY_MULTIPLIER
+    let in_length = crate::config::current().layout.taiko.gif.ASPECT_RATIO
+        * crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .STABLE_GAMEFIELD_HEIGHT
+        - crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .STABLE_HIT_LOCATION;
+    in_length / 100.0 * 1000.0
+        / crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .VELOCITY_MULTIPLIER
 }
 
 pub(crate) fn build_multiplier_points(
@@ -281,27 +321,58 @@ pub(crate) fn prepare_hit_objects(
 // ─── layout ───
 
 pub(crate) fn build_gif_layout(time_range: f64) -> GifLayout {
-    build_gif_layout_with_segments(time_range, ROW_COUNT as usize)
+    build_gif_layout_with_segments(
+        time_range,
+        crate::config::current().layout.taiko.gif.ROW_COUNT as usize,
+    )
 }
 
 pub(crate) fn build_gif_layout_with_segments(time_range: f64, segment_count: usize) -> GifLayout {
     let segment_width = gif_scroll_length_px();
-    let left_panel_width = pyround(ROW_HEIGHT as f64 * DRUM_PANEL_WIDTH_RATIO);
-    let right_panel_width = ROW_INNER_PADDING_X * 2 + segment_width;
+    let left_panel_width = pyround(
+        crate::config::current().layout.taiko.gif.ROW_HEIGHT as f64
+            * crate::config::current()
+                .layout
+                .taiko
+                .gif
+                .DRUM_PANEL_WIDTH_RATIO,
+    );
+    let right_panel_width = crate::config::current()
+        .layout
+        .taiko
+        .gif
+        .ROW_INNER_PADDING_X
+        * 2
+        + segment_width;
 
-    let image_width = PAGE_MARGIN_X * 2 + left_panel_width + right_panel_width;
-    let label_height = if SHOW_TIME_LABEL { 50 } else { 0 };
-    let image_height = PAGE_MARGIN_Y * 2
-        + segment_count as i64 * ROW_HEIGHT
-        + (segment_count as i64 - 1) * ROW_GAP
+    let image_width = crate::config::current().layout.taiko.gif.PAGE_MARGIN_X * 2
+        + left_panel_width
+        + right_panel_width;
+    let label_height = if crate::config::current().layout.taiko.gif.SHOW_TIME_LABEL {
+        50
+    } else {
+        0
+    };
+    let image_height = crate::config::current().layout.taiko.gif.PAGE_MARGIN_Y * 2
+        + segment_count as i64 * crate::config::current().layout.taiko.gif.ROW_HEIGHT
+        + (segment_count as i64 - 1) * crate::config::current().layout.taiko.gif.ROW_GAP
         + label_height;
 
-    let normal_note_diameter = pyround(ROW_HEIGHT as f64 * NORMAL_NOTE_SIZE_RATIO);
-    let big_note_diameter = pyround(normal_note_diameter as f64 * BIG_NOTE_SCALE);
+    let normal_note_diameter = pyround(
+        crate::config::current().layout.taiko.gif.ROW_HEIGHT as f64
+            * crate::config::current()
+                .layout
+                .taiko
+                .gif
+                .NORMAL_NOTE_SIZE_RATIO,
+    );
+    let big_note_diameter = pyround(
+        normal_note_diameter as f64 * crate::config::current().layout.taiko.gif.BIG_NOTE_SCALE,
+    );
 
     GifLayout {
         segment_width,
-        row_height: ROW_HEIGHT,
+        row_height: crate::config::current().layout.taiko.gif.ROW_HEIGHT,
         left_panel_width,
         right_panel_width,
         image_width,
@@ -313,7 +384,8 @@ pub(crate) fn build_gif_layout_with_segments(time_range: f64, segment_count: usi
 }
 
 fn gif_row_top(row_index: i64, layout: &GifLayout) -> i64 {
-    PAGE_MARGIN_Y + row_index * (layout.row_height + ROW_GAP)
+    crate::config::current().layout.taiko.gif.PAGE_MARGIN_Y
+        + row_index * (layout.row_height + crate::config::current().layout.taiko.gif.ROW_GAP)
 }
 
 fn gif_row_center_y(row_index: i64, layout: &GifLayout) -> i64 {
@@ -321,7 +393,9 @@ fn gif_row_center_y(row_index: i64, layout: &GifLayout) -> i64 {
 }
 
 fn judgement_line_x(layout: &GifLayout) -> i64 {
-    PAGE_MARGIN_X + layout.left_panel_width + gif_judgement_line_offset()
+    crate::config::current().layout.taiko.gif.PAGE_MARGIN_X
+        + layout.left_panel_width
+        + gif_judgement_line_offset()
 }
 
 // ─── drawing ───
@@ -334,7 +408,11 @@ fn draw_judgement_line(image: &mut Img, layout: &GifLayout, row_index: i64) {
         row_top,
         line_x + 1,
         row_top + layout.row_height,
-        JUDGEMENT_LINE_COLOR,
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .JUDGEMENT_LINE_COLOR,
     );
 }
 
@@ -344,14 +422,14 @@ pub(crate) fn draw_row_background(image: &mut Img, layout: &GifLayout, row_index
 
     draw_drum_panel(
         image,
-        PAGE_MARGIN_X,
+        crate::config::current().layout.taiko.gif.PAGE_MARGIN_X,
         row_top,
         layout.left_panel_width,
         layout.row_height,
     );
     draw_track_background(
         image,
-        PAGE_MARGIN_X + layout.left_panel_width,
+        crate::config::current().layout.taiko.gif.PAGE_MARGIN_X + layout.left_panel_width,
         row_top,
         layout.right_panel_width,
         layout.row_height,
@@ -369,7 +447,9 @@ pub(crate) fn draw_hit_objects(
     cache: &mut RenderCache,
 ) {
     let left_bound = judgement_line_x(layout);
-    let right_bound = PAGE_MARGIN_X + layout.left_panel_width + layout.right_panel_width;
+    let right_bound = crate::config::current().layout.taiko.gif.PAGE_MARGIN_X
+        + layout.left_panel_width
+        + layout.right_panel_width;
 
     for hit_object in hit_objects.iter().rev() {
         if can_skip(hit_object, snapshot_time, layout, left_bound, right_bound) {
@@ -431,7 +511,7 @@ fn draw_hit_object(
             snapshot_time,
             cache,
             true,
-            SWELL_COLOR,
+            crate::config::current().layout.taiko.gif.SWELL_COLOR,
             true,
         );
         return;
@@ -446,7 +526,7 @@ fn draw_hit_object(
             snapshot_time,
             cache,
             is_big_roll,
-            ROLL_COLOR,
+            crate::config::current().layout.taiko.gif.ROLL_COLOR,
             false,
         );
         return;
@@ -472,7 +552,9 @@ fn draw_circle_object(
     let center_y = gif_row_center_y(row_index, layout);
 
     let judgement_x = judgement_line_x(layout);
-    let right_bound = PAGE_MARGIN_X + layout.left_panel_width + layout.right_panel_width;
+    let right_bound = crate::config::current().layout.taiko.gif.PAGE_MARGIN_X
+        + layout.left_panel_width
+        + layout.right_panel_width;
     if center_x < judgement_x || center_x > right_bound {
         return;
     }
@@ -485,9 +567,9 @@ fn draw_circle_object(
         layout.normal_note_diameter
     };
     let color = if is_rim {
-        RIM_NOTE_COLOR
+        crate::config::current().layout.taiko.gif.RIM_NOTE_COLOR
     } else {
-        CENTRE_NOTE_COLOR
+        crate::config::current().layout.taiko.gif.CENTRE_NOTE_COLOR
     };
 
     draw_note_disc(image, cache, color, diameter, center_x, center_y, false);
@@ -520,7 +602,9 @@ fn draw_span_object(
     );
     let center_y = gif_row_center_y(row_index, layout);
     let clip_left = judgement_line_x(layout);
-    let clip_right = PAGE_MARGIN_X + layout.left_panel_width + layout.right_panel_width;
+    let clip_right = crate::config::current().layout.taiko.gif.PAGE_MARGIN_X
+        + layout.left_panel_width
+        + layout.right_panel_width;
 
     let head_diameter = if is_swell {
         layout.big_note_diameter
@@ -528,9 +612,17 @@ fn draw_span_object(
         layout.normal_note_diameter
     };
     let body_ratio = if is_swell {
-        SWELL_BODY_HEIGHT_RATIO
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .SWELL_BODY_HEIGHT_RATIO
     } else {
-        SPAN_BODY_HEIGHT_RATIO
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .SPAN_BODY_HEIGHT_RATIO
     };
     let body_height = pyround(head_diameter as f64 * body_ratio);
 
@@ -646,33 +738,80 @@ fn draw_time_label(
         crate::render::text::format_mmss_floor(time_axis.to_display(start_time + duration_ms))
     );
     let color = if is_preview {
-        PREVIEW_TIME_LABEL_COLOR
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .PREVIEW_TIME_LABEL_COLOR
     } else {
-        TIME_LABEL_COLOR
+        crate::config::current().layout.taiko.gif.TIME_LABEL_COLOR
     };
     let note_color = if is_preview {
-        PREVIEW_TIME_LABEL_COLOR
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .PREVIEW_TIME_LABEL_COLOR
     } else {
-        TIME_LABEL_NOTE_COLOR
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .TIME_LABEL_NOTE_COLOR
     };
-    let (label_w, label_h) = text_size(&label, TIME_LABEL_FONT_SIZE);
-    let x = (PAGE_MARGIN_X as f64
-        + (layout.image_width - PAGE_MARGIN_X * 2 - label_w as i64) as f64 / 2.0)
+    let (label_w, label_h) = text_size(
+        &label,
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .TIME_LABEL_FONT_SIZE,
+    );
+    let x = (crate::config::current().layout.taiko.gif.PAGE_MARGIN_X as f64
+        + (layout.image_width
+            - crate::config::current().layout.taiko.gif.PAGE_MARGIN_X * 2
+            - label_w as i64) as f64
+            / 2.0)
         .floor() as i64;
-    draw_text(image, x, y, &label, TIME_LABEL_FONT_SIZE, color);
+    draw_text(
+        image,
+        x,
+        y,
+        &label,
+        crate::config::current()
+            .layout
+            .taiko
+            .gif
+            .TIME_LABEL_FONT_SIZE,
+        color,
+    );
 
     if is_preview {
         let note = "Preview Time";
-        let (note_w, _) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
-        let note_x = (PAGE_MARGIN_X as f64
-            + (layout.image_width - PAGE_MARGIN_X * 2 - note_w as i64) as f64 / 2.0)
+        let (note_w, _) = text_size(
+            note,
+            crate::config::current()
+                .layout
+                .taiko
+                .gif
+                .TIME_LABEL_NOTE_FONT_SIZE,
+        );
+        let note_x = (crate::config::current().layout.taiko.gif.PAGE_MARGIN_X as f64
+            + (layout.image_width
+                - crate::config::current().layout.taiko.gif.PAGE_MARGIN_X * 2
+                - note_w as i64) as f64
+                / 2.0)
             .floor() as i64;
         draw_text(
             image,
             note_x,
             y + label_h as i64 + 4,
             note,
-            TIME_LABEL_NOTE_FONT_SIZE,
+            crate::config::current()
+                .layout
+                .taiko
+                .gif
+                .TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
     }

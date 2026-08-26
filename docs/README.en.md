@@ -17,7 +17,7 @@
 ## Usage
 
 ```bash
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>]
 ```
 
 ### Parameters
@@ -32,6 +32,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--duration-time` | MP4 only. Output duration in seconds. Defaults to `600`. |
 | `--no-log` | Disables logging. |
 | `--no-cache` | Skips download and output caches and forces a fresh render. |
+| `--config` | A configuration file path or an inline JSON/YAML object. Nested mappings merge recursively; arrays and scalars replace the whole field. Unspecified fields keep their defaults. |
 | `--version` | Prints the version and build time, then exits. |
 
 > MP4 numeric start times use the gameplay timeline: the first playable object in the target mode after conversion is `0:00`. Negative starts are allowed and portions before the audio begins are silent.
@@ -93,10 +94,20 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | OSZ cache | `<temp>/osu-beatmap-preview/osz-download-cache/` (archives use `<set-id>.osz`; extracted audio is isolated under `<set-id>/<filename-hash>.<extension>`) |
 | Preferred IP cache | `<temp>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
 | Output file | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_video-start...-duration...].<fmt>` |
-| Configuration directory | `<temp>/osu-beatmap-preview/config/` |
+| Configuration directory | Directory containing the binary |
 | Log files | `<temp>/osu-beatmap-preview/logs/` — `progress.log` (live progress, `tail -f`) and `render.log` (NDJSON summary) |
 
-These directories are defined by the top-level `paths` entries in `assets/default_config.yml`; `%TEMP%` is expanded to the platform temporary directory at runtime. The configuration directory is reserved for now and is not created or loaded automatically.
+These directories are defined by the top-level `paths` entries in `assets/default_config.yml`; the default `CONFIG_DIR: "./"` points to the directory containing the binary. The program tries to read `config.yml` beside the binary, then applies the `--config` overlay. A missing file is ignored; an invalid existing file fails startup.
+
+Configuration layers are merged as `embedded defaults < CONFIG_DIR/config.yml < --config`. `--config` accepts a file path or an inline JSON/YAML object, for example:
+
+Fields must exist in the embedded configuration. Unknown fields, a non-object top level, and values that cannot be converted to the expected type fail startup. Numeric and boolean strings are accepted when safely convertible.
+
+```bash
+osu-beatmap-preview --bid=123456 --config='{"layout":{"standard":{"gif":{"ROW_COUNT":1}}}}'
+osu-beatmap-preview --bid=123456 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'
+osu-beatmap-preview --bid=123456 --config=C:/path/to/config.yml
+```
 
 ### Images (PNG)
 

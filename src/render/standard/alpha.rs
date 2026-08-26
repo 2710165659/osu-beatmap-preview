@@ -2,7 +2,6 @@
 
 use crate::core::models::StandardHitObject;
 
-use super::constants::*;
 use super::context::RenderSettings;
 
 pub(crate) fn object_alpha(
@@ -31,7 +30,13 @@ pub(crate) fn normal_object_alpha(
     if snapshot_time <= end_time {
         return 1.0;
     }
-    (1.0 - (snapshot_time - end_time) as f64 / SLIDER_FADE_OUT_MS as f64).max(0.0)
+    (1.0 - (snapshot_time - end_time) as f64
+        / crate::config::current()
+            .layout
+            .standard
+            .png
+            .SLIDER_FADE_OUT_MS as f64)
+        .max(0.0)
 }
 
 pub(crate) fn hidden_object_alpha(
@@ -96,7 +101,13 @@ pub(crate) fn hidden_slider_body_alpha(
         return (1.0 - (t - fade_in_end) / (end_time as f64 - fade_in_end).max(1.0))
             .clamp(0.0, 1.0);
     }
-    (1.0 - (snapshot_time - end_time) as f64 / SLIDER_FADE_OUT_MS as f64).max(0.0)
+    (1.0 - (snapshot_time - end_time) as f64
+        / crate::config::current()
+            .layout
+            .standard
+            .png
+            .SLIDER_FADE_OUT_MS as f64)
+        .max(0.0)
 }
 
 pub(crate) fn spinner_alpha(
@@ -146,8 +157,21 @@ pub(crate) fn slider_head_alpha(
     if settings.hidden && !settings.traceable {
         return 0.0;
     }
-    if snapshot_time <= hit_object.start_time + POST_HIT_FADE_MS {
-        return 1.0 - (snapshot_time - hit_object.start_time) as f64 / POST_HIT_FADE_MS as f64;
+    if snapshot_time
+        <= hit_object.start_time
+            + crate::config::current()
+                .layout
+                .standard
+                .png
+                .POST_HIT_FADE_MS
+    {
+        return 1.0
+            - (snapshot_time - hit_object.start_time) as f64
+                / crate::config::current()
+                    .layout
+                    .standard
+                    .png
+                    .POST_HIT_FADE_MS as f64;
     }
     0.0
 }

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
+#[cfg(test)]
 pub(crate) use crate::config::logging::config::*;
 
 #[derive(Clone)]
@@ -18,10 +19,10 @@ static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 /// 默认日志目录：`<临时目录>/osu-beatmap-preview/logs`。
 #[allow(dead_code)] // Runtime initialization is owned by the binary target.
 pub fn default_log_dir() -> PathBuf {
-    crate::config::resolve_path(crate::config::paths::LOG_DIR)
+    crate::config::resolve_path(crate::config::current().paths.LOG_DIR.as_str())
 }
 
-/// 初始化日志（幂等），目录始终来自编译时 `LOG_DIR` 配置。
+/// 初始化日志（幂等），目录来自运行时配置快照。
 #[allow(dead_code)]
 pub fn init() {
     init_with_dir(default_log_dir());
@@ -36,9 +37,10 @@ fn init_with_dir(dir: PathBuf) {
         if guard.is_some() {
             return;
         }
+        let runtime = crate::config::current();
         let cfg = LogConfig {
-            progress_path: dir.join(PROGRESS_FILE),
-            render_path: dir.join(RENDER_FILE),
+            progress_path: dir.join(&runtime.logging.config.PROGRESS_FILE),
+            render_path: dir.join(&runtime.logging.config.RENDER_FILE),
         };
         match std::fs::create_dir_all(&dir) {
             Ok(()) => *guard = Some(cfg),

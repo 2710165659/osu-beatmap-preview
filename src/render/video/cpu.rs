@@ -16,7 +16,6 @@ use openh264::formats::{RgbaSliceU8, YUVBuffer};
 
 use super::mux::extract_nals_from_annexb;
 use super::{EncodedFrame, FrameEncoder};
-use crate::config::video::video_cpu::*;
 
 pub(crate) struct CpuEncoder {
     encoder: Encoder,
@@ -30,7 +29,9 @@ impl CpuEncoder {
             .usage_type(UsageType::ScreenContentRealTime)
             .complexity(Complexity::Low)
             .rate_control_mode(RateControlMode::Bitrate)
-            .bitrate(BitRate::from_bps(CPU_VIDEO_BITRATE))
+            .bitrate(BitRate::from_bps(
+                crate::config::current().video.video_cpu.CPU_VIDEO_BITRATE,
+            ))
             .max_frame_rate(FrameRate::from_hz(fps as f32))
             .intra_frame_period(IntraFramePeriod::from_num_frames(fps.saturating_mul(2)))
             .qp(QpRange::new(18, 42))

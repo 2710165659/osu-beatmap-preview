@@ -22,7 +22,6 @@ use super::gif::{
 };
 use super::notes::RenderCache;
 use super::timing::*;
-use crate::config::layout::taiko::mp4::*;
 
 pub(crate) fn render_taiko_video(
     beatmap: &Beatmap,
@@ -44,7 +43,7 @@ pub(crate) fn render_taiko_video(
     let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = FPS as u32;
+    let fps = crate::config::current().layout.taiko.mp4.FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;
@@ -60,7 +59,7 @@ pub(crate) fn render_taiko_video(
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
-            IMAGE_BACKGROUND,
+            crate::config::current().layout.taiko.mp4.IMAGE_BACKGROUND,
         );
         draw_row_background(&mut bg, &layout, 0);
         bg
@@ -105,6 +104,7 @@ pub(crate) fn render_taiko_video(
 /// (no 4-row stack, no inter-row gap, no bottom label strip).
 fn build_video_layout(time_range: f64) -> GifLayout {
     let mut layout = build_gif_layout(time_range);
-    layout.image_height = PAGE_MARGIN_Y * 2 + ROW_HEIGHT;
+    layout.image_height = crate::config::current().layout.taiko.mp4.PAGE_MARGIN_Y * 2
+        + crate::config::current().layout.taiko.mp4.ROW_HEIGHT;
     layout
 }

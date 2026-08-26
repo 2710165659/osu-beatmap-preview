@@ -14,7 +14,6 @@ use crate::render::composer::save_png;
 use crate::render::text::{draw_text, text_size};
 use std::path::{Path, PathBuf};
 
-use super::constants::*;
 use super::drawing::draw_catch_object;
 use super::objects::{
     build_catch_render_objects, effective_difficulty, object_order, RenderObject,
@@ -42,23 +41,53 @@ struct RenderLayout {
 /// AR 决定的纵向密度：AR 时间窗内的下落距离映射为像素。
 fn pixels_per_ms_for_ar(approach_rate: f64, playfield_scale: f64) -> f64 {
     let time_range = super::objects::catch_time_range(approach_rate);
-    let visible_fall_height = (STABLE_CATCHER_Y - STABLE_FRUIT_START_Y) * playfield_scale;
+    let visible_fall_height = (crate::config::current().layout.catch.png.STABLE_CATCHER_Y
+        - crate::config::current()
+            .layout
+            .catch
+            .png
+            .STABLE_FRUIT_START_Y)
+        * playfield_scale;
     visible_fall_height / time_range
 }
 
 fn resolve_max_area_height(beatmap_duration: i64) -> i64 {
     if beatmap_duration < 60_000 {
-        MAX_AREA_HEIGHT_0_TO_1_MINUTES
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .MAX_AREA_HEIGHT_0_TO_1_MINUTES
     } else if beatmap_duration < 2 * 60_000 {
-        MAX_AREA_HEIGHT_1_TO_2_MINUTES
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .MAX_AREA_HEIGHT_1_TO_2_MINUTES
     } else if beatmap_duration < 3 * 60_000 {
-        MAX_AREA_HEIGHT_2_TO_3_MINUTES
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .MAX_AREA_HEIGHT_2_TO_3_MINUTES
     } else if beatmap_duration < 4 * 60_000 {
-        MAX_AREA_HEIGHT_3_TO_4_MINUTES
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .MAX_AREA_HEIGHT_3_TO_4_MINUTES
     } else if beatmap_duration < 5 * 60_000 {
-        MAX_AREA_HEIGHT_4_TO_5_MINUTES
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .MAX_AREA_HEIGHT_4_TO_5_MINUTES
     } else {
-        MAX_AREA_HEIGHT_5_TO_6_MINUTES
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .MAX_AREA_HEIGHT_5_TO_6_MINUTES
     }
 }
 
@@ -72,32 +101,63 @@ fn build_layout(
     approach_rate: f64,
     chart_start_time: i64,
 ) -> Result<RenderLayout> {
-    if beatmap_duration >= MAX_SUPPORTED_DURATION_MS {
+    if beatmap_duration
+        >= crate::config::current()
+            .layout
+            .catch
+            .png
+            .MAX_SUPPORTED_DURATION_MS
+    {
         return Err(PreviewError::render(
             "songs longer than 10 minutes are not supported",
         ));
     }
-    let playfield_scale = PLAYFIELD_DISPLAY_WIDTH as f64 / PLAYFIELD_WIDTH;
+    let playfield_scale = crate::config::current()
+        .layout
+        .catch
+        .png
+        .PLAYFIELD_DISPLAY_WIDTH as f64
+        / crate::config::current().layout.catch.png.PLAYFIELD_WIDTH;
     let object_scale = super::objects::circle_scale(circle_size);
 
     // 纵向密度上限：限制谱面总像素高度，防止高 AR + 长曲导致内存爆炸
     let mut pixels_per_ms = pixels_per_ms_for_ar(approach_rate, playfield_scale);
     let natural_height = beatmap_duration as f64 * pixels_per_ms;
-    if natural_height > MAX_TOTAL_CHART_HEIGHT as f64 {
-        pixels_per_ms *= MAX_TOTAL_CHART_HEIGHT as f64 / natural_height;
+    if natural_height
+        > crate::config::current()
+            .layout
+            .catch
+            .png
+            .MAX_TOTAL_CHART_HEIGHT as f64
+    {
+        pixels_per_ms *= crate::config::current()
+            .layout
+            .catch
+            .png
+            .MAX_TOTAL_CHART_HEIGHT as f64
+            / natural_height;
     }
 
     let total_chart_height = rhe(beatmap_duration as f64 * pixels_per_ms).max(1);
     let max_area_height = resolve_max_area_height(beatmap_duration);
     let column_count = ceil_div(total_chart_height, max_area_height).max(1);
     let total_column_height = ceil_div(total_chart_height, column_count);
-    let image_width = PAGE_MARGIN_X * 2 + column_count * (COLUMN_WIDTH + COLUMN_GAP) - COLUMN_GAP
-        + LABEL_RIGHT_MARGIN;
-    let image_height = PAGE_MARGIN_Y * 2 + total_column_height;
+    let image_width = crate::config::current().layout.catch.png.PAGE_MARGIN_X * 2
+        + column_count
+            * (crate::config::current().layout.catch.png.COLUMN_WIDTH
+                + crate::config::current().layout.catch.png.COLUMN_GAP)
+        - crate::config::current().layout.catch.png.COLUMN_GAP
+        + crate::config::current().layout.catch.png.LABEL_RIGHT_MARGIN;
+    let image_height =
+        crate::config::current().layout.catch.png.PAGE_MARGIN_Y * 2 + total_column_height;
     Ok(RenderLayout {
         column_count,
         total_column_height,
-        visible_playfield_width: PLAYFIELD_DISPLAY_WIDTH,
+        visible_playfield_width: crate::config::current()
+            .layout
+            .catch
+            .png
+            .PLAYFIELD_DISPLAY_WIDTH,
         image_width,
         image_height,
         playfield_scale,
@@ -108,11 +168,14 @@ fn build_layout(
 }
 
 fn column_left(column_index: i64) -> i64 {
-    PAGE_MARGIN_X + column_index * (COLUMN_WIDTH + COLUMN_GAP)
+    crate::config::current().layout.catch.png.PAGE_MARGIN_X
+        + column_index
+            * (crate::config::current().layout.catch.png.COLUMN_WIDTH
+                + crate::config::current().layout.catch.png.COLUMN_GAP)
 }
 
 fn playfield_left(column_index: i64) -> i64 {
-    column_left(column_index) + LEFT_PANEL_WIDTH + 23
+    column_left(column_index) + crate::config::current().layout.catch.png.LEFT_PANEL_WIDTH + 23
 }
 
 // ─── 节拍线 ───
@@ -250,7 +313,7 @@ pub(crate) fn render_catch_grid(
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
-        IMAGE_BACKGROUND,
+        crate::config::current().layout.catch.png.IMAGE_BACKGROUND,
     );
 
     for column_index in 0..layout.column_count {
@@ -262,7 +325,13 @@ pub(crate) fn render_catch_grid(
         let mut tl = timing_line.clone();
         if tl.show_label {
             if let Some(prev) = last_label_time {
-                if (tl.time - prev).abs() < TIME_LABEL_MIN_INTERVAL_MS {
+                if (tl.time - prev).abs()
+                    < crate::config::current()
+                        .layout
+                        .catch
+                        .png
+                        .TIME_LABEL_MIN_INTERVAL_MS
+                {
                     tl.show_label = false;
                 }
             }
@@ -290,10 +359,11 @@ pub(crate) fn render_catch_grid(
 /// 画单列背景：左侧灰条 + playfield 底色 + 左右边界线（与 playfield 区域留 23px）。
 fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: i64) {
     let column_left = column_left(column_index);
-    let chart_top = PAGE_MARGIN_Y;
-    let chart_bottom = PAGE_MARGIN_Y + layout.total_column_height;
+    let chart_top = crate::config::current().layout.catch.png.PAGE_MARGIN_Y;
+    let chart_bottom =
+        crate::config::current().layout.catch.png.PAGE_MARGIN_Y + layout.total_column_height;
     // 左侧灰条在最左边
-    let panel_right = column_left + LEFT_PANEL_WIDTH;
+    let panel_right = column_left + crate::config::current().layout.catch.png.LEFT_PANEL_WIDTH;
     // playfield 在灰条右侧 23px 处开始
     let visible_left = panel_right + 23;
     let visible_right = visible_left + layout.visible_playfield_width;
@@ -305,28 +375,36 @@ fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: 
         chart_top,
         panel_right,
         chart_bottom,
-        LEFT_PANEL_BACKGROUND,
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .LEFT_PANEL_BACKGROUND,
     );
     image.set_rect(
         visible_left,
         chart_top,
         visible_right,
         chart_bottom,
-        PLAYFIELD_BACKGROUND,
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .PLAYFIELD_BACKGROUND,
     );
     image.set_rect(
         border_left,
         chart_top,
         border_left,
         chart_bottom,
-        PLAYFIELD_BORDER,
+        crate::config::current().layout.catch.png.PLAYFIELD_BORDER,
     );
     image.set_rect(
         border_right,
         chart_top,
         border_right,
         chart_bottom,
-        PLAYFIELD_BORDER,
+        crate::config::current().layout.catch.png.PLAYFIELD_BORDER,
     );
 }
 
@@ -337,7 +415,8 @@ fn locate_time(time: i64, layout: &RenderLayout) -> (i64, i64) {
         .clamp(0, layout.column_count - 1);
     let local_y_from_top = rhe(absolute_y - (column_index * layout.total_column_height) as f64);
     // 从列底部开始计算，时间 0 在底部，时间增大向上
-    let chart_bottom = PAGE_MARGIN_Y + layout.total_column_height;
+    let chart_bottom =
+        crate::config::current().layout.catch.png.PAGE_MARGIN_Y + layout.total_column_height;
     let y = chart_bottom - local_y_from_top;
     (column_index, y)
 }
@@ -346,12 +425,27 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
     let (column_index, y) = locate_time(timing_line.time, layout);
     let left = playfield_left(column_index);
     let right = left + layout.visible_playfield_width;
-    let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
+    let y = y.clamp(
+        crate::config::current().layout.catch.png.PAGE_MARGIN_Y,
+        crate::config::current().layout.catch.png.PAGE_MARGIN_Y + layout.total_column_height,
+    );
 
     if timing_line.is_measure {
-        image.set_rect(left, y, right, y + 1, MEASURE_LINE_COLOR);
+        image.set_rect(
+            left,
+            y,
+            right,
+            y + 1,
+            crate::config::current().layout.catch.png.MEASURE_LINE_COLOR,
+        );
     } else {
-        image.set_rect(left, y, right, y, BEAT_LINE_COLOR);
+        image.set_rect(
+            left,
+            y,
+            right,
+            y,
+            crate::config::current().layout.catch.png.BEAT_LINE_COLOR,
+        );
     }
 }
 
@@ -362,23 +456,42 @@ fn draw_timing_label_png(
     time_axis: TimeAxis,
 ) {
     let (column_index, y) = locate_time(timing_line.time, layout);
-    let border_right = column_left(column_index) + COLUMN_WIDTH;
-    let y = y.clamp(PAGE_MARGIN_Y, PAGE_MARGIN_Y + layout.total_column_height);
+    let border_right =
+        column_left(column_index) + crate::config::current().layout.catch.png.COLUMN_WIDTH;
+    let y = y.clamp(
+        crate::config::current().layout.catch.png.PAGE_MARGIN_Y,
+        crate::config::current().layout.catch.png.PAGE_MARGIN_Y + layout.total_column_height,
+    );
     let label = crate::render::text::format_seconds_tenths(
         time_axis.to_display(timing_line.time + layout.chart_start_time),
     );
-    let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
-    let label_x = (border_right + 4).min(layout.image_width - label_width as i64 - PAGE_MARGIN_X);
+    let (label_width, label_height) = text_size(
+        &label,
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .TIME_LABEL_FONT_SIZE,
+    );
+    let label_x = (border_right + 4).min(
+        layout.image_width
+            - label_width as i64
+            - crate::config::current().layout.catch.png.PAGE_MARGIN_X,
+    );
     let label_y = (y as f64 - label_height as f64 / 2.0)
-        .max(PAGE_MARGIN_Y as f64)
+        .max(crate::config::current().layout.catch.png.PAGE_MARGIN_Y as f64)
         .floor() as i64;
     draw_text(
         image,
         label_x,
         label_y,
         &label,
-        TIME_LABEL_FONT_SIZE,
-        TIME_LABEL_COLOR,
+        crate::config::current()
+            .layout
+            .catch
+            .png
+            .TIME_LABEL_FONT_SIZE,
+        crate::config::current().layout.catch.png.TIME_LABEL_COLOR,
     );
 }
 

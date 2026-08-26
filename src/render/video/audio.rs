@@ -1,4 +1,3 @@
-pub(crate) use crate::config::audio::video_audio::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
@@ -150,15 +149,18 @@ pub(crate) fn encode_audio_segment(
         ));
     }
     let decoded = decode_audio(&source.path)?;
-    let target_samples =
-        ((frame_count as u64 * AUDIO_SAMPLE_RATE as u64) + fps as u64 - 1) / fps as u64;
+    let target_samples = ((frame_count as u64
+        * crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE as u64)
+        + fps as u64
+        - 1)
+        / fps as u64;
     if target_samples == 0 {
         return Err(PreviewError::render("audio segment is empty"));
     }
 
     let encoder = Encoder::new(EncoderParams {
-        bit_rate: BitRate::Cbr(AUDIO_BITRATE),
-        sample_rate: AUDIO_SAMPLE_RATE,
+        bit_rate: BitRate::Cbr(crate::config::current().audio.video_audio.AUDIO_BITRATE),
+        sample_rate: crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE,
         transport: Transport::Raw,
         channels: ChannelMode::Stereo,
         audio_object_type: AudioObjectType::Mpeg4LowComplexity,
@@ -251,7 +253,8 @@ fn source_frame_position(
     speed: f64,
 ) -> f64 {
     let chart_time_ms = chart_start_ms as f64
-        + (output_index + encoder_delay_samples) as f64 * 1000.0 * speed / AUDIO_SAMPLE_RATE as f64;
+        + (output_index + encoder_delay_samples) as f64 * 1000.0 * speed
+            / crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE as f64;
     chart_time_ms * source_sample_rate as f64 / 1000.0
 }
 
@@ -364,7 +367,8 @@ fn decode_audio(path: &Path) -> Result<DecodedAudio> {
         return Err(PreviewError::render("beatmap audio decoded to no samples"));
     }
     Ok(DecodedAudio {
-        sample_rate: sample_rate.unwrap_or(AUDIO_SAMPLE_RATE),
+        sample_rate: sample_rate
+            .unwrap_or(crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE),
         stereo_samples,
     })
 }
@@ -392,7 +396,14 @@ fn extract_audio_entry(osz_path: &Path, wanted: &str, target_path: &Path) -> Res
     let mut entry = archive
         .by_index(index)
         .map_err(|e| PreviewError::download(format!("failed to open audio entry: {e}")))?;
-    if entry.is_dir() || entry.size() == 0 || entry.size() > MAX_EXTRACTED_AUDIO_BYTES {
+    if entry.is_dir()
+        || entry.size() == 0
+        || entry.size()
+            > crate::config::current()
+                .audio
+                .video_audio
+                .MAX_EXTRACTED_AUDIO_BYTES
+    {
         return Err(PreviewError::download(format!(
             "invalid extracted audio size: {} bytes",
             entry.size()
@@ -403,14 +414,26 @@ fn extract_audio_entry(osz_path: &Path, wanted: &str, target_path: &Path) -> Res
     let mut output = File::create(&part_path)
         .map_err(|e| PreviewError::download(format!("failed to create audio cache file: {e}")))?;
     let copied = std::io::copy(
-        &mut entry.by_ref().take(MAX_EXTRACTED_AUDIO_BYTES + 1),
+        &mut entry.by_ref().take(
+            crate::config::current()
+                .audio
+                .video_audio
+                .MAX_EXTRACTED_AUDIO_BYTES
+                + 1,
+        ),
         &mut output,
     )
     .map_err(|e| PreviewError::download(format!("failed to extract beatmap audio: {e}")))?;
     output
         .flush()
         .map_err(|e| PreviewError::download(format!("failed to flush audio cache: {e}")))?;
-    if copied == 0 || copied > MAX_EXTRACTED_AUDIO_BYTES {
+    if copied == 0
+        || copied
+            > crate::config::current()
+                .audio
+                .video_audio
+                .MAX_EXTRACTED_AUDIO_BYTES
+    {
         let _ = std::fs::remove_file(&part_path);
         return Err(PreviewError::download(
             "extracted audio is empty or too large",

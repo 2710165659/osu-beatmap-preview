@@ -2,7 +2,7 @@
 paths:
   OUTPUT_DIR: "%TEMP%/osu-beatmap-preview/outputs"
   CACHE_DIR: "%TEMP%/osu-beatmap-preview"
-  CONFIG_DIR: "%TEMP%/osu-beatmap-preview/config" # TODO: 目前仅写在配置项，还未实现从这个目录读取配置文件
+  CONFIG_DIR: "./"
   LOG_DIR: "%TEMP%/osu-beatmap-preview/logs"
 logging:
   config:

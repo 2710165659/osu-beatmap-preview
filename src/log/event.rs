@@ -6,7 +6,7 @@
 use crate::log::config::enabled;
 use crate::log::context;
 use crate::log::timestamp::now_local_millis;
-use crate::log::writer::{append_line, MAX_LINE_BYTES};
+use crate::log::writer::append_line;
 
 /// 写一条进度事件。
 ///
@@ -28,7 +28,7 @@ fn fit_line(step: &str, status: &str, bid: &str, msg: &str) -> String {
     let mut msg = msg.to_string();
     loop {
         let line = build_line(step, status, bid, &msg);
-        if line.len() <= MAX_LINE_BYTES || msg.is_empty() {
+        if line.len() <= crate::config::current().logging.writer.MAX_LINE_BYTES || msg.is_empty() {
             return line;
         }
         let cut = msg.char_indices().next_back().map(|(i, _)| i).unwrap_or(0);

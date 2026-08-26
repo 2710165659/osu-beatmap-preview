@@ -9,6 +9,8 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
 ureq = "2"
 lexopt = "0.3"
 serde_json = { version = "1", features = ["preserve_order"] }

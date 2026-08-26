@@ -7,7 +7,6 @@ use crate::core::mods::ModSettings;
 use crate::render::canvas::Img;
 use crate::render::text::format_mmssmmm;
 
-use super::constants::*;
 use super::context::*;
 use super::draw_time_label;
 use super::objects::render_frame;
@@ -24,32 +23,69 @@ pub(crate) fn render_standard_png(
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
-        ROW_COUNT,
-        IMAGES_PER_ROW,
-        MS_PER_IMAGE,
+        crate::config::current().layout.standard.png.ROW_COUNT,
+        crate::config::current().layout.standard.png.IMAGES_PER_ROW,
+        crate::config::current().layout.standard.png.MS_PER_IMAGE,
         times_ms,
     )?;
 
     let (canvas_w, canvas_h) = png_canvas_size();
-    let mut canvas = Img::new(canvas_w as u32, canvas_h as u32, CANVAS_BACKGROUND_COLOR);
+    let mut canvas = Img::new(
+        canvas_w as u32,
+        canvas_h as u32,
+        crate::config::current()
+            .layout
+            .standard
+            .png
+            .CANVAS_BACKGROUND_COLOR,
+    );
     let mut cache = RenderCache::default();
 
     for (row_index, row_timing) in row_timings.iter().enumerate() {
-        let snapshot_times: Vec<i64> = (0..IMAGES_PER_ROW)
-            .map(|i| row_timing.start_time + i as i64 * MS_PER_IMAGE)
-            .collect();
+        let snapshot_times: Vec<i64> =
+            (0..crate::config::current().layout.standard.png.IMAGES_PER_ROW)
+                .map(|i| {
+                    row_timing.start_time
+                        + i as i64 * crate::config::current().layout.standard.png.MS_PER_IMAGE
+                })
+                .collect();
         let visible_groups = build_visible_indexes_by_snapshot(
             &context.hit_objects,
             &snapshot_times,
             context.settings.preempt_ms,
         );
-        let y = VERTICAL_PAGE_MARGIN
+        let y = crate::config::current()
+            .layout
+            .standard
+            .png
+            .VERTICAL_PAGE_MARGIN
             + row_index as i64
-                * (IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT + INTER_ROW_GAP);
-        for image_index in 0..IMAGES_PER_ROW {
+                * (crate::config::current().layout.standard.png.IMAGE_HEIGHT
+                    + crate::config::current()
+                        .layout
+                        .standard
+                        .png
+                        .TIME_LABEL_TOP_GAP
+                    + crate::config::current()
+                        .layout
+                        .standard
+                        .png
+                        .TIME_LABEL_HEIGHT
+                    + crate::config::current().layout.standard.png.INTER_ROW_GAP);
+        for image_index in 0..crate::config::current().layout.standard.png.IMAGES_PER_ROW {
             let snapshot_time = snapshot_times[image_index];
-            let x =
-                HORIZONTAL_PAGE_MARGIN + image_index as i64 * (IMAGE_WIDTH + INTRA_ROW_IMAGE_GAP);
+            let x = crate::config::current()
+                .layout
+                .standard
+                .png
+                .HORIZONTAL_PAGE_MARGIN
+                + image_index as i64
+                    * (crate::config::current().layout.standard.png.IMAGE_WIDTH
+                        + crate::config::current()
+                            .layout
+                            .standard
+                            .png
+                            .INTRA_ROW_IMAGE_GAP);
             let empty_breaks: Vec<crate::core::models::BreakPeriod> = Vec::new();
             let breaks = if row_timing.is_preview {
                 &row_timing.break_periods
@@ -74,17 +110,38 @@ pub(crate) fn render_standard_png(
                 &mut canvas,
                 &format_mmssmmm(time_axis.to_display(snapshot_time)),
                 x,
-                y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP,
+                y + crate::config::current().layout.standard.png.IMAGE_HEIGHT
+                    + crate::config::current()
+                        .layout
+                        .standard
+                        .png
+                        .TIME_LABEL_TOP_GAP,
                 note,
                 if is_preview_label {
-                    PREVIEW_TIME_LABEL_COLOR
+                    crate::config::current()
+                        .layout
+                        .standard
+                        .png
+                        .PREVIEW_TIME_LABEL_COLOR
                 } else {
-                    TIME_LABEL_COLOR
+                    crate::config::current()
+                        .layout
+                        .standard
+                        .png
+                        .TIME_LABEL_COLOR
                 },
                 if is_preview_label {
-                    PREVIEW_TIME_LABEL_COLOR
+                    crate::config::current()
+                        .layout
+                        .standard
+                        .png
+                        .PREVIEW_TIME_LABEL_COLOR
                 } else {
-                    TIME_LABEL_NOTE_COLOR
+                    crate::config::current()
+                        .layout
+                        .standard
+                        .png
+                        .TIME_LABEL_NOTE_COLOR
                 },
             );
         }

@@ -3,7 +3,6 @@
 //! 从统一的 `assets/skin.ini`（经 [`crate::render::skin`] 解析）中按键数选取
 //! 对应的 [Mania] 配置块，提取列宽 / 分隔线宽 / 判定线位置 / 列颜色。
 
-use crate::config::layout::mania::png::*;
 use crate::parser::round_half_even;
 use crate::render::canvas::Rgba;
 
@@ -43,7 +42,7 @@ fn parse_skin_block(block: &[(String, String)], keys: i32) -> ManiaSkinConfig {
     let column_widths = parse_int_list(
         block_get(block, "ColumnWidth").unwrap_or(""),
         keys as usize,
-        LANE_WIDTH,
+        crate::config::current().layout.mania.png.LANE_WIDTH,
     );
     let column_line_widths = parse_int_list(
         block_get(block, "ColumnLineWidth").unwrap_or(""),
@@ -54,7 +53,7 @@ fn parse_skin_block(block: &[(String, String)], keys: i32) -> ManiaSkinConfig {
         .map(|index| {
             parse_colour(
                 block_get(block, &format!("Colour{}", index + 1)).unwrap_or(""),
-                LANE_BACKGROUND,
+                crate::config::current().layout.mania.png.LANE_BACKGROUND,
             )
         })
         .collect();
@@ -116,20 +115,37 @@ fn parse_colour(raw: &str, fallback: Rgba) -> Rgba {
 /// 坐标系中距底部的距离。
 fn parse_hit_position(raw: Option<&str>) -> f64 {
     let Some(raw) = raw else {
-        return HIT_TARGET_FROM_BOTTOM as f64;
+        return crate::config::current()
+            .layout
+            .mania
+            .png
+            .HIT_TARGET_FROM_BOTTOM as f64;
     };
     match raw.trim().parse::<f64>() {
         Ok(v) => (480.0 - v.clamp(240.0, 480.0)) * 1.6,
-        Err(_) => HIT_TARGET_FROM_BOTTOM as f64,
+        Err(_) => {
+            crate::config::current()
+                .layout
+                .mania
+                .png
+                .HIT_TARGET_FROM_BOTTOM as f64
+        }
     }
 }
 
 /// 缺省配置：等宽列、无分隔线、默认判定线位置。
 fn default_skin_config(keys: i32) -> ManiaSkinConfig {
     ManiaSkinConfig {
-        hit_position: HIT_TARGET_FROM_BOTTOM as f64,
-        column_widths: vec![LANE_WIDTH; keys as usize],
+        hit_position: crate::config::current()
+            .layout
+            .mania
+            .png
+            .HIT_TARGET_FROM_BOTTOM as f64,
+        column_widths: vec![crate::config::current().layout.mania.png.LANE_WIDTH; keys as usize],
         column_line_widths: vec![0; keys as usize + 1],
-        column_colours: vec![LANE_BACKGROUND; keys as usize],
+        column_colours: vec![
+            crate::config::current().layout.mania.png.LANE_BACKGROUND;
+            keys as usize
+        ],
     }
 }

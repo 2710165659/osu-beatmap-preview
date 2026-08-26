@@ -12,13 +12,11 @@
 //! - 白色中心圆点：直径 20/128 ≈ 0.156d（普通混合，非加色）
 //! - 超冲时再叠 1.15d、InnerRadius 0.08 的超冲色环
 
-use crate::config::effects::catch_drawing::*;
 use crate::render::canvas::Img;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::constants::*;
 use super::objects::{ObjType, RenderObject};
 
 /// CircularBlob 默认噪声参数（lazer 未覆盖默认值）。
@@ -101,8 +99,19 @@ struct BlobLayer {
 fn build_blob_sprite(base_diameter: f64, layers: &[BlobLayer], seed: u64) -> Img {
     let max_ratio = layers.iter().fold(1.0f64, |m, l| m.max(l.size_ratio));
     let full_size = ((base_diameter * max_ratio).ceil() as i64 + 4).max(1) as u32;
-    let small_d = base_diameter * BLOB_SPRITE_SCALE;
-    let sprite_size = ((full_size as f64 * BLOB_SPRITE_SCALE).ceil() as i64 + 4).max(1) as u32;
+    let small_d = base_diameter
+        * crate::config::current()
+            .effects
+            .catch_drawing
+            .BLOB_SPRITE_SCALE;
+    let sprite_size = ((full_size as f64
+        * crate::config::current()
+            .effects
+            .catch_drawing
+            .BLOB_SPRITE_SCALE)
+        .ceil() as i64
+        + 4)
+    .max(1) as u32;
     // [0]=R, [1]=G, [2]=B (非预乘), [3]=A (0..1)
     let mut acc = vec![[0.0f64; 4]; (sprite_size * sprite_size) as usize];
     let center = sprite_size as f64 / 2.0;
@@ -365,5 +374,9 @@ pub(crate) fn draw_catch_object(
 
 /// 对象直径：基础半径 × 对象缩放 × 类型缩放 × playfield 缩放。
 pub(crate) fn object_diameter(object_scale: f64, playfield_scale: f64, scale_factor: f64) -> f64 {
-    OBJECT_RADIUS * 2.0 * object_scale * scale_factor * playfield_scale
+    crate::config::current().layout.catch.png.OBJECT_RADIUS
+        * 2.0
+        * object_scale
+        * scale_factor
+        * playfield_scale
 }

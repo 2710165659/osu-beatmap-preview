@@ -1,6 +1,4 @@
 //! Configuration constants for osu!standard, generated from default_config.yml.
-pub(crate) use crate::config::layout::standard::png::*;
-
 pub(crate) const ID_CIRCLE_PIECE: u64 = 100;
 pub(crate) const ID_SLIDER_BALL: u64 = 102;
 pub(crate) const ID_FOLLOW: u64 = 103;

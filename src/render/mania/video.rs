@@ -6,7 +6,6 @@
 //! Time range is controlled by `--time-points` and `--duration-time`.
 
 use crate::common::time_selection::TimeAxis;
-use crate::config::layout::mania::mp4::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -65,7 +64,7 @@ pub(crate) fn render_mania_video(
     let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = FPS as u32;
+    let fps = crate::config::current().layout.mania.mp4.FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let skin_config = load_mania_skin_config(key_count);
@@ -108,7 +107,7 @@ pub(crate) fn render_mania_video(
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
-            IMAGE_BACKGROUND,
+            crate::config::current().layout.mania.mp4.IMAGE_BACKGROUND,
         );
         draw_segment_background(&mut bg, segment_left(0, &layout), &layout);
         bg
@@ -178,16 +177,22 @@ fn build_video_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
         build_column_left_offsets(&skin_config.column_widths, &skin_config.column_line_widths);
     let lane_area_width: i64 = skin_config.column_widths.iter().sum::<i64>()
         + skin_config.column_line_widths.iter().sum::<i64>();
-    let segment_width = LEFT_PANEL_WIDTH * 2 + lane_area_width;
-    let playfield_height = FRAME_HEIGHT;
+    let segment_width =
+        crate::config::current().layout.mania.mp4.LEFT_PANEL_WIDTH * 2 + lane_area_width;
+    let playfield_height = crate::config::current().layout.mania.mp4.FRAME_HEIGHT;
     let hit_position_y = round_half_even(playfield_height as f64 - skin_config.hit_position);
-    let scroll_length = (hit_position_y - STAGE_TOP_PADDING).max(1);
+    let scroll_length =
+        (hit_position_y - crate::config::current().layout.mania.mp4.STAGE_TOP_PADDING).max(1);
     let average_column_width = skin_config.column_widths.iter().sum::<i64>() as f64
         / skin_config.column_widths.len() as f64;
-    let note_head_height =
-        round_half_even(NOTE_HEAD_HEIGHT as f64 * average_column_width / LANE_WIDTH as f64).max(1);
-    let image_width = PAGE_MARGIN_X * 2 + segment_width;
-    let image_height = PAGE_MARGIN_Y * 2 + playfield_height;
+    let note_head_height = round_half_even(
+        crate::config::current().layout.mania.mp4.NOTE_HEAD_HEIGHT as f64 * average_column_width
+            / crate::config::current().layout.mania.mp4.LANE_WIDTH as f64,
+    )
+    .max(1);
+    let image_width = crate::config::current().layout.mania.mp4.PAGE_MARGIN_X * 2 + segment_width;
+    let image_height =
+        crate::config::current().layout.mania.mp4.PAGE_MARGIN_Y * 2 + playfield_height;
     GifLayout {
         segment_count: 1,
         segment_width,

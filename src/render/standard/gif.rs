@@ -1,7 +1,6 @@
 //! osu!standard GIF renderer: 2×2 segment preview or single-screen clip.
 
 use crate::common::time_selection::{GifRenderOptions, TimeAxis};
-use crate::config::layout::standard::gif::*;
 use crate::core::errors::Result;
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -40,26 +39,38 @@ fn render_standard_segment_gif(
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods, time_axis);
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let gameplay_segment_duration = py_round(DURATION_MS as f64 * speed_multiplier);
+    let gameplay_segment_duration = py_round(
+        crate::config::current().layout.standard.gif.DURATION_MS as f64 * speed_multiplier,
+    );
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
-        ROW_COUNT * IMAGES_PER_ROW,
+        crate::config::current().layout.standard.gif.ROW_COUNT
+            * crate::config::current().layout.standard.gif.IMAGES_PER_ROW,
         2,
         gameplay_segment_duration,
         times_ms,
     )?;
 
     let (canvas_w, canvas_h) = gif_canvas_size();
-    let frame_count = (((DURATION_MS * FPS) as f64 / 1000.0).round() as usize).max(1);
-    let frame_duration_ms = ((1000.0 / FPS as f64).round() as u32).max(1);
+    let frame_count = (((crate::config::current().layout.standard.gif.DURATION_MS
+        * crate::config::current().layout.standard.gif.FPS) as f64
+        / 1000.0)
+        .round() as usize)
+        .max(1);
+    let frame_duration_ms =
+        ((1000.0 / crate::config::current().layout.standard.gif.FPS as f64).round() as u32).max(1);
 
     let segment_snapshot_times: Vec<Vec<i64>> = row_timings
         .iter()
         .map(|rt| {
             (0..frame_count)
                 .map(|fi| {
-                    rt.start_time + py_round(fi as f64 * 1000.0 * speed_multiplier / FPS as f64)
+                    rt.start_time
+                        + py_round(
+                            fi as f64 * 1000.0 * speed_multiplier
+                                / crate::config::current().layout.standard.gif.FPS as f64,
+                        )
                 })
                 .collect()
         })
@@ -84,7 +95,15 @@ fn render_standard_segment_gif(
     }
 
     let render = move |frame_index: usize| -> Img {
-        let mut canvas = Img::new(canvas_w as u32, canvas_h as u32, CANVAS_BACKGROUND_COLOR);
+        let mut canvas = Img::new(
+            canvas_w as u32,
+            canvas_h as u32,
+            crate::config::current()
+                .layout
+                .standard
+                .gif
+                .CANVAS_BACKGROUND_COLOR,
+        );
         for (segment_index, row_timing) in row_timings.iter().enumerate() {
             let (x, y) = gif_frame_origin(segment_index);
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
@@ -110,22 +129,43 @@ fn render_standard_segment_gif(
                     time_axis.to_display(row_timing.start_time + gameplay_segment_duration)
                 )
             );
-            if SHOW_TIME_LABEL {
+            if crate::config::current().layout.standard.gif.SHOW_TIME_LABEL {
                 draw_time_label(
                     &mut canvas,
                     &label,
                     x,
-                    y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP,
+                    y + crate::config::current().layout.standard.gif.IMAGE_HEIGHT
+                        + crate::config::current()
+                            .layout
+                            .standard
+                            .gif
+                            .TIME_LABEL_TOP_GAP,
                     note,
                     if row_timing.is_preview {
-                        PREVIEW_TIME_LABEL_COLOR
+                        crate::config::current()
+                            .layout
+                            .standard
+                            .gif
+                            .PREVIEW_TIME_LABEL_COLOR
                     } else {
-                        TIME_LABEL_COLOR
+                        crate::config::current()
+                            .layout
+                            .standard
+                            .gif
+                            .TIME_LABEL_COLOR
                     },
                     if row_timing.is_preview {
-                        PREVIEW_TIME_LABEL_COLOR
+                        crate::config::current()
+                            .layout
+                            .standard
+                            .gif
+                            .PREVIEW_TIME_LABEL_COLOR
                     } else {
-                        TIME_LABEL_NOTE_COLOR
+                        crate::config::current()
+                            .layout
+                            .standard
+                            .gif
+                            .TIME_LABEL_NOTE_COLOR
                     },
                 );
             }

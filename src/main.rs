@@ -21,13 +21,14 @@ struct Args {
     duration_time: Option<f64>,
     no_cache: bool,
     no_log: bool,
+    config: Option<String>,
 }
 
 fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] \
          [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] \
-         [--no-log] [--no-cache]\n\
+         [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>]\n\
          osu-beatmap-preview --version\n\
          --mod and --time-points may be repeated to provide lists"
     );
@@ -44,6 +45,7 @@ fn parse_args() -> Args {
     let mut duration_time = None;
     let mut no_cache: bool = false;
     let mut no_log: bool = false;
+    let mut config: Option<String> = None;
 
     while let Some(arg) = parser.next().unwrap_or_else(|e| {
         eprintln!("error: {e}");
@@ -104,6 +106,13 @@ fn parse_args() -> Args {
             Long("no-log") => {
                 no_log = true;
             }
+            Long("config") => {
+                if config.is_some() {
+                    eprintln!("error: --config may only be specified once");
+                    print_usage_and_exit(2);
+                }
+                config = Some(take_value(&mut parser, "--config"));
+            }
             Long("version") => {
                 println!(
                     "osu-beatmap-preview v{} (built {})",
@@ -129,9 +138,13 @@ fn parse_args() -> Args {
         }
     }
 
-    let Some(bid) = bid else {
-        eprintln!("error: --bid is required");
-        print_usage_and_exit(2);
+    let bid = match bid {
+        Some(bid) => bid,
+        None if log_test_lines().is_some() => String::new(),
+        None => {
+            eprintln!("error: --bid is required");
+            print_usage_and_exit(2);
+        }
     };
     Args {
         bid,
@@ -142,6 +155,7 @@ fn parse_args() -> Args {
         duration_time,
         no_cache,
         no_log,
+        config,
     }
 }
 
@@ -220,11 +234,21 @@ fn run_log_test(lines: usize) {
 }
 
 fn main() {
+    let args = parse_args();
+    if let Err(error) = config::initialize_for_cli(args.config.as_deref()) {
+        let payload = serde_json::json!({
+            "status": "error",
+            "msg": format!("configuration error: {error}"),
+            "preview-img": "",
+            "beatmap-info": {},
+        });
+        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+        std::process::exit(1);
+    }
     if let Some(lines) = log_test_lines() {
         run_log_test(lines);
         return;
     }
-    let args = parse_args();
     if !args.no_log {
         log::config::init();
     }

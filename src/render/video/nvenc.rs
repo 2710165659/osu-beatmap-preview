@@ -37,8 +37,6 @@ use nvenc::sys::enums::{
 };
 use nvenc::sys::guids::{NV_ENC_CODEC_H264_GUID, NV_ENC_PRESET_P1_GUID};
 
-use super::VIDEO_BITRATE;
-
 /// Try to create an NVENC encoder. Returns `Ok(None)` if the NVENC DLL is
 /// unavailable or session creation fails (e.g. no NVIDIA GPU).
 pub(crate) fn try_create(w: u32, h: u32, fps: u32) -> Result<Option<NvencEncoder>> {
@@ -116,7 +114,8 @@ impl NvencEncoder {
         config.preset_cfg.gop_len = keyframe_period;
         config.preset_cfg.frame_interval_p = 1;
         config.preset_cfg.rc_params.rate_control_mode = NVencParamsRcMode::VBR;
-        config.preset_cfg.rc_params.average_bit_rate = VIDEO_BITRATE;
+        config.preset_cfg.rc_params.average_bit_rate =
+            crate::config::current().video.video.VIDEO_BITRATE;
 
         // ── 5. init encoder ──
         let init_params = InitParams {

@@ -23,16 +23,13 @@
 //! silently falls back to CPU.
 
 use crate::common::time_selection::TimeAxis;
-use crate::config::video::video::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
-use crate::render::video::audio::{
-    encode_audio_segment, full_video_start_time, AudioSourceJob, AUDIO_BITRATE, AUDIO_SAMPLE_RATE,
-};
+use crate::render::video::audio::{encode_audio_segment, full_video_start_time, AudioSourceJob};
 use bytes::Bytes;
 use rayon::prelude::*;
 use std::io::BufWriter;
@@ -66,7 +63,7 @@ pub(crate) fn resolve_video_time_range(
     speed: f64,
 ) -> Result<VideoTimeRange> {
     let full_start = full_video_start_time(first_object_ms, beatmap.audio_lead_in_ms());
-    let full_end = last_object_ms + VIDEO_END_PADDING_MS;
+    let full_end = last_object_ms + crate::config::current().video.video.VIDEO_END_PADDING_MS;
     let full_range = validate_video_time_range(VideoTimeRange {
         start: full_start,
         end: full_end,
@@ -197,6 +194,9 @@ pub(crate) fn save_mp4_streamed(
         return Err(PreviewError::render("no frames to encode"));
     }
     let video_started = Instant::now();
+    let audio_sample_rate = crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE;
+    let audio_bitrate = crate::config::current().audio.video_audio.AUDIO_BITRATE;
+    let audio_freq_index = sample_freq_index(audio_sample_rate)?;
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
@@ -250,7 +250,8 @@ pub(crate) fn save_mp4_streamed(
         .saturating_mul(out_h as usize)
         .saturating_mul(4)
         .max(1);
-    let par_chunk_size = (MAX_PAR_FRAME_BYTES / frame_bytes).clamp(1, PAR_CHUNK_SIZE);
+    let par_chunk_size = (crate::config::current().video.video.MAX_PAR_FRAME_BYTES / frame_bytes)
+        .clamp(1, crate::config::current().video.video.PAR_CHUNK_SIZE);
 
     // ── encode first frame, extract SPS/PPS for the mp4 track config ──
     let first_comp = compose_frame(
@@ -315,12 +316,12 @@ pub(crate) fn save_mp4_streamed(
 
         let audio_track_config = mp4::TrackConfig {
             track_type: mp4::TrackType::Audio,
-            timescale: AUDIO_SAMPLE_RATE,
+            timescale: audio_sample_rate,
             language: "und".to_string(),
             media_conf: mp4::MediaConfig::AacConfig(mp4::AacConfig {
-                bitrate: AUDIO_BITRATE,
+                bitrate: audio_bitrate,
                 profile: mp4::AudioObjectType::AacLowComplexity,
-                freq_index: mp4::SampleFreqIndex::Freq48000,
+                freq_index: audio_freq_index,
                 chan_conf: mp4::ChannelConfig::Stereo,
             }),
         };
@@ -462,6 +463,30 @@ pub(crate) fn save_mp4_streamed(
     Ok(())
 }
 
+fn sample_freq_index(sample_rate: u32) -> Result<mp4::SampleFreqIndex> {
+    let index = match sample_rate {
+        96_000 => mp4::SampleFreqIndex::Freq96000,
+        88_200 => mp4::SampleFreqIndex::Freq88200,
+        64_000 => mp4::SampleFreqIndex::Freq64000,
+        48_000 => mp4::SampleFreqIndex::Freq48000,
+        44_100 => mp4::SampleFreqIndex::Freq44100,
+        32_000 => mp4::SampleFreqIndex::Freq32000,
+        24_000 => mp4::SampleFreqIndex::Freq24000,
+        22_050 => mp4::SampleFreqIndex::Freq22050,
+        16_000 => mp4::SampleFreqIndex::Freq16000,
+        12_000 => mp4::SampleFreqIndex::Freq12000,
+        11_025 => mp4::SampleFreqIndex::Freq11025,
+        8_000 => mp4::SampleFreqIndex::Freq8000,
+        7_350 => mp4::SampleFreqIndex::Freq7350,
+        _ => {
+            return Err(PreviewError::render(format!(
+                "unsupported configured audio sample rate: {sample_rate}"
+            )))
+        }
+    };
+    Ok(index)
+}
+
 /// Try hardware encoders in priority order, fall back to CPU openh264.
 fn create_encoder(w: u32, h: u32, fps: u32) -> Result<Box<dyn FrameEncoder>> {
     // `OSU_PREVIEW_NO_GPU=1` forces the CPU path (for benchmarking / fallback).
@@ -500,21 +525,25 @@ fn letterbox_dims(pf_w: u32, pf_h: u32) -> (u32, u32) {
 /// Place the playfield frame centered on a black 16:9 canvas and draw the
 /// "current / total" gameplay-time label in the top-right corner.
 fn compose_frame(pf: Img, current_ms: i64, total_ms: i64, out_w: u32, out_h: u32) -> Img {
-    let mut canvas = Img::new(out_w, out_h, BLACK_OPAQUE);
+    let mut canvas = Img::new(
+        out_w,
+        out_h,
+        crate::config::current().video.video.BLACK_OPAQUE,
+    );
     let ox = ((out_w - pf.w) / 2) as i64;
     let oy = ((out_h - pf.h) / 2) as i64;
     canvas.alpha_composite(&pf, ox, oy);
 
     let label = format_progress_label(current_ms, total_ms);
-    let (lw, _) = text_size(&label, LABEL_FONT_SIZE);
-    let lx = out_w as i64 - lw as i64 - LABEL_PAD;
+    let (lw, _) = text_size(&label, crate::config::current().video.video.LABEL_FONT_SIZE);
+    let lx = out_w as i64 - lw as i64 - crate::config::current().video.video.LABEL_PAD;
     draw_text(
         &mut canvas,
         lx,
-        LABEL_PAD,
+        crate::config::current().video.video.LABEL_PAD,
         &label,
-        LABEL_FONT_SIZE,
-        LABEL_COLOR,
+        crate::config::current().video.video.LABEL_FONT_SIZE,
+        crate::config::current().video.video.LABEL_COLOR,
     );
     canvas
 }

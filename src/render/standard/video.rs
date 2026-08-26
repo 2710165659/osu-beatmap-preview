@@ -5,7 +5,6 @@
 //! Time range is controlled by `--time-points` and `--duration-time`.
 
 use crate::common::time_selection::TimeAxis;
-use crate::config::layout::standard::mp4::*;
 use crate::core::errors::Result;
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -41,7 +40,7 @@ pub(crate) fn render_standard_video(
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods, time_axis);
     let total_ms = end - start;
-    let fps = FPS as u32;
+    let fps = crate::config::current().layout.standard.mp4.FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let break_periods = beatmap.break_periods.clone();
