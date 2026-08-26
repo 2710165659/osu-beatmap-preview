@@ -1,4 +1,5 @@
 use crate::core::errors::{PreviewError, Result};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Default)]
 pub struct ModSettings {
@@ -56,16 +57,26 @@ impl ModSettings {
     }
 }
 
-pub fn parse_mods(mod_str: &str) -> Result<ModSettings> {
+pub fn parse_mods(mod_tokens: &[String]) -> Result<ModSettings> {
     let mut settings = ModSettings::new();
-    if mod_str.trim().is_empty() {
+    if mod_tokens.is_empty() {
         return Ok(settings);
     }
-    let tokens: Vec<String> = mod_str
-        .split('+')
-        .map(|t| t.trim().to_uppercase())
-        .filter(|t| !t.is_empty())
-        .collect();
+    if mod_tokens.iter().any(|token| token.contains('+')) {
+        return Err(PreviewError::new(
+            "mods must be supplied as repeated --mod values; '+' is not allowed",
+        ));
+    }
+    let tokens: Vec<String> = mod_tokens.iter().map(|t| t.trim().to_uppercase()).collect();
+    if tokens.iter().any(|token| token.is_empty()) {
+        return Err(PreviewError::new("mod tokens must not be empty"));
+    }
+    let mut seen = HashSet::new();
+    if let Some(duplicate) = tokens.iter().find(|token| !seen.insert(token.as_str())) {
+        return Err(PreviewError::new(format!(
+            "duplicate mod token: '{duplicate}'"
+        )));
+    }
     settings.tokens = tokens.clone();
     for token in &tokens {
         parse_one_token(token, &mut settings)?;
@@ -432,4 +443,29 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         _ => {}
     }
     filtered
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_mods_as_individual_tokens() {
+        let tokens = vec!["hd".to_string(), "dt1.25".to_string()];
+        let settings = parse_mods(&tokens).unwrap();
+        assert_eq!(settings.tokens, vec!["HD", "DT1.25"]);
+        assert!((settings.speed_multiplier - 1.25).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn rejects_plus_joined_mod_values() {
+        let tokens = vec!["hd+hr".to_string()];
+        assert!(parse_mods(&tokens).is_err());
+    }
+
+    #[test]
+    fn rejects_empty_and_duplicate_mod_tokens() {
+        assert!(parse_mods(&[String::new()]).is_err());
+        assert!(parse_mods(&["HD".into(), "hd".into()]).is_err());
+    }
 }

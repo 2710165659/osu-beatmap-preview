@@ -2,12 +2,12 @@
 //! Port of beatmap_preview/mania/renderer.py.
 
 use crate::common::time_selection::TimeAxis;
+use crate::config::layout::mania::png::*;
 use crate::core::errors::Result;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
-use crate::config::layout::mania::png::*;
 use crate::render::composer::save_png;
 use crate::render::text::{draw_text, text_size};
 use std::collections::BTreeMap;
@@ -17,7 +17,6 @@ use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
     mania_objects, resolve_key_count,
 };
-
 
 #[derive(Clone)]
 struct TimingLine {

@@ -1,3 +1,4 @@
+pub(crate) use crate::config::audio::video_audio::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
@@ -11,8 +12,6 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-pub(crate) use crate::config::audio::video_audio::*;
-
 
 #[derive(Debug, Clone)]
 pub(crate) struct AudioSource {

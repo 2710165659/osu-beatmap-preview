@@ -4,10 +4,10 @@
 //! - `render.log`：每张谱面渲染完（成功 / 失败 / 缓存命中）追加一行 NDJSON 汇总。
 //! - `progress.log`：人类可读的阶段事件流，可用 `tail -f` 实时查看多进程进度。
 //!
-//! 目录可通过 [`init`] 的 `log_dir` 参数或 `OSU_PREVIEW_LOG_DIR` 环境变量覆盖。
+//! 日志目录只由编译时 `LOG_DIR` 配置决定。
 //! 日志写入失败只降级到 stderr 提示，绝不阻断渲染。
 
-mod config;
+pub(crate) mod config;
 mod context;
 mod event;
 mod summary;
@@ -17,7 +17,6 @@ mod writer;
 #[cfg(test)]
 mod tests;
 
-pub use config::{init, paths};
 pub use context::{
     record_cache, record_output_bytes, record_stage, record_stage_status, record_video_stats,
     set_bid, CacheKind, VideoStats,

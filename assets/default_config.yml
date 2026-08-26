@@ -117,6 +117,7 @@ layout:
     gif:
       ROW_COUNT: 2
       IMAGES_PER_ROW: 2
+      SHOW_TIME_LABEL: true
       DURATION_MS: 5000
       FPS: 15
       GRID_GAP: 20
@@ -286,7 +287,8 @@ layout:
       TRACK_BACKGROUND_COLOR: [55, 55, 55, 255]
       TRACK_EDGE_COLOR: [80, 80, 80, 255]
       TRACK_ACCENT_COLOR: [254, 59, 1, 255]
-      SEGMENT_COUNT: 4
+      ROW_COUNT: 4
+      SHOW_TIME_LABEL: true
       DURATION_MS: 5000.0
       FPS: 15.0
       ROW_GAP: 60
@@ -380,7 +382,7 @@ layout:
         [[255, 192, 0], [0, 202, 0], [18, 124, 255], [242, 24, 57]]
       ROW_COUNT: 2
       IMAGES_PER_ROW: 2
-      SEGMENT_COUNT: 4
+      SHOW_TIME_LABEL: true
       DURATION_MS: 5000.0
       FPS: 15.0
       IMAGE_WIDTH: 470
@@ -456,7 +458,8 @@ layout:
       LEFT_PANEL_WIDTH: 12
       LEFT_PANEL_BACKGROUND: [112, 112, 112, 255]
       NOTE_SIDE_PADDING: 2
-      SEGMENT_COUNT: 4
+      IMAGES_PER_ROW: 4
+      SHOW_TIME_LABEL: true
       DURATION_MS: 10000
       FPS: 15
       SCROLL_SPEED: 33.0

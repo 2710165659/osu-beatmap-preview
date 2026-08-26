@@ -17,10 +17,8 @@
 ## 使用
 
 ```bash
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard|std] [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--gif-clip] [--gif-clip-label] [--preview-30s] [--gap=<BPM>] [--log-dir=<DIR>] [--no-log] [--no-cache]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache]
 ```
-
-参数别名：`--mod` = `--mods`，`--format` = `--fmt`，`--times` = `--time`。
 
 ### 参数
 
@@ -28,19 +26,15 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard|std] [--mods
 | --- | --- |
 | `--bid` | 必填，纯数字的 Beatmap ID。 |
 | `--convert` | 转谱模式，支持 `mania` / `ctb` / `taiko` / `standard` / `std`。仅 Standard 可用。 |
-| `--mods` | Mod 组合，用 `+` 连接，如 `hd+hr`；倍速类可带数值，如 `dt1.25`。 |
+| `--mod` | 单个 Mod，组合时重复传入，例如 `--mod=hd --mod=hr`；倍速类可带数值，如 `--mod=dt1.25`。 |
 | `--fmt` | 输出格式：`gif` / `png` / `mp4`。不填时按模式取默认值。 |
-| `--time` | 游戏皮肤时间轴上的时间点或范围，单位秒；目标模式首个可玩物件为 `0:00`，支持负数。|
-| `--gif-clip` | 仅 GIF 可用，输出单屏连续 GIF，不显示时间标签。 |
-| `--gif-clip-label` | 仅 GIF 可用，和 `--gif-clip` 同类，但会显示时间标签。 |
-| `--preview-30s` | 仅 MP4 可用，按 `PreviewTime` 附近渲染约 30 秒实际播放时长。 |
-| `--gap` | 仅 Taiko PNG 可用，指定排列间距 BPM。 |
-| `--log-dir` | 指定日志目录。 |
+| `--time-points` | 时间点列表。GIF 和 Standard PNG 可重复传入多个点；MP4 最多传入一个点。每个点为游戏时间秒数或 `preview`。未传时自动选择（MP4 默认从 `0` 开始）。 |
+| `--duration-time` | 仅 MP4 可用，输出时长（秒）。默认 `600`。 |
 | `--no-log` | 关闭日志。 |
 | `--no-cache` | 跳过下载缓存与输出缓存，强制重新渲染。 |
 | `--version` | 打印版本号与构建时间后退出。 |
 
-> `--time` 与 osu! 游戏内歌曲进度皮肤组件使用同一时间轴：转谱后的目标模式首个可玩物件为 `0:00`，不是编辑器左下角的绝对音轨时间。普通 GIF 和 Standard PNG 可传入 1–4 个时间点；MP4、`--gif-clip` 和 `--gif-clip-label` 必须传入两个时间点表示区间。负数表示首物件之前，建议使用等号形式，例如 `--time=-2+10`；早于音频起点的 MP4 部分输出静音。
+> MP4 数值起始时间使用游戏时间轴：转谱后的目标模式首个可玩物件为 `0:00`，不是编辑器左下角的绝对音轨时间。支持负数，早于音频起点的部分输出静音。
 
 ### 示例
 
@@ -52,28 +46,19 @@ osu-beatmap-preview --bid=123456
 osu-beatmap-preview --bid=123456 --convert=mania
 
 # 转谱后应用 Mod，并输出 GIF
-osu-beatmap-preview --bid=123456 --convert=mania --mods=4k+dt1.25 --fmt=gif
+osu-beatmap-preview --bid=123456 --convert=mania --mod=4k --mod=dt1.25 --fmt=gif
 
 # 应用多个 Mod 渲染
-osu-beatmap-preview --bid=123456 --mods=hd+hr
+osu-beatmap-preview --bid=123456 --mod=hd --mod=hr
 
-# 指定多个 GIF 预览时间点
-osu-beatmap-preview --bid=123456 --fmt=gif --time=10+25+60
+# 按谱面预览时间输出 30 秒 MP4
+osu-beatmap-preview --bid=123456 --fmt=mp4 --time-points=preview --duration-time=30
 
-# 从首物件前 2 秒开始渲染连续 GIF
-osu-beatmap-preview --bid=123456 --fmt=gif --gif-clip-label --time=-2+10
+# GIF 指定四个渲染时间点（列表参数必须重复传入）
+osu-beatmap-preview --bid=123456 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20
 
-# 指定区间，输出无时间标签的连续 GIF
-osu-beatmap-preview --bid=123456 --fmt=gif --gif-clip --time=30+42
-
-# 指定区间和 Mod，输出 MP4
-osu-beatmap-preview --bid=123456 --fmt=mp4 --time=30+60 --mods=hd+dt1.25
-
-# 按谱面预览时间输出约 30 秒 MP4
-osu-beatmap-preview --bid=123456 --fmt=mp4 --preview-30s
-
-# 组合使用转谱、PNG 和排列间距参数
-osu-beatmap-preview --bid=123456 --convert=taiko --fmt=png --gap=180 --mods=sw
+# 组合使用转谱和 PNG；Taiko 间距由配置项控制
+osu-beatmap-preview --bid=123456 --convert=taiko --fmt=png --mod=sw
 
 # 强制重新渲染并关闭日志
 osu-beatmap-preview --bid=123456 --no-cache --no-log
@@ -107,7 +92,7 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | 谱面缓存 | `<临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
 | 优选 IP 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
-| 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_gifclip][_t<时间点或区间>][_preview30s][_bpm<BPM值>].<fmt>` |
+| 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_video-start...-duration...].<fmt>` |
 | 配置文件夹 | `<临时目录>/osu-beatmap-preview/config/` |
 | 日志文件 | `<临时目录>/osu-beatmap-preview/logs/` — `progress.log`（实时进度，`tail -f`）与 `render.log`（NDJSON 汇总） |
 
@@ -117,18 +102,18 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 
 使用 `--fmt=png` 输出静态 PNG 图片。
 
-- Standard 输出 `5×8` 的预览图，共 5 行、每行 8 个连续画面；`--time` 最多可指定 4 个时间点，每个时间点作为一行预览的起点。
-- Taiko 输出按谱面滚动排列的长图，可使用 `--gap=<BPM>` 调整排列间距。
+- Standard GIF 网格可在 `assets/default_config.yml` 中配置行数和列数。
+- Taiko 输出按谱面滚动排列的长图，间距由配置项 `SPACING_PER_BPM` 控制，`0` 表示自动计算。
 - Catch 输出按谱面排列的长图。
 - Mania 输出按键道排列的长图，谱面较长时会自动分成多列。
 
 ### GIF 动图
 
-使用 `--fmt=gif` 输出 GIF 动图。默认输出多段预览，可用 `--time=t1+t2+...` 指定游戏皮肤时间轴上的预览点。`--gif-clip` 输出单屏连续 GIF，不显示时间标签；`--gif-clip-label` 同样输出单屏连续 GIF，但会显示时间标签。未指定区间时，单屏模式仍按 `.osu` 的绝对 `PreviewTime` 选段，标签会换算为首物件相对时间；尾段不足时会向前补足。
+使用 `--fmt=gif` 输出 GIF 动图。四种模式分别在 `assets/default_config.yml` 中配置网格、时长和 `SHOW_TIME_LABEL`。将网格设为 `1×1` 并启用标签即可得到单画面带时间标签的预览。自动选段结果是确定性的，并优先使用谱面的 `PreviewTime`。
 
 ### MP4 视频
 
-使用 `--fmt=mp4` 输出带谱面音频的视频，支持四种模式。默认渲染全谱面，也可用 `--time=t1+t2` 指定游戏皮肤时间轴上的视频区间；右上角左侧显示当前皮肤时间，右侧固定显示从首物件到末物件结束的全谱可玩总时长，不受截取区间和 padding 影响。负时间或全谱默认 padding 会显示为负标签，落在音频文件前的部分为静音。`--preview-30s` 会从 `.osu` 的绝对 `PreviewTime` 附近渲染约 30 秒实际播放时长，不能与 `--time` 同时使用。预览时间落在谱面尾段时，会向前补足播放时长。
+使用 `--fmt=mp4` 输出带谱面音频的视频，支持四种模式。默认从游戏时间 `0` 开始输出 600 秒；使用单个 `--time-points` 和 `--duration-time` 指定区间。`--time-points=preview` 使用谱面的 `PreviewTime`，接近谱面尾部时会向前调整。GIF 和 Standard PNG 可以重复传入 `--time-points` 指定多个渲染点；旧的 `5+10+15` 拼接格式不再支持。
 
 ### 命令行输出
 
@@ -165,15 +150,12 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 
 ### 参数限制
 
-- `--gif-clip` 和 `--gif-clip-label` 互斥，且只能用于 GIF 输出。
-- `--preview-30s` 只能用于 MP4 输出，且不能同时传 `--time`。
-- MP4 使用 `--time` 时必须传入两个时间点，格式为 `--time=t1+t2`。
-- `--gif-clip` 或 `--gif-clip-label` 使用 `--time` 时必须传入两个时间点，格式为 `--time=t1+t2`。
-- `--gap` 只对 Taiko PNG 生效。
+- `--mod` 每次只能传入一个 Mod，组合时必须重复参数；使用 `+` 拼接会报错。
+- `--time-points` 和 `--duration-time` 只能用于 GIF、Standard PNG 或 MP4（`--duration-time` 仅 MP4）。
 
 ### 缓存与日志
 
-日志默认开启，可用 `--log-dir=<DIR>` 指定目录、`--no-log` 关闭；也可用环境变量 `OSU_PREVIEW_LOG_DIR` 覆盖目录。日志写入失败只降级到 stderr 提示，不影响渲染与 stdout 结果。
+日志默认开启，目录始终由配置项 `LOG_DIR` 决定；可用 `--no-log` 关闭。日志写入失败只降级到 stderr 提示，不影响渲染与 stdout 结果。
 
 缓存文件不会自动删除，占用过大时可手动清理临时目录。输出文件采用原子写入（先写临时文件、完成后才替换），渲染中断不会产生可被当作有效缓存的损坏文件。
 

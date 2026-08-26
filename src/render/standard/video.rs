@@ -2,21 +2,20 @@
 //! preview). Reuses `render_frame` from the GIF path so per-frame pixels match
 //! the GIF's single-segment look; only the time axis and framing differ.
 //!
-//! Time range: first note − 2s → last note + 2s, `[t1, t2]` when
-//! `--time=t1+t2` is given, or a preview-time 30s clip when `--preview-30s`
-//! is given. 15 fps, letterboxed to 16:9 by `video::save_mp4_streamed`.
+//! Time range is controlled by `--time-points` and `--duration-time`.
 
 use crate::common::time_selection::TimeAxis;
+use crate::config::layout::standard::mp4::*;
 use crate::core::errors::Result;
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
 use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::cell::RefCell;
 use std::path::Path;
-use crate::config::layout::standard::mp4::*;
 
 use super::context::{
     apply_standard_object_mods, build_render_context, build_visible_indexes_by_snapshot,
@@ -27,8 +26,8 @@ use super::objects::render_frame;
 pub(crate) fn render_standard_video(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
-    times_ms: Option<Vec<i64>>,
-    preview_30s: bool,
+    start_time: Option<TimePoint>,
+    duration_time: Option<f64>,
     output_path: &Path,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
@@ -37,14 +36,7 @@ pub(crate) fn render_standard_video(
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let first = hit_objects.iter().map(|o| o.start_time).min().unwrap_or(0);
     let last = hit_objects.iter().map(|o| o.end_time).max().unwrap_or(0);
-    let range = resolve_video_time_range(
-        beatmap,
-        first,
-        last,
-        times_ms.as_deref(),
-        preview_30s,
-        speed,
-    )?;
+    let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods, time_axis);

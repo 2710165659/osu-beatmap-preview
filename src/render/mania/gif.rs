@@ -1,9 +1,8 @@
 //! osu!mania GIF renderer: multi-segment or single-screen falling-note preview.
 //! Port of beatmap_preview/mania/gif_renderer.py.
 
-use crate::common::time_selection::{
-    GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector, TimeAxis,
-};
+use crate::common::time_selection::{GifRenderOptions, PreviewTimeSelector, TimeAxis};
+use crate::config::layout::mania::gif::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
@@ -12,7 +11,6 @@ use crate::render::canvas::{Img, Rgba};
 use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::{draw_text, render_text_sprite, text_size};
 use std::path::Path;
-use crate::config::layout::mania::gif::*;
 
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, format_sv_label,
@@ -82,8 +80,7 @@ pub(crate) fn render_mania_gif(
             times_ms,
             time_axis,
         } => {
-            let gameplay_segment_duration =
-                round_half_even(DURATION_MS as f64 * speed_multiplier);
+            let gameplay_segment_duration = round_half_even(DURATION_MS as f64 * speed_multiplier);
             let spans: Vec<(i64, i64)> = hit_objects
                 .iter()
                 .map(|ho| (ho.start_time, ho.end_time))
@@ -91,7 +88,7 @@ pub(crate) fn render_mania_gif(
             let segment_timings = PreviewTimeSelector::new(
                 beatmap,
                 spans,
-                SEGMENT_COUNT as usize,
+                IMAGES_PER_ROW as usize,
                 gameplay_segment_duration,
                 times_ms,
             )?
@@ -101,29 +98,8 @@ pub(crate) fn render_mania_gif(
                 segment_timings,
                 gameplay_segment_duration,
                 frame_count,
-                true,
+                SHOW_TIME_LABEL,
                 time_axis,
-            )
-        }
-        GifRenderOptions::Clip {
-            range,
-            show_time_label,
-        } => {
-            let segment_duration = range.end - range.start;
-            let frame_count = round_half_even(
-                segment_duration as f64 * FPS as f64 / (1000.0 * speed_multiplier),
-            )
-            .max(1);
-            (
-                vec![PreviewSegmentTiming {
-                    start_time: range.start,
-                    is_preview: range.is_preview,
-                    break_periods: range.break_periods,
-                }],
-                segment_duration,
-                frame_count,
-                show_time_label,
-                range.time_axis,
             )
         }
     };

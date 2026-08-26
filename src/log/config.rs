@@ -1,6 +1,6 @@
 //! 全局配置：日志目录、文件路径、进程启动时间与开关。
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
@@ -16,13 +16,19 @@ static CONFIG: OnceLock<Mutex<Option<LogConfig>>> = OnceLock::new();
 static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 
 /// 默认日志目录：`<临时目录>/osu-beatmap-preview/logs`。
+#[allow(dead_code)] // Runtime initialization is owned by the binary target.
 pub fn default_log_dir() -> PathBuf {
     crate::config::resolve_path(crate::config::paths::LOG_DIR)
 }
 
-/// 初始化日志（幂等）。`log_dir` 为空时依次回退到 `OSU_PREVIEW_LOG_DIR`
-/// 环境变量与默认目录。目录创建失败时禁用日志，不影响主流程。
-pub fn init(log_dir: Option<&Path>) {
+/// 初始化日志（幂等），目录始终来自编译时 `LOG_DIR` 配置。
+#[allow(dead_code)]
+pub fn init() {
+    init_with_dir(default_log_dir());
+}
+
+#[allow(dead_code)]
+fn init_with_dir(dir: PathBuf) {
     let _ = PROCESS_START.get_or_init(Instant::now);
     {
         let mutex = CONFIG.get_or_init(|| Mutex::new(None));
@@ -30,10 +36,6 @@ pub fn init(log_dir: Option<&Path>) {
         if guard.is_some() {
             return;
         }
-        let dir = match log_dir {
-            Some(dir) => dir.to_path_buf(),
-            None => env_log_dir().unwrap_or_else(default_log_dir),
-        };
         let cfg = LogConfig {
             progress_path: dir.join(PROGRESS_FILE),
             render_path: dir.join(RENDER_FILE),
@@ -49,10 +51,12 @@ pub fn init(log_dir: Option<&Path>) {
     crate::log::event::event("session-start", "info", None, &session_message());
 }
 
-fn env_log_dir() -> Option<PathBuf> {
-    std::env::var_os("OSU_PREVIEW_LOG_DIR").map(PathBuf::from)
+#[cfg(test)]
+pub(crate) fn init_for_tests(log_dir: &std::path::Path) {
+    init_with_dir(log_dir.to_path_buf());
 }
 
+#[allow(dead_code)]
 fn session_message() -> String {
     let args: Vec<String> = std::env::args().collect();
     format!(
@@ -72,6 +76,7 @@ pub(crate) fn enabled() -> Option<LogConfig> {
 }
 
 /// 返回 (progress.log, render.log) 两个文件的路径。
+#[allow(dead_code)]
 pub fn paths() -> Option<(PathBuf, PathBuf)> {
     enabled().map(|cfg| (cfg.progress_path, cfg.render_path))
 }

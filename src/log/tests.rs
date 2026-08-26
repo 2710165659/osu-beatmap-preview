@@ -1,6 +1,6 @@
 //! 单元测试：时间戳、事件/汇总格式、转义、截断、禁用、上下文合并与并发追加。
 
-use super::config::{PROGRESS_FILE, RENDER_FILE};
+use super::config::{init_for_tests, paths, PROGRESS_FILE, RENDER_FILE};
 use super::*;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -44,7 +44,7 @@ fn event_and_summary_write_parseable_lines() {
     let _guard = test_guard();
     let dir = unique_dir("basic");
     reset_for_tests();
-    init(Some(&dir));
+    init_for_tests(&dir);
     event("test", "info", Some("123"), "hello \"quoted\"");
 
     let mut rec = SummaryRecord::default();
@@ -85,7 +85,7 @@ fn long_message_is_truncated_to_line_limit() {
     let _guard = test_guard();
     let dir = unique_dir("truncate");
     reset_for_tests();
-    init(Some(&dir));
+    init_for_tests(&dir);
     let long = "x".repeat(20_000);
     event("test", "info", Some("1"), &long);
 
@@ -116,7 +116,7 @@ fn summary_merges_context_cache_stages_and_video_stats() {
     let _guard = test_guard();
     let dir = unique_dir("context");
     reset_for_tests();
-    init(Some(&dir));
+    init_for_tests(&dir);
     set_bid("777");
     record_cache(CacheKind::Osu, "downloaded");
     record_cache(CacheKind::Output, "hit");
@@ -160,7 +160,7 @@ fn concurrent_threads_write_complete_lines() {
     let _guard = test_guard();
     let dir = unique_dir("threads");
     reset_for_tests();
-    init(Some(&dir));
+    init_for_tests(&dir);
 
     let handles: Vec<_> = (0..8)
         .map(|thread| {

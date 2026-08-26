@@ -10,12 +10,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::constants::*;
-use crate::config::layout::standard::gif::{
-    GRID_GAP as GIF_GRID_GAP,
-    IMAGES_PER_ROW as GIF_IMAGES_PER_ROW,
-    ROW_COUNT as GIF_ROW_COUNT,
-};
 use super::slider::SliderRenderData;
+use crate::config::layout::standard::gif::{
+    GRID_GAP as GIF_GRID_GAP, IMAGES_PER_ROW as GIF_IMAGES_PER_ROW, ROW_COUNT as GIF_ROW_COUNT,
+    SHOW_TIME_LABEL as GIF_SHOW_TIME_LABEL,
+};
 
 // ——— helpers ———
 
@@ -356,7 +355,12 @@ pub(crate) fn png_canvas_size() -> (i64, i64) {
 }
 
 pub(crate) fn gif_canvas_size() -> (i64, i64) {
-    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
+    let row_height = IMAGE_HEIGHT
+        + if GIF_SHOW_TIME_LABEL {
+            TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
+        } else {
+            0
+        };
     let width = HORIZONTAL_PAGE_MARGIN * 2
         + GIF_IMAGES_PER_ROW as i64 * IMAGE_WIDTH
         + (GIF_IMAGES_PER_ROW as i64 - 1) * GIF_GRID_GAP;
@@ -369,7 +373,12 @@ pub(crate) fn gif_canvas_size() -> (i64, i64) {
 pub(crate) fn gif_frame_origin(segment_index: usize) -> (i64, i64) {
     let row_index = (segment_index / GIF_IMAGES_PER_ROW) as i64;
     let image_index = (segment_index % GIF_IMAGES_PER_ROW) as i64;
-    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
+    let row_height = IMAGE_HEIGHT
+        + if GIF_SHOW_TIME_LABEL {
+            TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
+        } else {
+            0
+        };
     let x = HORIZONTAL_PAGE_MARGIN + image_index * (IMAGE_WIDTH + GIF_GRID_GAP);
     let y = VERTICAL_PAGE_MARGIN + row_index * (row_height + GIF_GRID_GAP);
     (x, y)

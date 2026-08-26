@@ -1,9 +1,9 @@
-use vergen::BuildBuilder;
-use vergen::Emitter;
 use serde_yaml::Value;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use vergen::BuildBuilder;
+use vergen::Emitter;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let build = BuildBuilder::default().build_timestamp(true).build()?;
@@ -26,7 +26,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let section = section.as_str().ok_or("section name must be a string")?;
             generated.push_str(&format!("#[allow(dead_code)]\npub mod {section} {{\n"));
             if module == "layout" {
-                let tiers = entries.as_mapping().ok_or("layout mode must be a mapping")?;
+                let tiers = entries
+                    .as_mapping()
+                    .ok_or("layout mode must be a mapping")?;
                 for (tier, tier_entries) in tiers {
                     let tier = tier.as_str().ok_or("layout tier name must be a string")?;
                     generated.push_str(&format!("#[allow(dead_code)]\npub mod {tier} {{\n"));
@@ -51,7 +53,9 @@ fn generate_entries(
     raw_entries: &Value,
     path: &[&str],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let entries = raw_entries.as_mapping().ok_or("section must be a mapping")?;
+    let entries = raw_entries
+        .as_mapping()
+        .ok_or("section must be a mapping")?;
     generate_entries_from_mapping(generated, entries, path)
 }
 
@@ -117,7 +121,10 @@ fn special_kind(path: &[&str], name: &str) -> Option<&'static str> {
                     | "CONNECT_TIMEOUT"
                     | "READ_TIMEOUT"
                     | "WRITE_TIMEOUT"
-            ) => Some("duration_secs"),
+            ) =>
+        {
+            Some("duration_secs")
+        }
         _ => None,
     }
 }
@@ -204,10 +211,16 @@ fn sequence_type(values: &[Value]) -> String {
     if values.iter().all(is_byte_value) {
         return format!("[u8; {}]", values.len());
     }
-    if values.iter().all(|value| matches!(value, Value::Sequence(inner) if inner.iter().all(is_byte_value))) {
+    if values
+        .iter()
+        .all(|value| matches!(value, Value::Sequence(inner) if inner.iter().all(is_byte_value)))
+    {
         let width = values
             .first()
-            .and_then(|value| match value { Value::Sequence(inner) => Some(inner.len()), _ => None })
+            .and_then(|value| match value {
+                Value::Sequence(inner) => Some(inner.len()),
+                _ => None,
+            })
             .unwrap_or(0);
         return format!("[[u8; {width}]; {}]", values.len());
     }
@@ -228,7 +241,10 @@ fn rust_literal(value: &Value) -> Result<String, Box<dyn std::error::Error>> {
         Value::Number(value) => value.to_string(),
         Value::String(value) => format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\"")),
         Value::Sequence(values) => {
-            let values = values.iter().map(rust_literal).collect::<Result<Vec<_>, _>>()?;
+            let values = values
+                .iter()
+                .map(rust_literal)
+                .collect::<Result<Vec<_>, _>>()?;
             format!("[{}]", values.join(", "))
         }
         Value::Mapping(_) => return Err("constant value must be scalar or sequence".into()),

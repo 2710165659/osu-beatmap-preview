@@ -6,22 +6,17 @@ mod parser;
 mod pipeline;
 mod render;
 
-pub use core::errors::{PreviewError, ErrorKind};
-pub use log::{init, paths};
+pub use core::errors::{ErrorKind, PreviewError};
+pub use core::validate::{parse_time_point, TimePoint};
 
 #[derive(Debug, Clone)]
 pub struct PreviewOptions {
     pub bid: String,
     pub convert: Option<String>,
-    pub mods: Option<String>,
+    pub mods: Vec<String>,
     pub format: Option<String>,
-    pub times: Option<String>,
-
-    pub gif_clip: bool,
-    pub gif_clip_label: bool,
-    pub preview_30s: bool,
-
-    pub gap: Option<f64>,
+    pub time_points: Vec<TimePoint>,
+    pub duration_time: Option<f64>,
     pub no_cache: bool,
 }
 
@@ -30,39 +25,26 @@ impl PreviewOptions {
         Self {
             bid: bid.into(),
             convert: None,
-            mods: None,
+            mods: Vec::new(),
             format: None,
-            times: None,
-            gif_clip: false,
-            gif_clip_label: false,
-            preview_30s: false,
-            gap: None,
+            time_points: Vec::new(),
+            duration_time: None,
             no_cache: false,
         }
     }
 }
 
-pub fn generate_preview(
-    options: PreviewOptions,
-) -> Result<serde_json::Value, PreviewError> {
+pub fn generate_preview(options: PreviewOptions) -> Result<serde_json::Value, PreviewError> {
     if let Some(value) = options.convert.as_deref() {
         core::validate::validate_convert_value(value)?;
     }
     if let Some(value) = options.format.as_deref() {
         core::validate::validate_fmt_value(value)?;
     }
-    if let Some(value) = options.gap {
-        core::validate::validate_gap_value(value)?;
-    }
-
-    let mods = match &options.mods {
-        Some(value) => Some(core::mods::parse_mods(value)?),
-        None => None,
-    };
-
-    let times = match &options.times {
-        Some(value) => Some(core::validate::parse_times(value)?),
-        None => None,
+    let mods = if options.mods.is_empty() {
+        None
+    } else {
+        Some(core::mods::parse_mods(&options.mods)?)
     };
 
     pipeline::service::generate_preview(
@@ -70,11 +52,8 @@ pub fn generate_preview(
         options.format.as_deref(),
         options.convert.as_deref(),
         mods,
-        times,
-        options.gif_clip,
-        options.gif_clip_label,
-        options.preview_30s,
-        options.gap,
+        options.time_points,
+        options.duration_time,
         options.no_cache,
     )
 }

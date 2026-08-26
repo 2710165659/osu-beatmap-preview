@@ -12,8 +12,8 @@
 //! - 白色中心圆点：直径 20/128 ≈ 0.156d（普通混合，非加色）
 //! - 超冲时再叠 1.15d、InnerRadius 0.08 的超冲色环
 
-use crate::render::canvas::Img;
 use crate::config::effects::catch_drawing::*;
+use crate::render::canvas::Img;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

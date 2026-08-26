@@ -17,10 +17,8 @@
 ## Usage
 
 ```bash
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard|std] [--mods=<MODS>] [--fmt=png|gif|mp4] [--time=<T1+T2+...>] [--gif-clip] [--gif-clip-label] [--preview-30s] [--gap=<BPM>] [--log-dir=<DIR>] [--no-log] [--no-cache]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache]
 ```
-
-Parameter aliases: `--mod` = `--mods`, `--format` = `--fmt`, `--times` = `--time`.
 
 ### Parameters
 
@@ -28,19 +26,15 @@ Parameter aliases: `--mod` = `--mods`, `--format` = `--fmt`, `--times` = `--time
 | --- | --- |
 | `--bid` | Required. A numeric Beatmap ID. |
 | `--convert` | Conversion mode: `mania` / `ctb` / `taiko` / `standard` / `std`. Only available for Standard beatmaps. |
-| `--mods` | Mod combination joined with `+`, such as `hd+hr`; speed-changing Mods may include a value, such as `dt1.25`. |
+| `--mod` | A single Mod token; repeat the option for combinations, such as `--mod=hd --mod=hr`. |
 | `--fmt` | Output format: `gif` / `png` / `mp4`. When omitted, the default format for the mode is used. |
-| `--time` | Time point or range on the gameplay skin timeline, in seconds. The first playable object is `0:00`; negative values are supported. |
-| `--gif-clip` | GIF only. Outputs a single-screen continuous GIF without time labels. |
-| `--gif-clip-label` | GIF only. Like `--gif-clip`, but shows time labels. |
-| `--preview-30s` | MP4 only. Renders about 30 seconds of actual playback near `PreviewTime`. |
-| `--gap` | Taiko PNG only. Sets the layout spacing BPM. |
-| `--log-dir` | Sets the log directory. |
+| `--time-points` | A list of gameplay time points. Repeat it for multiple GIF or Standard PNG points; MP4 accepts at most one. Each value is seconds or `preview`. When omitted, points are selected automatically (MP4 starts at `0`). |
+| `--duration-time` | MP4 only. Output duration in seconds. Defaults to `600`. |
 | `--no-log` | Disables logging. |
 | `--no-cache` | Skips download and output caches and forces a fresh render. |
 | `--version` | Prints the version and build time, then exits. |
 
-> `--time` uses the same timeline as osu!'s in-game song-progress skin components: the first playable object in the target mode after conversion is `0:00`, rather than the editor's absolute track time. Regular GIF and Standard PNG accept 1-4 time points; MP4, `--gif-clip`, and `--gif-clip-label` require a two-point range. Negative values select time before the first object; use the equals form, for example `--time=-2+10`. MP4 portions before the audio begins are silent.
+> MP4 numeric start times use the gameplay timeline: the first playable object in the target mode after conversion is `0:00`. Negative starts are allowed and portions before the audio begins are silent.
 
 ### Examples
 
@@ -52,28 +46,19 @@ osu-beatmap-preview --bid=123456
 osu-beatmap-preview --bid=123456 --convert=mania
 
 # Combine conversion, Mods, and GIF output
-osu-beatmap-preview --bid=123456 --convert=mania --mods=4k+dt1.25 --fmt=gif
+osu-beatmap-preview --bid=123456 --convert=mania --mod=4k --mod=dt1.25 --fmt=gif
 
 # Render with multiple Mods
-osu-beatmap-preview --bid=123456 --mods=hd+hr
+osu-beatmap-preview --bid=123456 --mod=hd --mod=hr
 
-# Specify multiple GIF preview time points
-osu-beatmap-preview --bid=123456 --fmt=gif --time=10+25+60
+# Render an MP4 near the beatmap preview time
+osu-beatmap-preview --bid=123456 --fmt=mp4 --time-points=preview --duration-time=30
 
-# Render a continuous GIF starting two seconds before the first object
-osu-beatmap-preview --bid=123456 --fmt=gif --gif-clip-label --time=-2+10
+# Specify four GIF render points (repeat the list option)
+osu-beatmap-preview --bid=123456 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20
 
-# Specify a range for a continuous GIF without time labels
-osu-beatmap-preview --bid=123456 --fmt=gif --gif-clip --time=30+42
-
-# Combine an MP4 time range with Mods
-osu-beatmap-preview --bid=123456 --fmt=mp4 --time=30+60 --mods=hd+dt1.25
-
-# Render about 30 seconds of MP4 near the beatmap preview time
-osu-beatmap-preview --bid=123456 --fmt=mp4 --preview-30s
-
-# Combine conversion, PNG output, and layout spacing
-osu-beatmap-preview --bid=123456 --convert=taiko --fmt=png --gap=180 --mods=sw
+# Combine conversion and PNG output; Taiko spacing comes from configuration
+osu-beatmap-preview --bid=123456 --convert=taiko --fmt=png --mod=sw
 
 # Force a fresh render and disable logs
 osu-beatmap-preview --bid=123456 --no-cache --no-log
@@ -107,7 +92,7 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | Beatmap cache | `<temp>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ cache | `<temp>/osu-beatmap-preview/osz-download-cache/` (archives use `<set-id>.osz`; extracted audio is isolated under `<set-id>/<filename-hash>.<extension>`) |
 | Preferred IP cache | `<temp>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
-| Output file | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_gifclip][_t<time-or-range>][_preview30s][_bpm<BPM>].<fmt>` |
+| Output file | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_video-start...-duration...].<fmt>` |
 | Configuration directory | `<temp>/osu-beatmap-preview/config/` |
 | Log files | `<temp>/osu-beatmap-preview/logs/` — `progress.log` (live progress, `tail -f`) and `render.log` (NDJSON summary) |
 
@@ -117,18 +102,18 @@ These directories are defined by the top-level `paths` entries in `assets/defaul
 
 Use `--fmt=png` to output a static PNG image.
 
-- Standard outputs a `5x8` preview grid with 5 rows and 8 consecutive frames per row; `--time` accepts up to 4 time points, with each point used as the start of a preview row.
-- Taiko outputs a scroll-layout chart image; use `--gap=<BPM>` to adjust the layout spacing.
+- Standard outputs a configurable GIF grid; row and column counts come from `assets/default_config.yml`.
+- Taiko outputs a scroll-layout chart image; spacing comes from `SPACING_PER_BPM` in configuration (`0` means automatic).
 - Catch outputs a chart image arranged along the beatmap.
 - Mania outputs a lane-based chart image and automatically splits long beatmaps into multiple columns.
 
 ### GIF Animations
 
-Use `--fmt=gif` to output a GIF animation. By default, it outputs multiple preview segments; use `--time=t1+t2+...` to specify points on the gameplay skin timeline. `--gif-clip` outputs a single-screen continuous GIF without time labels; `--gif-clip-label` uses the same format with labels. Without an explicit range, segment selection still uses the absolute `.osu` `PreviewTime`, while labels are converted to first-object-relative time. If the tail is too short, the range is shifted backward.
+Use `--fmt=gif` to output a GIF animation. Each mode has independent grid, duration, and `SHOW_TIME_LABEL` settings in `assets/default_config.yml`. A `1x1` grid with labels enabled provides a single-panel labeled preview. Segment selection is deterministic and starts from `PreviewTime` when available.
 
 ### MP4 Videos
 
-Use `--fmt=mp4` to output a video with beatmap audio for all four modes. The default covers the full beatmap; use `--time=t1+t2` to specify a range on the gameplay skin timeline. The top-right label shows the current skin time on the left and the full playable duration from the first object through the last object's end on the right; the total is independent of the export range and padding. Negative time and the default full-chart padding are shown with negative labels, and portions before the audio file begins are silent. `--preview-30s` renders about 30 seconds near the absolute `.osu` `PreviewTime` and cannot be used with `--time`. If the preview is near the end, the range is shifted backward.
+Use `--fmt=mp4` to output a video with beatmap audio for all four modes. The default range is 600 seconds from gameplay time `0`; use one `--time-points` value and `--duration-time` to select another interval. `--time-points=preview` uses the beatmap `PreviewTime`, shifting backward when necessary near the chart tail. GIF and Standard PNG accept repeated `--time-points` values. The old `5+10+15` joined format is invalid.
 
 ### Command-Line Output
 
@@ -165,15 +150,12 @@ The program prints a JSON object to stdout. Its schema is as follows:
 
 ### Parameter Restrictions
 
-- `--gif-clip` and `--gif-clip-label` are mutually exclusive and can only be used for GIF output.
-- `--preview-30s` can only be used for MP4 output and cannot be combined with `--time`.
-- When used with MP4, `--time` must contain exactly two time points in the format `--time=t1+t2`.
-- When used with `--gif-clip` or `--gif-clip-label`, `--time` must contain exactly two time points in the format `--time=t1+t2`.
-- `--gap` only takes effect for Taiko PNG output.
+- `--mod` must be repeated for each Mod token; `+`-joined Mod strings are invalid.
+- `--time-points` is valid for GIF, Standard PNG, and MP4; `--duration-time` is valid only for MP4.
 
 ### Caches and Logs
 
-Logging is enabled by default. Use `--log-dir=<DIR>` to set the directory or `--no-log` to disable logging; the `OSU_PREVIEW_LOG_DIR` environment variable can also override the directory. A logging failure only falls back to a message on stderr and does not affect rendering or stdout results.
+Logging is enabled by default and always uses the configured `LOG_DIR`; use `--no-log` to disable it. A logging failure only falls back to a message on stderr and does not affect rendering or stdout results.
 
 Cache files are not deleted automatically and can be removed manually from the temporary directory when they take up too much space. Output files are written atomically: a temporary file is completed before it replaces the final file, so an interrupted render does not leave a corrupted file that can be treated as a valid cache.
 

@@ -3,9 +3,9 @@
 //! resides in memory at once.  Frames are rendered in parallel chunks (rayon)
 //! and encoded sequentially to preserve delta-frame ordering.
 
+use crate::config::video::composer::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::render::canvas::Img;
-use crate::config::video::composer::*;
 use rayon::prelude::*;
 use std::path::Path;
 

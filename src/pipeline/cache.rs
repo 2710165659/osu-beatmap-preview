@@ -4,6 +4,7 @@
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::KvSection;
 use crate::core::mods::ModSettings;
+use crate::core::validate::TimePoint;
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -71,28 +72,44 @@ pub fn format_mod_suffix(mods: &ModSettings) -> String {
     tokens.join("-")
 }
 
-/// Build a time-point suffix (e.g. "t10-20-30").
-pub fn format_time_suffix(times: &[f64]) -> String {
+pub fn format_video_time_suffix(
+    start_time: Option<TimePoint>,
+    duration_time: Option<f64>,
+) -> String {
+    let start = match start_time.unwrap_or(TimePoint::Seconds(0.0)) {
+        TimePoint::Preview => "preview".to_string(),
+        TimePoint::Seconds(value) => value.to_string(),
+    };
     format!(
-        "t{}",
-        times
-            .iter()
-            .map(|t| format!("{}", t))
-            .collect::<Vec<_>>()
-            .join("-")
+        "video-start{}-duration{}",
+        sanitize_suffix(&start),
+        sanitize_suffix(&duration_time.unwrap_or(600.0).to_string())
     )
 }
 
-pub fn format_preview_30s_suffix() -> &'static str {
-    "preview30s"
+pub fn format_time_points_suffix(points: &[TimePoint]) -> String {
+    let values = points
+        .iter()
+        .map(|point| match point {
+            TimePoint::Preview => "preview".to_string(),
+            TimePoint::Seconds(value) => value.to_string(),
+        })
+        .map(|value| sanitize_suffix(&value))
+        .collect::<Vec<_>>();
+    format!("time-points{}", values.join("-"))
 }
 
-pub fn format_gif_clip_suffix() -> &'static str {
-    "gifclip"
-}
-
-pub fn format_gif_clip_label_suffix() -> &'static str {
-    "label"
+fn sanitize_suffix(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect()
 }
 
 // ── output cache helpers ──
@@ -101,10 +118,8 @@ pub fn format_gif_clip_label_suffix() -> &'static str {
 pub fn output_cache_hit(
     output_path: &Path,
     beatmap_path: &Path,
-    times: &Option<Vec<f64>>,
     fmt: &str,
-    target_mode: i32,
-    gif_clip: bool,
+    _target_mode: i32,
     no_cache: bool,
 ) -> Option<PathBuf> {
     if no_cache {
@@ -137,41 +152,7 @@ pub fn output_cache_hit(
         return None;
     }
 
-    // When random time selection is involved and the user did NOT pin ALL
-    // required time points, the output is non-deterministic → never cache.
-    if !all_times_pinned(fmt, target_mode, times, gif_clip) {
-        return None;
-    }
-
     Some(output_path.to_path_buf())
-}
-
-/// Returns `true` when the output is fully deterministic w.r.t. time selection.
-///
-/// * GIF (all modes): needs 4 segments → cache only when `--time` gives all 4.
-/// * Standard PNG: needs 5 rows but `--time` accepts at most 4 → never cachable.
-/// * Taiko / Catch / Mania PNG: no time selection at all → always cachable.
-fn all_times_pinned(fmt: &str, target_mode: i32, times: &Option<Vec<f64>>, gif_clip: bool) -> bool {
-    if gif_clip {
-        return fmt == "gif";
-    }
-
-    // mp4 is always deterministic: full-chart (±2s) is fixed by the beatmap,
-    // and an explicit [t1, t2] range is user-pinned.
-    if fmt == "mp4" {
-        return true;
-    }
-    // Modes that don't use PreviewTimeSelector at all are always deterministic.
-    if fmt == "png" && target_mode != 0 {
-        return true;
-    }
-
-    // GIF needs 4, std PNG needs 5 (but max allowed is 4 → unreachable).
-    let needed: usize = if fmt == "gif" { 4 } else { 5 };
-    match times {
-        Some(ts) => ts.len() >= needed,
-        None => false,
-    }
 }
 
 // ── atomic output ──
@@ -467,24 +448,10 @@ mod tests {
     }
 
     #[test]
-    fn preview_30s_suffix_is_stable() {
-        assert_eq!(format_preview_30s_suffix(), "preview30s");
-    }
-
-    #[test]
-    fn gif_clip_suffix_is_stable() {
-        assert_eq!(format_gif_clip_suffix(), "gifclip");
-    }
-
-    #[test]
-    fn gif_clip_label_suffix_is_stable() {
-        assert_eq!(format_gif_clip_label_suffix(), "label");
-    }
-
-    #[test]
-    fn gif_clip_outputs_are_deterministic() {
-        assert!(all_times_pinned("gif", 0, &None, true));
-        assert!(all_times_pinned("gif", 1, &Some(vec![10.0, 20.0]), true));
-        assert!(!all_times_pinned("png", 0, &None, true));
+    fn video_time_suffix_is_stable() {
+        assert_eq!(
+            format_video_time_suffix(Some(TimePoint::Preview), Some(30.0)),
+            "video-startpreview-duration30"
+        );
     }
 }

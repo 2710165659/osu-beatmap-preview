@@ -26,7 +26,6 @@ const HIT_WHISTLE: i32 = 2;
 const HIT_FINISH: i32 = 4;
 const HIT_CLAP: i32 = 8;
 
-
 // ── pattern ──
 
 #[derive(Clone)]

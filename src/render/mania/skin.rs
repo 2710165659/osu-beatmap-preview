@@ -3,9 +3,9 @@
 //! 从统一的 `assets/skin.ini`（经 [`crate::render::skin`] 解析）中按键数选取
 //! 对应的 [Mania] 配置块，提取列宽 / 分隔线宽 / 判定线位置 / 列颜色。
 
+use crate::config::layout::mania::png::*;
 use crate::parser::round_half_even;
 use crate::render::canvas::Rgba;
-use crate::config::layout::mania::png::*;
 
 /// 单个键数对应的 mania 皮肤配置。
 pub(crate) struct ManiaSkinConfig {

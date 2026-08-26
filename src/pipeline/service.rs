@@ -1,8 +1,8 @@
-use crate::common::time_selection::{resolve_gif_clip_range, GifRenderOptions, TimeAxis};
+use crate::common::time_selection::{GifRenderOptions, TimeAxis};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, HitObjects};
 use crate::core::mods::ModSettings;
-use crate::core::validate::{self, ValidateContext};
+use crate::core::validate::{self, TimePoint, ValidateContext};
 use crate::log::{self, CacheKind, SummaryRecord};
 use crate::pipeline::cache;
 use crate::render::video::audio::AudioSourceJob;
@@ -15,11 +15,8 @@ pub fn generate_preview(
     fmt: Option<&str>,
     convert: Option<&str>,
     mods: Option<ModSettings>,
-    times: Option<Vec<f64>>,
-    gif_clip: bool,
-    gif_clip_label: bool,
-    preview_30s: bool,
-    gap: Option<f64>,
+    time_points: Vec<TimePoint>,
+    duration_time: Option<f64>,
     no_cache: bool,
 ) -> Result<Value> {
     log::set_bid(bid);
@@ -28,11 +25,9 @@ pub fn generate_preview(
         bid: bid.to_string(),
         fmt: fmt.map(str::to_string),
         convert: convert.map(str::to_string),
-        times: times.clone(),
-        gif_clip,
-        gif_clip_label,
-        preview_30s,
-        gap,
+        time_points: (!time_points.is_empty())
+            .then(|| time_points.iter().map(format_time_point).collect()),
+        duration_time,
         no_cache,
         ..SummaryRecord::default()
     };
@@ -41,11 +36,8 @@ pub fn generate_preview(
         fmt,
         convert,
         mods,
-        times,
-        gif_clip,
-        gif_clip_label,
-        preview_30s,
-        gap,
+        time_points,
+        duration_time,
         no_cache,
         &mut rec,
     ) {
@@ -74,18 +66,13 @@ fn generate_preview_inner(
     fmt: Option<&str>,
     convert: Option<&str>,
     mods: Option<ModSettings>,
-    times: Option<Vec<f64>>,
-    gif_clip: bool,
-    gif_clip_label: bool,
-    preview_30s: bool,
-    gap: Option<f64>,
+    time_points: Vec<TimePoint>,
+    duration_time: Option<f64>,
     no_cache: bool,
     rec: &mut SummaryRecord,
 ) -> Result<Value> {
     let cache_root = crate::config::resolve_path(crate::config::paths::CACHE_DIR);
     let output_root = crate::config::resolve_path(crate::config::paths::OUTPUT_DIR);
-    let gif_clip_mode = gif_clip || gif_clip_label;
-
     // ── .osu 下载与解析 ──
     let t0 = Instant::now();
     let beatmap_path = crate::pipeline::downloader::download_beatmap_file(
@@ -121,7 +108,7 @@ fn generate_preview_inner(
     let fmt: String = match fmt {
         Some(f) => f.to_string(),
         None => {
-            if gif_clip_mode || target_mode == 0 {
+            if target_mode == 0 {
                 "gif".to_string()
             } else {
                 "png".to_string()
@@ -135,16 +122,8 @@ fn generate_preview_inner(
         fmt: &fmt,
         target_mode,
     };
-    let mods = validate::validate_with_context(
-        &ctx,
-        times.as_deref(),
-        gif_clip,
-        gif_clip_label,
-        preview_30s,
-        gap,
-        mods,
-    )?;
-    rec.mods = mods.as_ref().map(|m| m.tokens.join("+"));
+    let mods = validate::validate_with_context(&ctx, &time_points, duration_time, mods)?;
+    rec.mods = mods.as_ref().map(|m| m.tokens.join(","));
 
     let mode_name = match target_mode {
         0 => "standard",
@@ -163,39 +142,18 @@ fn generate_preview_inner(
             parts.push(cache::format_mod_suffix(m));
         }
     }
-    if gif_clip_mode {
-        parts.push(cache::format_gif_clip_suffix().to_string());
-        if gif_clip_label {
-            parts.push(cache::format_gif_clip_label_suffix().to_string());
-        }
-        if let Some(t) = &times {
-            if !t.is_empty() {
-                parts.push(cache::format_time_suffix(t));
-            }
-        }
-    } else if let Some(t) = &times {
-        if !t.is_empty() {
-            parts.push(cache::format_time_suffix(t));
-        }
-    }
-    if preview_30s {
-        parts.push(cache::format_preview_30s_suffix().to_string());
-    }
-    if let Some(b) = gap {
-        parts.push(format!("bpm{}", b));
+    if fmt == "mp4" {
+        parts.push(cache::format_video_time_suffix(
+            time_points.first().copied(),
+            duration_time,
+        ));
+    } else if !time_points.is_empty() {
+        parts.push(cache::format_time_points_suffix(&time_points));
     }
     let output_path: PathBuf = output_root.join(format!("{}.{}", parts.join("_"), fmt));
 
     // ── image cache check ──
-    let cached = cache::output_cache_hit(
-        &output_path,
-        &beatmap_path,
-        &times,
-        &fmt,
-        target_mode,
-        gif_clip_mode,
-        no_cache,
-    );
+    let cached = cache::output_cache_hit(&output_path, &beatmap_path, &fmt, target_mode, no_cache);
     if let Some(cached_path) = cached {
         rec.status = "cache-hit".to_string();
         log::record_cache(CacheKind::Output, "hit");
@@ -262,11 +220,8 @@ fn generate_preview_inner(
         &fmt,
         target_mode,
         mods,
-        times,
-        gif_clip,
-        gif_clip_label,
-        preview_30s,
-        gap,
+        time_points,
+        duration_time,
         audio_job,
         bid,
     ) {
@@ -392,21 +347,16 @@ trait ModeRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        gap: Option<f64>,
         _time_axis: TimeAxis,
-        times_ms: Option<Vec<i64>>,
+        _times_ms: Option<Vec<i64>>,
     ) -> Result<PathBuf>;
 
-    /// Render an MP4 (H.264) video of the full chart to `output_path`.
-    /// `times_ms` is either `None` (full chart, ±2s padding) or `Some([t1, t2])`
-    /// (explicit range). `preview_30s` selects a PreviewTime-based 30s actual
-    /// duration clip. Invalid combinations are rejected by validation.
     fn render_video(
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
-        preview_30s: bool,
+        time_point: Option<TimePoint>,
+        duration_time: Option<f64>,
         output_path: &Path,
         audio_job: AudioSourceJob,
         _time_axis: TimeAxis,
@@ -456,12 +406,11 @@ impl ModeRenderer for StandardRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        _gap: Option<f64>,
         time_axis: TimeAxis,
         times_ms: Option<Vec<i64>>,
     ) -> Result<PathBuf> {
         let image =
-            crate::render::standard::render_standard_png(beatmap, mods, times_ms, time_axis)?;
+            crate::render::standard::render_standard_png(beatmap, mods, time_axis, times_ms)?;
         crate::render::composer::save_png(&image, output_path)?;
         Ok(output_path.to_path_buf())
     }
@@ -470,8 +419,8 @@ impl ModeRenderer for StandardRenderer {
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
-        preview_30s: bool,
+        time_point: Option<TimePoint>,
+        duration_time: Option<f64>,
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
@@ -479,8 +428,8 @@ impl ModeRenderer for StandardRenderer {
         crate::render::standard::render_standard_video(
             beatmap,
             mods,
-            times_ms,
-            preview_30s,
+            time_point,
+            duration_time,
             output_path,
             audio_job,
             time_axis,
@@ -517,19 +466,18 @@ impl ModeRenderer for TaikoRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        gap: Option<f64>,
         time_axis: TimeAxis,
         _times_ms: Option<Vec<i64>>,
     ) -> Result<PathBuf> {
-        crate::render::taiko::render_taiko_grid(beatmap, output_path, mods, gap, time_axis)
+        crate::render::taiko::render_taiko_grid(beatmap, output_path, mods, time_axis)
     }
 
     fn render_video(
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
-        preview_30s: bool,
+        time_point: Option<TimePoint>,
+        duration_time: Option<f64>,
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
@@ -537,8 +485,8 @@ impl ModeRenderer for TaikoRenderer {
         crate::render::taiko::render_taiko_video(
             beatmap,
             mods,
-            times_ms,
-            preview_30s,
+            time_point,
+            duration_time,
             output_path,
             audio_job,
             time_axis,
@@ -575,7 +523,6 @@ impl ModeRenderer for CatchRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        _gap: Option<f64>,
         time_axis: TimeAxis,
         _times_ms: Option<Vec<i64>>,
     ) -> Result<PathBuf> {
@@ -586,8 +533,8 @@ impl ModeRenderer for CatchRenderer {
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
-        preview_30s: bool,
+        time_point: Option<TimePoint>,
+        duration_time: Option<f64>,
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
@@ -595,8 +542,8 @@ impl ModeRenderer for CatchRenderer {
         crate::render::catch::render_catch_video(
             beatmap,
             mods,
-            times_ms,
-            preview_30s,
+            time_point,
+            duration_time,
             output_path,
             audio_job,
             time_axis,
@@ -633,7 +580,6 @@ impl ModeRenderer for ManiaRenderer {
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
         output_path: &Path,
-        _gap: Option<f64>,
         time_axis: TimeAxis,
         _times_ms: Option<Vec<i64>>,
     ) -> Result<PathBuf> {
@@ -644,8 +590,8 @@ impl ModeRenderer for ManiaRenderer {
         &self,
         beatmap: &Beatmap,
         mods: Option<&ModSettings>,
-        times_ms: Option<Vec<i64>>,
-        preview_30s: bool,
+        time_point: Option<TimePoint>,
+        duration_time: Option<f64>,
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
@@ -653,8 +599,8 @@ impl ModeRenderer for ManiaRenderer {
         crate::render::mania::render_mania_video(
             beatmap,
             mods,
-            times_ms,
-            preview_30s,
+            time_point,
+            duration_time,
             output_path,
             audio_job,
             time_axis,
@@ -747,15 +693,11 @@ fn render_preview_for_mode(
     fmt: &str,
     target_mode: i32,
     mods: Option<ModSettings>,
-    times: Option<Vec<f64>>,
-    gif_clip: bool,
-    gif_clip_label: bool,
-    preview_30s: bool,
-    gap: Option<f64>,
+    time_points: Vec<TimePoint>,
+    duration_time: Option<f64>,
     audio_job: Option<AudioSourceJob>,
     bid: &str,
 ) -> Result<PathBuf> {
-    let display_times_ms = crate::common::time_selection::times_to_milliseconds(times.as_deref())?;
     let mods_ref = mods.as_ref();
 
     renderer.validate(&beatmap)?;
@@ -782,30 +724,13 @@ fn render_preview_for_mode(
         log::record_stage("convert_ms", ms);
     }
 
-    let (time_axis, first, last) = object_time_axis(&beatmap.hit_objects)
+    let (time_axis, _, _) = object_time_axis(&beatmap.hit_objects)
         .ok_or_else(|| PreviewError::render("beatmap has no hit objects"))?;
-    let times_ms = time_axis.to_absolute_times(display_times_ms)?;
-
+    let absolute_time_points = resolve_time_points(&beatmap, time_axis, &time_points)?;
     if fmt == "gif" {
-        let gif_clip_mode = gif_clip || gif_clip_label;
-        let gif_options = if gif_clip_mode {
-            let speed = mods_ref.map(|m| m.speed_multiplier).unwrap_or(1.0);
-            GifRenderOptions::Clip {
-                range: resolve_gif_clip_range(
-                    &beatmap,
-                    first,
-                    last,
-                    times_ms.as_deref(),
-                    speed,
-                    time_axis,
-                )?,
-                show_time_label: gif_clip_label,
-            }
-        } else {
-            GifRenderOptions::Segments {
-                times_ms,
-                time_axis,
-            }
+        let gif_options = GifRenderOptions::Segments {
+            times_ms: absolute_time_points.clone(),
+            time_axis,
         };
         renderer.render_gif(&beatmap, mods_ref, gif_options, time_axis, output_path)
     } else if fmt == "mp4" {
@@ -814,15 +739,70 @@ fn render_preview_for_mode(
         renderer.render_video(
             &beatmap,
             mods_ref,
-            times_ms,
-            preview_30s,
+            time_points.first().copied(),
+            duration_time,
             output_path,
             audio_job,
             time_axis,
         )
     } else {
-        renderer.render_png(&beatmap, mods_ref, output_path, gap, time_axis, times_ms)
+        renderer.render_png(
+            &beatmap,
+            mods_ref,
+            output_path,
+            time_axis,
+            absolute_time_points,
+        )
     }
+}
+
+fn format_time_point(point: &TimePoint) -> String {
+    match point {
+        TimePoint::Preview => "preview".to_string(),
+        TimePoint::Seconds(value) => value.to_string(),
+    }
+}
+
+fn resolve_time_points(
+    beatmap: &Beatmap,
+    time_axis: TimeAxis,
+    points: &[TimePoint],
+) -> Result<Option<Vec<i64>>> {
+    if points.is_empty() {
+        return Ok(None);
+    }
+    let first_object = object_time_bounds(&beatmap.hit_objects)
+        .map(|(first, _)| first)
+        .ok_or_else(|| PreviewError::render("beatmap has no hit objects"))?;
+    let preview_time = beatmap
+        .general
+        .get("PreviewTime")
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|time| *time >= 0)
+        .unwrap_or(first_object);
+    let mut result = Vec::with_capacity(points.len());
+    for point in points {
+        let absolute = match point {
+            TimePoint::Preview => preview_time,
+            TimePoint::Seconds(seconds) => {
+                if !seconds.is_finite() {
+                    return Err(PreviewError::new("time point must be finite"));
+                }
+                let milliseconds_f64 = seconds * 1000.0;
+                if !(-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0)
+                    .contains(&milliseconds_f64)
+                {
+                    return Err(PreviewError::new(
+                        "time point is outside the supported range",
+                    ));
+                }
+                let milliseconds = crate::parser::round_half_even(milliseconds_f64);
+                time_axis.to_absolute(milliseconds)?
+            }
+        };
+        result.push(absolute);
+    }
+    Ok(Some(result))
 }
 
 #[cfg(test)]
@@ -851,6 +831,5 @@ mod tests {
 
         assert_eq!((first, last), (12_500, 26_000));
         assert_eq!(axis.to_display(first), 0);
-        assert_eq!(axis.to_absolute(80_000).unwrap(), 92_500);
     }
 }

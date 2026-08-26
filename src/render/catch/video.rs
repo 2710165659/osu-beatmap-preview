@@ -2,19 +2,18 @@
 //! preview). Reuses `render_gif_frame` from the GIF path so per-frame pixels
 //! match the GIF's single-segment look; only the time axis and framing differ.
 //!
-//! Time range: first note − 2s → last note + 2s, `[t1, t2]` when
-//! `--time=t1+t2` is given, or a preview-time 30s clip when `--preview-30s`
-//! is given. 15 fps, letterboxed to 16:9 by `video::save_mp4_streamed`.
+//! Time range is controlled by `--time-points` and `--duration-time`.
 
 use crate::common::time_selection::TimeAxis;
+use crate::config::layout::catch::mp4::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::validate::TimePoint;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
 use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::path::Path;
-use crate::config::layout::catch::mp4::*;
 
 use super::gif::{build_gif_layout, render_gif_frame};
 use super::objects::{build_catch_render_objects, effective_difficulty};
@@ -23,8 +22,8 @@ use super::png::rhe;
 pub(crate) fn render_catch_video(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
-    times_ms: Option<Vec<i64>>,
-    preview_30s: bool,
+    start_time: Option<TimePoint>,
+    duration_time: Option<f64>,
     output_path: &Path,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
@@ -39,14 +38,7 @@ pub(crate) fn render_catch_video(
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let first = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let last = hit_objects.iter().map(|h| h.end_time).max().unwrap_or(0);
-    let range = resolve_video_time_range(
-        beatmap,
-        first,
-        last,
-        times_ms.as_deref(),
-        preview_30s,
-        speed,
-    )?;
+    let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
     let fps = FPS as u32;

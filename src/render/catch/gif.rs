@@ -3,9 +3,8 @@
 //! 单帧 683×384（16:9），playfield 的位置与缩放按游戏内 1080p 等比换算
 //! （见 `config::layout::catch::gif` 中的 playfield 配置），上下左右留白与游戏一致。
 
-use crate::common::time_selection::{
-    GifClipRange, GifRenderOptions, PreviewTimeSelector, TimeAxis,
-};
+use crate::common::time_selection::{GifRenderOptions, PreviewTimeSelector, TimeAxis};
+use crate::config::layout::catch::gif::*;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
@@ -13,7 +12,6 @@ use crate::render::canvas::Img;
 use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::{draw_text, text_size};
 use std::path::Path;
-use crate::config::layout::catch::gif::*;
 
 use super::drawing::{draw_catch_object, object_diameter};
 use super::objects::{build_catch_render_objects, effective_difficulty, RenderObject};
@@ -45,12 +43,15 @@ pub(crate) fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayou
     let visible_fall_height = (STABLE_CATCHER_Y - STABLE_FRUIT_START_Y) * playfield_scale;
     let pixels_per_ms = visible_fall_height / time_range;
 
-    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
-    let canvas_width = PAGE_MARGIN_X * 2
-        + IMAGES_PER_ROW * IMAGE_WIDTH
-        + (IMAGES_PER_ROW - 1) * GRID_GAP;
-    let canvas_height =
-        PAGE_MARGIN_Y * 2 + ROW_COUNT * row_height + (ROW_COUNT - 1) * GRID_GAP;
+    let row_height = IMAGE_HEIGHT
+        + if SHOW_TIME_LABEL {
+            TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
+        } else {
+            0
+        };
+    let canvas_width =
+        PAGE_MARGIN_X * 2 + IMAGES_PER_ROW * IMAGE_WIDTH + (IMAGES_PER_ROW - 1) * GRID_GAP;
+    let canvas_height = PAGE_MARGIN_Y * 2 + ROW_COUNT * row_height + (ROW_COUNT - 1) * GRID_GAP;
 
     GifLayout {
         canvas_width,
@@ -67,7 +68,12 @@ pub(crate) fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayou
 fn frame_origin(segment_index: usize) -> (i64, i64) {
     let row_index = segment_index as i64 / IMAGES_PER_ROW;
     let col_index = segment_index as i64 % IMAGES_PER_ROW;
-    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
+    let row_height = IMAGE_HEIGHT
+        + if SHOW_TIME_LABEL {
+            TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
+        } else {
+            0
+        };
     let x = PAGE_MARGIN_X + col_index * (IMAGE_WIDTH + GRID_GAP);
     let y = PAGE_MARGIN_Y + row_index * (row_height + GRID_GAP);
     (x, y)
@@ -86,10 +92,6 @@ pub(crate) fn render_catch_gif(
             times_ms,
             time_axis,
         } => render_catch_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
-        GifRenderOptions::Clip {
-            range,
-            show_time_label,
-        } => render_catch_clip_gif(beatmap, mods, range, show_time_label, output_path),
     }
 }
 
@@ -117,7 +119,7 @@ fn render_catch_segment_gif(
     let segment_timings = PreviewTimeSelector::new(
         beatmap,
         spans,
-        SEGMENT_COUNT,
+        (ROW_COUNT * IMAGES_PER_ROW) as usize,
         gameplay_segment_duration,
         times_ms,
     )?
@@ -132,8 +134,7 @@ fn render_catch_segment_gif(
         .map(|timing| {
             (0..frame_count)
                 .map(|frame_index| {
-                    timing.start_time
-                        + rhe(frame_index as f64 * 1000.0 * speed_multiplier / FPS)
+                    timing.start_time + rhe(frame_index as f64 * 1000.0 * speed_multiplier / FPS)
                 })
                 .collect()
         })
@@ -155,83 +156,17 @@ fn render_catch_segment_gif(
             let (frame_x, frame_y) = frame_origin(segment_index);
             let frame = render_gif_frame(&render_objects, &start_times, snapshot_time, &layout);
             canvas.alpha_composite(&frame, frame_x, frame_y);
-            draw_gif_time_label(
-                &mut canvas,
-                segment_timing.start_time,
-                gameplay_segment_duration,
-                frame_x,
-                frame_y,
-                segment_timing.is_preview,
-                time_axis,
-            );
-        }
-        canvas
-    };
-
-    save_animated_gif_streamed(frame_count, render, output_path, frame_duration_ms)
-}
-
-fn render_catch_clip_gif(
-    beatmap: &Beatmap,
-    mods: Option<&ModSettings>,
-    range: GifClipRange,
-    show_time_label: bool,
-    output_path: &Path,
-) -> Result<()> {
-    let hit_objects = match beatmap.hit_objects.as_catch() {
-        Some(v) if !v.is_empty() => v,
-        _ => return Err(PreviewError::render("catch beatmap has no hit objects")),
-    };
-
-    let difficulty = effective_difficulty(beatmap, mods);
-    let mut render_objects = build_catch_render_objects(beatmap, hit_objects, mods, &difficulty)?;
-    render_objects.sort_by_key(|o| std::cmp::Reverse(o.start_time));
-    let start_times: Vec<i64> = render_objects.iter().map(|o| o.start_time).collect();
-
-    let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let frame_count = rhe((range.end - range.start) as f64 * FPS / (1000.0 * speed_multiplier))
-        .max(1) as usize;
-    let frame_duration_ms = rhe(1000.0 / FPS).max(1) as u32;
-    let layout = build_gif_layout(difficulty.cs, difficulty.ar);
-    let canvas_width = PAGE_MARGIN_X * 2 + IMAGE_WIDTH;
-    let label_height = if show_time_label {
-        TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT
-    } else {
-        0
-    };
-    let canvas_height = PAGE_MARGIN_Y * 2 + IMAGE_HEIGHT + label_height;
-
-    let snapshot_times: Vec<i64> = (0..frame_count)
-        .map(|frame_index| {
-            range.start + rhe(frame_index as f64 * 1000.0 * speed_multiplier / FPS)
-        })
-        .collect();
-
-    let render = move |frame_index: usize| -> Img {
-        let mut canvas = Img::new(
-            canvas_width as u32,
-            canvas_height as u32,
-            PLAYFIELD_BACKGROUND,
-        );
-        let frame_x = PAGE_MARGIN_X;
-        let frame_y = PAGE_MARGIN_Y;
-        let frame = render_gif_frame(
-            &render_objects,
-            &start_times,
-            snapshot_times[frame_index],
-            &layout,
-        );
-        canvas.alpha_composite(&frame, frame_x, frame_y);
-        if show_time_label {
-            draw_gif_time_label_range(
-                &mut canvas,
-                range.start,
-                range.end,
-                frame_x,
-                frame_y,
-                range.is_preview,
-                range.time_axis,
-            );
+            if SHOW_TIME_LABEL {
+                draw_gif_time_label(
+                    &mut canvas,
+                    segment_timing.start_time,
+                    gameplay_segment_duration,
+                    frame_x,
+                    frame_y,
+                    segment_timing.is_preview,
+                    time_axis,
+                );
+            }
         }
         canvas
     };
@@ -324,50 +259,6 @@ fn draw_gif_time_label(
         "{} - {}",
         crate::render::text::format_mmss_floor(time_axis.to_display(start_time)),
         crate::render::text::format_mmss_floor(time_axis.to_display(start_time + duration_ms))
-    );
-    let color = if is_preview {
-        PREVIEW_TIME_LABEL_COLOR
-    } else {
-        TIME_LABEL_COLOR
-    };
-    let note_color = if is_preview {
-        PREVIEW_TIME_LABEL_COLOR
-    } else {
-        TIME_LABEL_NOTE_COLOR
-    };
-    let (label_w, label_h) = text_size(&label, TIME_LABEL_FONT_SIZE);
-    let x = frame_x + (IMAGE_WIDTH - label_w as i64) / 2;
-    let y = frame_y + IMAGE_HEIGHT + TIME_LABEL_TOP_GAP;
-    draw_text(canvas, x, y, &label, TIME_LABEL_FONT_SIZE, color);
-
-    if is_preview {
-        let note = "Preview Time";
-        let (note_w, _) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
-        let note_x = frame_x + (IMAGE_WIDTH - note_w as i64) / 2;
-        draw_text(
-            canvas,
-            note_x,
-            y + label_h as i64 + TIME_LABEL_NOTE_TOP_GAP,
-            note,
-            TIME_LABEL_NOTE_FONT_SIZE,
-            note_color,
-        );
-    }
-}
-
-fn draw_gif_time_label_range(
-    canvas: &mut Img,
-    start_time: i64,
-    end_time: i64,
-    frame_x: i64,
-    frame_y: i64,
-    is_preview: bool,
-    time_axis: TimeAxis,
-) {
-    let label = format!(
-        "{} - {}",
-        crate::render::text::format_mmss_floor(time_axis.to_display(start_time)),
-        crate::render::text::format_mmss_floor(time_axis.to_display(end_time))
     );
     let color = if is_preview {
         PREVIEW_TIME_LABEL_COLOR

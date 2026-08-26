@@ -15,9 +15,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::constants::*;
-use crate::config::layout::taiko::png::*;
 use super::notes::{cached_roll_tail, draw_note_disc, draw_track_background, RenderCache};
 use super::timing::*;
+use crate::config::layout::taiko::png::*;
 
 #[inline]
 fn pyround(v: f64) -> i64 {
@@ -58,7 +58,6 @@ pub(crate) fn render_taiko_grid(
     beatmap: &Beatmap,
     output_path: &Path,
     mods: Option<&ModSettings>,
-    gap: Option<f64>,
     time_axis: TimeAxis,
 ) -> Result<PathBuf> {
     let mut hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
@@ -103,7 +102,7 @@ pub(crate) fn render_taiko_grid(
         &spacing_timing_points,
         effective_chart_end_time,
         slider_multiplier,
-        gap.unwrap_or(SPACING_PER_BPM),
+        SPACING_PER_BPM,
     );
     let redline_sections = build_redline_sections(&timing_points, effective_chart_end_time);
     let kiai_sections = build_kiai_sections(&timing_points, effective_chart_end_time);

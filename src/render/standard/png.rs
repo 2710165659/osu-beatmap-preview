@@ -15,8 +15,8 @@ use super::objects::render_frame;
 pub(crate) fn render_standard_png(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
-    times_ms: Option<Vec<i64>>,
     time_axis: TimeAxis,
+    times_ms: Option<Vec<i64>>,
 ) -> Result<Img> {
     let hit_objects = standard_objects(beatmap)?;
     let hit_objects = apply_standard_object_mods(hit_objects, mods);

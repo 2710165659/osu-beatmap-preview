@@ -12,10 +12,10 @@ mod png;
 pub(crate) mod slider;
 mod video;
 
+pub(crate) use crate::config::layout::standard::png::*;
 pub(crate) use gif::render_standard_gif;
 pub(crate) use png::render_standard_png;
 pub(crate) use video::render_standard_video;
-pub(crate) use crate::config::layout::standard::png::*;
 
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
