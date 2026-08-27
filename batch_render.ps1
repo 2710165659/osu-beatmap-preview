@@ -3,7 +3,7 @@
 #
 # 渲染内容：
 #   - std / taiko / catch / mania 每张谱面都生成 png 与 gif
-#   - 穿插 mod、转谱(convert)、指定时间点(time)、以及多特性组合示例
+#   - 穿插 mod、转谱(convert)、指定时间点(time-points)、以及多特性组合示例
 # 输出：
 #   - 渲染图片复制到 %TEMP%\osu-beatmap-preview\outputs\batch-rust
 #   - 渲染完成后写入 report.txt，列出每张图的耗时与峰值内存
@@ -42,11 +42,11 @@ foreach ($b in $mania) { $tasks.Add((New-Task "mania" $b "png")) }; foreach ($b 
 
 # ── 穿插：mod 示例（遵守各模式支持的 mod；DT/HT 仅 gif） ──
 # std: 支持 EZ HR HD DA（gif/png），DT/HT 仅 gif
-$tasks.Add((New-Task "std" "738063"  "gif" $null "hd+hr"))
+$tasks.Add((New-Task "std" "738063"  "gif" $null @("hd", "hr")))
 $tasks.Add((New-Task "std" "2875069" "png" $null "hr"))
 $tasks.Add((New-Task "std" "4897202" "gif" $null "dt1.3"))
-$tasks.Add((New-Task "std" "1024742" "gif" $null "daar9.5+dacs4.5"))
-$tasks.Add((New-Task "std" "5467386" "gif" $null "ez+hd"))
+$tasks.Add((New-Task "std" "1024742" "gif" $null @("daar9.5", "dacs4.5")))
+$tasks.Add((New-Task "std" "5467386" "gif" $null @("ez", "hd")))
 # taiko: 支持 EZ HR SW（png/gif）、CS（gif）、DT/HT（gif）
 $tasks.Add((New-Task "taiko" "4242023" "gif" $null "hr"))
 $tasks.Add((New-Task "taiko" "1418246" "gif" $null "dt"))
@@ -74,15 +74,15 @@ $tasks.Add((New-Task "convert" "260177" "png" "taiko"))
 $tasks.Add((New-Task "convert" "260177" "png" "ctb"))
 
 # ── 穿插：指定时间点（仅 gif，最多 4 个，单位秒） ──
-$tasks.Add((New-Task "std" "738063" "gif" $null $null "30+40+50+60"))
-$tasks.Add((New-Task "std" "2875069" "gif" $null $null "10+25+60"))
+$tasks.Add((New-Task "std" "738063" "gif" $null $null @(30, 40, 50, 60)))
+$tasks.Add((New-Task "std" "2875069" "gif" $null $null @(10, 25, 60)))
 $tasks.Add((New-Task "std" "4897202"  "gif" $null $null "45"))
 
 # ── 穿插：多特性组合示例 ──
 $tasks.Add((New-Task "convert" "738063"  "gif" "mania" "in"))           # 转谱 + mod
 $tasks.Add((New-Task "convert" "2875069" "gif" "ctb"   "hr"))           # 转谱 + mod
-$tasks.Add((New-Task "std"     "4897202" "gif" $null   "hd+dt1.25" "20+40"))  # mod + 时间点
-$tasks.Add((New-Task "convert" "5467386"  "gif" "taiko" "hr" "15+30")) # 转谱 + mod + 时间点
+$tasks.Add((New-Task "std"     "4897202" "gif" $null   @("hd", "dt1.25") @(20, 40)))  # mod + 时间点
+$tasks.Add((New-Task "convert" "5467386"  "gif" "taiko" "hr" @(15, 30))) # 转谱 + mod + 时间点
 
 
 # ── 执行前统计 ──
@@ -100,7 +100,7 @@ Write-Host ("-" * 70)
 Write-Host ("  基础任务 (各模式 png+gif):          {0,4}" -f $basicCount)
 Write-Host ("  Mod 示例 (HR/DT/EZ/HD/DA/IN/HO...):  {0,4}" -f $modCount)
 Write-Host ("  转谱示例 (std->taiko/ctb/mania):     {0,4}" -f $convCount)
-Write-Host ("  指定时间点 (--time):                 {0,4}" -f $timeCount)
+Write-Host ("  指定时间点 (--time-points):          {0,4}" -f $timeCount)
 Write-Host ("  多特性组合 (转谱+mod/时间):          {0,4}" -f $comboCount)
 Write-Host ("-" * 70)
 Write-Host ("  任务总计:                            {0,4}" -f $totalCount)
@@ -124,8 +124,18 @@ foreach ($t in $tasks) {
     # 组装命令行参数（参数内无空格，直接拼成字符串，兼容 PowerShell 5.1）
     $argList = @("--bid=$($t.bid)", "--fmt=$($t.fmt)")
     if ($t.convert) { $argList += "--convert=$($t.convert)" }
-    if ($t.mods)    { $argList += "--mods=$($t.mods)" }
-    if ($t.time)    { $argList += "--time=$($t.time)" }
+    if ($t.mods) {
+        foreach ($mod in @($t.mods)) {
+            if ($mod) { $argList += "--mod=$mod" }
+        }
+    }
+    if ($t.time) {
+        foreach ($timePoint in @($t.time)) {
+            if ($null -ne $timePoint -and "$timePoint" -ne "") {
+                $argList += "--time-points=$timePoint"
+            }
+        }
+    }
 
     # 用 Process 启动以便采集峰值内存
     $psi = New-Object System.Diagnostics.ProcessStartInfo

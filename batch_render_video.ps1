@@ -21,6 +21,8 @@ $appOutputDir = [System.IO.Path]::GetFullPath(
     (Join-Path $env:TEMP "osu-beatmap-preview\outputs")
 )
 $outdir = Join-Path $appOutputDir "batch-video"
+$videoStart = 0
+$videoDuration = 600
 
 if (-not (Test-Path -LiteralPath $bin -PathType Leaf)) {
     throw "Release binary not found: $bin`nRun cargo build --release first."
@@ -80,7 +82,7 @@ function Get-ExpectedOutputName {
         "mania" { "mania" }
         default { throw "Unknown mode: $($Task.mode)" }
     }
-    return "${prefix}_$($Task.bid).mp4"
+    return "${prefix}_$($Task.bid)_video-start${videoStart}-duration${videoDuration}.mp4"
 }
 
 function Get-Mp4DurationSeconds {
@@ -177,7 +179,12 @@ foreach ($task in $tasks) {
         Remove-Item -LiteralPath $expectedPath -Force
     }
 
-    $argList = @("--bid=$($task.bid)", "--fmt=mp4")
+    $argList = @(
+        "--bid=$($task.bid)",
+        "--fmt=mp4",
+        "--time-points=$videoStart",
+        "--duration-time=$videoDuration"
+    )
     if ($NoCache) { $argList += "--no-cache" }
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
