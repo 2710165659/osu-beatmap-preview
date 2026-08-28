@@ -4,11 +4,13 @@
 //! and encoded sequentially to preserve delta-frame ordering.
 
 use crate::core::errors::{PreviewError, Result};
+use crate::core::timeout::RequestDeadline;
 use crate::render::canvas::Img;
 use rayon::prelude::*;
 use std::path::Path;
 
-pub fn save_png(image: &Img, path: &Path) -> Result<()> {
+pub fn save_png(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<()> {
+    deadline.check()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
@@ -24,6 +26,7 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
     for px in image.data.chunks_exact(64) {
         sample.extend_from_slice(&[px[0], px[1], px[2], 255]);
     }
+    deadline.check()?;
     // Catch any remainder pixels so very small images still get a sample.
     let rem_start = (image.data.len() / 64) * 64;
     if rem_start < image.data.len() && sample.is_empty() {
@@ -37,6 +40,7 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
 
     // Build 256-color palette with NeuQuant (same quantizer as GIF).
     let nq = color_quant::NeuQuant::new(10, 255, &sample);
+    deadline.check()?;
     let palette_rgba = nq.color_map_rgba();
     let mut palette_rgb = Vec::with_capacity(256 * 3);
     for px in palette_rgba.chunks_exact(4) {
@@ -53,15 +57,19 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
     // in practice.  This replaces the previous HashMap approach with a single
     // array access: 32K entries built once, O(1) lookup per pixel, no hashing.
     let lut = build_png_lut(&nq);
+    deadline.check()?;
     let mut indexed = vec![0u8; (image.w * image.h) as usize];
     for (i, px) in image.data.chunks_exact(4).enumerate() {
         indexed[i] = lut[px[0] as usize >> 3][px[1] as usize >> 3][px[2] as usize >> 3];
+        if i % 1_000_000 == 0 {
+            deadline.check()?;
+        }
     }
 
     // Write to a sibling temp file and atomically replace the final path only
     // after the PNG is fully encoded, so an interrupted render never leaves a
     // partial file that could be served from cache.
-    crate::pipeline::cache::with_atomic_output(path, "png.tmp", |tmp_path| {
+    crate::pipeline::cache::with_atomic_output_deadline(path, "png.tmp", deadline, |tmp_path| {
         let file = std::fs::File::create(tmp_path)
             .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
         let writer = std::io::BufWriter::new(file);
@@ -78,6 +86,7 @@ pub fn save_png(image: &Img, path: &Path) -> Result<()> {
             .write_image_data(&indexed)
             .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
         drop(writer); // flush buffered bytes before the temp file is renamed
+        deadline.check()?;
         Ok(())
     })
 }
@@ -166,7 +175,9 @@ pub fn save_animated_gif_streamed(
     render: impl Fn(usize) -> Img + Send + Sync,
     path: &Path,
     frame_duration_ms: u32,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     if frame_count == 0 {
         return Err(PreviewError::render("no frames to encode"));
     }
@@ -186,6 +197,7 @@ pub fn save_animated_gif_streamed(
     // Palette frames are independent, so render them concurrently. This pass
     // holds at most four frames, no more than the old fixed render chunk.
     let palette_frames: Vec<Img> = sample_indices.par_iter().map(|&si| render(si)).collect();
+    deadline.check()?;
 
     let mut sample: Vec<u8> = Vec::new();
     let mut first_dims = (0u32, 0u32);
@@ -216,6 +228,7 @@ pub fn save_animated_gif_streamed(
         crate::config::current().video.composer.PALETTE_COLORS,
         &sample,
     );
+    deadline.check()?;
     let mut palette: Vec<u8> =
         Vec::with_capacity((crate::config::current().video.composer.PALETTE_COLORS + 1) * 3);
     for px in nq.color_map_rgba().chunks_exact(4) {
@@ -240,7 +253,7 @@ pub fn save_animated_gif_streamed(
     // Write to a sibling temp file and atomically replace the final path only
     // after every frame is encoded, so an interrupted render never leaves a
     // partial file that could be served from cache.
-    crate::pipeline::cache::with_atomic_output(path, "gif.tmp", |tmp_path| {
+    crate::pipeline::cache::with_atomic_output_deadline(path, "gif.tmp", deadline, |tmp_path| {
         let file = std::fs::File::create(tmp_path)
             .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
         let writer = std::io::BufWriter::new(file);
@@ -260,6 +273,7 @@ pub fn save_animated_gif_streamed(
 
         // ── render + encode in parallel chunks ──
         for chunk_start in (0..frame_count).step_by(par_chunk_size) {
+            deadline.check()?;
             let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
 
             // Render this chunk in parallel; each thread calls `render(i)` independently.
@@ -267,9 +281,11 @@ pub fn save_animated_gif_streamed(
                 .into_par_iter()
                 .map(&render)
                 .collect();
+            deadline.check()?;
 
             // Encode sequentially (delta frames must stay in order).
             for (fi, frame) in (chunk_start..).zip(frames) {
+                deadline.check()?;
                 let mut indexed = vec![0u8; w * h];
                 for (i, px) in frame.data.chunks_exact(4).enumerate().take(w * h) {
                     indexed[i] = lut[posterize(px[0]) as usize >> 3]
@@ -323,6 +339,7 @@ pub fn save_animated_gif_streamed(
             }
         }
         drop(encoder); // flush buffered bytes before the temp file is renamed
+        deadline.check()?;
         Ok(())
     })
 }
@@ -405,6 +422,59 @@ fn find_delta_rect(
         None
     } else {
         Some((min_x, min_y, max_x, max_y))
+    }
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
+
+    fn expired(format: &str) -> RequestDeadline {
+        RequestDeadline::new(
+            Instant::now() - Duration::from_secs(2),
+            format,
+            Duration::from_secs(1),
+        )
+    }
+
+    #[test]
+    fn png_timeout_does_not_replace_existing_output() {
+        let path = std::env::temp_dir().join(format!(
+            "osu-preview-png-timeout-test-{}.png",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"existing").unwrap();
+        let image = Img::new(1, 1, [0, 0, 0, 255]);
+        let error = save_png(&image, &path, &expired("png")).unwrap_err();
+        assert!(error.to_string().contains("PNG preview request timed out"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"existing");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn gif_timeout_stops_before_rendering_or_writing() {
+        let path = std::env::temp_dir().join(format!(
+            "osu-preview-gif-timeout-test-{}.gif",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let rendered = AtomicBool::new(false);
+        let error = save_animated_gif_streamed(
+            1,
+            |_| {
+                rendered.store(true, Ordering::Relaxed);
+                Img::new(1, 1, [0, 0, 0, 255])
+            },
+            &path,
+            100,
+            &expired("gif"),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("GIF preview request timed out"));
+        assert!(!rendered.load(Ordering::Relaxed));
+        assert!(!path.exists());
     }
 }
 

@@ -8,6 +8,7 @@ use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::core::validate::TimePoint;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
@@ -26,7 +27,9 @@ pub(crate) fn render_catch_video(
     output_path: &Path,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
         _ => return Err(PreviewError::render("catch beatmap has no hit objects")),
@@ -63,5 +66,6 @@ pub(crate) fn render_catch_video(
         fps,
         audio_job,
         time_axis,
+        deadline,
     )
 }

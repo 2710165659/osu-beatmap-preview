@@ -4,6 +4,7 @@ use crate::common::time_selection::{GifRenderOptions, TimeAxis};
 use crate::core::errors::Result;
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::render::canvas::Img;
 use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::format_mmssmmm;
@@ -19,12 +20,14 @@ pub(crate) fn render_standard_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     match options {
         GifRenderOptions::Segments {
             times_ms,
             time_axis,
-        } => render_standard_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
+        } => render_standard_segment_gif(beatmap, mods, times_ms, time_axis, output_path, deadline),
     }
 }
 
@@ -34,6 +37,7 @@ fn render_standard_segment_gif(
     times_ms: Option<Vec<i64>>,
     time_axis: TimeAxis,
     output_path: &Path,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
     let hit_objects = standard_objects(beatmap)?;
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
@@ -173,5 +177,11 @@ fn render_standard_segment_gif(
         canvas
     };
 
-    save_animated_gif_streamed(frame_count, render, output_path, frame_duration_ms)
+    save_animated_gif_streamed(
+        frame_count,
+        render,
+        output_path,
+        frame_duration_ms,
+        deadline,
+    )
 }

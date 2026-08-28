@@ -103,6 +103,16 @@ Configuration layers are merged as `embedded defaults < CONFIG_DIR/config.yml < 
 
 Fields must exist in the embedded configuration. Unknown fields, a non-object top level, and values that cannot be converted to the expected type fail startup. Numeric and boolean strings are accepted when safely convertible.
 
+Whole-request timeouts for PNG, GIF, and MP4 are controlled by `timeouts.render.PNG_TIMEOUT`, `GIF_TIMEOUT`, and `MP4_TIMEOUT`. Values are positive integer seconds and default to `300`. Timing starts at the request entry point and covers download, parsing, conversion, cache lookup, rendering, audio processing, encoding, and final output. When `--fmt` is omitted and the beatmap mode is not known before download, the preliminary phase uses the larger PNG/GIF timeout; once the mode is known, the actual format deadline is recalculated from the original request start.
+
+```yaml
+timeouts:
+  render:
+    PNG_TIMEOUT: 300
+    GIF_TIMEOUT: 300
+    MP4_TIMEOUT: 300
+```
+
 ```bash
 osu-beatmap-preview --bid=123456 --config='{"layout":{"standard":{"gif":{"ROW_COUNT":1}}}}'
 osu-beatmap-preview --bid=123456 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'

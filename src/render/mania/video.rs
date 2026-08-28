@@ -9,6 +9,7 @@ use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
@@ -34,7 +35,9 @@ pub(crate) fn render_mania_video(
     output_path: &Path,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
     let original_objects = mania_objects(beatmap);
@@ -167,6 +170,7 @@ pub(crate) fn render_mania_video(
         fps,
         audio_job,
         time_axis,
+        deadline,
     )
 }
 

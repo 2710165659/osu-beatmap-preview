@@ -8,6 +8,7 @@ use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TimingPoint};
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::composer::save_png;
@@ -258,7 +259,9 @@ pub(crate) fn render_catch_grid(
     output_path: &Path,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
+    deadline.check()?;
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
         _ => return Err(PreviewError::render("catch beatmap has no hit objects")),
@@ -266,6 +269,7 @@ pub(crate) fn render_catch_grid(
 
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects = build_catch_render_objects(beatmap, hit_objects, mods, &difficulty)?;
+    deadline.check()?;
     let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap().max(1);
 
     // Trim leading silence: if first note is >= 5s in, start 1s before it,
@@ -317,11 +321,13 @@ pub(crate) fn render_catch_grid(
     );
 
     for column_index in 0..layout.column_count {
+        deadline.check()?;
         draw_column_background(&mut image, &layout, column_index);
     }
 
     let mut last_label_time: Option<i64> = None;
     for timing_line in &timing_lines {
+        deadline.check()?;
         let mut tl = timing_line.clone();
         if tl.show_label {
             if let Some(prev) = last_label_time {
@@ -348,11 +354,14 @@ pub(crate) fn render_catch_grid(
     // 后发生的对象先画（早出现的盖在上层），同时刻按 类型 排序
     let mut sorted_objects: Vec<&RenderObject> = render_objects.iter().collect();
     sorted_objects.sort_by_key(|o| (-o.start_time, object_order(o.object_type)));
-    for catch_object in sorted_objects {
+    for (index, catch_object) in sorted_objects.into_iter().enumerate() {
+        if index % 1024 == 0 {
+            deadline.check()?;
+        }
         draw_catch_object_png(&mut image, catch_object, &layout);
     }
 
-    save_png(&image, output_path)?;
+    save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
 }
 

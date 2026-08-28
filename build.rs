@@ -103,6 +103,10 @@ fn generate_runtime_struct(
                 generated.push_str(&format!(
                     "    #[serde(deserialize_with = \"crate::config::deserialize_duration_secs\")]\n"
                 ));
+            } else if kind == "positive_duration_secs" {
+                generated.push_str(&format!(
+                    "    #[serde(deserialize_with = \"crate::config::deserialize_positive_duration_secs\")]\n"
+                ));
             }
         }
         generated.push_str(&format!("    pub {key}: {ty},\n"));
@@ -113,7 +117,10 @@ fn generate_runtime_struct(
 
 fn runtime_field_type(path: &[&str], value: &Value) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(kind) = special_kind(&path[..path.len() - 1], path[path.len() - 1]) {
-        if matches!(kind, "duration_ms" | "duration_secs") {
+        if matches!(
+            kind,
+            "duration_ms" | "duration_secs" | "positive_duration_secs"
+        ) {
             return Ok("std::time::Duration".to_string());
         }
     }
@@ -199,6 +206,7 @@ fn module_prelude(module: &str, section: &str) -> &'static str {
         ("network", "downloader_cf_ip") | ("network", "downloader_osz") => {
             "use std::time::Duration;\n"
         }
+        ("timeouts", "render") => "use std::time::Duration;\n",
         _ => "",
     }
 }
@@ -216,6 +224,9 @@ fn generate_constant(
             "pub const {name}: std::time::Duration = Duration::from_millis({value});\n"
         ),
         Some("duration_secs") => format!(
+            "pub const {name}: std::time::Duration = Duration::from_secs({value});\n"
+        ),
+        Some("positive_duration_secs") => format!(
             "pub const {name}: std::time::Duration = Duration::from_secs({value});\n"
         ),
         Some("format") => format!(
@@ -247,6 +258,9 @@ fn special_kind(path: &[&str], name: &str) -> Option<&'static str> {
             ) =>
         {
             Some("duration_secs")
+        }
+        ["timeouts", "render"] if matches!(name, "PNG_TIMEOUT" | "GIF_TIMEOUT" | "MP4_TIMEOUT") => {
+            Some("positive_duration_secs")
         }
         _ => None,
     }

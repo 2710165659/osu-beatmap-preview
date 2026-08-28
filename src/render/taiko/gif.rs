@@ -4,6 +4,7 @@ use crate::common::time_selection::{GifRenderOptions, PreviewSegmentTiming, Prev
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TaikoHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::composer;
@@ -97,12 +98,14 @@ pub(crate) fn render_taiko_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     match options {
         GifRenderOptions::Segments {
             times_ms,
             time_axis,
-        } => render_taiko_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
+        } => render_taiko_segment_gif(beatmap, mods, times_ms, time_axis, output_path, deadline),
     }
 }
 
@@ -112,6 +115,7 @@ fn render_taiko_segment_gif(
     times_ms: Option<Vec<i64>>,
     time_axis: crate::common::time_selection::TimeAxis,
     output_path: &Path,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
@@ -225,7 +229,13 @@ fn render_taiko_segment_gif(
         canvas
     };
 
-    composer::save_animated_gif_streamed(frame_count, render, output_path, frame_duration_ms)
+    composer::save_animated_gif_streamed(
+        frame_count,
+        render,
+        output_path,
+        frame_duration_ms,
+        deadline,
+    )
 }
 
 // ─── time range / multiplier ───

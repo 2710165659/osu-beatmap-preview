@@ -1,4 +1,5 @@
 use crate::core::errors::{PreviewError, Result};
+use crate::core::timeout::RequestDeadline;
 use std::cmp::Reverse;
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
@@ -8,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ContentRange {
@@ -256,12 +257,15 @@ pub fn download_beatmapset_archive(
     set_id: u64,
     temp_dir: &Path,
     no_cache: bool,
+    deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
+    deadline.check()?;
     let log = OszLogContext::new(request_bid, set_id);
     std::fs::create_dir_all(temp_dir)
         .map_err(|e| PreviewError::download(format!("failed to create osz cache dir: {e}")))?;
     let target_path = temp_dir.join(format!("{set_id}.osz"));
     if !no_cache && valid_osz(&target_path) {
+        deadline.check()?;
         let size_mib = target_path
             .metadata()
             .map(|m| {
@@ -293,9 +297,10 @@ pub fn download_beatmapset_archive(
     );
 
     let started = Instant::now();
-    let winner = match run_download_race(&log, temp_dir, candidates) {
+    let winner = match run_download_race(&log, temp_dir, candidates, deadline) {
         Ok(winner) => winner,
         Err(failures) => {
+            deadline.check()?;
             crate::pipeline::downloader::cf_ip::invalidate(temp_dir);
             crate::pipeline::downloader::cf_ip::spawn_refresh(temp_dir, true);
             log.event("error", failures.join("; "));
@@ -305,6 +310,7 @@ pub fn download_beatmapset_archive(
             )));
         }
     };
+    deadline.check()?;
 
     if target_path.exists() {
         std::fs::remove_file(&target_path)
@@ -349,21 +355,28 @@ fn build_candidates(preferred_ip: Option<Ipv4Addr>) -> Vec<MirrorCandidate> {
     candidates
 }
 
-fn build_agent(preferred_ip: Option<Ipv4Addr>) -> ureq::Agent {
+fn build_agent(preferred_ip: Option<Ipv4Addr>, deadline: &RequestDeadline) -> ureq::Agent {
+    let min_timeout = |configured| {
+        deadline
+            .cap(configured)
+            .unwrap_or_else(|_| Duration::from_millis(1))
+    };
     let builder = ureq::AgentBuilder::new()
-        .timeout_connect(
+        .timeout_connect(min_timeout(
             crate::config::current()
                 .network
                 .downloader_osz
                 .CONNECT_TIMEOUT,
-        )
-        .timeout_read(crate::config::current().network.downloader_osz.READ_TIMEOUT)
-        .timeout_write(
+        ))
+        .timeout_read(min_timeout(
+            crate::config::current().network.downloader_osz.READ_TIMEOUT,
+        ))
+        .timeout_write(min_timeout(
             crate::config::current()
                 .network
                 .downloader_osz
                 .WRITE_TIMEOUT,
-        );
+        ));
     if let Some(ip) = preferred_ip {
         builder
             .resolver(crate::pipeline::downloader::cf_ip::resolver_for(ip))
@@ -377,6 +390,7 @@ fn run_download_race(
     log: &OszLogContext,
     temp_dir: &Path,
     mut candidates: Vec<MirrorCandidate>,
+    request_deadline: &RequestDeadline,
 ) -> std::result::Result<PathBuf, Vec<String>> {
     let (sender, receiver) = mpsc::channel();
     let mut active = Vec::new();
@@ -398,9 +412,17 @@ fn run_download_race(
         &mut next_id,
         &sender,
         &mut active,
+        request_deadline,
     );
 
     loop {
+        if request_deadline.check().is_err() {
+            for attempt in active.drain(..) {
+                cancel_attempt(log, attempt);
+            }
+            failures.push("preview request deadline exceeded".to_string());
+            return Err(failures);
+        }
         if Instant::now() >= deadline {
             for attempt in active.drain(..) {
                 cancel_attempt(log, attempt);
@@ -409,12 +431,15 @@ fn run_download_race(
             return Err(failures);
         }
 
-        match receiver.recv_timeout(
-            crate::config::current()
-                .network
-                .downloader_osz
-                .POLL_INTERVAL,
-        ) {
+        let poll_interval = request_deadline
+            .cap(
+                crate::config::current()
+                    .network
+                    .downloader_osz
+                    .POLL_INTERVAL,
+            )
+            .unwrap_or_else(|_| Duration::from_millis(1));
+        match receiver.recv_timeout(poll_interval) {
             Ok(message) => {
                 let outcome = handle_attempt_result(
                     message,
@@ -439,6 +464,7 @@ fn run_download_race(
                         &mut next_id,
                         &sender,
                         &mut active,
+                        request_deadline,
                     );
                 }
                 while let Ok(message) = receiver.try_recv() {
@@ -465,6 +491,7 @@ fn run_download_race(
                             &mut next_id,
                             &sender,
                             &mut active,
+                            request_deadline,
                         );
                     }
                 }
@@ -558,6 +585,7 @@ fn run_download_race(
                 &mut next_id,
                 &sender,
                 &mut active,
+                request_deadline,
             );
         }
 
@@ -573,6 +601,7 @@ fn run_download_race(
                 &mut next_id,
                 &sender,
                 &mut active,
+                request_deadline,
             );
         }
     }
@@ -586,6 +615,7 @@ fn start_next_attempt(
     next_id: &mut usize,
     sender: &mpsc::Sender<AttemptResult>,
     active: &mut Vec<ActiveAttempt>,
+    deadline: &RequestDeadline,
 ) {
     maybe_insert_preferred_candidate(candidates, *next_candidate, temp_dir);
     if *next_candidate >= candidates.len()
@@ -610,7 +640,7 @@ fn start_next_attempt(
         progress: progress.clone(),
     };
     let url = source.url(log.set_id);
-    let agent = build_agent(source.preferred_ip());
+    let agent = build_agent(source.preferred_ip(), deadline);
     log.event(
         "attempt-start",
         format!("attempt={id} source={} url={url}", source.name()),
@@ -724,10 +754,8 @@ fn cancel_attempt(log: &OszLogContext, attempt: ActiveAttempt) {
         "attempt-cancelled",
         format!("attempt={} source={}", attempt.id, attempt.source.name()),
     );
-    thread::spawn(move || {
-        let _ = attempt.handle.join();
-        remove_if_exists(&attempt.path);
-    });
+    let _ = attempt.handle.join();
+    remove_if_exists(&attempt.path);
 }
 
 fn attempt_path(temp_dir: &Path, set_id: u64, attempt_id: usize) -> PathBuf {

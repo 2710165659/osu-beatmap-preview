@@ -7,6 +7,7 @@ use crate::common::time_selection::{GifRenderOptions, PreviewTimeSelector, TimeA
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::render::canvas::Img;
 use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::{draw_text, text_size};
@@ -105,12 +106,14 @@ pub(crate) fn render_catch_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     match options {
         GifRenderOptions::Segments {
             times_ms,
             time_axis,
-        } => render_catch_segment_gif(beatmap, mods, times_ms, time_axis, output_path),
+        } => render_catch_segment_gif(beatmap, mods, times_ms, time_axis, output_path, deadline),
     }
 }
 
@@ -120,6 +123,7 @@ fn render_catch_segment_gif(
     times_ms: Option<Vec<i64>>,
     time_axis: TimeAxis,
     output_path: &Path,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
@@ -202,7 +206,13 @@ fn render_catch_segment_gif(
         canvas
     };
 
-    save_animated_gif_streamed(frame_count, render, output_path, frame_duration_ms)
+    save_animated_gif_streamed(
+        frame_count,
+        render,
+        output_path,
+        frame_duration_ms,
+        deadline,
+    )
 }
 
 /// 渲染单段单帧：背景 + 判定线 + 接手 + 可见的下落对象。

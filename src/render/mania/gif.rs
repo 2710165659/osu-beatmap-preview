@@ -5,6 +5,7 @@ use crate::common::time_selection::{GifRenderOptions, PreviewTimeSelector, TimeA
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::composer::save_animated_gif_streamed;
@@ -55,7 +56,9 @@ pub(crate) fn render_mania_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
     let original_objects = mania_objects(beatmap);
@@ -290,6 +293,7 @@ pub(crate) fn render_mania_gif(
         render_frame,
         output_path,
         frame_duration_ms as u32,
+        deadline,
     )
 }
 

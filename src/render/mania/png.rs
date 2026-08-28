@@ -5,6 +5,7 @@ use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::composer::save_png;
@@ -42,7 +43,9 @@ pub(crate) fn render_mania_grid(
     output_path: &Path,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
+    deadline.check()?;
     // key count comes straight from the beatmap CS (mods don't change native mania lanes)
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
@@ -118,6 +121,7 @@ pub(crate) fn render_mania_grid(
         chart_end_time,
         chart_start_time,
     )?;
+    deadline.check()?;
 
     let mut image = Img::new(
         layout.image_width as u32,
@@ -126,10 +130,12 @@ pub(crate) fn render_mania_grid(
     );
 
     for column_index in 0..layout.column_count {
+        deadline.check()?;
         draw_column_background(&mut image, key_count, column_index, &layout);
     }
     let mut last_label_time: Option<i64> = None;
     for timing_line in &timing_lines {
+        deadline.check()?;
         let mut tl = timing_line.clone();
         if tl.show_label {
             if let Some(prev) = last_label_time {
@@ -149,14 +155,20 @@ pub(crate) fn render_mania_grid(
         }
         draw_timing_line(&mut image, &tl, &layout, time_axis);
     }
-    for sv_change in &sv_changes {
+    for (index, sv_change) in sv_changes.iter().enumerate() {
+        if index % 1024 == 0 {
+            deadline.check()?;
+        }
         draw_sv_indicator(&mut image, *sv_change, &layout);
     }
-    for hit_object in &hit_objects {
+    for (index, hit_object) in hit_objects.iter().enumerate() {
+        if index % 1024 == 0 {
+            deadline.check()?;
+        }
         draw_png_hit_object(&mut image, hit_object, &palette, &layout);
     }
 
-    save_png(&image, output_path)?;
+    save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
 }
 

@@ -1,5 +1,6 @@
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
+use crate::core::timeout::RequestDeadline;
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
 use std::fs::File;
 use std::io::{Read, Seek, Write};
@@ -19,7 +20,8 @@ pub(crate) struct AudioSource {
 }
 
 pub(crate) struct AudioSourceJob {
-    handle: std::thread::JoinHandle<Result<AudioSource>>,
+    handle: Option<std::thread::JoinHandle<Result<AudioSource>>>,
+    deadline: RequestDeadline,
 }
 
 impl AudioSourceJob {
@@ -28,6 +30,7 @@ impl AudioSourceJob {
         beatmap: Beatmap,
         cache_dir: PathBuf,
         no_cache: bool,
+        deadline: RequestDeadline,
     ) -> Result<Self> {
         let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
             PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
@@ -43,22 +46,40 @@ impl AudioSourceJob {
             &format!("set_id={set_id} audio={audio_filename}"),
         );
 
+        let worker_deadline = deadline.clone();
         let handle = std::thread::spawn(move || {
+            worker_deadline.check()?;
             let osz_path = crate::pipeline::downloader::download_beatmapset_archive(
                 &request_bid,
                 set_id,
                 &cache_dir,
                 no_cache,
+                &worker_deadline,
             )?;
-            prepare_audio_source(&beatmap, &osz_path, &cache_dir, no_cache)
+            prepare_audio_source(&beatmap, &osz_path, &cache_dir, no_cache, &worker_deadline)
         });
-        Ok(Self { handle })
+        Ok(Self {
+            handle: Some(handle),
+            deadline,
+        })
     }
 
-    pub(crate) fn wait(self) -> Result<AudioSource> {
+    pub(crate) fn wait(mut self) -> Result<AudioSource> {
         self.handle
+            .take()
+            .expect("audio source job waited more than once")
             .join()
             .map_err(|_| PreviewError::render("audio preparation worker panicked"))?
+    }
+}
+
+impl Drop for AudioSourceJob {
+    fn drop(&mut self) {
+        let Some(handle) = self.handle.take() else {
+            return;
+        };
+        self.deadline.cancel();
+        let _ = handle.join();
     }
 }
 
@@ -83,7 +104,9 @@ pub(crate) fn prepare_audio_source(
     osz_path: &Path,
     cache_dir: &Path,
     no_cache: bool,
+    deadline: &RequestDeadline,
 ) -> Result<AudioSource> {
+    deadline.check()?;
     let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
         PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
     })?;
@@ -122,7 +145,7 @@ pub(crate) fn prepare_audio_source(
 
     std::fs::create_dir_all(&set_cache)
         .map_err(|e| PreviewError::download(format!("failed to create audio cache dir: {e}")))?;
-    extract_audio_entry(osz_path, &normalized, &target_path)?;
+    extract_audio_entry(osz_path, &normalized, &target_path, deadline)?;
     crate::log::event(
         "audio-prepare",
         "done",
@@ -142,13 +165,15 @@ pub(crate) fn encode_audio_segment(
     frame_count: usize,
     fps: u32,
     speed: f64,
+    deadline: &RequestDeadline,
 ) -> Result<EncodedAudio> {
+    deadline.check()?;
     if fps == 0 || !speed.is_finite() || speed <= 0.0 {
         return Err(PreviewError::render(
             "invalid video timing for audio encoding",
         ));
     }
-    let decoded = decode_audio(&source.path)?;
+    let decoded = decode_audio(&source.path, deadline)?;
     let target_samples = ((frame_count as u64
         * crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE as u64)
         + fps as u64
@@ -182,6 +207,7 @@ pub(crate) fn encode_audio_segment(
     // be needed after the requested input span before every access unit appears.
     let max_calls = target_frame_count + 16;
     for _ in 0..max_calls {
+        deadline.check()?;
         fill_audio_frame(
             &mut input,
             input_frame_index * samples_per_frame,
@@ -290,7 +316,7 @@ fn sample_stereo(decoded: &DecodedAudio, source_frame: f64) -> [i16; 2] {
     [interpolate(0), interpolate(1)]
 }
 
-fn decode_audio(path: &Path) -> Result<DecodedAudio> {
+fn decode_audio(path: &Path, deadline: &RequestDeadline) -> Result<DecodedAudio> {
     let file = File::open(path)
         .map_err(|e| PreviewError::render(format!("failed to open beatmap audio: {e}")))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
@@ -318,6 +344,7 @@ fn decode_audio(path: &Path) -> Result<DecodedAudio> {
     let mut stereo_samples = Vec::new();
 
     loop {
+        deadline.check()?;
         let packet = match format.next_packet() {
             Ok(packet) => packet,
             Err(SymphoniaError::IoError(error))
@@ -387,7 +414,13 @@ fn append_as_stereo(input: &[i16], channels: usize, output: &mut Vec<i16>) {
     }
 }
 
-fn extract_audio_entry(osz_path: &Path, wanted: &str, target_path: &Path) -> Result<()> {
+fn extract_audio_entry(
+    osz_path: &Path,
+    wanted: &str,
+    target_path: &Path,
+    deadline: &RequestDeadline,
+) -> Result<()> {
+    deadline.check()?;
     let file = File::open(osz_path)
         .map_err(|e| PreviewError::download(format!("failed to open osz archive: {e}")))?;
     let mut archive = zip::ZipArchive::new(file)
@@ -424,6 +457,9 @@ fn extract_audio_entry(osz_path: &Path, wanted: &str, target_path: &Path) -> Res
         &mut output,
     )
     .map_err(|e| PreviewError::download(format!("failed to extract beatmap audio: {e}")))?;
+    deadline.check().inspect_err(|_| {
+        let _ = std::fs::remove_file(&part_path);
+    })?;
     output
         .flush()
         .map_err(|e| PreviewError::download(format!("failed to flush audio cache: {e}")))?;
@@ -558,7 +594,12 @@ mod tests {
             writer.write_all(b"requested-audio").unwrap();
             writer.finish().unwrap();
         }
-        extract_audio_entry(&osz, "audio/song.mp3", &output).unwrap();
+        let deadline = RequestDeadline::new(
+            std::time::Instant::now(),
+            "mp4",
+            std::time::Duration::from_secs(300),
+        );
+        extract_audio_entry(&osz, "audio/song.mp3", &output, &deadline).unwrap();
         assert_eq!(std::fs::read(&output).unwrap(), b"requested-audio");
         std::fs::remove_dir_all(&dir).unwrap();
     }

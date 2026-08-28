@@ -7,6 +7,7 @@ use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TaikoHitObject};
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::composer;
@@ -58,7 +59,9 @@ pub(crate) fn render_taiko_grid(
     output_path: &Path,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
+    deadline.check()?;
     let mut hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
         return Err(PreviewError::render("taiko beatmap has no hit objects"));
@@ -132,6 +135,7 @@ pub(crate) fn render_taiko_grid(
         chart_start_time,
     );
     let sv_changes = build_sv_changes(&timing_points, effective_chart_end_time, &mapper);
+    deadline.check()?;
 
     let mut image = Img::new(
         layout.image_width as u32,
@@ -157,6 +161,7 @@ pub(crate) fn render_taiko_grid(
     };
 
     for row_index in 0..layout.row_count {
+        deadline.check()?;
         let row_top = png_row_top(row_index);
         image.alpha_composite(
             &track_bg,
@@ -167,6 +172,7 @@ pub(crate) fn render_taiko_grid(
 
     let mut last_label_time: Option<i64> = None;
     for timing_line in timing_lines.iter().rev() {
+        deadline.check()?;
         let mut tl = timing_line.clone();
         if tl.show_label {
             if let Some(prev) = last_label_time {
@@ -189,11 +195,14 @@ pub(crate) fn render_taiko_grid(
 
     draw_sv_indicators(&mut image, &sv_changes, &layout);
 
-    for hit_object in hit_objects.iter().rev() {
+    for (index, hit_object) in hit_objects.iter().rev().enumerate() {
+        if index % 1024 == 0 {
+            deadline.check()?;
+        }
         draw_hit_object(&mut image, hit_object, &mapper, &layout, &mut cache);
     }
 
-    composer::save_png(&image, output_path)?;
+    composer::save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
 }
 

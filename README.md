@@ -104,6 +104,16 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 配置字段必须来自内置配置；未知字段、顶层非对象和无法转换的类型会导致启动失败。数字和布尔值也接受可安全转换的字符串形式。
 配置会先与内置默认值合并并归一化；若最终生效值与默认配置相同，仍使用 `OUTPUT_DIR`。否则程序对差异配置计算稳定的 SHA-256（取末 6 位）并使用 `OUTPUT_DIR/<config-hash>/`，同时在该目录写入只包含非默认字段的规范 `config.yml`。因此等价的 JSON、YAML、配置文件及显式填写默认值不会拆分输出缓存；以后新增且仍采用默认值的配置项也不会改变已有 hash。
 
+PNG、GIF 和 MP4 的整次请求超时分别由 `timeouts.render.PNG_TIMEOUT`、`GIF_TIMEOUT` 和 `MP4_TIMEOUT` 控制，单位为秒，默认均为 `300`，且必须是正整数。计时从请求入口开始，覆盖下载、解析、转谱、缓存检查、渲染、音频处理、编码和输出落盘。省略 `--fmt` 且下载前无法确定谱面模式时，前置阶段暂用 PNG/GIF 中较大的超时；模式确定后改用实际格式基于原始请求起点计算的截止时间。
+
+```yaml
+timeouts:
+  render:
+    PNG_TIMEOUT: 300
+    GIF_TIMEOUT: 300
+    MP4_TIMEOUT: 300
+```
+
 ```bash
 osu-beatmap-preview --bid=123456 --config='{"layout":{"standard":{"gif":{"ROW_COUNT":1}}}}'
 osu-beatmap-preview --bid=123456 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'

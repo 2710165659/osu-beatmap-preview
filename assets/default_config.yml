@@ -63,6 +63,11 @@ network:
     READ_TIMEOUT: 15
     WRITE_TIMEOUT: 10
     BUFFER_SIZE: 65536
+timeouts:
+  render:
+    PNG_TIMEOUT: 300
+    GIF_TIMEOUT: 300
+    MP4_TIMEOUT: 300
 # Output-specific layout values. Shared entries are repeated only where the renderer uses them.
 layout:
   standard:

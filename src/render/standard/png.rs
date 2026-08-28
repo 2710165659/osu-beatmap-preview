@@ -4,6 +4,7 @@ use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::render::canvas::Img;
 use crate::render::text::format_mmssmmm;
 
@@ -16,7 +17,9 @@ pub(crate) fn render_standard_png(
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
     times_ms: Option<Vec<i64>>,
+    deadline: &RequestDeadline,
 ) -> Result<Img> {
+    deadline.check()?;
     let hit_objects = standard_objects(beatmap)?;
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods, time_axis);
@@ -42,6 +45,7 @@ pub(crate) fn render_standard_png(
     let mut cache = RenderCache::default();
 
     for (row_index, row_timing) in row_timings.iter().enumerate() {
+        deadline.check()?;
         let snapshot_times: Vec<i64> =
             (0..crate::config::current().layout.standard.png.IMAGES_PER_ROW)
                 .map(|i| {
@@ -73,6 +77,7 @@ pub(crate) fn render_standard_png(
                         .TIME_LABEL_HEIGHT
                     + crate::config::current().layout.standard.png.INTER_ROW_GAP);
         for image_index in 0..crate::config::current().layout.standard.png.IMAGES_PER_ROW {
+            deadline.check()?;
             let snapshot_time = snapshot_times[image_index];
             let x = crate::config::current()
                 .layout

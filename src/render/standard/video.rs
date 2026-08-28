@@ -8,6 +8,7 @@ use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
@@ -30,7 +31,9 @@ pub(crate) fn render_standard_video(
     output_path: &Path,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     let hit_objects = standard_objects(beatmap)?;
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let first = hit_objects.iter().map(|o| o.start_time).min().unwrap_or(0);
@@ -83,5 +86,6 @@ pub(crate) fn render_standard_video(
         fps,
         audio_job,
         time_axis,
+        deadline,
     )
 }

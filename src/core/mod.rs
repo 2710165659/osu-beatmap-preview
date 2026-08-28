@@ -4,4 +4,5 @@ pub(crate) mod build_time;
 pub(crate) mod errors;
 pub(crate) mod models;
 pub(crate) mod mods;
+pub(crate) mod timeout;
 pub(crate) mod validate;

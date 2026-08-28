@@ -25,8 +25,10 @@
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
+use crate::core::timeout::RequestDeadline;
 use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
+use crate::pipeline::cache::with_atomic_output_deadline;
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
 use crate::render::video::audio::{encode_audio_segment, full_video_start_time, AudioSourceJob};
@@ -189,7 +191,9 @@ pub(crate) fn save_mp4_streamed(
     fps: u32,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     if frame_count == 0 {
         return Err(PreviewError::render("no frames to encode"));
     }
@@ -202,36 +206,50 @@ pub(crate) fn save_mp4_streamed(
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
     }
 
-    let audio_task = std::thread::spawn(move || {
-        let source = audio_job.wait()?;
-        let encoded = encode_audio_segment(&source, chart_start_ms, frame_count, fps, speed)?;
-        crate::log::event(
-            "audio-encode",
-            "done",
-            None,
-            &format!(
-                "{} AAC frames from {} (lead-in={}ms)",
+    let audio_deadline = deadline.clone();
+    let mut audio_task = JoinedAudioTask::new(
+        std::thread::spawn(move || {
+            audio_deadline.check()?;
+            let source = audio_job.wait()?;
+            let encoded = encode_audio_segment(
+                &source,
+                chart_start_ms,
+                frame_count,
+                fps,
+                speed,
+                &audio_deadline,
+            )?;
+            crate::log::event(
+                "audio-encode",
+                "done",
+                None,
+                &format!(
+                    "{} AAC frames from {} (lead-in={}ms)",
+                    encoded.frames.len(),
+                    source.path.display(),
+                    source.lead_in_ms,
+                ),
+            );
+            eprintln!(
+                "[audio] encoded {} AAC frames from {} (lead-in={}ms)",
                 encoded.frames.len(),
                 source.path.display(),
                 source.lead_in_ms,
-            ),
-        );
-        eprintln!(
-            "[audio] encoded {} AAC frames from {} (lead-in={}ms)",
-            encoded.frames.len(),
-            source.path.display(),
-            source.lead_in_ms,
-        );
-        Ok::<_, PreviewError>(encoded)
-    });
+            );
+            Ok::<_, PreviewError>(encoded)
+        }),
+        deadline.clone(),
+    );
 
     // ── render first frame to discover playfield dimensions ──
     let (first_frame, first_time) = render(0);
+    deadline.check()?;
     let (pf_w, pf_h) = (first_frame.w, first_frame.h);
     let (out_w, out_h) = letterbox_dims(pf_w, pf_h);
 
     // ── pick the best available encoder backend ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
+    deadline.check()?;
     crate::log::event(
         "video-backend",
         "done",
@@ -262,6 +280,7 @@ pub(crate) fn save_mp4_streamed(
         out_h,
     );
     let first_encoded = encoder.encode(&first_comp)?;
+    deadline.check()?;
     if first_encoded.slice.is_empty() {
         return Err(PreviewError::render(format!(
             "{} returned an empty H.264 sample for frame 0",
@@ -281,7 +300,7 @@ pub(crate) fn save_mp4_streamed(
     // a partial file that could be served from cache. The encoder is moved
     // into the closure and returned so its `Drop` (which prints to stdout)
     // can still be silenced after the rename.
-    let encoder = crate::pipeline::cache::with_atomic_output(output_path, "mp4.tmp", |tmp_path| {
+    let encoder = with_atomic_output_deadline(output_path, "mp4.tmp", deadline, |tmp_path| {
         let file = std::fs::File::create(tmp_path)
             .map_err(|e| PreviewError::render(format!("failed to write mp4: {e}")))?;
         let writer = BufWriter::new(file);
@@ -351,6 +370,7 @@ pub(crate) fn save_mp4_streamed(
         let mut t_mux = std::time::Duration::ZERO;
         let gameplay_total = time_axis.to_display(last_object_ms);
         for chunk_start in (1..frame_count).step_by(par_chunk_size) {
+            deadline.check()?;
             let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
             let t0 = Instant::now();
             let frames: Vec<Img> = (chunk_start..chunk_end)
@@ -361,11 +381,14 @@ pub(crate) fn save_mp4_streamed(
                     compose_frame(pf, time_axis.to_display(time), gameplay_total, out_w, out_h)
                 })
                 .collect();
+            deadline.check()?;
             t_render += t0.elapsed();
 
             for (i, comp) in (chunk_start..).zip(frames) {
+                deadline.check()?;
                 let t2 = Instant::now();
                 let encoded = encoder.encode(&comp)?;
+                deadline.check()?;
                 t_encode += t2.elapsed();
                 if encoded.slice.is_empty() {
                     return Err(PreviewError::render(format!(
@@ -399,12 +422,13 @@ pub(crate) fn save_mp4_streamed(
             );
         }
         let audio_wait_start = Instant::now();
-        let encoded_audio = audio_task
-            .join()
-            .map_err(|_| PreviewError::render("audio encoding worker panicked"))??;
+        deadline.check()?;
+        let encoded_audio = audio_task.join()?;
+        deadline.check()?;
         let audio_wait = audio_wait_start.elapsed();
         let mut audio_start = 0_u64;
         for frame in encoded_audio.frames {
+            deadline.check()?;
             let sample = mp4::Mp4Sample {
                 start_time: audio_start,
                 duration: frame.duration,
@@ -447,6 +471,7 @@ pub(crate) fn save_mp4_streamed(
             .map_err(|e| PreviewError::render(format!("mp4 flush failed: {e}")))?;
         drop(writer);
         mux::make_mp4_faststart(tmp_path)?;
+        deadline.check()?;
 
         Ok(encoder)
     })?;
@@ -461,6 +486,47 @@ pub(crate) fn save_mp4_streamed(
     });
 
     Ok(())
+}
+
+struct JoinedAudioTask {
+    handle: Option<std::thread::JoinHandle<Result<audio::EncodedAudio>>>,
+    deadline: RequestDeadline,
+}
+
+impl JoinedAudioTask {
+    fn new(
+        handle: std::thread::JoinHandle<Result<audio::EncodedAudio>>,
+        deadline: RequestDeadline,
+    ) -> Self {
+        Self {
+            handle: Some(handle),
+            deadline,
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.handle
+            .as_ref()
+            .is_none_or(|handle| handle.is_finished())
+    }
+
+    fn join(&mut self) -> Result<audio::EncodedAudio> {
+        self.handle
+            .take()
+            .expect("audio task joined more than once")
+            .join()
+            .map_err(|_| PreviewError::render("audio encoding worker panicked"))?
+    }
+}
+
+impl Drop for JoinedAudioTask {
+    fn drop(&mut self) {
+        let Some(handle) = self.handle.take() else {
+            return;
+        };
+        self.deadline.cancel();
+        let _ = handle.join();
+    }
 }
 
 fn sample_freq_index(sample_rate: u32) -> Result<mp4::SampleFreqIndex> {
@@ -607,6 +673,9 @@ fn drop_stdout_silence<F: FnOnce()>(f: F) {
 mod tests {
     use super::*;
     use crate::core::models::{HitObjects, KvSection};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
 
     fn beatmap_with_preview(preview_time: Option<&str>, lead_in: Option<&str>) -> Beatmap {
         let mut general = KvSection::default();
@@ -684,5 +753,26 @@ mod tests {
             format_progress_label(time_axis.to_display(92_500), total_ms),
             "1:20/1:30"
         );
+    }
+
+    #[test]
+    fn dropping_audio_task_cancels_and_joins_worker() {
+        let deadline = RequestDeadline::new(Instant::now(), "mp4", Duration::from_secs(300));
+        let worker_deadline = deadline.clone();
+        let finished = Arc::new(AtomicBool::new(false));
+        let worker_finished = finished.clone();
+        let task = JoinedAudioTask::new(
+            std::thread::spawn(move || loop {
+                if let Err(error) = worker_deadline.check() {
+                    worker_finished.store(true, Ordering::Relaxed);
+                    return Err(error);
+                }
+                std::thread::yield_now();
+            }),
+            deadline,
+        );
+
+        drop(task);
+        assert!(finished.load(Ordering::Relaxed));
     }
 }

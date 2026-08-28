@@ -202,6 +202,19 @@ pub(crate) fn with_atomic_output<T>(
     }
 }
 
+pub(crate) fn with_atomic_output_deadline<T>(
+    output_path: &Path,
+    tmp_suffix: &str,
+    deadline: &crate::core::timeout::RequestDeadline,
+    write: impl FnOnce(&Path) -> Result<T>,
+) -> Result<T> {
+    with_atomic_output(output_path, tmp_suffix, |tmp_path| {
+        let value = write(tmp_path)?;
+        deadline.check()?;
+        Ok(value)
+    })
+}
+
 // ── output completeness validation ──
 
 /// Return `true` when an existing output file looks structurally complete for
@@ -291,6 +304,8 @@ fn png_bytes_complete(data: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::timeout::RequestDeadline;
+    use std::time::{Duration, Instant};
 
     fn test_dir() -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -425,6 +440,27 @@ mod tests {
         std::fs::write(&final_path, b"old-cache").unwrap();
         let result = with_atomic_output(&final_path, "gif.tmp", |_tmp| -> Result<()> {
             Err(PreviewError::render("boom"))
+        });
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&final_path).unwrap(), b"old-cache");
+        assert!(!tmp.exists());
+        let _ = std::fs::remove_file(&final_path);
+    }
+
+    #[test]
+    fn atomic_output_timeout_keeps_existing_final_and_cleans_temp() {
+        let dir = test_dir();
+        let final_path = unique_path(&dir, "timeout.gif");
+        let tmp = tmp_for(&final_path, "gif.tmp");
+        std::fs::write(&final_path, b"old-cache").unwrap();
+        let deadline = RequestDeadline::new(
+            Instant::now() - Duration::from_secs(2),
+            "gif",
+            Duration::from_secs(1),
+        );
+        let result = with_atomic_output_deadline(&final_path, "gif.tmp", &deadline, |tmp_path| {
+            std::fs::write(tmp_path, b"new-output")
+                .map_err(|error| PreviewError::render(error.to_string()))
         });
         assert!(result.is_err());
         assert_eq!(std::fs::read(&final_path).unwrap(), b"old-cache");

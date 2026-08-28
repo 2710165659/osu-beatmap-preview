@@ -2,13 +2,14 @@ use crate::common::time_selection::{GifRenderOptions, TimeAxis};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, HitObjects};
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::core::validate::{self, TimePoint, ValidateContext};
 use crate::log::{self, CacheKind, SummaryRecord};
 use crate::pipeline::cache;
 use crate::render::video::audio::AudioSourceJob;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub fn generate_preview(
     bid: &str,
@@ -19,8 +20,9 @@ pub fn generate_preview(
     duration_time: Option<f64>,
     no_cache: bool,
 ) -> Result<Value> {
-    log::set_bid(bid);
     let started = Instant::now();
+    log::set_bid(bid);
+    let deadline = initial_deadline(started, fmt, convert);
     let mut rec = SummaryRecord {
         bid: bid.to_string(),
         fmt: fmt.map(str::to_string),
@@ -39,6 +41,8 @@ pub fn generate_preview(
         time_points,
         duration_time,
         no_cache,
+        started,
+        deadline,
         &mut rec,
     ) {
         Ok(value) => {
@@ -69,8 +73,11 @@ fn generate_preview_inner(
     time_points: Vec<TimePoint>,
     duration_time: Option<f64>,
     no_cache: bool,
+    request_started: Instant,
+    mut deadline: RequestDeadline,
     rec: &mut SummaryRecord,
 ) -> Result<Value> {
+    deadline.check()?;
     let runtime_config = crate::config::current();
     let cache_root = crate::config::resolve_path(runtime_config.paths.CACHE_DIR.as_str());
     let output_root = crate::config::output_directory().map_err(PreviewError::new)?;
@@ -80,7 +87,9 @@ fn generate_preview_inner(
         bid,
         &cache_root.join("osu-download-cache"),
         no_cache,
+        &deadline,
     )?;
+    deadline.check()?;
     rec.download_osu_ms = Some(t0.elapsed().as_secs_f64() * 1000.0);
     rec.osu_bytes = beatmap_path.metadata().ok().map(|meta| meta.len());
 
@@ -89,7 +98,7 @@ fn generate_preview_inner(
     rec.parse_ms = Some(t1.elapsed().as_secs_f64() * 1000.0);
 
     if fmt == Some("mp4") && beatmap.beatmap_set_id().is_none() {
-        let set_id = crate::pipeline::downloader::resolve_beatmap_set_id(bid)?;
+        let set_id = crate::pipeline::downloader::resolve_beatmap_set_id(bid, &deadline)?;
         beatmap.metadata.insert("BeatmapSetID", set_id.to_string());
     }
     fill_beatmap_info(&beatmap, rec);
@@ -116,6 +125,8 @@ fn generate_preview_inner(
             }
         }
     };
+    deadline = deadline_for_format(request_started, &fmt);
+    deadline.check()?;
     rec.fmt = Some(fmt.clone());
 
     let ctx = ValidateContext {
@@ -124,6 +135,7 @@ fn generate_preview_inner(
         target_mode,
     };
     let mods = validate::validate_with_context(&ctx, &time_points, duration_time, mods)?;
+    deadline.check()?;
     rec.mods = mods.as_ref().map(|m| m.tokens.join(","));
 
     let mode_name = match target_mode {
@@ -156,6 +168,7 @@ fn generate_preview_inner(
     // ── image cache check ──
     let cached = cache::output_cache_hit(&output_path, &beatmap_path, &fmt, target_mode, no_cache);
     if let Some(cached_path) = cached {
+        deadline.check()?;
         rec.status = "cache-hit".to_string();
         log::record_cache(CacheKind::Output, "hit");
         if let Ok(meta) = cached_path.metadata() {
@@ -199,6 +212,7 @@ fn generate_preview_inner(
             beatmap.clone(),
             cache_root.join("osz-download-cache"),
             no_cache,
+            deadline.clone(),
         )?)
     } else {
         None
@@ -225,6 +239,7 @@ fn generate_preview_inner(
         duration_time,
         audio_job,
         bid,
+        &deadline,
     ) {
         Ok(path) => path,
         // Atomic writes mean a failed render never touches the final path, so
@@ -232,6 +247,7 @@ fn generate_preview_inner(
         // any) was already cleaned up by the writer.
         Err(error) => return Err(error),
     };
+    deadline.check()?;
     rec.render_ms = Some(t_render.elapsed().as_secs_f64() * 1000.0);
     if let Ok(meta) = preview_path.metadata() {
         log::record_output_bytes(meta.len());
@@ -340,6 +356,7 @@ trait ModeRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf>;
 
     /// Render a static PNG to `output_path`. Returns the output path.
@@ -350,6 +367,7 @@ trait ModeRenderer {
         output_path: &Path,
         _time_axis: TimeAxis,
         _times_ms: Option<Vec<i64>>,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf>;
 
     fn render_video(
@@ -361,6 +379,7 @@ trait ModeRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         _time_axis: TimeAxis,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf>;
 
     /// Optionally convert the beatmap before rendering. Default: clone (no conversion).
@@ -397,8 +416,15 @@ impl ModeRenderer for StandardRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::standard::render_standard_gif(beatmap, mods, options, output_path)?;
+        crate::render::standard::render_standard_gif(
+            beatmap,
+            mods,
+            options,
+            output_path,
+            deadline,
+        )?;
         Ok(output_path.to_path_buf())
     }
 
@@ -409,10 +435,12 @@ impl ModeRenderer for StandardRenderer {
         output_path: &Path,
         time_axis: TimeAxis,
         times_ms: Option<Vec<i64>>,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        let image =
-            crate::render::standard::render_standard_png(beatmap, mods, time_axis, times_ms)?;
-        crate::render::composer::save_png(&image, output_path)?;
+        let image = crate::render::standard::render_standard_png(
+            beatmap, mods, time_axis, times_ms, deadline,
+        )?;
+        crate::render::composer::save_png(&image, output_path, deadline)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -425,6 +453,7 @@ impl ModeRenderer for StandardRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
         crate::render::standard::render_standard_video(
             beatmap,
@@ -434,6 +463,7 @@ impl ModeRenderer for StandardRenderer {
             output_path,
             audio_job,
             time_axis,
+            deadline,
         )?;
         Ok(output_path.to_path_buf())
     }
@@ -457,8 +487,9 @@ impl ModeRenderer for TaikoRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::taiko::render_taiko_gif(beatmap, mods, options, output_path)?;
+        crate::render::taiko::render_taiko_gif(beatmap, mods, options, output_path, deadline)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -469,8 +500,9 @@ impl ModeRenderer for TaikoRenderer {
         output_path: &Path,
         time_axis: TimeAxis,
         _times_ms: Option<Vec<i64>>,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::taiko::render_taiko_grid(beatmap, output_path, mods, time_axis)
+        crate::render::taiko::render_taiko_grid(beatmap, output_path, mods, time_axis, deadline)
     }
 
     fn render_video(
@@ -482,6 +514,7 @@ impl ModeRenderer for TaikoRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
         crate::render::taiko::render_taiko_video(
             beatmap,
@@ -491,6 +524,7 @@ impl ModeRenderer for TaikoRenderer {
             output_path,
             audio_job,
             time_axis,
+            deadline,
         )?;
         Ok(output_path.to_path_buf())
     }
@@ -514,8 +548,9 @@ impl ModeRenderer for CatchRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::catch::render_catch_gif(beatmap, mods, options, output_path)?;
+        crate::render::catch::render_catch_gif(beatmap, mods, options, output_path, deadline)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -526,8 +561,9 @@ impl ModeRenderer for CatchRenderer {
         output_path: &Path,
         time_axis: TimeAxis,
         _times_ms: Option<Vec<i64>>,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::catch::render_catch_grid(beatmap, output_path, mods, time_axis)
+        crate::render::catch::render_catch_grid(beatmap, output_path, mods, time_axis, deadline)
     }
 
     fn render_video(
@@ -539,6 +575,7 @@ impl ModeRenderer for CatchRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
         crate::render::catch::render_catch_video(
             beatmap,
@@ -548,6 +585,7 @@ impl ModeRenderer for CatchRenderer {
             output_path,
             audio_job,
             time_axis,
+            deadline,
         )?;
         Ok(output_path.to_path_buf())
     }
@@ -571,8 +609,9 @@ impl ModeRenderer for ManiaRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::mania::render_mania_gif(beatmap, mods, options, output_path)?;
+        crate::render::mania::render_mania_gif(beatmap, mods, options, output_path, deadline)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -583,8 +622,9 @@ impl ModeRenderer for ManiaRenderer {
         output_path: &Path,
         time_axis: TimeAxis,
         _times_ms: Option<Vec<i64>>,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::mania::render_mania_grid(beatmap, output_path, mods, time_axis)
+        crate::render::mania::render_mania_grid(beatmap, output_path, mods, time_axis, deadline)
     }
 
     fn render_video(
@@ -596,6 +636,7 @@ impl ModeRenderer for ManiaRenderer {
         output_path: &Path,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
         crate::render::mania::render_mania_video(
             beatmap,
@@ -605,6 +646,7 @@ impl ModeRenderer for ManiaRenderer {
             output_path,
             audio_job,
             time_axis,
+            deadline,
         )?;
         Ok(output_path.to_path_buf())
     }
@@ -698,7 +740,9 @@ fn render_preview_for_mode(
     duration_time: Option<f64>,
     audio_job: Option<AudioSourceJob>,
     bid: &str,
+    deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
+    deadline.check()?;
     let mods_ref = mods.as_ref();
 
     renderer.validate(&beatmap)?;
@@ -714,6 +758,7 @@ fn render_preview_for_mode(
     }
     let t_convert = Instant::now();
     let beatmap = renderer.convert(&beatmap, target_mode, mods_ref)?;
+    deadline.check()?;
     if converting {
         let ms = t_convert.elapsed().as_secs_f64() * 1000.0;
         log::event(
@@ -733,7 +778,14 @@ fn render_preview_for_mode(
             times_ms: absolute_time_points.clone(),
             time_axis,
         };
-        renderer.render_gif(&beatmap, mods_ref, gif_options, time_axis, output_path)
+        renderer.render_gif(
+            &beatmap,
+            mods_ref,
+            gif_options,
+            time_axis,
+            output_path,
+            deadline,
+        )
     } else if fmt == "mp4" {
         let audio_job =
             audio_job.ok_or_else(|| PreviewError::render("MP4 audio job was not started"))?;
@@ -745,6 +797,7 @@ fn render_preview_for_mode(
             output_path,
             audio_job,
             time_axis,
+            deadline,
         )
     } else {
         renderer.render_png(
@@ -753,8 +806,50 @@ fn render_preview_for_mode(
             output_path,
             time_axis,
             absolute_time_points,
+            deadline,
         )
     }
+}
+
+fn timeout_for_format(format: &str) -> Duration {
+    let timeouts = &crate::config::current().timeouts.render;
+    match format {
+        "png" => timeouts.PNG_TIMEOUT,
+        "gif" => timeouts.GIF_TIMEOUT,
+        "mp4" => timeouts.MP4_TIMEOUT,
+        _ => timeouts.PNG_TIMEOUT.max(timeouts.GIF_TIMEOUT),
+    }
+}
+
+fn deadline_for_format(started: Instant, format: &str) -> RequestDeadline {
+    RequestDeadline::new(started, format, timeout_for_format(format))
+}
+
+fn initial_deadline(
+    started: Instant,
+    format: Option<&str>,
+    convert: Option<&str>,
+) -> RequestDeadline {
+    if let Some(format) = format {
+        return deadline_for_format(started, format);
+    }
+    if let Some(convert) = convert {
+        let format = if matches!(
+            convert.trim().to_ascii_lowercase().as_str(),
+            "standard" | "std"
+        ) {
+            "gif"
+        } else {
+            "png"
+        };
+        return deadline_for_format(started, format);
+    }
+    let timeout = crate::config::current()
+        .timeouts
+        .render
+        .PNG_TIMEOUT
+        .max(crate::config::current().timeouts.render.GIF_TIMEOUT);
+    RequestDeadline::new(started, "PNG/GIF", timeout)
 }
 
 fn format_time_point(point: &TimePoint) -> String {
@@ -832,5 +927,30 @@ mod tests {
 
         assert_eq!((first, last), (12_500, 26_000));
         assert_eq!(axis.to_display(first), 0);
+    }
+
+    #[test]
+    fn output_formats_select_their_own_timeout() {
+        assert_eq!(timeout_for_format("png").as_secs(), 300);
+        assert_eq!(timeout_for_format("gif").as_secs(), 300);
+        assert_eq!(timeout_for_format("mp4").as_secs(), 300);
+    }
+
+    #[test]
+    fn implicit_format_uses_png_gif_provisional_deadline() {
+        let deadline = initial_deadline(Instant::now(), None, None);
+        assert_eq!(deadline.format(), "PNG/GIF");
+        assert_eq!(
+            deadline.configured_timeout(),
+            timeout_for_format("png").max(timeout_for_format("gif"))
+        );
+    }
+
+    #[test]
+    fn conversion_selects_existing_default_output_format() {
+        let standard = initial_deadline(Instant::now(), None, Some("standard"));
+        let mania = initial_deadline(Instant::now(), None, Some("mania"));
+        assert_eq!(standard.format(), "GIF");
+        assert_eq!(mania.format(), "PNG");
     }
 }

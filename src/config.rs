@@ -85,6 +85,7 @@ fn load_layers(
         let overlay = parse_argument(value)?;
         merge_values(&mut merged, &overlay, "")?;
     }
+    validate_positive_timeouts(&merged)?;
     let format = merged
         .pointer("/logging/timestamp/LOCAL_FORMAT")
         .and_then(Value::as_str)
@@ -95,6 +96,22 @@ fn load_layers(
         .map_err(|error| format!("invalid merged configuration: {error}"))?;
     let variant = config_variant(&defaults, &merged)?;
     Ok(ConfigSnapshot { runtime, variant })
+}
+
+fn validate_positive_timeouts(config: &Value) -> Result<(), String> {
+    for name in ["PNG_TIMEOUT", "GIF_TIMEOUT", "MP4_TIMEOUT"] {
+        let pointer = format!("/timeouts/render/{name}");
+        if config
+            .pointer(&pointer)
+            .and_then(Value::as_u64)
+            .is_none_or(|seconds| seconds == 0)
+        {
+            return Err(format!(
+                "configuration field 'timeouts.render.{name}' must be a positive integer number of seconds"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Return the output cache directory for the active effective configuration.
@@ -378,6 +395,20 @@ where
     Ok(std::time::Duration::from_secs(seconds))
 }
 
+pub(crate) fn deserialize_positive_duration_secs<'de, D>(
+    deserializer: D,
+) -> Result<std::time::Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let seconds = value
+        .as_u64()
+        .filter(|seconds| *seconds > 0)
+        .ok_or_else(|| D::Error::custom("expected a positive integer number of seconds"))?;
+    Ok(std::time::Duration::from_secs(seconds))
+}
+
 /// Expand portable directory placeholders from the embedded configuration.
 /// `%TEMP%` always uses the platform's temporary directory; other `%NAME%`
 /// placeholders are resolved from the process environment when available.
@@ -453,6 +484,41 @@ mod tests {
             .expect("valid overlay");
         assert_eq!(config.layout.standard.gif.ROW_COUNT, 1);
         assert_eq!(config.layout.standard.gif.IMAGES_PER_ROW, 2);
+    }
+
+    #[test]
+    fn render_timeouts_default_to_five_minutes() {
+        let config = load_snapshot(None).expect("valid defaults");
+        assert_eq!(config.timeouts.render.PNG_TIMEOUT.as_secs(), 300);
+        assert_eq!(config.timeouts.render.GIF_TIMEOUT.as_secs(), 300);
+        assert_eq!(config.timeouts.render.MP4_TIMEOUT.as_secs(), 300);
+    }
+
+    #[test]
+    fn render_timeout_overlays_accept_positive_integer_seconds() {
+        let config = load_snapshot(Some(
+            r#"{"timeouts":{"render":{"PNG_TIMEOUT":"10","GIF_TIMEOUT":20,"MP4_TIMEOUT":30}}}"#,
+        ))
+        .expect("valid timeout overlay");
+        assert_eq!(config.timeouts.render.PNG_TIMEOUT.as_secs(), 10);
+        assert_eq!(config.timeouts.render.GIF_TIMEOUT.as_secs(), 20);
+        assert_eq!(config.timeouts.render.MP4_TIMEOUT.as_secs(), 30);
+    }
+
+    #[test]
+    fn render_timeouts_reject_non_positive_or_fractional_values_with_field_path() {
+        for (name, value) in [
+            ("PNG_TIMEOUT", "0"),
+            ("GIF_TIMEOUT", "-1"),
+            ("MP4_TIMEOUT", "1.5"),
+        ] {
+            let source = format!("{{\"timeouts\":{{\"render\":{{\"{name}\":{value}}}}}}}");
+            let error = load_snapshot(Some(&source)).expect_err("must reject invalid timeout");
+            assert!(
+                error.contains(&format!("timeouts.render.{name}")),
+                "{error}"
+            );
+        }
     }
 
     #[test]
