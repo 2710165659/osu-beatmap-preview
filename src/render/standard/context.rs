@@ -67,9 +67,9 @@ pub(crate) struct RenderCache {
 pub(crate) struct Skin {
     /// 0-9 数字位图（程序化生成，已裁剪到字形边界）。
     pub(crate) digit_crops: Vec<&'static Img>,
-    /// combo 数字重叠量（来自 skin.ini [Fonts] HitCircleOverlap）。
+    /// combo 数字重叠量（来自 skin 配置 HIT_CIRCLE_OVERLAP）。
     pub(crate) hitcircle_overlap: i64,
-    /// combo 颜色（谱面 [Colours] 优先，否则用 skin.ini 的配色）。
+    /// combo 颜色（谱面 [Colours] 优先，否则用 skin 配置的配色）。
     pub(crate) combo_colors: Vec<[u8; 3]>,
 }
 
@@ -286,15 +286,15 @@ pub(crate) fn build_combo_info(
     combo_info
 }
 
-/// 加载 std 皮肤：数字位图程序化生成，颜色与重叠量来自统一 skin.ini。
+/// 加载 std 皮肤：数字位图程序化生成，颜色与重叠量来自统一 skin 配置。
 pub(crate) fn load_skin(beatmap: &Beatmap) -> Skin {
-    let skin_config = crate::render::skin::skin();
+    let skin_config = &crate::config::current().skin;
     let digit_crops = (0..10).map(super::digits::digit_image).collect();
-    // 谱面自带 [Colours] 时优先使用；否则用 skin.ini 配色；都没有则回退 Argon 默认
+    // 谱面自带 [Colours] 时优先使用；否则用 skin 配色；都没有则回退 Argon 默认
     let combo_colors = if !beatmap.combo_colors.is_empty() {
         beatmap.combo_colors.clone()
-    } else if !skin_config.combo_colors.is_empty() {
-        skin_config.combo_colors.clone()
+    } else if !skin_config.COMBO_COLORS.is_empty() {
+        skin_config.COMBO_COLORS.clone()
     } else {
         crate::config::current()
             .layout
@@ -305,7 +305,7 @@ pub(crate) fn load_skin(beatmap: &Beatmap) -> Skin {
     };
     Skin {
         digit_crops,
-        hitcircle_overlap: skin_config.hitcircle_overlap,
+        hitcircle_overlap: skin_config.HIT_CIRCLE_OVERLAP,
         combo_colors,
     }
 }

@@ -147,8 +147,8 @@ pub(crate) fn build_catch_render_objects(
     let mut last_position: Option<f64> = None;
     let mut last_start_time = 0.0f64;
 
-    // 谱面自带 [Colours] 优先；其次统一 skin.ini；最后 lazer 默认配色
-    let skin_combo_colors = &crate::render::skin::skin().combo_colors;
+    // 谱面自带 [Colours] 优先；其次统一 skin 配置；最后 lazer 默认配色
+    let skin_combo_colors = &crate::config::current().skin.COMBO_COLORS;
     let combo_colors: &[[u8; 3]] = if !beatmap.combo_colors.is_empty() {
         &beatmap.combo_colors
     } else if !skin_combo_colors.is_empty() {

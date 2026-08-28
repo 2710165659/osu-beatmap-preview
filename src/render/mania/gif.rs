@@ -656,7 +656,7 @@ pub(crate) fn draw_gif_hit_object(
 
     let lane = (hit_object.lane.max(0) as usize).min(layout.column_widths.len() - 1);
     let lane_color = palette[lane.min(palette.len() - 1)];
-    // LN body keeps the PNG look (darkened lane color), not skin.ini ColourHold.
+    // LN body keeps the PNG look (darkened lane color), independent of lane config.
     let hold_color = hold_colors[lane.min(hold_colors.len() - 1)];
     let lane_left = seg_left
         + crate::config::current().layout.mania.gif.LEFT_PANEL_WIDTH

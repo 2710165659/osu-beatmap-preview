@@ -16,6 +16,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (module, sections) in modules {
         let module = module.as_str().ok_or("module name must be a string")?;
         let sections = sections.as_mapping().ok_or("module must be a mapping")?;
+        // Skin configuration is intentionally exposed only through the typed
+        // runtime snapshot below. Its nested Mania key-count blocks cannot be
+        // represented by the legacy constant modules.
+        if module == "skin" {
+            continue;
+        }
         generated.push_str(&format!("#[allow(dead_code)]\npub mod {module} {{\n"));
         if module == "paths" {
             generate_entries_from_mapping(&mut generated, sections, &[module])?;
@@ -116,6 +122,14 @@ fn generate_runtime_struct(
 }
 
 fn runtime_field_type(path: &[&str], value: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    if path.first() == Some(&"skin")
+        && matches!(
+            path.last(),
+            Some(&"COLUMN_WIDTHS") | Some(&"COLUMN_LINE_WIDTHS")
+        )
+    {
+        return Ok("Vec<i64>".to_string());
+    }
     if let Some(kind) = special_kind(&path[..path.len() - 1], path[path.len() - 1]) {
         if matches!(
             kind,

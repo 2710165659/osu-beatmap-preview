@@ -538,6 +538,59 @@ mod tests {
     }
 
     #[test]
+    fn skin_defaults_cover_all_mania_keycounts() {
+        let config = load_snapshot(None).expect("valid defaults");
+        macro_rules! assert_block {
+            ($block:expr, $keys:expr, $width:expr, $line_count:expr, $hit_position:expr) => {{
+                assert_eq!($block.COLUMN_WIDTHS, vec![$width; $keys]);
+                assert_eq!($block.COLUMN_LINE_WIDTHS.len(), $line_count);
+                assert_eq!($block.COLUMN_COLORS.len(), $keys);
+                assert_eq!($block.HIT_POSITION, $hit_position);
+            }};
+        }
+        assert_block!(config.skin.MANIA.KEYS_1, 1, 68, 2, 473);
+        assert_block!(config.skin.MANIA.KEYS_2, 2, 68, 3, 473);
+        assert_block!(config.skin.MANIA.KEYS_3, 3, 68, 4, 473);
+        assert_block!(config.skin.MANIA.KEYS_4, 4, 68, 5, 473);
+        assert_block!(config.skin.MANIA.KEYS_5, 5, 60, 6, 460);
+        assert_block!(config.skin.MANIA.KEYS_6, 6, 55, 7, 460);
+        assert_block!(config.skin.MANIA.KEYS_7, 7, 53, 8, 460);
+        assert_block!(config.skin.MANIA.KEYS_8, 8, 53, 9, 460);
+        assert_block!(config.skin.MANIA.KEYS_9, 9, 53, 10, 460);
+        assert_block!(config.skin.MANIA.KEYS_10, 10, 53, 11, 460);
+        assert_block!(config.skin.MANIA.KEYS_11, 11, 53, 12, 460);
+        assert_block!(config.skin.MANIA.KEYS_12, 12, 53, 13, 460);
+        assert_block!(config.skin.MANIA.KEYS_13, 13, 53, 14, 460);
+        assert_block!(config.skin.MANIA.KEYS_14, 14, 53, 15, 460);
+        assert_block!(config.skin.MANIA.KEYS_15, 15, 53, 16, 460);
+        assert_block!(config.skin.MANIA.KEYS_16, 16, 53, 17, 460);
+        assert_block!(config.skin.MANIA.KEYS_17, 17, 48, 18, 460);
+        assert_block!(config.skin.MANIA.KEYS_18, 18, 48, 19, 460);
+        assert_eq!(config.skin.COMBO_COLORS.len(), 3);
+        assert_eq!(config.skin.HIT_CIRCLE_OVERLAP, 10);
+        assert_eq!(config.skin.HYPER_DASH, [255, 82, 139]);
+    }
+
+    #[test]
+    fn skin_overlay_accepts_mania_integer_arrays() {
+        let config = load_snapshot(Some(
+            r#"{
+                "skin": {
+                    "MANIA": {
+                        "KEYS_3": {
+                            "COLUMN_WIDTHS": ["70", "71", "72"],
+                            "HIT_POSITION": 450
+                        }
+                    }
+                }
+            }"#,
+        ))
+        .expect("valid skin overlay");
+        assert_eq!(config.skin.MANIA.KEYS_3.COLUMN_WIDTHS, vec![70, 71, 72]);
+        assert_eq!(config.skin.MANIA.KEYS_3.HIT_POSITION, 450);
+    }
+
+    #[test]
     fn boolean_strings_are_converted() {
         let config = load_snapshot(Some(
             r#"{"layout":{"standard":{"png":{"SNAKING_IN_SLIDERS":"false"}}}}"#,

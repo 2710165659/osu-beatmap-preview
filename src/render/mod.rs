@@ -4,7 +4,6 @@ pub(crate) mod canvas;
 pub(crate) mod catch;
 pub(crate) mod composer;
 pub(crate) mod mania;
-pub(crate) mod skin;
 pub(crate) mod standard;
 pub(crate) mod taiko;
 pub(crate) mod text;

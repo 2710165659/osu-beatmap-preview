@@ -138,7 +138,7 @@ pub(crate) fn render_slider_body_layer(
     .clamp(0, 255) as u8;
     // 边框颜色：使用 combo 颜色（与 C# Argon 的 AccentColour 一致）
     // 轨道内部颜色：使用 Darken(4)（与 C# Argon 的 AccentColour.Darken(4) 一致）
-    // 注意：skin.ini 的 SliderBorder / SliderTrackOverride 会被忽略，以匹配 Argon 风格
+    // 注意：SliderBorder / SliderTrackOverride 不在当前 skin 配置中，以匹配 Argon 风格
     let border_color = color;
     let inner_color = darken(color, 4.0);
 

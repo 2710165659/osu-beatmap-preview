@@ -223,9 +223,9 @@ fn cached_blob_sprite(
     })
 }
 
-/// 超冲提示颜色（skin.ini [CatchTheBeat] HyperDash）。
+/// 超冲提示颜色（skin 配置 HYPER_DASH）。
 fn hyper_dash_color() -> [u8; 3] {
-    crate::render::skin::skin().hyper_dash
+    crate::config::current().skin.HYPER_DASH
 }
 
 // ─── 对象绘制 ───
