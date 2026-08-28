@@ -4,12 +4,14 @@
 //! from `CONFIG_DIR` and a final command-line overlay before the immutable
 //! process-wide snapshot is initialized.
 
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use serde::de::Error as _;
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
 pub fn default_config_yaml() -> &'static str {
@@ -18,39 +20,55 @@ pub fn default_config_yaml() -> &'static str {
 
 include!(concat!(env!("OUT_DIR"), "/config_constants.rs"));
 
-static RUNTIME_CONFIG: OnceLock<RuntimeConfig> = OnceLock::new();
+static RUNTIME_CONFIG: OnceLock<ConfigSnapshot> = OnceLock::new();
+
+#[derive(Debug)]
+struct ConfigSnapshot {
+    runtime: RuntimeConfig,
+    variant: Option<ConfigVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ConfigVariant {
+    hash: String,
+    difference: Value,
+}
 
 /// Return the active configuration. Library callers that do not initialize
 /// the CLI layer receive the embedded defaults.
 pub(crate) fn current() -> &'static RuntimeConfig {
-    RUNTIME_CONFIG.get_or_init(|| {
-        load_embedded_snapshot()
-            .unwrap_or_else(|error| panic!("invalid embedded configuration: {error}"))
-    })
+    &RUNTIME_CONFIG
+        .get_or_init(|| {
+            load_embedded_snapshot()
+                .unwrap_or_else(|error| panic!("invalid embedded configuration: {error}"))
+        })
+        .runtime
 }
 
 /// Initialize the process-wide configuration for the command-line binary.
 #[allow(dead_code)]
 pub(crate) fn initialize_for_cli(cli_value: Option<&str>) -> Result<(), String> {
-    let snapshot = load_snapshot(cli_value)?;
+    let snapshot = load_layers(cli_value, true)?;
     RUNTIME_CONFIG
         .set(snapshot)
         .map_err(|_| "configuration has already been initialized".to_string())
 }
 
+#[cfg(test)]
 fn load_snapshot(cli_value: Option<&str>) -> Result<RuntimeConfig, String> {
-    load_layers(cli_value, true)
+    load_layers(cli_value, true).map(|snapshot| snapshot.runtime)
 }
 
-fn load_embedded_snapshot() -> Result<RuntimeConfig, String> {
+fn load_embedded_snapshot() -> Result<ConfigSnapshot, String> {
     load_layers(None, false)
 }
 
 fn load_layers(
     cli_value: Option<&str>,
     include_config_directory: bool,
-) -> Result<RuntimeConfig, String> {
-    let mut merged = parse_document(default_config_yaml(), "embedded defaults")?;
+) -> Result<ConfigSnapshot, String> {
+    let defaults = parse_document(default_config_yaml(), "embedded defaults")?;
+    let mut merged = defaults.clone();
     let default_config_dir = merged
         .get("paths")
         .and_then(Value::as_object)
@@ -73,7 +91,138 @@ fn load_layers(
         .ok_or_else(|| "logging.timestamp.LOCAL_FORMAT must be a string".to_string())?;
     time::format_description::parse_owned::<2>(format)
         .map_err(|error| format!("invalid logging.timestamp.LOCAL_FORMAT: {error}"))?;
-    serde_json::from_value(merged).map_err(|error| format!("invalid merged configuration: {error}"))
+    let runtime = serde_json::from_value(merged.clone())
+        .map_err(|error| format!("invalid merged configuration: {error}"))?;
+    let variant = config_variant(&defaults, &merged)?;
+    Ok(ConfigSnapshot { runtime, variant })
+}
+
+/// Return the output cache directory for the active effective configuration.
+/// Default-equivalent configurations stay directly under OUTPUT_DIR.
+pub(crate) fn output_directory() -> Result<PathBuf, String> {
+    let snapshot = RUNTIME_CONFIG.get_or_init(|| {
+        load_embedded_snapshot()
+            .unwrap_or_else(|error| panic!("invalid embedded configuration: {error}"))
+    });
+    let root = resolve_path(snapshot.runtime.paths.OUTPUT_DIR.as_str());
+    let Some(variant) = &snapshot.variant else {
+        return Ok(root);
+    };
+
+    let directory = root.join(&variant.hash);
+    std::fs::create_dir_all(&directory).map_err(|error| {
+        format!(
+            "failed to create configuration output directory '{}': {error}",
+            directory.display()
+        )
+    })?;
+    write_variant_file(&directory, variant)?;
+    Ok(directory)
+}
+
+fn config_variant(defaults: &Value, active: &Value) -> Result<Option<ConfigVariant>, String> {
+    let Some(difference) = difference(defaults, active) else {
+        return Ok(None);
+    };
+    let canonical = canonical_json(&difference)?;
+    let digest = Sha256::digest(canonical.as_bytes());
+    let hex = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(Some(ConfigVariant {
+        hash: hex[hex.len() - 6..].to_string(),
+        difference,
+    }))
+}
+
+fn difference(defaults: &Value, active: &Value) -> Option<Value> {
+    match (defaults, active) {
+        (Value::Object(defaults), Value::Object(active)) => {
+            let mut result = serde_json::Map::new();
+            for (key, active_value) in active {
+                match defaults.get(key) {
+                    Some(default_value) => {
+                        if let Some(value) = difference(default_value, active_value) {
+                            result.insert(key.clone(), value);
+                        }
+                    }
+                    None => {
+                        result.insert(key.clone(), active_value.clone());
+                    }
+                }
+            }
+            (!result.is_empty()).then_some(Value::Object(result))
+        }
+        _ if defaults == active => None,
+        _ => Some(active.clone()),
+    }
+}
+
+fn canonical_json(value: &Value) -> Result<String, String> {
+    fn sort(value: &Value) -> Value {
+        match value {
+            Value::Object(object) => Value::Object(
+                object
+                    .iter()
+                    .collect::<BTreeMap<_, _>>()
+                    .into_iter()
+                    .map(|(key, value)| (key.clone(), sort(value)))
+                    .collect(),
+            ),
+            Value::Array(values) => Value::Array(values.iter().map(sort).collect()),
+            _ => value.clone(),
+        }
+    }
+
+    serde_json::to_string(&sort(value))
+        .map_err(|error| format!("failed to serialize canonical configuration: {error}"))
+}
+
+fn write_variant_file(directory: &Path, variant: &ConfigVariant) -> Result<(), String> {
+    let path = directory.join("config.yml");
+    if path.exists() {
+        let existing = read_document_file(&path)?;
+        if existing != variant.difference {
+            return Err(format!(
+                "configuration hash collision at '{}': existing config.yml has different values",
+                directory.display()
+            ));
+        }
+        return Ok(());
+    }
+
+    let yaml = serde_yaml::to_string(&variant.difference)
+        .map_err(|error| format!("failed to serialize configuration variant: {error}"))?;
+    let temp = directory.join(format!("config.yml.{}.tmp", std::process::id()));
+    std::fs::write(&temp, yaml).map_err(|error| {
+        format!(
+            "failed to write configuration variant '{}': {error}",
+            temp.display()
+        )
+    })?;
+    match std::fs::rename(&temp, &path) {
+        Ok(()) => Ok(()),
+        Err(_error) if path.exists() => {
+            let _ = std::fs::remove_file(&temp);
+            let existing = read_document_file(&path)?;
+            if existing == variant.difference {
+                Ok(())
+            } else {
+                Err(format!(
+                    "configuration hash collision at '{}': existing config.yml has different values",
+                    directory.display()
+                ))
+            }
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(&temp);
+            Err(format!(
+                "failed to finalize configuration variant '{}': {error}",
+                path.display()
+            ))
+        }
+    }
 }
 
 fn parse_argument(value: &str) -> Result<Value, String> {
@@ -91,6 +240,9 @@ fn read_document_file(path: &std::path::Path) -> Result<Value, String> {
 }
 
 fn parse_document(source: &str, origin: &str) -> Result<Value, String> {
+    if source.trim().is_empty() {
+        return Ok(Value::Object(serde_json::Map::new()));
+    }
     let value = match serde_json::from_str::<Value>(source) {
         Ok(value) => value,
         Err(json_error) => {
@@ -177,6 +329,13 @@ fn coerce_scalar(value: &Value, expected: &Value, path: &str) -> Result<Value, S
             let number = text
                 .parse::<f64>()
                 .map_err(|_| format!("configuration field '{path}' must be a number"))?;
+            let number = serde_json::Number::from_f64(number)
+                .ok_or_else(|| format!("configuration field '{path}' must be finite"))?;
+            return Ok(Value::Number(number));
+        }
+    }
+    if expected.is_f64() {
+        if let Some(number) = value.as_f64() {
             let number = serde_json::Number::from_f64(number)
                 .ok_or_else(|| format!("configuration field '{path}' must be finite"))?;
             return Ok(Value::Number(number));
@@ -269,7 +428,18 @@ fn resolve_config_dir(template: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_snapshot, resolve_path};
+    use super::{
+        config_variant, load_snapshot, merge_values, parse_argument, parse_document, resolve_path,
+        write_variant_file,
+    };
+
+    fn variant(source: &str) -> Option<super::ConfigVariant> {
+        let defaults = parse_document(super::default_config_yaml(), "defaults").unwrap();
+        let mut active = defaults.clone();
+        let overlay = parse_document(source, "test config").unwrap();
+        merge_values(&mut active, &overlay, "").unwrap();
+        config_variant(&defaults, &active).unwrap()
+    }
 
     #[test]
     fn expands_temp_placeholder() {
@@ -332,5 +502,113 @@ mod tests {
         ))
         .expect_err("must reject invalid format");
         assert!(error.contains("LOCAL_FORMAT"));
+    }
+
+    #[test]
+    fn default_equivalent_inputs_have_no_variant() {
+        let explicit_defaults = r#"
+layout:
+  standard:
+    gif:
+      ROW_COUNT: 2
+      IMAGES_PER_ROW: 2
+      SHOW_TIME_LABEL: true
+      DURATION_MS: 5000
+"#;
+        let partial_defaults = r#"
+layout:
+  standard:
+    gif:
+      ROW_COUNT: 2
+      IMAGES_PER_ROW: 2
+"#;
+        assert!(variant(explicit_defaults).is_none());
+        assert!(variant("").is_none());
+        assert!(variant(partial_defaults).is_none());
+    }
+
+    #[test]
+    fn equivalent_json_and_yaml_have_same_hash_and_minimal_difference() {
+        let yaml = r#"
+layout:
+  standard:
+    gif:
+      ROW_COUNT: 1
+      IMAGES_PER_ROW: 2
+      SHOW_TIME_LABEL: false
+      DURATION_MS: 10000
+"#;
+        let json = r#"{"layout":{"standard":{"gif":{"ROW_COUNT":1,"SHOW_TIME_LABEL":false,"DURATION_MS":10000}}}}"#;
+        let yaml_variant = variant(yaml).unwrap();
+        let json_variant = variant(json).unwrap();
+        assert_eq!(yaml_variant, json_variant);
+        assert_eq!(yaml_variant.hash, "6bde85");
+        assert_eq!(
+            yaml_variant.difference,
+            serde_json::json!({
+                "layout": {
+                    "standard": {
+                        "gif": {
+                            "ROW_COUNT": 1,
+                            "SHOW_TIME_LABEL": false,
+                            "DURATION_MS": 10000
+                        }
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn file_input_has_same_variant_as_inline_document() {
+        let directory = std::env::temp_dir().join(format!(
+            "osu-preview-config-input-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("variant.yml");
+        let source = "layout:\n  standard:\n    gif:\n      ROW_COUNT: 1\n";
+        std::fs::write(&path, source).unwrap();
+
+        let defaults = parse_document(super::default_config_yaml(), "defaults").unwrap();
+        let mut from_file = defaults.clone();
+        merge_values(
+            &mut from_file,
+            &parse_argument(path.to_str().unwrap()).unwrap(),
+            "",
+        )
+        .unwrap();
+        let mut inline = defaults.clone();
+        merge_values(&mut inline, &parse_argument(source).unwrap(), "").unwrap();
+
+        assert_eq!(
+            config_variant(&defaults, &from_file).unwrap(),
+            config_variant(&defaults, &inline).unwrap()
+        );
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(directory);
+    }
+
+    #[test]
+    fn variant_file_contains_only_normalized_difference() {
+        let variant =
+            variant(r#"{"layout":{"standard":{"gif":{"ROW_COUNT":1,"IMAGES_PER_ROW":2}}}}"#)
+                .unwrap();
+        let directory = std::env::temp_dir().join(format!(
+            "osu-preview-config-output-test-{}-{}",
+            std::process::id(),
+            variant.hash
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+
+        write_variant_file(&directory, &variant).unwrap();
+        let written = parse_argument(directory.join("config.yml").to_str().unwrap()).unwrap();
+        assert_eq!(written, variant.difference);
+        assert_eq!(
+            written,
+            serde_json::json!({"layout": {"standard": {"gif": {"ROW_COUNT": 1}}}})
+        );
+        let _ = std::fs::remove_dir_all(directory);
     }
 }

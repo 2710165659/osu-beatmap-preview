@@ -93,7 +93,7 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | 谱面缓存 | `<临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
 | 优选 IP 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
-| 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_video-start...-duration...].<fmt>` |
+| 输出文件 | 默认配置写入 `<OUTPUT_DIR>/<mode>_<bid>...<fmt>`；非默认配置写入 `<OUTPUT_DIR>/<config-hash>/<mode>_<bid>...<fmt>` |
 | 配置文件夹 | 二进制文件同级目录 |
 | 日志文件 | `<临时目录>/osu-beatmap-preview/logs/` — `progress.log`（实时进度，`tail -f`）与 `render.log`（NDJSON 汇总） |
 
@@ -102,6 +102,7 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 配置来源按“内置默认值 < `CONFIG_DIR/config.yml` < `--config`”合并。`--config` 可以是文件路径，也可以直接传入 JSON/YAML 对象，例如：
 
 配置字段必须来自内置配置；未知字段、顶层非对象和无法转换的类型会导致启动失败。数字和布尔值也接受可安全转换的字符串形式。
+配置会先与内置默认值合并并归一化；若最终生效值与默认配置相同，仍使用 `OUTPUT_DIR`。否则程序对差异配置计算稳定的 SHA-256（取末 6 位）并使用 `OUTPUT_DIR/<config-hash>/`，同时在该目录写入只包含非默认字段的规范 `config.yml`。因此等价的 JSON、YAML、配置文件及显式填写默认值不会拆分输出缓存；以后新增且仍采用默认值的配置项也不会改变已有 hash。
 
 ```bash
 osu-beatmap-preview --bid=123456 --config='{"layout":{"standard":{"gif":{"ROW_COUNT":1}}}}'
