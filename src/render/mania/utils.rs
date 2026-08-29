@@ -1,5 +1,4 @@
-//! Shared mania helpers: key-count resolution, mod applications, SV changes,
-//! lane palette, and timing utilities.
+//! mania 共享辅助函数：键数解析、模组应用、SV 变化、轨道配色和时间工具。
 
 use crate::core::errors::PreviewError;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
@@ -87,7 +86,7 @@ pub(crate) fn beat_length_at(time: i64, timing_points: &[TimingPoint]) -> f64 {
     beat_length
 }
 
-/// IN mod: convert gaps between adjacent same-lane objects into holds; last object dropped.
+/// IN 模组：将同轨相邻音符间隔转换为长按，并丢弃最后一个音符。
 pub(crate) fn apply_inverse_mod(
     hit_objects: &[ManiaHitObject],
     timing_points: &[TimingPoint],
@@ -123,7 +122,7 @@ pub(crate) fn apply_inverse_mod(
     result
 }
 
-/// HO mod: holds become taps at the head; plain notes preserved.
+/// HO 模组：长按变为头部单点，普通音符保持不变。
 pub(crate) fn apply_hold_off_mod(hit_objects: &[ManiaHitObject]) -> Vec<ManiaHitObject> {
     let mut result: Vec<ManiaHitObject> = hit_objects
         .iter()
@@ -146,7 +145,10 @@ pub(crate) fn build_sv_changes(
     let mut prev_sv: Option<f64> = None;
     for point in timing_points {
         if point.uninherited
-            || !(point.beat_length < 0.0)
+            || !matches!(
+                point.beat_length.partial_cmp(&0.0),
+                Some(std::cmp::Ordering::Less)
+            )
             || point.time < 0.0
             || point.time > chart_end_time as f64
         {

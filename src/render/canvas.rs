@@ -1,5 +1,4 @@
-//! RGBA8 image type with PIL-compatible alpha compositing, Lanczos resize,
-//! rotation, and 2D drawing primitives.
+//! RGBA8 图像类型，提供兼容 PIL 的 alpha 合成、Lanczos 缩放、旋转和二维绘图原语。
 
 #[derive(Debug, Clone)]
 pub struct Img {
@@ -43,7 +42,7 @@ impl Img {
         self.data[i..i + 4].copy_from_slice(&c);
     }
 
-    /// Straight-alpha src-over blend of a single pixel.
+    /// 对单个像素执行 straight-alpha 的 src-over 混合。
     #[inline]
     pub fn blend_px(&mut self, x: i64, y: i64, c: Rgba) {
         if x < 0 || y < 0 || x >= self.w as i64 || y >= self.h as i64 {
@@ -53,7 +52,7 @@ impl Img {
         blend_into(&mut self.data[i..i + 4], c);
     }
 
-    /// PIL Image.alpha_composite: src-over `src` at (ox, oy).
+    /// 对应 PIL Image.alpha_composite：将 `src` 以 src-over 方式合成到 `(ox, oy)`。
     pub fn alpha_composite(&mut self, src: &Img, ox: i64, oy: i64) {
         let x0 = ox.max(0);
         let y0 = oy.max(0);
@@ -93,7 +92,7 @@ impl Img {
         out
     }
 
-    /// Bounding box of non-zero alpha, like PIL getbbox() on alpha channel.
+    /// 非零 alpha 的包围盒，类似 PIL 对 alpha 通道执行 getbbox()。
     pub fn alpha_bbox(&self) -> Option<(u32, u32, u32, u32)> {
         let mut min_x = self.w;
         let mut min_y = self.h;
@@ -118,7 +117,7 @@ impl Img {
         }
     }
 
-    /// Scale the alpha channel by factor (0..=1).
+    /// 将 alpha 通道乘以给定因子（0..=1）。
     pub fn scale_alpha(&self, factor: f64) -> Img {
         let mut out = self.clone();
         let f = factor.clamp(0.0, 1.0);
@@ -132,7 +131,7 @@ impl Img {
         out
     }
 
-    /// Lanczos-3 resize (PIL Image.LANCZOS).
+    /// 使用 Lanczos-3 算法缩放（对应 PIL Image.LANCZOS）。
     pub fn resize(&self, nw: u32, nh: u32) -> Img {
         if nw == 0 || nh == 0 {
             return Img::new(nw.max(1), nh.max(1), [0, 0, 0, 0]);
@@ -144,7 +143,7 @@ impl Img {
         resample_axis(&horizontal, nh, false)
     }
 
-    /// Rotate counterclockwise by `angle_deg` with expand=true, bilinear sampling.
+    /// 逆时针旋转 `angle_deg` 度，使用 expand=true 和双线性采样。
     pub fn rotate_expand(&self, angle_deg: f64) -> Img {
         let theta = angle_deg.to_radians();
         let (sin_t, cos_t) = theta.sin_cos();
@@ -161,7 +160,7 @@ impl Img {
             for x in 0..nw {
                 let dx = x as f64 + 0.5 - ncx;
                 let dy = y as f64 + 0.5 - ncy;
-                // inverse rotation (CCW image rotation = CW coordinate rotation)
+                // 逆向旋转（图像逆时针旋转对应坐标顺时针旋转）。
                 let sx = dx * cos_t - dy * sin_t + cx - 0.5;
                 let sy = dx * sin_t + dy * cos_t + cy - 0.5;
                 let c = self.sample_bilinear(sx, sy);
@@ -214,7 +213,7 @@ impl Img {
         ]
     }
 
-    // ─── drawing primitives ───
+    // ─── 绘图原语 ───
 
     pub fn fill_rect(&mut self, x0: i64, y0: i64, x1: i64, y1: i64, color: Rgba) {
         let xa = x0.max(0) as u32;
@@ -238,7 +237,7 @@ impl Img {
         }
     }
 
-    /// Overwrite rect pixels (no blending) — like ImageDraw on RGBA.
+    /// 覆盖矩形像素（不混合），类似 RGBA 上的 ImageDraw。
     pub fn set_rect(&mut self, x0: i64, y0: i64, x1: i64, y1: i64, color: Rgba) {
         let xa = x0.max(0) as u32;
         let ya = y0.max(0) as u32;
@@ -247,13 +246,13 @@ impl Img {
         self.set_rect_unchecked(xa, ya, xb, yb, color);
     }
 
-    /// Like `set_rect` but caller guarantees `xa < xb`, `ya < yb`, and all coords
-    /// are within `[0, w)` / `[0, h)`. Used on hot paths (mania rendering).
+    /// 与 `set_rect` 类似，但调用方保证 `xa < xb`、`ya < yb`，且所有坐标位于
+    /// `[0, w)` / `[0, h)`。用于 mania 渲染的热点路径。
     #[inline]
     pub fn set_rect_unchecked(&mut self, xa: u32, ya: u32, xb: u32, yb: u32, color: Rgba) {
         let row_bytes = ((xb - xa) * 4) as usize;
-        // For single-pixel-wide columns (lane separators, timing lines) use a
-        // tight per-row put loop instead of chunks_exact_mut overhead.
+        // 对单像素宽的列（轨道分隔线、节拍线）使用紧凑的逐行写入，
+        // 避免 chunks_exact_mut 的额外开销。
         if row_bytes == 4 {
             for y in ya..yb {
                 let i = self.idx(xa, y);
@@ -261,12 +260,10 @@ impl Img {
             }
             return;
         }
-        // For narrow rects (note heads ~38px) the chunks overhead is amortised;
-        // for wide rects we fill whole rows with a pre-built pattern.
+        // 窄矩形（音符头约 38px）可以摊薄分块开销；宽矩形则用预构建的行模式填充。
         if row_bytes >= 64 {
-            // Build one full row pattern then copy it per row (memcpy).
-            let pattern: Vec<u8> = std::iter::repeat(&color[..])
-                .take((xb - xa) as usize)
+            // 构建一整行模式，再逐行复制（memcpy）。
+            let pattern: Vec<u8> = std::iter::repeat_n(&color[..], (xb - xa) as usize)
                 .flatten()
                 .copied()
                 .collect();
@@ -284,7 +281,7 @@ impl Img {
         }
     }
 
-    /// Filled ellipse in bbox [x0,y0,x1,y1] (inclusive, PIL semantics), pixels overwritten.
+    /// 在包围盒 [x0,y0,x1,y1] 内绘制填充椭圆（含端点，遵循 PIL 语义），覆盖原像素。
     pub fn fill_ellipse(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, color: Rgba) {
         let cx = (x0 + x1) / 2.0;
         let cy = (y0 + y1) / 2.0;
@@ -312,7 +309,7 @@ impl Img {
         }
     }
 
-    /// Anti-aliased filled disc, blended.
+    /// 绘制带抗锯齿的填充圆盘并进行混合。
     pub fn fill_circle_aa(&mut self, cx: f64, cy: f64, r: f64, color: Rgba) {
         if r <= 0.0 {
             return;
@@ -343,13 +340,13 @@ impl Img {
         }
     }
 
-    /// 1px-ish line (overwrite), like PIL draw.line width=w without joints.
+    /// 绘制近似 1px 的覆盖线，类似 PIL draw.line width=w 且不带连接点。
     pub fn draw_line(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, width: f64, color: Rgba) {
         self.stroke_polyline(&[(x0, y0), (x1, y1)], width, color, false);
     }
 
-    /// Thick polyline with optional round joints/caps (PIL joint="curve" + end ellipses).
-    /// Pixels are overwritten (no blending), matching ImageDraw behaviour on an empty layer.
+    /// 绘制带可选圆角连接/端帽的粗折线（PIL joint="curve" + 端部椭圆）。
+    /// 像素直接覆盖（不混合），匹配空图层上的 ImageDraw 行为。
     pub fn stroke_polyline(
         &mut self,
         pts: &[(f64, f64)],
@@ -373,7 +370,7 @@ impl Img {
             }
             return;
         }
-        // Compute overall bbox
+        // 计算整体包围盒。
         let mut min_x = f64::MAX;
         let mut min_y = f64::MAX;
         let mut max_x = f64::MIN;
@@ -392,8 +389,7 @@ impl Img {
             return;
         }
 
-        // Distance-to-polyline rasterization on a grid; for long paths use
-        // per-segment bboxes to avoid O(area * segments).
+        // 在网格上按点到折线距离进行光栅化；长路径使用逐线段包围盒，避免 O(area * segments)。
         let grid_w = (xb - xa + 1) as usize;
         let grid_h = (yb - ya + 1) as usize;
         let mut covered = vec![false; grid_w * grid_h];
@@ -432,8 +428,8 @@ impl Img {
             mark_segment(&mut covered, win[0], win[1]);
         }
         if !round_caps {
-            // joints still rounded via segment distance overlap; caps are square-ish — PIL
-            // butt caps differ negligibly at our widths.
+            // 通过线段距离重叠仍能得到圆角连接；端帽近似方形，
+            // 在当前线宽下与 PIL 的 butt 端帽差异可忽略。
         }
         for gy in 0..grid_h {
             for gx in 0..grid_w {
@@ -444,7 +440,7 @@ impl Img {
         }
     }
 
-    /// Rounded rectangle fill (PIL rounded_rectangle).
+    /// 绘制圆角矩形填充（PIL rounded_rectangle）。
     pub fn fill_rounded_rect(
         &mut self,
         x0: f64,
@@ -515,7 +511,7 @@ fn blend_into(dst: &mut [u8], src: Rgba) {
     dst[3] = ((out_a + 127) / 255) as u8;
 }
 
-// ─── Lanczos-3 separable resampling ───
+// ─── Lanczos-3 可分离重采样 ───
 
 fn lanczos3(x: f64) -> f64 {
     if x.abs() >= 3.0 {
@@ -541,7 +537,7 @@ fn resample_axis(src: &Img, new_size: u32, horizontal: bool) -> Img {
     let filter_scale = scale.max(1.0);
     let support = 3.0 * filter_scale;
 
-    // Precompute weights per output coordinate.
+    // 为每个输出坐标预计算权重。
     let mut all_weights: Vec<(i64, Vec<f64>)> = Vec::with_capacity(new_size as usize);
     for o in 0..new_size {
         let center = (o as f64 + 0.5) * scale;
@@ -579,7 +575,7 @@ fn resample_axis(src: &Img, new_size: u32, horizontal: bool) -> Img {
                 } else {
                     src.get(j, i)
                 };
-                // premultiply to avoid halo from transparent pixels
+                // 预乘 alpha，避免透明像素产生光晕。
                 let a = c[3] as f64;
                 acc[0] += c[0] as f64 * a * w;
                 acc[1] += c[1] as f64 * a * w;

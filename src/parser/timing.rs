@@ -1,9 +1,9 @@
-//! Timing point and break-period parsing.
+//! Timing point 与 break 时段解析。
 
 use crate::core::models::{BreakPeriod, TimingPoint};
 
-/// Parse `[TimingPoints]` lines into a sorted `Vec<TimingPoint>`.
-/// Returns `None` if the section is empty.
+/// 将 `[TimingPoints]` 行解析为排序后的 `Vec<TimingPoint>`。
+/// 区段为空时返回 `None`。
 pub fn parse_timing_points(lines: &[&str]) -> Option<Vec<TimingPoint>> {
     let mut points: Vec<TimingPoint> = Vec::new();
     for line in lines {
@@ -33,7 +33,7 @@ pub fn parse_timing_points(lines: &[&str]) -> Option<Vec<TimingPoint>> {
             kiai_mode: effects & 1 != 0,
         });
     }
-    // Stable sort keeps file order for equal times (red/green at same time).
+    // 稳定排序可保留相同时间红线/绿线在文件中的顺序。
     points.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
     if points.is_empty() {
         return None;
@@ -41,7 +41,7 @@ pub fn parse_timing_points(lines: &[&str]) -> Option<Vec<TimingPoint>> {
     Some(points)
 }
 
-/// Parse break periods from `[Events]` lines (type-2 events).
+/// 从 `[Events]` 行解析 break 时段（类型 2 事件）。
 pub fn parse_break_periods(lines: Option<&Vec<&str>>) -> Vec<BreakPeriod> {
     let Some(lines) = lines else {
         return Vec::new();

@@ -260,8 +260,8 @@ pub(crate) fn render_catch_grid(
     deadline.check()?;
     let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap().max(1);
 
-    // Trim leading silence: if first note is >= 5s in, start 1s before it,
-    // aligned to the red-line beat grid.
+    // 裁剪开头静音：若第一个音符在 5 秒之后，则从其前 1 秒开始，
+    // 并对齐到红线节拍网格。
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let chart_start_time = if first_note_time >= 5000 {
         crate::common::time_selection::snap_to_beat_grid(
@@ -316,7 +316,7 @@ pub(crate) fn render_catch_grid(
     let mut last_label_time: Option<i64> = None;
     for timing_line in &timing_lines {
         deadline.check()?;
-        let mut tl = timing_line.clone();
+        let mut tl = *timing_line;
         if tl.show_label {
             if let Some(prev) = last_label_time {
                 if (tl.time - prev).abs()

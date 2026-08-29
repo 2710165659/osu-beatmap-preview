@@ -1,4 +1,4 @@
-//! Alpha / timing helpers for osu!standard renderer.
+//! osu!standard 渲染器的 alpha 与时间辅助函数。
 
 use crate::core::models::StandardHitObject;
 

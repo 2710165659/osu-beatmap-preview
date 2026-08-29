@@ -4,9 +4,6 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-#[cfg(test)]
-pub(crate) use crate::config::logging::config::*;
-
 #[derive(Clone)]
 pub struct LogConfig {
     pub progress_path: PathBuf,
@@ -17,7 +14,7 @@ static CONFIG: OnceLock<Mutex<Option<LogConfig>>> = OnceLock::new();
 static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 
 /// 默认日志目录：`<临时目录>/osu-beatmap-preview/logs`。
-#[allow(dead_code)] // Runtime initialization is owned by the binary target.
+#[allow(dead_code)] // 运行时初始化由二进制目标负责。
 pub fn default_log_dir() -> PathBuf {
     crate::config::resolve_path(crate::config::current().paths.LOG_DIR.as_str())
 }
@@ -53,11 +50,6 @@ fn init_with_dir(dir: PathBuf) {
     crate::log::event::event("session-start", "info", None, &session_message());
 }
 
-#[cfg(test)]
-pub(crate) fn init_for_tests(log_dir: &std::path::Path) {
-    init_with_dir(log_dir.to_path_buf());
-}
-
 #[allow(dead_code)]
 fn session_message() -> String {
     let args: Vec<String> = std::env::args().collect();
@@ -77,12 +69,6 @@ pub(crate) fn enabled() -> Option<LogConfig> {
         .and_then(|guard| guard.clone())
 }
 
-/// 返回 (progress.log, render.log) 两个文件的路径。
-#[allow(dead_code)]
-pub fn paths() -> Option<(PathBuf, PathBuf)> {
-    enabled().map(|cfg| (cfg.progress_path, cfg.render_path))
-}
-
 /// 进程启动至今的毫秒数（未初始化时返回 0）。
 pub(crate) fn process_elapsed_ms() -> f64 {
     PROCESS_START
@@ -96,3 +82,16 @@ pub(crate) fn reset_for_tests() {
     let mutex = CONFIG.get_or_init(|| Mutex::new(None));
     *mutex.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
+
+#[cfg(test)]
+pub(crate) fn init_for_tests(log_dir: &std::path::Path) {
+    init_with_dir(log_dir.to_path_buf());
+}
+
+#[cfg(test)]
+pub(crate) fn paths() -> Option<(PathBuf, PathBuf)> {
+    enabled().map(|cfg| (cfg.progress_path, cfg.render_path))
+}
+
+#[cfg(test)]
+pub(crate) use crate::config::logging::config::*;

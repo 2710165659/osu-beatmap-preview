@@ -1,10 +1,9 @@
-//! Shared helpers for beatmap conversion (standard → taiko/catch/mania).
-//! Used by each mode's conv.rs module.
+//! 谱面转换共享辅助函数（standard → taiko/catch/mania）。
+//! 由各模式的 conv.rs 模块使用。
 
 use crate::core::models::{Beatmap, StandardHitObject, TimingPoint};
 
-/// Monotonically advances through sorted timing points as objects are processed
-/// in time order, avoiding O(n×m) repeated linear scans.
+/// 随对象按时间顺序处理，单调推进已排序的 timing points，避免反复线性扫描造成的 O(n×m) 开销。
 pub(crate) struct TimingCursor<'a> {
     points: &'a [TimingPoint],
     index: usize,
@@ -52,12 +51,12 @@ impl<'a> TimingCursor<'a> {
     }
 }
 
-/// math.isclose(a, b, abs_tol=1e-7) keeps the default rel_tol=1e-9.
+/// 对应 `math.isclose(a, b, abs_tol=1e-7)`，并保留默认 `rel_tol=1e-9`。
 pub(crate) fn almost_equals(a: f64, b: f64) -> bool {
     (a - b).abs() <= f64::max(1e-9 * f64::max(a.abs(), b.abs()), 1e-7)
 }
 
-/// Convenience: extract standard hit objects as a slice.
+/// 便捷地获取 standard 音符对象切片。
 pub(crate) fn std_objects(beatmap: &Beatmap) -> &[StandardHitObject] {
     beatmap.hit_objects.as_standard().unwrap_or(&[])
 }

@@ -1,4 +1,4 @@
-//! osu!standard GIF renderer: 2×2 segment preview or single-screen clip.
+//! osu!standard GIF 渲染器：2×2 分段预览或单画面片段。
 
 use crate::common::time_selection::{GifRenderOptions, TimeAxis};
 use crate::core::errors::Result;
@@ -90,10 +90,9 @@ fn render_standard_segment_gif(
         })
         .collect();
 
-    // Per-thread render cache avoids serialising parallel render_frame calls
-    // behind a single Mutex — rayon's chunk-parallel render would otherwise queue
-    // on the lock, halving throughput.  Each thread gets its own cache; the
-    // first few frames rebuild procedural textures, then cache hits dominate.
+    // 每线程独立渲染缓存，避免并行 render_frame 调用在同一 Mutex 后串行化。
+    // 否则 rayon 分块渲染会在锁上排队，使吞吐量减半。每个线程拥有自己的缓存；
+    // 前几帧构建程序化纹理，之后主要命中缓存。
     thread_local! {
         static STD_GIF_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
     }
@@ -114,7 +113,7 @@ fn render_standard_segment_gif(
             let frame = STD_GIF_CACHE.with(|cache| {
                 render_frame(
                     &context,
-                    &mut *cache.borrow_mut(),
+                    &mut cache.borrow_mut(),
                     snapshot_time,
                     &row_timing.break_periods,
                     &segment_visible_indexes[segment_index][frame_index],

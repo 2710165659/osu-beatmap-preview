@@ -1,4 +1,4 @@
-//! osu!standard PNG grid renderer: 5×8 gameplay snapshots.
+//! osu!standard PNG 网格渲染器：5×8 游戏画面快照。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;

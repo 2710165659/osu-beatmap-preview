@@ -3,8 +3,8 @@ use crate::core::models::{Beatmap, BreakPeriod, TimingPoint};
 
 pub const BREAK_GAP_MS: i64 = 2200;
 
-/// Converts between the absolute `.osu` timeline used by renderers and the
-/// gameplay timeline exposed by osu! song-progress skin components.
+/// 在渲染器使用的绝对 `.osu` 时间轴与 osu! 歌曲进度皮肤组件使用的
+/// 游戏时间轴之间转换。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeAxis {
     origin_ms: i64,
@@ -304,8 +304,8 @@ pub fn break_periods_overlapping_segment(
         .collect()
 }
 
-/// Snap `time` backward to the nearest beat-line position on the red-line grid,
-/// so that timing lines stay in phase after chart trimming.
+/// 将 `time` 向前吸附到红线网格中最近的节拍线位置，
+/// 使谱面裁剪后节拍线仍保持相位一致。
 pub fn snap_to_beat_grid(time: i64, timing_points: &[TimingPoint]) -> i64 {
     let red = timing_points
         .iter()

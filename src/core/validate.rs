@@ -1,13 +1,13 @@
-//! Consolidated parameter validation.
+//! 集中的参数校验。
 //!
-//! Split into two phases:
-//! 1. CLI-phase: value-format checks that run during argument parsing.
-//! 2. Context-phase: checks that need the beatmap mode and resolved format.
+//! 校验分为两个阶段：
+//! 1. CLI 阶段：参数解析时执行的值格式校验。
+//! 2. 上下文阶段：需要谱面模式和最终输出格式的校验。
 
 use crate::core::errors::{PreviewError, Result};
 use crate::core::mods::{mods_for_mode, validate_mods, ModSettings};
 
-/// Validate `--convert` value.
+/// 校验 `--convert` 参数值。
 pub fn validate_convert_value(v: &str) -> Result<()> {
     match v {
         "mania" | "ctb" | "taiko" | "standard" | "std" => Ok(()),
@@ -17,7 +17,7 @@ pub fn validate_convert_value(v: &str) -> Result<()> {
     }
 }
 
-/// Validate `--fmt` value.
+/// 校验 `--fmt` 参数值。
 pub fn validate_fmt_value(v: &str) -> Result<()> {
     match v {
         "png" | "gif" | "mp4" => Ok(()),
@@ -52,23 +52,23 @@ pub fn parse_time_point(raw: &str) -> Result<TimePoint> {
     Ok(TimePoint::Seconds(value))
 }
 
-/// Context for mode-aware validation.
+/// 与模式相关的校验上下文。
 pub struct ValidateContext<'a> {
     pub bid: &'a str,
     pub fmt: &'a str,
     pub target_mode: i32,
 }
 
-/// Validate parameters that depend on the resolved target mode and format.
+/// 校验依赖目标模式和输出格式的参数。
 ///
-/// Returns validated mod settings (mode-adjusted), or `None`.
+/// 返回经过模式调整的模组设置，未指定模组时返回 `None`。
 pub fn validate_with_context(
     ctx: &ValidateContext,
     time_points: &[TimePoint],
     duration_time: Option<f64>,
     mods: Option<ModSettings>,
 ) -> Result<Option<ModSettings>> {
-    // --- bid ---
+    // --- 谱面 ID ---
     if ctx.bid.is_empty() || !ctx.bid.chars().all(|c| c.is_ascii_digit()) {
         return Err(PreviewError::new("bid must be numeric"));
     }
@@ -100,7 +100,7 @@ pub fn validate_with_context(
         }
     }
 
-    // --- mods ---
+    // --- 模组 ---
     let mods = match mods {
         Some(m) if m.has_any_mod() => {
             let mode_errors = validate_mods(&m, Some(ctx.target_mode), Some(ctx.fmt));

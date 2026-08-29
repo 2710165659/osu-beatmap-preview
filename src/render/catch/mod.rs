@@ -1,6 +1,5 @@
-//! osu!catch renderers: render-object expansion (fruits, juice streams,
-//! banana showers, HR offsets, hyperdash) plus PNG grid and GIF previews.
-//! RNG call order mirrors the Python/stable implementations exactly.
+//! osu!catch 渲染器：展开水果、果汁流、香蕉雨、HR 偏移和 hyperdash 等渲染对象，
+//! 并输出 PNG 网格和 GIF 预览。RNG 调用顺序严格匹配 Python/stable 实现。
 
 mod constants;
 pub(crate) mod conv;

@@ -1,10 +1,10 @@
-//! Beatmap section parsing: split a .osu file into `[Section]` blocks,
-//! parse key-value pairs, format version, and combo colours.
+//! 谱面区段解析：将 .osu 文件拆分为 `[Section]` 块，
+//! 解析键值对、格式版本和连击颜色。
 
 use crate::core::models::KvSection;
 use std::collections::HashMap;
 
-/// Split raw .osu content into named sections (HashMap<section_name, Vec<lines>>).
+/// 将原始 .osu 内容拆分为命名区段（HashMap<section_name, Vec<lines>>）。
 pub fn split_sections(content: &str) -> HashMap<String, Vec<&str>> {
     let mut sections: HashMap<String, Vec<&str>> = HashMap::new();
     let mut current: Option<String> = None;
@@ -27,7 +27,7 @@ pub fn split_sections(content: &str) -> HashMap<String, Vec<&str>> {
     sections
 }
 
-/// Parse the file format version from the first line of the file.
+/// 从文件第一行解析文件格式版本。
 pub fn parse_format_version(content: &str) -> i32 {
     let first = content.lines().next().unwrap_or("").trim();
     if let Some(rest) = first.strip_prefix("osu file format v") {
@@ -38,7 +38,7 @@ pub fn parse_format_version(content: &str) -> i32 {
     14
 }
 
-/// Parse a key-value section into a `KvSection`.
+/// 将键值区段解析为 `KvSection`。
 pub fn parse_key_value(lines: &[&str]) -> KvSection {
     let mut kv = KvSection::default();
     for line in lines {
@@ -49,7 +49,7 @@ pub fn parse_key_value(lines: &[&str]) -> KvSection {
     kv
 }
 
-/// Default metadata when the [Metadata] section is missing.
+/// 缺少 [Metadata] 区段时使用的默认元数据。
 pub fn default_metadata() -> KvSection {
     let mut kv = KvSection::default();
     kv.insert("Title", "Unknown".into());
@@ -61,7 +61,7 @@ pub fn default_metadata() -> KvSection {
     kv
 }
 
-/// Parse Combo1..ComboN from the [Colours] section, in numeric order.
+/// 按数字顺序解析 [Colours] 区段中的 Combo1..ComboN。
 pub fn parse_combo_colors(lines: Option<&Vec<&str>>) -> Vec<[u8; 3]> {
     let Some(lines) = lines else {
         return Vec::new();

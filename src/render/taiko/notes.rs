@@ -23,7 +23,6 @@ pub(crate) struct RenderCache {
 // ─── 行背景（程序化，替代原 taiko-bar-left/right 图片） ───
 
 /// 左侧鼓面板宽度与行高的比例（原图 362×400 的纵横比）。
-
 /// 绘制左侧鼓面板：红色竖条 + 米色鼓面圆，模拟 classic 皮肤的 taiko-bar-left。
 pub(crate) fn draw_drum_panel(image: &mut Img, x: i64, y: i64, w: i64, h: i64) {
     if w <= 0 || h <= 0 {
@@ -96,9 +95,8 @@ pub(crate) fn draw_track_background(image: &mut Img, x: i64, y: i64, w: i64, h: 
     );
 }
 
-/// Classic-2013 style note: solid AA disc, light ring border, 1px dark outer
-/// edge, no center symbol. `swell_marker` adds an inner ring (replaces the
-/// spinner-warning sprite).
+/// Classic-2013 风格音符：实心抗锯齿圆盘、浅色圆环边框、1px 深色外缘，
+/// 无中心符号。`swell_marker` 会增加内环（替代 spinner-warning 精灵图）。
 pub(crate) fn build_note_disc(color: [u8; 3], diameter: i64, swell_marker: bool) -> Img {
     let d = diameter.max(1);
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
@@ -127,12 +125,12 @@ pub(crate) fn build_note_disc(color: [u8; 3], diameter: i64, swell_marker: bool)
     img
 }
 
-pub(crate) fn cached_note_disc<'a>(
-    cache: &'a mut RenderCache,
+pub(crate) fn cached_note_disc(
+    cache: &mut RenderCache,
     color: [u8; 3],
     diameter: i64,
     swell_marker: bool,
-) -> &'a Img {
+) -> &Img {
     cache
         .discs
         .entry((color, diameter, swell_marker))
@@ -162,11 +160,7 @@ pub(crate) fn build_roll_tail_sprite(color: [u8; 3], height: i64) -> Img {
     tail.resize(((scaled_width / scale).max(1)) as u32, height.max(1) as u32)
 }
 
-pub(crate) fn cached_roll_tail<'a>(
-    cache: &'a mut RenderCache,
-    color: [u8; 3],
-    height: i64,
-) -> &'a Img {
+pub(crate) fn cached_roll_tail(cache: &mut RenderCache, color: [u8; 3], height: i64) -> &Img {
     cache
         .tails
         .entry((color, height))

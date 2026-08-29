@@ -174,11 +174,9 @@ pub(crate) fn encode_audio_segment(
         ));
     }
     let decoded = decode_audio(&source.path, deadline)?;
-    let target_samples = ((frame_count as u64
+    let target_samples = (frame_count as u64
         * crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE as u64)
-        + fps as u64
-        - 1)
-        / fps as u64;
+        .div_ceil(fps as u64);
     if target_samples == 0 {
         return Err(PreviewError::render("audio segment is empty"));
     }
@@ -197,16 +195,15 @@ pub(crate) fn encode_audio_segment(
     let samples_per_frame = info.frameLength.max(1) as usize;
     let target_frame_count = target_samples.div_ceil(samples_per_frame as u64) as usize;
     let max_output_bytes = (info.maxOutBufBytes.max(8192)) as usize;
-    let encoder_delay_samples = info.nDelay.max(0) as usize;
+    let encoder_delay_samples = info.nDelay as usize;
     let mut input = vec![0_i16; samples_per_frame * 2];
     let mut output = vec![0_u8; max_output_bytes];
     let mut frames = Vec::with_capacity(target_frame_count);
-    let mut input_frame_index = 0usize;
 
-    // FDK buffers encoder look-ahead internally, so a few zero-padded calls may
-    // be needed after the requested input span before every access unit appears.
+    // FDK 在内部缓冲编码器前瞻数据，因此请求输入区间结束后可能还需执行几次补零调用，
+    // 才能取出全部访问单元。
     let max_calls = target_frame_count + 16;
-    for _ in 0..max_calls {
+    for input_frame_index in 0..max_calls {
         deadline.check()?;
         fill_audio_frame(
             &mut input,
@@ -217,7 +214,6 @@ pub(crate) fn encode_audio_segment(
             speed,
             encoder_delay_samples,
         );
-        input_frame_index += 1;
         let encoded = encoder
             .encode(&input, &mut output)
             .map_err(|e| PreviewError::render(format!("AAC encoding failed: {e}")))?;
@@ -284,8 +280,7 @@ fn source_frame_position(
     chart_time_ms * source_sample_rate as f64 / 1000.0
 }
 
-/// osu! uses AudioLeadIn to choose how early gameplay starts; it does not
-/// offset the audio file relative to beatmap time zero.
+/// osu! 使用 AudioLeadIn 决定游戏多早开始，它不会改变音频文件相对谱面零时刻的偏移。
 pub(crate) fn full_video_start_time(first_object_ms: i64, audio_lead_in_ms: i64) -> i64 {
     let default_start = first_object_ms - 2_000;
     if audio_lead_in_ms > 0 {

@@ -1,6 +1,5 @@
-//! osu!standard renderer: per-frame 512×384 gameplay snapshots composed into a
-//! PNG grid (5×8) or animated GIF (2×2 segments). Port of the Python renderer
-//! with identical constants, alpha curves and layout.
+//! osu!standard 渲染器：将每帧 512×384 游戏画面合成为 PNG 网格（5×8）
+//! 或 GIF 动画（2×2 分段）。移植自 Python 渲染器，常量、alpha 曲线与布局保持一致。
 
 mod alpha;
 mod constants;
@@ -18,7 +17,7 @@ pub(crate) use video::render_standard_video;
 
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
-/// Draw text centered horizontally within `IMAGE_WIDTH` at `(x, y)`.
+/// 在 `IMAGE_WIDTH` 范围内以 `(x, y)` 为基准水平居中绘制文字。
 pub(crate) fn draw_centered_text(
     canvas: &mut Img,
     text: &str,
@@ -32,7 +31,7 @@ pub(crate) fn draw_centered_text(
     draw_text(canvas, text_x, y, text, size, color);
 }
 
-/// Draw a time label (and optional note) centered below a frame at `(x, y)`.
+/// 在 `(x, y)` 下方居中绘制时间标签及可选提示文字。
 pub(crate) fn draw_time_label(
     canvas: &mut Img,
     label: &str,

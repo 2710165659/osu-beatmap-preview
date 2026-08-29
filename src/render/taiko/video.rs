@@ -1,9 +1,8 @@
-//! osu!taiko MP4 renderer: full-chart continuous playback (no 4-row segment
-//! preview). Reuses the GIF row background + hit-object drawing on a one-row
-//! layout; the per-segment bottom label is dropped (the global top-right label
-//! is drawn by `video::save_mp4_streamed`).
+//! osu!taiko MP4 渲染器：完整谱面连续播放（无四行分段预览）。
+//! 复用 GIF 的行背景和音符绘制，并使用单行布局；省略每段底部标签，
+//! 全局右上角标签由 `video::save_mp4_streamed` 绘制。
 //!
-//! Time range is controlled by `--time-points` and `--duration-time`.
+//! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
@@ -68,8 +67,8 @@ pub(crate) fn render_taiko_video(
         bg
     };
 
-    // Per-thread render cache avoids serialising parallel draw_hit_objects
-    // calls behind a single Mutex (video has far more frames than GIF).
+    // 每线程独立渲染缓存，避免并行 draw_hit_objects 调用在同一 Mutex 后串行化；
+    // 视频帧数远多于 GIF。
     thread_local! {
         static TAIKO_VIDEO_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
     }
@@ -84,7 +83,7 @@ pub(crate) fn render_taiko_video(
                 &layout,
                 0,
                 snapshot_time,
-                &mut *cache.borrow_mut(),
+                &mut cache.borrow_mut(),
             );
         });
         (canvas, snapshot_time)
@@ -104,8 +103,8 @@ pub(crate) fn render_taiko_video(
     )
 }
 
-/// Single-row layout for MP4: same width as the GIF, height trimmed to one row
-/// (no 4-row stack, no inter-row gap, no bottom label strip).
+/// MP4 的单行布局：宽度与 GIF 相同，高度裁剪为一行
+///（无四行堆叠、无行间距、无底部标签条）。
 fn build_video_layout(time_range: f64) -> GifLayout {
     let mut layout = build_gif_layout(time_range);
     layout.image_height = crate::render::taiko::constants::PAGE_MARGIN_Y * 2

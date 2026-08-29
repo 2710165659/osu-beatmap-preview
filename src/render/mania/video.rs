@@ -1,9 +1,8 @@
-//! osu!mania MP4 renderer: full-chart continuous playback (no 4-segment
-//! preview). Reuses the GIF per-object drawing routines on a single-column
-//! layout; the bottom segment label is dropped (the global top-right label is
-//! drawn by `video::save_mp4_streamed`).
+//! osu!mania MP4 渲染器：完整谱面连续播放（无四段预览）。
+//! 在单列布局中复用 GIF 的逐音符绘制逻辑；省略底部段落标签，
+//! 全局右上角标签由 `video::save_mp4_streamed` 绘制。
 //!
-//! Time range is controlled by `--time-points` and `--duration-time`.
+//! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
@@ -87,9 +86,9 @@ pub(crate) fn render_mania_video(
         .collect();
     let hold_colors: Vec<Rgba> = palette.iter().map(|&c| darken(c, 0.5)).collect();
 
-    // Precompute scroll-distance positions for sorted binary-search culling.
-    // Culling by distance (not chart time) stays correct under variable SV
-    // (time↔position is non-linear); see `visible_pos_window`.
+    // 预计算滚动距离位置，供排序后的二分查找裁剪使用。
+    // 按距离而不是谱面时间裁剪，在可变 SV 下仍然正确（时间与位置不是线性关系）；
+    // 详见 `visible_pos_window`。
     let pos_start: Vec<f64> = hit_objects
         .iter()
         .map(|ho| scroll_map.position_at(ho.start_time as f64))
@@ -104,8 +103,7 @@ pub(crate) fn render_mania_video(
         .map(|(&start, &end)| (end - start).max(0.0))
         .fold(0.0_f64, f64::max);
 
-    // Single-segment static background: one column backdrop + judgement line,
-    // no inter-segment separators.
+    // 单段静态背景：一列背景和判定线，不绘制段间分隔线。
     let static_bg = {
         let mut bg = Img::new(
             layout.image_width as u32,
@@ -131,8 +129,8 @@ pub(crate) fn render_mania_video(
             &layout,
             pixels_per_scroll_unit,
         );
-        // Binary-search the precomputed scroll-distance positions.  Culling by
-        // distance (not chart time) stays correct under variable SV.
+        // 对预计算的滚动距离位置执行二分查找。按距离而不是谱面时间裁剪，
+        // 在可变 SV 下仍然正确。
         let (lo_pos, hi_pos) = visible_pos_window(
             snapshot_pos,
             &layout,
@@ -174,8 +172,7 @@ pub(crate) fn render_mania_video(
     )
 }
 
-/// Single-segment layout for MP4: one column width, no inter-segment gap, no
-/// bottom label area (the global top-right label is drawn by the encoder).
+/// MP4 的单段布局：单列宽度、无段间间隔、无底部标签区域（全局右上角标签由编码器绘制）。
 fn build_video_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
     let column_left_offsets =
         build_column_left_offsets(&skin_config.column_widths, &skin_config.column_line_widths);

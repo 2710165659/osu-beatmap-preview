@@ -1,4 +1,4 @@
-//! Render context, difficulty, skin, combo info, row timing, visible indexes.
+//! 渲染上下文、难度、皮肤、连击信息、行时间和可见索引。
 
 use crate::common::time_selection::{PreviewTimeSelector, TimeAxis};
 use crate::core::errors::{PreviewError, Result};
@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use super::slider::SliderRenderData;
 
-// ——— helpers ———
+// ——— 辅助函数 ———
 
 #[inline]
 pub(crate) fn py_round(v: f64) -> i64 {
@@ -23,7 +23,7 @@ pub(crate) fn color_id(base: u64, color: [u8; 3]) -> u64 {
     base | (color[0] as u64) << 32 | (color[1] as u64) << 40 | (color[2] as u64) << 48
 }
 
-// ——— data structs ———
+// ——— 数据结构 ———
 
 #[derive(Clone, Copy)]
 pub(crate) struct FrameLayout {
@@ -93,7 +93,7 @@ pub(crate) struct RowTiming {
     pub(crate) break_periods: Vec<BreakPeriod>,
 }
 
-// ——— object helpers ———
+// ——— 音符对象辅助函数 ———
 
 pub(crate) fn standard_objects(beatmap: &Beatmap) -> Result<Vec<StandardHitObject>> {
     match &beatmap.hit_objects {
@@ -132,7 +132,7 @@ pub(crate) fn apply_standard_object_mods(
         .collect()
 }
 
-// ——— difficulty ———
+// ——— 难度 ———
 
 struct EffectiveDifficulty {
     circle_size: f64,
@@ -319,7 +319,7 @@ pub(crate) fn build_render_context(
     }
 }
 
-// ——— row timing ———
+// ——— 行时间 ———
 
 pub(crate) fn choose_row_start_times(
     beatmap: &Beatmap,
@@ -352,7 +352,7 @@ pub(crate) fn choose_row_start_times(
         .collect())
 }
 
-// ——— canvas sizes ———
+// ——— 画布尺寸 ———
 
 pub(crate) fn png_canvas_size() -> (i64, i64) {
     let width = crate::config::current()
@@ -467,7 +467,7 @@ pub(crate) fn gif_frame_origin(segment_index: usize) -> (i64, i64) {
     (x, y)
 }
 
-// ——— visible indexes ———
+// ——— 可见索引 ———
 
 pub(crate) fn build_visible_indexes_by_snapshot(
     hit_objects: &[StandardHitObject],
@@ -521,7 +521,7 @@ pub(crate) fn visible_end_time(hit_object: &StandardHitObject) -> i64 {
     hit_object.start_time + crate::render::standard::constants::POST_HIT_FADE_MS
 }
 
-// ——— coordinate transform ———
+// ——— 坐标变换 ———
 
 pub(crate) fn to_frame_point(x: f64, y: f64, frame_layout: &FrameLayout) -> (f64, f64) {
     (

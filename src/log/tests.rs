@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 //! 单元测试：时间戳、事件/汇总格式、转义、截断、禁用、上下文合并与并发追加。
 
 use super::config::{init_for_tests, paths, PROGRESS_FILE, RENDER_FILE};
@@ -47,12 +49,14 @@ fn event_and_summary_write_parseable_lines() {
     init_for_tests(&dir);
     event("test", "info", Some("123"), "hello \"quoted\"");
 
-    let mut rec = SummaryRecord::default();
-    rec.status = "success".to_string();
-    rec.bid = "123".to_string();
-    rec.duration_ms = 42.5;
-    rec.title = Some("quote \" and \n newline".to_string());
-    rec.hit_object_count = Some(7);
+    let rec = SummaryRecord {
+        status: "success".to_string(),
+        bid: "123".to_string(),
+        duration_ms: 42.5,
+        title: Some("quote \" and \n newline".to_string()),
+        hit_object_count: Some(7),
+        ..SummaryRecord::default()
+    };
     write_summary(&rec);
 
     let progress = read(&dir.join(PROGRESS_FILE));

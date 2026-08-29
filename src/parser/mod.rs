@@ -1,9 +1,9 @@
-//! .osu beatmap file parser.
+//! .osu 谱面文件解析器。
 //!
-//! Sub-modules:
-//! - `sections`: section splitting, key-value parsing, combo colours
-//! - `timing`: timing points and break periods
-//! - `hit_objects`: mode-specific hit-object parsing, slider timing, rounding
+//! 子模块：
+//! - `sections`：区段拆分、键值解析、连击颜色
+//! - `timing`：timing points 与 break 时段
+//! - `hit_objects`：按模式解析音符、滑条时长与舍入
 
 mod hit_objects;
 mod sections;
@@ -20,7 +20,7 @@ use crate::core::models::*;
 use std::path::Path;
 use std::time::Instant;
 
-/// Parse a .osu file from disk.
+/// 从磁盘解析 .osu 文件。
 pub fn parse_beatmap(path: &Path) -> Result<Beatmap> {
     let started = Instant::now();
     let bytes = std::fs::read(path)

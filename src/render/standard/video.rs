@@ -1,8 +1,8 @@
-//! osu!standard MP4 renderer: full-chart continuous playback (no 2×2 segment
-//! preview). Reuses `render_frame` from the GIF path so per-frame pixels match
-//! the GIF's single-segment look; only the time axis and framing differ.
+//! osu!standard MP4 渲染器：完整谱面连续播放（无 2×2 分段预览）。
+//! 复用 GIF 路径的 `render_frame`，确保每帧像素与 GIF 单段外观一致，
+//! 仅时间轴和取景方式不同。
 //!
-//! Time range is controlled by `--time-points` and `--duration-time`.
+//! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;
@@ -50,8 +50,7 @@ pub(crate) fn render_standard_video(
     let context_ref = &context;
     let break_ref = &break_periods;
 
-    // Per-thread render cache avoids serialising parallel render_frame calls
-    // behind a single Mutex (video has far more frames than GIF).
+    // 每线程独立渲染缓存，避免并行 render_frame 调用在同一 Mutex 后串行化（视频帧数远多于 GIF）。
     thread_local! {
         static STD_VIDEO_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
     }
@@ -67,7 +66,7 @@ pub(crate) fn render_standard_video(
         let frame = STD_VIDEO_CACHE.with(|cache| {
             render_frame(
                 context_ref,
-                &mut *cache.borrow_mut(),
+                &mut cache.borrow_mut(),
                 snapshot_time,
                 break_ref,
                 &groups[0],

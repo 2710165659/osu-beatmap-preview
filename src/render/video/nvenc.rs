@@ -1,28 +1,25 @@
-//! NVIDIA NVENC H.264 encoder backend.
+//! NVIDIA NVENC H.264 编码后端。
 //!
-//! Dynamically loads `nvEncodeAPI64.dll` at runtime via the `nvenc` crate
-//! (which uses `libloading`). If the DLL is missing (no NVIDIA GPU / driver),
-//! `try_create` returns `Ok(None)` and the caller falls through to the next
-//! backend.
+//! 通过 `nvenc` crate（内部使用 `libloading`）在运行时动态加载
+//! `nvEncodeAPI64.dll`。DLL 缺失（没有 NVIDIA GPU / 驱动）时，
+//! `try_create` 返回 `Ok(None)`，调用方继续尝试下一个后端。
 //!
-//! ## Input path
+//! ## 输入路径
 //!
-//! Uses a **D3D11 staging texture** (CPU-writable) as the NVENC input source.
-//! Each frame: Map the texture → memcpy RGBA → Unmap → `register_resource_dx11`
-//! → `encode_picture` → drop (auto unmap+unregister). The texture is created
-//! once and reused across frames.
+//! 使用 **D3D11 staging texture**（可由 CPU 写入）作为 NVENC 输入源。
+//! 每帧执行：Map 纹理 → memcpy RGBA → Unmap → `register_resource_dx11`
+//! → `encode_picture` → drop（自动 unmap + unregister）。纹理只创建一次并在帧间复用。
 //!
-//! This path is used instead of `create_input_buffer` + `InputBuffer::lock()`
-//! because the crate's `InputBufferLock::drop` has a bug: it passes
-//! `buffer_data_ptr` instead of the buffer handle to `unlock_input_buffer`.
-//! The `RegisteredResource` wrapper (from `register_resource_dx11`) has a
-//! correct `Drop` impl, so it's safe to use.
+//! 由于 crate 的 `InputBufferLock::drop` 存在 bug（向 `unlock_input_buffer`
+//! 传入 `buffer_data_ptr` 而不是 buffer handle），此路径替代了
+//! `create_input_buffer` + `InputBuffer::lock()`。`register_resource_dx11` 返回的
+//! `RegisteredResource` 包装器实现了正确的 Drop，因此可以安全使用。
 //!
-//! ## Configuration
+//! ## 配置
 //!
-//! - H.264, fastest P1 preset, LowLatency tuning, 900 kbps VBR, no B-frames
-//! - GOP = 2s of frames; NVENC emits SPS/PPS before the first IDR by default
-//! - Output is Annex-B, parsed by the shared `mux` module
+//! - H.264，最快 P1 预设、LowLatency 调优、900 kbps VBR、无 B 帧。
+//! - GOP 为 2 秒帧数；NVENC 默认在首个 IDR 前输出 SPS/PPS。
+//! - 输出为 Annex-B，由共享 `mux` 模块解析。
 
 use crate::core::errors::{PreviewError, Result};
 use crate::render::canvas::Img;
@@ -37,8 +34,8 @@ use nvenc::sys::enums::{
 };
 use nvenc::sys::guids::{NV_ENC_CODEC_H264_GUID, NV_ENC_PRESET_P1_GUID};
 
-/// Try to create an NVENC encoder. Returns `Ok(None)` if the NVENC DLL is
-/// unavailable or session creation fails (e.g. no NVIDIA GPU).
+/// 尝试创建 NVENC 编码器。NVENC DLL 不可用或会话创建失败
+///（例如没有 NVIDIA GPU）时返回 `Ok(None)`。
 pub(crate) fn try_create(w: u32, h: u32, fps: u32) -> Result<Option<NvencEncoder>> {
     match NvencEncoder::new(w, h, fps) {
         Ok(enc) => Ok(Some(enc)),
@@ -61,15 +58,14 @@ enum NvencInitError {
 pub(crate) struct NvencEncoder {
     encoder: nvenc::encoder::Encoder,
     bitstream: BitStream,
-    /// Reused Annex-B assembly buffer.
+    /// 复用的 Annex-B 拼接缓冲区。
     annexb_buf: Vec<u8>,
     frame_idx: u32,
     keyframe_period: u32,
-    /// D3D11 device + staging texture (CPU-writable, registered with NVENC
-    /// once at init and reused across all frames).
+    /// D3D11 设备与 staging texture（可由 CPU 写入，初始化时向 NVENC 注册一次并在所有帧中复用）。
     d3d: D3D11Resources,
-    /// Registered NVENC input resource — created once, reused every frame.
-    /// Avoids the ~5ms/frame overhead of register+unmap+unregister.
+    /// 已注册的 NVENC 输入资源，仅创建一次并在每帧复用，
+    /// 避免每帧 register + unmap + unregister 约 5ms 的开销。
     registered: nvenc::encoder::RegisteredResource,
     _device_guard: D3D11DeviceGuard,
 }
@@ -78,16 +74,16 @@ unsafe impl Send for NvencEncoder {}
 
 impl NvencEncoder {
     fn new(w: u32, h: u32, fps: u32) -> std::result::Result<Self, NvencInitError> {
-        if w % 2 != 0 || h % 2 != 0 {
+        if !w.is_multiple_of(2) || !h.is_multiple_of(2) {
             return Err(NvencInitError::Failed(PreviewError::render(format!(
                 "NVENC requires even dimensions, got {w}x{h}"
             ))));
         }
 
-        // ── 1. create D3D11 device (NVENC session + staging texture) ──
+        // ── 1. 创建设备（NVENC 会话 + staging texture） ──
         let device_guard = D3D11DeviceGuard::create().map_err(NvencInitError::Failed)?;
 
-        // ── 2. open NVENC session ──
+        // ── 2. 打开 NVENC 会话 ──
         let session = match Session::open_dx(&device_guard.device) {
             Ok(s) => s,
             Err(e) => {
@@ -96,7 +92,7 @@ impl NvencEncoder {
             }
         };
 
-        // ── 3. get preset config ──
+        // ── 3. 获取预设配置 ──
         let (session, mut config) = session
             .get_encode_preset_config_ex(
                 NV_ENC_CODEC_H264_GUID,
@@ -109,7 +105,7 @@ impl NvencEncoder {
                 )))
             })?;
 
-        // ── 4. optimize for throughput and compact output ──
+        // ── 4. 优化吞吐量和输出大小 ──
         let keyframe_period = (fps * 2).max(1);
         config.preset_cfg.gop_len = keyframe_period;
         config.preset_cfg.frame_interval_p = 1;
@@ -117,7 +113,7 @@ impl NvencEncoder {
         config.preset_cfg.rc_params.average_bit_rate =
             crate::config::current().video.video.VIDEO_BITRATE;
 
-        // ── 5. init encoder ──
+        // ── 5. 初始化编码器 ──
         let init_params = InitParams {
             encode_guid: NV_ENC_CODEC_H264_GUID,
             preset_guid: NV_ENC_PRESET_P1_GUID,
@@ -136,7 +132,7 @@ impl NvencEncoder {
             )))
         })?;
 
-        // ── 6. allocate output bitstream + create staging texture ──
+        // ── 6. 分配输出 bitstream 并创建 staging texture ──
         let bitstream = encoder.create_bitstream_buffer().map_err(|e| {
             NvencInitError::Failed(PreviewError::render(format!(
                 "NVENC create_bitstream failed: {e:?}"
@@ -146,9 +142,9 @@ impl NvencEncoder {
         let d3d =
             D3D11Resources::create(&device_guard.device, w, h).map_err(NvencInitError::Failed)?;
 
-        // ── 7. register the texture ONCE (reused across all frames) ──
-        // This avoids the ~5ms/frame overhead of register+unmap+unregister
-        // that would otherwise dominate small-frame encoding.
+        // ── 7. 仅注册一次纹理（所有帧复用） ──
+        // 避免 register + unmap + unregister 每帧约 5ms 的开销，
+        // 否则该开销会主导小帧编码时间。
         let registered = encoder
             .register_resource_dx11(&d3d.texture, NVencBufferFormat::ARGB, 0)
             .map_err(|e| {
@@ -172,18 +168,19 @@ impl NvencEncoder {
 
 impl FrameEncoder for NvencEncoder {
     fn encode(&mut self, rgba: &Img) -> Result<EncodedFrame> {
-        // ── update the staging texture with the new RGBA frame ──
+        // ── 使用新的 RGBA 帧更新 staging texture ──
         self.d3d.update_texture(rgba)?;
 
-        // ── determine picture type ──
-        let is_keyframe = self.frame_idx == 0 || (self.frame_idx % self.keyframe_period == 0);
+        // ── 确定图像类型 ──
+        let is_keyframe =
+            self.frame_idx == 0 || self.frame_idx.is_multiple_of(self.keyframe_period);
         let pic_type = if is_keyframe {
             NVencPicType::IDR
         } else {
             NVencPicType::P
         };
 
-        // ── encode (reuse the pre-registered resource) ──
+        // ── 编码（复用预注册资源） ──
         self.encoder
             .encode_picture(
                 &self.registered,
@@ -197,7 +194,7 @@ impl FrameEncoder for NvencEncoder {
             )
             .map_err(|e| PreviewError::render(format!("NVENC encode_picture failed: {e:?}")))?;
 
-        // ── read back the bitstream ──
+        // ── 读回 bitstream ──
         let bs_lock = self
             .bitstream
             .try_lock(true)
@@ -222,9 +219,9 @@ impl FrameEncoder for NvencEncoder {
     }
 }
 
-// ── D3D11 device + staging texture ──
+// ── D3D11 设备与 staging texture ──
 
-/// Holds a D3D11 device + its context alive for the lifetime of the encoder.
+/// 在编码器生命周期内保持 D3D11 设备及其上下文存活。
 struct D3D11DeviceGuard {
     #[cfg(windows)]
     device: windows::Win32::Graphics::Direct3D11::ID3D11Device,
@@ -232,7 +229,7 @@ struct D3D11DeviceGuard {
     _context: windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
 }
 
-/// D3D11 staging texture + device context for CPU→GPU frame upload.
+/// 用于 CPU→GPU 帧上传的 D3D11 staging texture 与设备上下文。
 struct D3D11Resources {
     #[cfg(windows)]
     texture: windows::Win32::Graphics::Direct3D11::ID3D11Texture2D,
@@ -251,7 +248,7 @@ impl D3D11DeviceGuard {
         };
         use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory, IDXGIAdapter, IDXGIFactory};
 
-        // On dual-GPU systems, prefer the NVIDIA adapter so NVENC is available.
+        // 双 GPU 系统优先选择 NVIDIA 适配器，以确保 NVENC 可用。
         let nvidia_adapter: Option<IDXGIAdapter> = {
             let factory: IDXGIFactory = unsafe { CreateDXGIFactory() }
                 .map_err(|e| PreviewError::render(format!("CreateDXGIFactory failed: {e}")))?;
@@ -326,8 +323,8 @@ impl D3D11Resources {
             DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
         };
 
-        // Dynamic texture: CPU-writable via Map(WRITE_DISCARD), GPU-readable
-        // for NVENC registration. This is the standard CPU→GPU upload path.
+        // 动态纹理：通过 Map(WRITE_DISCARD) 由 CPU 写入，并可供 GPU 读取以注册到 NVENC。
+        // 这是标准的 CPU→GPU 上传路径。
         let desc = D3D11_TEXTURE2D_DESC {
             Width: w,
             Height: h,
@@ -352,7 +349,7 @@ impl D3D11Resources {
         }
         let texture = texture.ok_or_else(|| PreviewError::render("texture was null"))?;
 
-        // Get the immediate context for Map/Unmap operations.
+        // 获取用于 Map/Unmap 操作的 immediate context。
         let context = unsafe { device.GetImmediateContext() }
             .map_err(|e| PreviewError::render(format!("GetImmediateContext failed: {e}")))?;
 
@@ -364,7 +361,7 @@ impl D3D11Resources {
         })
     }
 
-    /// Map the staging texture, memcpy RGBA into it, unmap.
+    /// Map staging texture，将 RGBA memcpy 进去，再执行 unmap。
     fn update_texture(&self, rgba: &Img) -> Result<()> {
         use windows::Win32::Graphics::Direct3D11::{
             D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD,

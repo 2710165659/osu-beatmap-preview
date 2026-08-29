@@ -89,7 +89,7 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         return parse_da_token(tail, s);
     }
 
-    // DT/HT with optional speed value
+    // DT/HT 可带可选速度值。
     if token.starts_with("DT") || token.starts_with("HT") {
         let (kind, rest) = token.split_at(2);
         if rest.is_empty() || rest.chars().all(|c| c.is_ascii_digit() || c == '.') {
@@ -125,7 +125,7 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         }
     }
 
-    // <n>K
+    // <n>K。
     if let Some(num) = token.strip_suffix('K') {
         if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) {
             let keys: i32 = num
@@ -181,7 +181,7 @@ fn parse_da_token(tail: &str, s: &mut ModSettings) -> Result<()> {
         } else {
             break;
         };
-        // numeric part: -?[\d.]+
+        // 数字部分：-?[\d.]+。
         let num_start = pos + 2;
         let mut num_end = num_start;
         let b = tail.as_bytes();
@@ -323,7 +323,7 @@ fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
 
 fn validate_supported_mods(settings: &ModSettings, mode: i32, fmt: &str) -> Vec<String> {
     let fmt_key = fmt.trim().to_lowercase();
-    // mp4 uses the same mod rules as gif (animated output, DT/HT allowed).
+    // MP4 与 GIF 使用相同模组规则（动画输出，允许 DT/HT）。
     let fmt_key = if fmt_key == "mp4" {
         "gif".to_owned()
     } else {

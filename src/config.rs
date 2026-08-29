@@ -1,8 +1,7 @@
-//! Application configuration.
+//! 应用配置。
 //!
-//! The embedded YAML is the default layer. The CLI can add an optional file
-//! from `CONFIG_DIR` and a final command-line overlay before the immutable
-//! process-wide snapshot is initialized.
+//! 内嵌 YAML 是默认配置层。CLI 可从 `CONFIG_DIR` 加载可选文件，
+//! 再叠加命令行配置，最后初始化不可变的进程级快照。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -34,8 +33,7 @@ struct ConfigVariant {
     difference: Value,
 }
 
-/// Return the active configuration. Library callers that do not initialize
-/// the CLI layer receive the embedded defaults.
+/// 返回当前生效的配置。未初始化 CLI 配置层的库调用方会得到内嵌默认值。
 pub(crate) fn current() -> &'static RuntimeConfig {
     &RUNTIME_CONFIG
         .get_or_init(|| {
@@ -45,18 +43,13 @@ pub(crate) fn current() -> &'static RuntimeConfig {
         .runtime
 }
 
-/// Initialize the process-wide configuration for the command-line binary.
+/// 为命令行程序初始化进程级配置。
 #[allow(dead_code)]
 pub(crate) fn initialize_for_cli(cli_value: Option<&str>) -> Result<(), String> {
     let snapshot = load_layers(cli_value, true)?;
     RUNTIME_CONFIG
         .set(snapshot)
         .map_err(|_| "configuration has already been initialized".to_string())
-}
-
-#[cfg(test)]
-fn load_snapshot(cli_value: Option<&str>) -> Result<RuntimeConfig, String> {
-    load_layers(cli_value, true).map(|snapshot| snapshot.runtime)
 }
 
 fn load_embedded_snapshot() -> Result<ConfigSnapshot, String> {
@@ -108,8 +101,8 @@ fn validate_positive_timeouts(config: &Value) -> Result<(), String> {
     Ok(())
 }
 
-/// Return the output cache directory for the active effective configuration.
-/// Default-equivalent configurations stay directly under OUTPUT_DIR.
+/// 返回当前有效配置对应的输出缓存目录。
+/// 与默认配置等价的配置直接使用 OUTPUT_DIR。
 pub(crate) fn output_directory() -> Result<PathBuf, String> {
     let snapshot = RUNTIME_CONFIG.get_or_init(|| {
         load_embedded_snapshot()
@@ -390,9 +383,8 @@ where
     Ok(std::time::Duration::from_secs(seconds))
 }
 
-/// Expand portable directory placeholders from the embedded configuration.
-/// `%TEMP%` always uses the platform's temporary directory; other `%NAME%`
-/// placeholders are resolved from the process environment when available.
+/// 展开内嵌配置中的可移植目录占位符。
+/// `%TEMP%` 始终使用平台临时目录；其它 `%NAME%` 占位符在环境变量存在时解析。
 pub(crate) fn resolve_path(template: &str) -> PathBuf {
     let mut expanded = String::with_capacity(template.len());
     let mut remainder = template;
@@ -424,9 +416,8 @@ pub(crate) fn resolve_path(template: &str) -> PathBuf {
     PathBuf::from(expanded)
 }
 
-/// Resolve the automatic configuration directory. Relative directories are
-/// anchored beside the executable so `CONFIG_DIR: "./"` finds `config.yml`
-/// next to the binary regardless of the process working directory.
+/// 解析自动配置目录。相对目录以可执行文件所在目录为基准，
+/// 因此无论进程工作目录如何，`CONFIG_DIR: "./"` 都能找到旁边的 `config.yml`。
 fn resolve_config_dir(template: &str) -> PathBuf {
     let path = resolve_path(template);
     if path.is_absolute() {
@@ -441,7 +432,7 @@ fn resolve_config_dir(template: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        config_variant, load_snapshot, merge_values, parse_argument, parse_document, resolve_path,
+        config_variant, merge_values, parse_argument, parse_document, resolve_path,
         write_variant_file,
     };
 
@@ -451,6 +442,10 @@ mod tests {
         let overlay = parse_document(source, "test config").unwrap();
         merge_values(&mut active, &overlay, "").unwrap();
         config_variant(&defaults, &active).unwrap()
+    }
+
+    fn load_snapshot(cli_value: Option<&str>) -> Result<super::RuntimeConfig, String> {
+        super::load_layers(cli_value, true).map(|snapshot| snapshot.runtime)
     }
 
     #[test]

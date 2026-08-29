@@ -1,8 +1,8 @@
-//! osu!catch MP4 renderer: full-chart continuous playback (no 2×2 segment
-//! preview). Reuses `render_gif_frame` from the GIF path so per-frame pixels
-//! match the GIF's single-segment look; only the time axis and framing differ.
+//! osu!catch MP4 渲染器：完整谱面连续播放（无 2×2 分段预览）。
+//! 复用 GIF 路径的 `render_gif_frame`，确保每帧像素与 GIF 单段外观一致，
+//! 仅时间轴和取景方式不同。
 //!
-//! Time range is controlled by `--time-points` and `--duration-time`.
+//! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};

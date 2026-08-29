@@ -9,7 +9,7 @@ use serde_json::{json, Map, Value};
 /// 一张谱面渲染的汇总字段（由调用方逐步填充）。
 #[derive(Debug, Default, Clone)]
 pub struct SummaryRecord {
-    /// success / error / cache-hit
+    /// 状态：success / error / cache-hit。
     pub status: String,
     pub bid: String,
     /// 渲染流水线总耗时（毫秒）

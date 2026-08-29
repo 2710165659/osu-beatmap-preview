@@ -1,4 +1,4 @@
-//! Hit object rendering: hit circles, sliders, spinners, approach circles.
+//! 音符对象渲染：打击圈、滑条、转盘和接近圈。
 
 use crate::core::models::{BreakPeriod, StandardHitObject};
 use crate::render::canvas::Img;
@@ -13,7 +13,7 @@ use super::slider::{
     is_full_slider_body, resized_with_alpha, slider_snaked_range, with_alpha,
 };
 
-// ——— frame rendering ———
+// ——— 帧渲染 ———
 
 pub(crate) fn render_frame(
     context: &RenderContext,
@@ -64,7 +64,7 @@ pub(crate) fn render_frame(
     frame
 }
 
-// ——— hit circle ———
+// ——— 打击圈 ———
 
 fn draw_hit_circle(
     frame: &mut Img,
@@ -82,7 +82,7 @@ fn draw_hit_circle(
         &context.settings,
     );
     if context.settings.traceable {
-        // TC: only approach circle is visible, skip the circle piece
+        // TC：只显示接近圈，跳过打击圈主体。
         return;
     }
     let center = to_frame_point(
@@ -101,7 +101,7 @@ fn draw_hit_circle(
     );
 }
 
-// ——— slider ———
+// ——— 滑条 ———
 
 fn draw_slider(
     frame: &mut Img,
@@ -191,7 +191,7 @@ fn draw_slider(
     }
 }
 
-// ——— spinner ———
+// ——— 转盘 ———
 
 fn draw_spinner(
     frame: &mut Img,
@@ -243,7 +243,7 @@ fn draw_spinner(
     );
 }
 
-// ——— approach circle ———
+// ——— 接近圈 ———
 
 fn draw_approach_circle(
     frame: &mut Img,
@@ -289,7 +289,7 @@ fn draw_approach_circle(
     );
 }
 
-// ——— circle piece (hitcircle + overlay + number) ———
+// ——— 打击圈主体（打击圈 + 覆盖层 + 数字） ———
 
 fn draw_circle_piece(
     frame: &mut Img,
@@ -327,7 +327,7 @@ fn build_circle_piece(diameter: i64, color: [u8; 3]) -> Img {
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
     let border = d as f64 * crate::render::standard::constants::ARGON_BORDER_RATIO;
-    // C# Argon: outerFill = accentColour.Darken(4)
+    // C# Argon：outerFill = accentColour.Darken(4)。
     let dark = darken(color, 4.0);
 
     // 1. outerFill: 深色填充圆
@@ -405,12 +405,9 @@ fn draw_number(
     }
 }
 
-// ——— break overlay ———
+// ——— Break 覆盖层 ———
 
-fn current_break_period<'a>(
-    break_periods: &'a [BreakPeriod],
-    snapshot_time: i64,
-) -> Option<&'a BreakPeriod> {
+fn current_break_period(break_periods: &[BreakPeriod], snapshot_time: i64) -> Option<&BreakPeriod> {
     break_periods
         .iter()
         .find(|p| break_overlay_alpha(p, snapshot_time) > 0.0)

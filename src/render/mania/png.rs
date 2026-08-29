@@ -1,5 +1,5 @@
-//! osu!mania PNG grid renderer.
-//! Port of beatmap_preview/mania/renderer.py.
+//! osu!mania PNG 网格渲染器。
+//! 移植自 beatmap_preview/mania/renderer.py。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;
@@ -46,7 +46,7 @@ pub(crate) fn render_mania_grid(
     deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
     deadline.check()?;
-    // key count comes straight from the beatmap CS (mods don't change native mania lanes)
+    // 键数直接来自谱面 CS（模组不会改变原生 mania 轨道数）。
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
 
@@ -61,8 +61,8 @@ pub(crate) fn render_mania_grid(
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     let native_mania = is_native_mania(beatmap);
 
-    // Trim leading silence: if first note is >= 5s in, start 1s before it,
-    // aligned to the red-line beat grid.
+    // 裁剪开头静音：若第一个音符在 5 秒之后，则从其前 1 秒开始，
+    // 并对齐到红线节拍网格。
     let first_note_time = hit_objects
         .iter()
         .map(|ho| ho.start_time)
@@ -543,8 +543,8 @@ fn build_timing_lines(
             1
         };
         let step = point.beat_length / subdivision as f64;
-        // NaN steps fall through (single line emitted, like Python); zero/negative
-        // steps would loop forever, so skip them.
+        // NaN 步长直接继续（与 Python 一样只输出一条线）；零或负值另行处理。
+        // 该步长会造成无限循环，因此跳过。
         if step <= 0.0 {
             continue;
         }
@@ -576,17 +576,17 @@ fn build_timing_lines(
             current = point.time + step_index as f64 * step;
         }
     }
-    // Attach BPM labels: at each red line's first bar line when BPM changes,
-    // and at the bar line nearest the first note.
+    // 添加 BPM 标签：BPM 变化时标在每条红线的第一条小节线，
+    // 并在最接近首个音符的小节线上标记。
     if !ordered_unique.is_empty() {
         let mut last_bpm: Option<f64> = None;
         for point in &base_points {
             let bpm = 60_000.0 / point.beat_length;
-            let bpm_changed = last_bpm.map_or(true, |prev| (bpm - prev).abs() > 0.01);
+            let bpm_changed = last_bpm.is_none_or(|prev| (bpm - prev).abs() > 0.01);
             last_bpm = Some(bpm);
 
             if bpm_changed {
-                // Find the first bar line at or after this red line's time.
+                // 查找该红线时间点或之后的第一条小节线。
                 let rounded = round_half_even(point.time);
                 let key = ordered_unique
                     .range(rounded..)
@@ -599,7 +599,7 @@ fn build_timing_lines(
             }
         }
 
-        // First note BPM: use the current BPM at first_note_time.
+        // 首个音符 BPM：使用 first_note_time 时生效的 BPM。
         if first_note_time > 0 {
             let bpm = 60_000.0
                 / base_points
@@ -612,7 +612,7 @@ fn build_timing_lines(
                 .map(|(&k, _)| k);
             if let Some(k) = key {
                 if let Some(line) = ordered_unique.get_mut(&k) {
-                    // Only attach if not already labelled by a BPM change at the same time.
+                    // 仅当同一时刻尚未因 BPM 变化添加标签时才附加。
                     if line.bpm_label.is_none() {
                         line.bpm_label = Some(format!("{:.0}BPM", bpm.round()));
                     }

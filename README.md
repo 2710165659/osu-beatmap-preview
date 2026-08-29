@@ -149,20 +149,11 @@ osu-beatmap-preview --bid=123456 --config=C:/path/to/config.yml
   "beatmap-info": {
     "meta-data": { "title": "...", "artist": "...", ... },
     "difficulty": { ... }
-  },
-  "build-info": {
-    "version": "1.0.3",
-    "build_time": "2026-06-22T16:01:06.623636800Z"
-  },
-  "log": {
-    "progress": "C:/Users/.../AppData/Local/Temp/osu-beatmap-preview/logs/progress.log",
-    "render": "C:/Users/.../AppData/Local/Temp/osu-beatmap-preview/logs/render.log"
   }
 }
 ```
 
 > `preview-img` 字段为输出文件的绝对路径，格式由 `--fmt` 决定（`.gif` / `.png` / `.mp4`）。
-> `log` 字段为可选字段，只有日志启用时才存在，不影响现有解析。
 
 ## 效果预览
 

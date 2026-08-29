@@ -1,5 +1,5 @@
-//! osu!catch render-object expansion: fruits, juice streams, banana showers,
-//! HR offsets, hyperdash. RNG call order mirrors Python/stable exactly.
+//! osu!catch 渲染对象展开：水果、果汁流、香蕉雨、HR 偏移和 hyperdash。
+//! RNG 调用顺序严格匹配 Python/stable。
 
 use crate::common::legacy_random::{stateless_next_int, LegacyRandom};
 use crate::common::slider_path::{build_catch_slider_path, path_position_at, SliderPath};
@@ -20,7 +20,7 @@ fn to_float32(v: f64) -> f32 {
     v as f32
 }
 
-// ─── render objects ───
+// ─── 渲染对象 ───
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum ObjType {
@@ -72,7 +72,7 @@ pub(crate) struct SliderEvent {
     pub(crate) path_progress: f64,
 }
 
-// ─── difficulty ───
+// ─── 难度 ───
 
 pub(crate) struct Difficulty {
     pub(crate) cs: f64,
@@ -122,13 +122,13 @@ pub(crate) fn catch_time_range(approach_rate: f64) -> f64 {
     difficulty_range(approach_rate, 1800.0, 1200.0, 450.0)
 }
 
-// ─── stateless colors ───
+// ─── 无状态颜色 ───
 
 pub(crate) fn banana_color(seed: i64) -> [u8; 3] {
     crate::render::catch::constants::BANANA_COLORS[stateless_next_int(3, seed, 0) as usize]
 }
 
-// ─── object expansion ───
+// ─── 对象展开 ───
 
 /// 将谱面 hit object 展开为渲染对象（水果 / 果汁流 / 香蕉雨）。
 ///
@@ -344,12 +344,16 @@ fn build_juice_stream_objects(
     for mut obj in nested_objects {
         match obj.object_type {
             ObjType::TinyDroplet => {
-                // Python: offset = rng.next(-20, 20)
-                // which is: int(-20 + rng.next_double() * 40)
+                // Python：offset = rng.next(-20, 20)。
+                // 等价于：int(-20 + rng.next_double() * 40)。
                 let offset = (-20.0 + rng.next_double() * 40.0) as i32 as f64;
-                obj.x = (obj.x + offset)
-                    .max(0.0)
-                    .min(crate::render::catch::constants::PLAYFIELD_WIDTH);
+                let shifted_x = obj.x + offset;
+                // 原 max/min 链在 NaN 时回退到下界，显式保留该行为。
+                obj.x = if shifted_x.is_nan() {
+                    0.0
+                } else {
+                    shifted_x.clamp(0.0, crate::render::catch::constants::PLAYFIELD_WIDTH)
+                };
             }
             ObjType::Droplet => {
                 rng.next();
@@ -444,9 +448,9 @@ fn build_slider_events(
         });
     }
 
-    // Always generate legacy last tick, regardless of format version
+    // 无论格式版本如何，始终生成旧版末尾 tick。
     if let Some(legacy_tick) =
-        build_legacy_last_tick(hit_object.start_time as i64, span_duration, span_count)
+        build_legacy_last_tick(hit_object.start_time, span_duration, span_count)
     {
         events.push(legacy_tick);
     }
@@ -534,7 +538,13 @@ fn precision_adjusted_beat_length(beat_length: f64, slider_velocity: f64) -> f64
     if slider_velocity <= 0.0 {
         return beat_length;
     }
-    let bpm_multiplier = to_float32(100.0 / slider_velocity).max(10.0).min(1000.0) / 100.0;
+    let raw_multiplier = to_float32(100.0 / slider_velocity);
+    // 原 max/min 链在 NaN 时回退到下界 10.0。
+    let bpm_multiplier = if raw_multiplier.is_nan() {
+        10.0
+    } else {
+        raw_multiplier.clamp(10.0, 1000.0)
+    } / 100.0;
     beat_length * bpm_multiplier as f64
 }
 
@@ -651,7 +661,7 @@ fn apply_hyper_dash(render_objects: &mut [RenderObject], circle_size: f64) {
     }
 }
 
-// ─── slider timing ───
+// ─── 滑条时间 ───
 
 fn catch_resolve_slider_timing(start_time: i64, timing_points: &[TimingPoint]) -> (f64, f64) {
     let mut beat_length = DEFAULT_BEAT_LENGTH;

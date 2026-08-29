@@ -140,7 +140,6 @@ fn parse_args() -> Args {
 
     let bid = match bid {
         Some(bid) => bid,
-        None if log_test_lines().is_some() => String::new(),
         None => {
             eprintln!("error: --bid is required");
             print_usage_and_exit(2);
@@ -188,51 +187,6 @@ fn run(args: &Args) -> Result<serde_json::Value> {
     )
 }
 
-fn build_info() -> serde_json::Value {
-    serde_json::json!({
-        "version": VERSION,
-        "build_time": BUILD_TIMESTAMP
-    })
-}
-
-/// 把日志文件路径附加到 stdout 的 JSON 结果中（可选字段，不影响现有解析）。
-fn attach_log_info(mut result: serde_json::Value) -> serde_json::Value {
-    if let Some((progress, render)) = log::config::paths() {
-        if let Some(obj) = result.as_object_mut() {
-            obj.insert(
-                "log".to_string(),
-                serde_json::json!({
-                    "progress": progress.to_string_lossy(),
-                    "render": render.to_string_lossy(),
-                }),
-            );
-        }
-    }
-    result
-}
-
-/// `OSU_PREVIEW_LOG_TEST=<N>`：测试钩子，只写 N 条进度事件 + 1 条汇总后退出，
-/// 供多进程并发集成测试使用（不渲染谱面、不访问网络）。
-fn log_test_lines() -> Option<usize> {
-    std::env::var("OSU_PREVIEW_LOG_TEST")
-        .ok()
-        .and_then(|value| value.parse().ok())
-}
-
-fn run_log_test(lines: usize) {
-    log::config::init();
-    for i in 0..lines {
-        log::event("test", "info", Some("test-bid"), &format!("test line {i}"));
-    }
-    let mut rec = log::SummaryRecord::default();
-    rec.status = "success".to_string();
-    rec.bid = "test-bid".to_string();
-    rec.duration_ms = 1.0;
-    rec.fmt = Some("png".to_string());
-    log::write_summary(&rec);
-    std::process::exit(0);
-}
-
 fn main() {
     let args = parse_args();
     if let Err(error) = config::initialize_for_cli(args.config.as_deref()) {
@@ -245,19 +199,11 @@ fn main() {
         println!("{}", serde_json::to_string_pretty(&payload).unwrap());
         std::process::exit(1);
     }
-    if let Some(lines) = log_test_lines() {
-        run_log_test(lines);
-        return;
-    }
     if !args.no_log {
         log::config::init();
     }
     match run(&args) {
-        Ok(mut result) => {
-            if let Some(obj) = result.as_object_mut() {
-                obj.insert("build-info".to_string(), build_info());
-            }
-            result = attach_log_info(result);
+        Ok(result) => {
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }
         Err(exc) => {
@@ -271,7 +217,6 @@ fn main() {
                 "preview-img": "",
                 "beatmap-info": {},
             });
-            let payload = attach_log_info(payload);
             println!("{}", serde_json::to_string_pretty(&payload).unwrap());
             std::process::exit(1);
         }

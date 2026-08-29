@@ -1,5 +1,4 @@
-//! Output caching helpers: file-name formatting, mtime-based cache validity,
-//! and deterministic-time checks.
+//! 输出缓存辅助函数：文件名格式化、基于修改时间的缓存有效性和确定性时间检查。
 
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::KvSection;
@@ -9,12 +8,12 @@ use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-/// Strip the Windows extended-length prefix `\\?\` if present.
+/// 如果存在 Windows 扩展长度前缀 `\\?\`，则将其移除。
 pub fn clean_windows_path(path: &str) -> String {
     path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
 }
 
-/// Convert a `KvSection` into a JSON object with kebab-case keys.
+/// 将 `KvSection` 转换为键名使用 kebab-case 的 JSON 对象。
 pub fn format_section_keys(section: &KvSection) -> Value {
     let mut map = Map::new();
     for (key, value) in &section.entries {
@@ -23,9 +22,9 @@ pub fn format_section_keys(section: &KvSection) -> Value {
     Value::Object(map)
 }
 
-/// Convert CamelCase / PascalCase to kebab-case.
+/// 将 CamelCase / PascalCase 转换为 kebab-case。
 fn kebab_case(key: &str) -> String {
-    // pass 1: ([a-z0-9])([A-Z]) -> \1-\2 ; pass 2: ([A-Z]+)([A-Z][a-z]) -> \1-\2
+    // 第一遍处理小写/数字到大写的边界，第二遍处理连续大写到大写小写的边界。
     let chars: Vec<char> = key.chars().collect();
     let mut pass1 = String::with_capacity(key.len() + 4);
     for i in 0..chars.len() {
@@ -42,7 +41,7 @@ fn kebab_case(key: &str) -> String {
     let mut i = 0;
     while i < chars.len() {
         pass2.push(chars[i]);
-        // boundary between a run of uppercase and [A-Z][a-z]
+        // 连续大写与 [A-Z][a-z] 之间的边界。
         if chars[i].is_ascii_uppercase()
             && i + 2 < chars.len()
             && chars[i + 1].is_ascii_uppercase()
@@ -55,7 +54,7 @@ fn kebab_case(key: &str) -> String {
     pass2.to_lowercase()
 }
 
-/// Build a filesystem-safe suffix from mod tokens (e.g. "dt1.5-hr").
+/// 根据模组令牌构建文件系统安全的后缀（例如 "dt1.5-hr"）。
 pub fn format_mod_suffix(mods: &ModSettings) -> String {
     let tokens: Vec<String> = mods
         .tokens
@@ -112,9 +111,9 @@ fn sanitize_suffix(value: &str) -> String {
         .collect()
 }
 
-// ── output cache helpers ──
+// ── 输出缓存辅助函数 ──
 
-/// Returns `Some(path)` if the cached output is still valid, `None` otherwise.
+/// 缓存输出仍有效时返回 `Some(path)`，否则返回 `None`。
 pub fn output_cache_hit(
     output_path: &Path,
     beatmap_path: &Path,
@@ -130,13 +129,13 @@ pub fn output_cache_hit(
         return None;
     }
 
-    // Output must be newer than the program build.
+    // 输出文件必须晚于程序构建时间。
     let out_mtime = out_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
     if out_mtime < crate::core::build_time::build_time() {
         return None;
     }
 
-    // Output must be newer than the beatmap file.
+    // 输出文件必须晚于谱面文件。
     if let Ok(beatmap_meta) = beatmap_path.metadata() {
         if let Ok(beatmap_mtime) = beatmap_meta.modified() {
             if out_mtime < beatmap_mtime {
@@ -145,31 +144,26 @@ pub fn output_cache_hit(
         }
     }
 
-    // A render interrupted mid-write (e.g. the process was force-killed) leaves
-    // a truncated file at the final path. Only structurally complete outputs
-    // may be served from cache; anything else is re-rendered from scratch.
-    if !output_is_complete(&output_path, fmt) {
+    // 渲染在写入中断（例如进程被强制终止）会在最终路径留下截断文件。
+    // 只有结构完整的输出才能从缓存提供，其余情况必须重新渲染。
+    if !output_is_complete(output_path, fmt) {
         return None;
     }
 
     Some(output_path.to_path_buf())
 }
 
-// ── atomic output ──
+// ── 原子输出 ──
 
-/// Write an output file atomically: `write` receives a sibling temporary path
-/// and must produce the file there; only after it returns `Ok` is the temp
-/// file renamed over `output_path`. A render killed mid-write (forced process
-/// termination, panic) can therefore never leave a partial file at the final
-/// cache path — at worst a stale `.tmp` file is left, which is removed before
-/// the next attempt.
+/// 以原子方式写入输出文件：`write` 接收同目录临时路径并写入，
+/// 仅在返回 `Ok` 后才将临时文件重命名覆盖 `output_path`。
+/// 因此渲染中途被终止或 panic 不会在缓存最终路径留下残缺文件，
+/// 最坏只会留下下次尝试前可清理的旧 `.tmp` 文件。
 ///
-/// The temp file lives in the same directory as `output_path` so the final
-/// rename stays on one volume and is atomic. On Windows `std::fs::rename`
-/// replaces an existing destination (`MOVEFILE_REPLACE_EXISTING`), so a
-/// previously good cache stays intact until the new file is complete. If
-/// `write` fails, the temp file is removed best-effort and the error is
-/// propagated with `output_path` untouched.
+/// 临时文件与 `output_path` 位于同一目录，确保重命名在同一卷内完成并具备原子性。
+/// Windows 的 `std::fs::rename` 会替换目标（`MOVEFILE_REPLACE_EXISTING`），
+/// 因此旧的有效缓存会一直保留到新文件完整写入。若 `write` 失败，
+/// 会尽力删除临时文件并原样返回错误，`output_path` 不受影响。
 pub(crate) fn with_atomic_output<T>(
     output_path: &Path,
     tmp_suffix: &str,
@@ -181,7 +175,7 @@ pub(crate) fn with_atomic_output<T>(
     let tmp_path =
         output_path.with_file_name(format!("{}.{}", file_name.to_string_lossy(), tmp_suffix));
 
-    // Clear any temp file left by a previous interrupted run.
+    // 清理上次中断运行遗留的临时文件。
     let _ = std::fs::remove_file(&tmp_path);
 
     let result = write(&tmp_path);
@@ -215,11 +209,10 @@ pub(crate) fn with_atomic_output_deadline<T>(
     })
 }
 
-// ── output completeness validation ──
+// ── 输出完整性校验 ──
 
-/// Return `true` when an existing output file looks structurally complete for
-/// its format. Interrupted renders leave truncated files behind; without this
-/// check they would be served from cache as if they were valid.
+/// 当已有输出文件在其格式上看起来结构完整时返回 `true`。
+/// 中断渲染可能留下截断文件，缺少此检查会把它们误当作有效缓存。
 pub(crate) fn output_is_complete(path: &Path, fmt: &str) -> bool {
     let Ok(data) = std::fs::read(path) else {
         return false;
@@ -228,14 +221,13 @@ pub(crate) fn output_is_complete(path: &Path, fmt: &str) -> bool {
         "mp4" => mp4_bytes_complete(&data),
         "gif" => gif_bytes_complete(&data),
         "png" => png_bytes_complete(&data),
-        _ => true, // unknown formats are not validated
+        _ => true, // 未知格式不做校验。
     }
 }
 
-/// MP4 check: the file must start with an `ftyp` brand box, all top-level boxes
-/// must align exactly to EOF, and both `moov` and `mdat` must be present. This
-/// accepts both faststart (`ftyp` + `moov` + `mdat`) and tail-indexed
-/// (`ftyp` + `mdat` + `moov`) files.
+/// MP4 检查：文件必须以 `ftyp` brand box 开头，所有顶层 box 必须恰好对齐 EOF，
+/// 且同时包含 `moov` 和 `mdat`。同时接受 faststart（`ftyp` + `moov` + `mdat`）
+/// 与尾部索引（`ftyp` + `mdat` + `moov`）文件。
 fn mp4_bytes_complete(data: &[u8]) -> bool {
     if data.len() < 16 {
         return false;
@@ -290,13 +282,13 @@ fn mp4_bytes_complete(data: &[u8]) -> bool {
     seen_ftyp && seen_moov && seen_mdat
 }
 
-/// GIF check: the trailer byte `0x3B` must be the last byte of the file.
+/// GIF 检查：尾标记字节 `0x3B` 必须是文件最后一个字节。
 fn gif_bytes_complete(data: &[u8]) -> bool {
     data.last() == Some(&0x3B)
 }
 
-/// PNG check: the file must end with an `IEND` chunk (4-byte type followed by
-/// a 4-byte CRC, i.e. `IEND` at `len - 8..len - 4`).
+/// PNG 检查：文件必须以 `IEND` 区块结尾（4 字节类型后跟 4 字节 CRC，
+/// 即 `IEND` 位于 `len - 8..len - 4`）。
 fn png_bytes_complete(data: &[u8]) -> bool {
     data.len() >= 8 && &data[data.len() - 8..data.len() - 4] == b"IEND"
 }
@@ -349,33 +341,32 @@ mod tests {
         let complete = complete_mp4_bytes();
         assert!(mp4_bytes_complete(&complete));
 
-        // faststart order is complete too: ftyp + moov + mdat.
+        // faststart 顺序同样完整：ftyp + moov + mdat。
         let mut faststart = complete[..24].to_vec();
         faststart.extend_from_slice(&complete[36..48]);
         faststart.extend_from_slice(&complete[24..36]);
         assert!(mp4_bytes_complete(&faststart));
 
-        // truncated: final box payload cut off, so the top-level boxes do not
-        // align to EOF.
+        // 截断：最后一个 box 的负载被截断，顶层 box 无法对齐到 EOF。
         let mut truncated = complete.clone();
         truncated.truncate(complete.len() - 4);
         assert!(!mp4_bytes_complete(&truncated));
 
-        // moov missing entirely
+        // 完全缺少 moov。
         let no_moov = complete[..36].to_vec();
         assert!(!mp4_bytes_complete(&no_moov));
 
-        // mdat missing entirely
+        // 完全缺少 mdat。
         let mut no_mdat = complete[..24].to_vec();
         no_mdat.extend_from_slice(&complete[36..]);
         assert!(!mp4_bytes_complete(&no_mdat));
 
-        // ftyp missing
+        // 缺少 ftyp。
         let mut no_ftyp = complete.clone();
         no_ftyp[4..8].copy_from_slice(b"junk");
         assert!(!mp4_bytes_complete(&no_ftyp));
 
-        // too short
+        // 文件过短。
         assert!(!mp4_bytes_complete(&[0u8; 8]));
     }
 

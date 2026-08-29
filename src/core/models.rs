@@ -91,7 +91,7 @@ pub enum HitObjects {
     Mania(Vec<ManiaHitObject>),
 }
 
-/// Map an expression across all four `HitObjects` variants.
+/// 对四种 `HitObjects` 变体统一应用表达式。
 macro_rules! for_each_hit_variant {
     ($self:expr, |$v:ident| $body:expr) => {
         match $self {
@@ -142,7 +142,7 @@ impl HitObjects {
     }
 }
 
-// Key/value sections preserve insertion order via Vec; lookup helper provided.
+// 键值区段使用 Vec 保留插入顺序，并提供查找辅助方法。
 #[derive(Debug, Clone, Default)]
 pub struct KvSection {
     pub entries: Vec<(String, String)>,
@@ -180,9 +180,9 @@ pub struct Beatmap {
     pub timing_points: Vec<TimingPoint>,
     pub hit_objects: HitObjects,
     pub break_periods: Vec<BreakPeriod>,
-    /// Combo colours from the beatmap's [Colours] section (Combo1..ComboN order).
+    /// 谱面 [Colours] 区段中的连击颜色（按 Combo1..ComboN 顺序）。
     pub combo_colors: Vec<[u8; 3]>,
-    /// BeatDivisor from the [Editor] section, 0 if not set.
+    /// [Editor] 区段中的 BeatDivisor，未设置时为 0。
     pub beat_divisor: i32,
 }
 

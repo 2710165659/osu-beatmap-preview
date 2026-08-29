@@ -1,8 +1,7 @@
-//! Hit-object parsing for all four game modes.
+//! 四种游戏模式的音符对象解析。
 //!
-//! Each mode's parser converts raw CSV lines into its typed hit-object vector.
-//! Slider end-time computation (including timing-point lookups) is shared across
-//! standard, taiko, and catch.
+//! 各模式解析器将原始 CSV 行转换为对应的类型化音符向量。
+//! 滑条结束时间计算（包括 timing point 查找）由 standard、taiko、catch 共用。
 
 use crate::core::models::*;
 
@@ -215,8 +214,7 @@ fn parse_slider_end_time(
     Some(start_time + round_half_even(duration))
 }
 
-/// Resolve the effective beat_length and slider_velocity at a given start_time
-/// by scanning the timing points up to that time.
+/// 扫描给定开始时间之前的 timing points，解析生效的 beat_length 和 slider_velocity。
 pub fn resolve_slider_timing(start_time: i64, timing_points: &[TimingPoint]) -> (f64, f64) {
     let mut beat_length = timing_points[0].beat_length;
     let mut slider_velocity = 1.0;
@@ -234,7 +232,7 @@ pub fn resolve_slider_timing(start_time: i64, timing_points: &[TimingPoint]) -> 
     (beat_length, slider_velocity)
 }
 
-// Python's round() = banker's rounding.
+// Python 的 round() 使用银行家舍入。
 pub fn round_half_even(v: f64) -> i64 {
     let floor = v.floor();
     let diff = v - floor;

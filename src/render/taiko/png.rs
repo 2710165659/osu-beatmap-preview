@@ -80,7 +80,7 @@ pub(crate) fn render_taiko_grid(
         ));
     }
 
-    // Always trim leading silence, starting directly from the first note.
+    // 始终裁剪开头的静音，直接从第一个音符开始。
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let chart_start_time =
         crate::common::time_selection::snap_to_beat_grid(first_note_time, &beatmap.timing_points);
@@ -139,7 +139,7 @@ pub(crate) fn render_taiko_grid(
         crate::config::current().layout.taiko.png.IMAGE_BACKGROUND,
     );
 
-    // Pre-render track background strip — identical for every row.
+    // 预渲染轨道背景条，每一行都相同。
     let track_bg = {
         let mut bg = Img::new(
             layout.content_width as u32,
@@ -388,8 +388,8 @@ fn resolve_row_width_bpm_multiplier(redline_sections: &[RedlineSection]) -> f64 
 }
 
 fn resolve_main_bpm(redline_sections: &[RedlineSection]) -> f64 {
-    // Weight each rounded BPM by section duration; pick the dominant one
-    // (first-inserted wins ties, like Python's max over insertion order).
+    // 按区段时长对四舍五入后的 BPM 加权，选择占比最大的值。
+    // 相同权重时取先插入的值，匹配 Python 按插入顺序执行 max 的行为。
     let mut order: Vec<i64> = Vec::new();
     let mut weighted: HashMap<i64, i64> = HashMap::new();
     for section in redline_sections {
@@ -415,7 +415,7 @@ fn resolve_main_bpm(redline_sections: &[RedlineSection]) -> f64 {
     best_bpm as f64
 }
 
-// ─── row helpers ───
+// ─── 行辅助函数 ───
 
 fn png_row_top(row_index: i64) -> i64 {
     let base = crate::config::current().layout.taiko.png.PAGE_MARGIN_Y
@@ -659,7 +659,7 @@ fn format_sv_label(sv: f64) -> String {
     }
 }
 
-// ─── hit object drawing ───
+// ─── 音符绘制 ───
 
 fn draw_hit_object(
     image: &mut Img,

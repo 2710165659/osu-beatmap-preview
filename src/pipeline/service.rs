@@ -165,7 +165,7 @@ fn generate_preview_inner(
     }
     let output_path: PathBuf = output_root.join(format!("{}.{}", parts.join("_"), fmt));
 
-    // ── image cache check ──
+    // ── 图像缓存检查 ──
     let cached = cache::output_cache_hit(&output_path, &beatmap_path, &fmt, target_mode, no_cache);
     if let Some(cached_path) = cached {
         deadline.check()?;
@@ -228,7 +228,9 @@ fn generate_preview_inner(
             output_path.display()
         ),
     );
-    let preview_path = match render_preview_for_mode(
+    // 原子写入保证失败的渲染不会触碰最终路径，因此已有的有效缓存仍会保留；
+    // 临时文件（若存在）由写入器负责清理。
+    let preview_path = render_preview_for_mode(
         renderer,
         beatmap.clone(),
         &output_path,
@@ -240,13 +242,7 @@ fn generate_preview_inner(
         audio_job,
         bid,
         &deadline,
-    ) {
-        Ok(path) => path,
-        // Atomic writes mean a failed render never touches the final path, so
-        // a previously good cached output is preserved. The temp file (if
-        // any) was already cleaned up by the writer.
-        Err(error) => return Err(error),
-    };
+    )?;
     deadline.check()?;
     rec.render_ms = Some(t_render.elapsed().as_secs_f64() * 1000.0);
     if let Ok(meta) = preview_path.metadata() {
@@ -287,7 +283,7 @@ fn fill_beatmap_info(beatmap: &Beatmap, rec: &mut SummaryRecord) {
     rec.hit_object_count = Some(beatmap.hit_objects.len());
     rec.chart_duration_ms =
         object_time_bounds(&beatmap.hit_objects).map(|(first, last)| (last - first).max(0));
-    rec.bpm = main_bpm(&beatmap);
+    rec.bpm = main_bpm(beatmap);
     rec.ar = beatmap.difficulty.get_f64("ApproachRate");
     rec.cs = beatmap.difficulty.get_f64("CircleSize");
     rec.hp = beatmap.difficulty.get_f64("HPDrainRate");
@@ -345,10 +341,10 @@ fn main_bpm(beatmap: &Beatmap) -> Option<f64> {
         .map(|t| (60000.0 / t.beat_length * 100.0).round() / 100.0)
 }
 
-// ── ModeRenderer trait ──
+// ── 模式渲染器 trait ──
 
 trait ModeRenderer {
-    /// Render a GIF animation to `output_path`. Returns the output path.
+    /// 将 GIF 动画渲染到 `output_path`，并返回输出路径。
     fn render_gif(
         &self,
         beatmap: &Beatmap,
@@ -359,7 +355,7 @@ trait ModeRenderer {
         deadline: &RequestDeadline,
     ) -> Result<PathBuf>;
 
-    /// Render a static PNG to `output_path`. Returns the output path.
+    /// 将静态 PNG 渲染到 `output_path`，并返回输出路径。
     fn render_png(
         &self,
         beatmap: &Beatmap,
@@ -382,7 +378,7 @@ trait ModeRenderer {
         deadline: &RequestDeadline,
     ) -> Result<PathBuf>;
 
-    /// Optionally convert the beatmap before rendering. Default: clone (no conversion).
+    /// 在渲染前按需转换谱面。默认行为是克隆谱面（不转换）。
     fn convert(
         &self,
         beatmap: &Beatmap,
@@ -392,13 +388,13 @@ trait ModeRenderer {
         Ok(beatmap.clone())
     }
 
-    /// Validate that the beatmap has hit objects. Default: accept anything.
+    /// 校验谱面是否包含音符对象。默认实现接受任意谱面。
     fn validate(&self, _beatmap: &Beatmap) -> Result<()> {
         Ok(())
     }
 }
 
-// ── Mode implementations ──
+// ── 模式实现 ──
 
 struct StandardRenderer;
 impl ModeRenderer for StandardRenderer {
@@ -652,7 +648,7 @@ impl ModeRenderer for ManiaRenderer {
     }
 }
 
-// ── conversion helpers ──
+// ── 转换辅助函数 ──
 
 fn resolve_convert_target(beatmap: &Beatmap, name: &str) -> Result<i32> {
     let key = name.to_lowercase();
@@ -714,7 +710,7 @@ fn convert_beatmap(
         })
 }
 
-/// Convert the beatmap only if its native mode differs from the target.
+/// 仅当谱面原生模式与目标模式不同时才转换谱面。
 fn convert_if_needed(
     beatmap: &Beatmap,
     native_mode: i32,
@@ -728,7 +724,7 @@ fn convert_if_needed(
     }
 }
 
-/// Unified render dispatch through the `ModeRenderer` trait.
+/// 通过 `ModeRenderer` trait 统一分派渲染。
 fn render_preview_for_mode(
     renderer: &dyn ModeRenderer,
     beatmap: Beatmap,

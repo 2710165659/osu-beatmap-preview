@@ -15,9 +15,6 @@ mod summary;
 mod timestamp;
 mod writer;
 
-#[cfg(test)]
-mod tests;
-
 pub use context::{
     record_cache, record_output_bytes, record_stage, record_stage_status, record_video_stats,
     set_bid, CacheKind, VideoStats,
@@ -33,3 +30,6 @@ pub(crate) fn reset_for_tests() {
     config::reset_for_tests();
     context::reset_for_tests();
 }
+
+#[cfg(test)]
+mod tests;

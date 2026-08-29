@@ -16,9 +16,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (module, sections) in modules {
         let module = module.as_str().ok_or("module name must be a string")?;
         let sections = sections.as_mapping().ok_or("module must be a mapping")?;
-        // Skin configuration is intentionally exposed only through the typed
-        // runtime snapshot below. Its nested Mania key-count blocks cannot be
-        // represented by the legacy constant modules.
+        // 皮肤配置仅通过下方的类型化运行时快照暴露；旧版常量模块无法表示
+        // Mania 各键数对应的嵌套配置块。
         if module == "skin" {
             continue;
         }
@@ -42,15 +41,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     generated.push_str("}\n");
                 }
             } else {
-                generated.push_str(&module_prelude(&module, &section));
+                generated.push_str(module_prelude(module, section));
                 generate_entries(&mut generated, entries, &[module, section])?;
             }
             generated.push_str("}\n");
         }
         generated.push_str("}\n");
     }
-    // Keep the generated schema separate from the legacy constants while the
-    // consumers are migrated to the runtime snapshot.
+    // 在调用方迁移到运行时快照期间，让生成的模式与旧版常量保持分离。
     let source_value: Value = serde_yaml::from_str(&source)?;
     generate_runtime_schema(&mut generated, &source_value)?;
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").ok_or("OUT_DIR missing")?);
@@ -102,13 +100,13 @@ fn generate_runtime_struct(
         let ty = runtime_field_type(&child_path, child)?;
         if let Some(kind) = special_kind(path, key) {
             if kind == "duration_secs" {
-                generated.push_str(&format!(
-                    "    #[serde(deserialize_with = \"crate::config::deserialize_duration_secs\")]\n"
-                ));
+                generated.push_str(
+                    "    #[serde(deserialize_with = \"crate::config::deserialize_duration_secs\")]\n",
+                );
             } else if kind == "positive_duration_secs" {
-                generated.push_str(&format!(
-                    "    #[serde(deserialize_with = \"crate::config::deserialize_positive_duration_secs\")]\n"
-                ));
+                generated.push_str(
+                    "    #[serde(deserialize_with = \"crate::config::deserialize_positive_duration_secs\")]\n",
+                );
             }
         }
         generated.push_str(&format!("    pub {key}: {ty},\n"));

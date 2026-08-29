@@ -1,4 +1,4 @@
-//! osu!taiko GIF renderer: multi-segment preview or single-screen clip.
+//! osu!taiko GIF 渲染器：多段预览或单画面片段。
 
 use crate::common::time_selection::{GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector};
 use crate::core::errors::{PreviewError, Result};
@@ -24,7 +24,7 @@ pub(crate) fn pyround(v: f64) -> i64 {
     round_half_even(v)
 }
 
-// ─── GIF helpers ───
+// ─── GIF 辅助函数 ───
 
 fn gif_judgement_line_offset() -> i64 {
     pyround(
@@ -42,7 +42,7 @@ fn gif_scroll_length_px() -> i64 {
     )
 }
 
-// ─── multiplier / prepared objects ───
+// ─── 倍率与预处理对象 ───
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MultiplierPoint {
@@ -83,7 +83,7 @@ pub(crate) struct GifLayout {
     pub(crate) time_range: f64,
 }
 
-// ─── public API ───
+// ─── 公共 API ───
 
 pub(crate) fn render_taiko_gif(
     beatmap: &Beatmap,
@@ -165,16 +165,15 @@ fn render_taiko_segment_gif(
         })
         .collect();
 
-    // Per-thread render cache avoids serialising parallel render calls behind a
-    // single Mutex — rayon's chunk-parallel render would otherwise queue on the
-    // lock.  Each thread gets its own cache; first few frames rebuild textures,
-    // then cache hits dominate.
+    // 每线程独立渲染缓存，避免并行渲染调用在同一 Mutex 后串行化。
+    // 否则 rayon 分块渲染会在锁上排队。每个线程拥有自己的缓存；前几帧构建纹理，
+    // 之后主要命中缓存。
     thread_local! {
         static TAIKO_GIF_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
     }
 
-    // Pre-render static row backgrounds (drum panels + tracks + judgement lines)
-    // once, then clone per frame instead of redrawing 600 times across 150 frames.
+    // 预渲染静态行背景（鼓面板、轨道和判定线）一次，再逐帧克隆，
+    // 避免在 150 帧中重复绘制 600 次。
     let static_bg = {
         let mut bg = Img::new(
             layout.image_width as u32,
@@ -190,8 +189,13 @@ fn render_taiko_segment_gif(
     let render = move |frame_index: usize| -> Img {
         let mut canvas = static_bg.clone();
 
-        for segment_index in 0..segment_timings.len() {
-            let snapshot_time = segment_snapshot_times[segment_index][frame_index];
+        debug_assert_eq!(segment_timings.len(), segment_snapshot_times.len());
+        for (segment_index, snapshot_times) in segment_snapshot_times
+            .iter()
+            .enumerate()
+            .take(segment_timings.len())
+        {
+            let snapshot_time = snapshot_times[frame_index];
             TAIKO_GIF_CACHE.with(|cache| {
                 draw_hit_objects(
                     &mut canvas,
@@ -199,7 +203,7 @@ fn render_taiko_segment_gif(
                     &layout,
                     segment_index as i64,
                     snapshot_time,
-                    &mut *cache.borrow_mut(),
+                    &mut cache.borrow_mut(),
                 )
             });
         }
@@ -230,7 +234,7 @@ fn render_taiko_segment_gif(
     )
 }
 
-// ─── time range / multiplier ───
+// ─── 时间范围与倍率 ───
 
 pub(crate) fn compute_time_range() -> f64 {
     let in_length = crate::render::taiko::constants::ASPECT_RATIO
@@ -307,7 +311,7 @@ pub(crate) fn prepare_hit_objects(
         .collect()
 }
 
-// ─── layout ───
+// ─── 布局 ───
 
 pub(crate) fn build_gif_layout(time_range: f64) -> GifLayout {
     build_gif_layout_with_segments(
@@ -372,7 +376,7 @@ fn judgement_line_x(layout: &GifLayout) -> i64 {
         + gif_judgement_line_offset()
 }
 
-// ─── drawing ───
+// ─── 绘制 ───
 
 fn draw_judgement_line(image: &mut Img, layout: &GifLayout, row_index: i64) {
     let line_x = judgement_line_x(layout);
@@ -433,7 +437,7 @@ pub(crate) fn draw_hit_objects(
     }
 }
 
-/// Overlapping PositionAt: x = judgement_x + (t - now) / timeRange * multiplier * scrollLength
+/// Overlapping PositionAt：x = judgement_x + (t - now) / timeRange * multiplier * scrollLength。
 fn object_x(note_time: f64, snapshot_time: f64, multiplier: f64, layout: &GifLayout) -> i64 {
     let judgement_x = judgement_line_x(layout);
     let offset =

@@ -1,26 +1,21 @@
-//! MP4 (H.264) video encoder: streams frames produced by a callback into an
-//! MP4 file via H.264 + the `mp4` crate. Mirrors `save_animated_gif_streamed`:
-//! parallel render chunks (rayon) + sequential encode to preserve frame order.
+//! MP4（H.264）视频编码器：将回调生成的帧通过 H.264 和 `mp4` crate
+//! 流式写入 MP4 文件。流程类似 `save_animated_gif_streamed`：
+//! rayon 分块并行渲染，再顺序编码以保持帧顺序。
 //!
-//! Each rendered playfield frame is letterboxed into a 16:9 black canvas with a
-//! "current / total" time label in the top-right, converted to the format the
-//! selected backend expects, encoded as H.264, and written as one MP4 sample.
-//! The full animation never resides in memory at once — at most `PAR_CHUNK_SIZE`
-//! raw frames are held.
+//! 每帧游戏区域会放入 16:9 黑色画布，在右上角绘制“当前 / 总时长”标签，
+//! 转换为后端所需格式后编码为 H.264，并写入一个 MP4 sample。
+//! 完整动画不会同时驻留内存，最多保留 `PAR_CHUNK_SIZE` 个原始帧。
 //!
-//! ## GPU acceleration
+//! ## GPU 加速
 //!
-//! Encoding is dispatched to the first available hardware backend:
-//!   1. **NVENC** (NVIDIA) — dynamically loads `nvEncodeAPI64.dll` at runtime.
-//!   2. **AMF** (AMD) — dynamically loads `amfrt64.dll` at runtime.
-//!   3. **openh264** (CPU) — always available fallback, single-threaded software
-//!      encoder (the original implementation).
+//! 编码按顺序分派给第一个可用的后端：
+//!   1. **NVENC**（NVIDIA）：运行时动态加载 `nvEncodeAPI64.dll`。
+//!   2. **AMF**（AMD）：运行时动态加载 `amfrt64.dll`。
+//!   3. **openh264**（CPU）：始终可用的单线程软件编码回退（原始实现）。
 //!
-//! All backends emit Annex-B H.264 NALs which are fed through the shared mux
-//! layer (`extract_nals` + `mp4` writer), so the output files are byte-for-byte
-//! compatible in structure. GPU DLLs are loaded via `libloading`; their absence
-//! at build time or runtime never breaks compilation or execution — the encoder
-//! silently falls back to CPU.
+//! 所有后端都输出 Annex-B H.264 NAL，并交给共享封装层
+//!（`extract_nals` + `mp4` writer），因此输出文件结构一致。GPU DLL 通过
+//! `libloading` 加载；构建或运行时缺少 DLL 都不会影响程序，编码器会静默回退到 CPU。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
@@ -47,8 +42,8 @@ mod mux;
 #[cfg(windows)]
 mod nvenc;
 
-/// Parallel-render chunk size (matches GIF: ~8 frames at once).
-/// Bound transient RGBA frame memory for unusually large playfields.
+/// 并行渲染分块大小（与 GIF 一致：一次约 8 帧）。
+/// 限制异常大游戏区域带来的临时 RGBA 帧内存。
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct VideoTimeRange {
@@ -141,10 +136,10 @@ fn preview_time_or_first_object(beatmap: &Beatmap, first_object_ms: i64) -> i64 
         .unwrap_or(first_object_ms)
 }
 
-/// An encoded H.264 frame ready to be muxed into the MP4 container.
+/// 已编码并可封装进 MP4 容器的 H.264 帧。
 ///
-/// `sps`/`pps` are `Some` only on frames that carry them. `slice` is the
-/// length-prefixed slice NAL data, and `is_keyframe` reflects an actual IDR NAL.
+/// 仅携带 SPS/PPS 的帧对应字段为 `Some`。`slice` 是带长度前缀的 slice NAL 数据，
+/// `is_keyframe` 表示是否实际包含 IDR NAL。
 struct EncodedFrame {
     sps: Option<Vec<u8>>,
     pps: Option<Vec<u8>>,
@@ -152,35 +147,27 @@ struct EncodedFrame {
     is_keyframe: bool,
 }
 
-/// A backend H.264 encoder that consumes composed RGBA frames and produces
-/// Annex-B NALs. Implementations own their encoder state (GPU session, CPU
-/// codec, etc.) and must be fed frames in order.
+/// 后端 H.264 编码器：接收合成后的 RGBA 帧并产生 Annex-B NAL。
+/// 实现持有自身编码状态（GPU 会话、CPU codec 等），必须按顺序输入帧。
 ///
-/// Safety contract: `encode` is called sequentially from a single thread (the
-/// mux loop), so backends need not be `Sync` — but the trait object is held
-/// across rayon parallel render chunks, so it must not be borrowed during
-/// `into_par_iter`. The dispatch in `save_mp4_streamed` encodes *after* the
-/// parallel collect, so this is safe.
+/// 安全约定：`encode` 仅由单线程（封装循环）顺序调用，因此后端无需实现 `Sync`。
+/// trait 对象会跨 rayon 并行渲染分块持有，所以 `into_par_iter` 期间不得借用它。
+/// `save_mp4_streamed` 在并行收集完成后才编码，因此符合约定。
 trait FrameEncoder {
-    /// Encode one composed RGBA frame. Returns the NAL units split into
-    /// SPS / PPS / slice for muxing.
+    /// 编码一帧合成 RGBA，返回拆分为 SPS / PPS / slice 的 NAL 供封装。
     fn encode(&mut self, rgba: &Img) -> Result<EncodedFrame>;
 
-    /// Human-readable backend name for diagnostics (e.g. "NVENC", "AMF", "openh264").
+    /// 用于诊断的可读后端名称（例如 "NVENC"、"AMF"、"openh264"）。
     fn name(&self) -> &'static str;
 }
 
-/// Stream `frame_count` frames produced by `render(i)` into an MP4 file at
-/// `output_path`.
+/// 将 `render(i)` 产生的 `frame_count` 帧流式写入 `output_path` 指定的 MP4 文件。
 ///
-/// `render` returns the playfield frame and the current absolute chart time
-/// (ms). `last_object_ms` is the absolute end of the last playable object;
-/// both are converted through `time_axis` before drawing the top-right
-/// "current / total" gameplay label. The total is therefore independent of
-/// the selected export range and its leading/trailing padding.
-/// Frames are rendered in parallel chunks and encoded sequentially to preserve
-/// ordering; `fps` is both the encode frame rate and the MP4 timescale (1 tick
-/// per frame).
+/// `render` 返回游戏区域帧和当前绝对谱面时间（毫秒）；`last_object_ms` 是最后一个
+/// 可玩音符的绝对结束时间。绘制右上角“当前 / 总时长”标签前，两者都通过
+/// `time_axis` 转换，因此总时长独立于所选导出范围及首尾留白。
+/// 帧分块并行渲染并顺序编码以保持顺序；`fps` 同时作为编码帧率与 MP4 时间尺度
+///（每帧一个 tick）。
 pub(crate) fn save_mp4_streamed(
     frame_count: usize,
     chart_start_ms: i64,
@@ -241,13 +228,13 @@ pub(crate) fn save_mp4_streamed(
         deadline.clone(),
     );
 
-    // ── render first frame to discover playfield dimensions ──
+    // ── 渲染首帧以确定游戏区域尺寸 ──
     let (first_frame, first_time) = render(0);
     deadline.check()?;
     let (pf_w, pf_h) = (first_frame.w, first_frame.h);
     let (out_w, out_h) = letterbox_dims(pf_w, pf_h);
 
-    // ── pick the best available encoder backend ──
+    // ── 选择最佳可用编码后端 ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
     deadline.check()?;
     crate::log::event(
@@ -271,7 +258,7 @@ pub(crate) fn save_mp4_streamed(
     let par_chunk_size = (crate::config::current().video.video.MAX_PAR_FRAME_BYTES / frame_bytes)
         .clamp(1, crate::config::current().video.video.PAR_CHUNK_SIZE);
 
-    // ── encode first frame, extract SPS/PPS for the mp4 track config ──
+    // ── 编码首帧并提取 SPS/PPS，供 MP4 轨道配置使用 ──
     let first_comp = compose_frame(
         first_frame,
         time_axis.to_display(first_time),
@@ -294,12 +281,10 @@ pub(crate) fn save_mp4_streamed(
         .pps
         .ok_or_else(|| PreviewError::render("missing PPS in first encoded frame"))?;
 
-    // ── mp4 writer ──
-    // Write to a sibling temp file and atomically replace the final path only
-    // after the MP4 is fully finalized, so an interrupted render never leaves
-    // a partial file that could be served from cache. The encoder is moved
-    // into the closure and returned so its `Drop` (which prints to stdout)
-    // can still be silenced after the rename.
+    // ── MP4 写入器 ──
+    // 写入同目录临时文件，MP4 完成收尾后才原子替换最终路径，
+    // 避免中断渲染留下可被缓存误用的残缺文件。编码器移入闭包再返回，
+    // 使重命名后仍可抑制其会打印到 stdout 的 Drop 输出。
     let encoder = with_atomic_output_deadline(output_path, "mp4.tmp", deadline, |tmp_path| {
         let file = std::fs::File::create(tmp_path)
             .map_err(|e| PreviewError::render(format!("failed to write mp4: {e}")))?;
@@ -348,7 +333,7 @@ pub(crate) fn save_mp4_streamed(
             .add_track(&audio_track_config)
             .map_err(|e| PreviewError::render(format!("mp4 add audio track failed: {e}")))?;
 
-        // first sample (IDR, start_time = 0 ticks)
+        // 首个 sample（IDR，start_time = 0 tick）。
         let sample = mp4::Mp4Sample {
             start_time: 0,
             duration: 1,
@@ -360,11 +345,9 @@ pub(crate) fn save_mp4_streamed(
             .write_sample(1, &sample)
             .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
 
-        // ── render + compose in parallel chunks, encode sequentially ──
-        // compose_frame is moved into the parallel loop so it runs alongside
-        // render on rayon's thread pool — this eliminates the serial compose
-        // bottleneck (~5s for 4000 frames) that previously halved the GPU
-        // speedup.
+        // ── 分块并行渲染和合成，顺序编码 ──
+        // 将 compose_frame 移入并行循环，使其在 rayon 线程池内与渲染同时执行，
+        // 消除串行合成瓶颈（4000 帧约 5 秒），避免 GPU 加速收益减半。
         let mut t_render = std::time::Duration::ZERO;
         let mut t_encode = std::time::Duration::ZERO;
         let mut t_mux = std::time::Duration::ZERO;
@@ -377,7 +360,7 @@ pub(crate) fn save_mp4_streamed(
                 .into_par_iter()
                 .map(|fi| {
                     let (pf, time) = render(fi);
-                    // compose here, in parallel — avoids serial bottleneck
+                    // 在此并行合成，避免串行瓶颈。
                     compose_frame(pf, time_axis.to_display(time), gameplay_total, out_w, out_h)
                 })
                 .collect();
@@ -464,8 +447,7 @@ pub(crate) fn save_mp4_streamed(
         mp4_writer
             .write_end()
             .map_err(|e| PreviewError::render(format!("mp4 write_end failed: {e}")))?;
-        // Recover the BufWriter and flush it so every byte is on disk before
-        // the temp file is renamed over the final path.
+        // 取回 BufWriter 并刷新，确保临时文件覆盖最终路径前所有字节都已落盘。
         let mut writer = mp4_writer.into_writer();
         std::io::Write::flush(&mut writer)
             .map_err(|e| PreviewError::render(format!("mp4 flush failed: {e}")))?;
@@ -476,11 +458,9 @@ pub(crate) fn save_mp4_streamed(
         Ok(encoder)
     })?;
 
-    // Explicitly drop the encoder before returning. The `nvenc` crate's Drop
-    // impl uses `println!` (stdout) for debug messages ("Dropping bitstream
-    // buffer" / "Dropping encoder"), which would pollute the JSON output on
-    // stdout. We temporarily swap stdout→stderr so those messages go to stderr
-    // instead, keeping stdout clean for the JSON payload.
+    // 返回前显式释放编码器。`nvenc` crate 的 Drop 实现使用 `println!` 向 stdout
+    // 输出调试信息，会污染 JSON 输出。临时将 stdout 切换到 stderr，使调试信息
+    // 写入 stderr，从而保持 JSON 输出纯净。
     drop_stdout_silence(|| {
         drop(encoder);
     });
@@ -553,43 +533,43 @@ fn sample_freq_index(sample_rate: u32) -> Result<mp4::SampleFreqIndex> {
     Ok(index)
 }
 
-/// Try hardware encoders in priority order, fall back to CPU openh264.
+/// 按优先级尝试硬件编码器，全部不可用时回退到 CPU openh264。
 fn create_encoder(w: u32, h: u32, fps: u32) -> Result<Box<dyn FrameEncoder>> {
-    // `OSU_PREVIEW_NO_GPU=1` forces the CPU path (for benchmarking / fallback).
+    // `OSU_PREVIEW_NO_GPU=1` 强制使用 CPU 路径（用于基准测试或回退）。
     let force_cpu = std::env::var("OSU_PREVIEW_NO_GPU").as_deref() == Ok("1");
-    // 1. NVENC (NVIDIA) — Windows only
+    // 1. NVENC（NVIDIA）——仅 Windows。
     #[cfg(windows)]
     if !force_cpu {
         if let Some(enc) = nvenc::try_create(w, h, fps)? {
             return Ok(Box::new(enc));
         }
     }
-    // 2. AMF (AMD) — Windows only (amfrt64.dll)
+    // 2. AMF（AMD）——仅 Windows（amfrt64.dll）。
     #[cfg(windows)]
     if !force_cpu {
         if let Some(enc) = amf::try_create(w, h, fps)? {
             return Ok(Box::new(enc));
         }
     }
-    // 3. CPU fallback (always available)
+    // 3. CPU 回退（始终可用）。
     Ok(Box::new(cpu::CpuEncoder::new(w, h, fps)?))
 }
 
-/// Compute the 16:9 letterbox canvas size for a playfield frame, rounding out
-/// to even dimensions (YUV420 requires width and height to be multiples of 2).
+/// 计算游戏区域帧的 16:9 信箱画布尺寸，并取整到偶数
+///（YUV420 要求宽高都是 2 的倍数）。
 fn letterbox_dims(pf_w: u32, pf_h: u32) -> (u32, u32) {
     let (w, h) = if pf_w as f64 * 9.0 > pf_h as f64 * 16.0 {
-        // playfield wider than 16:9 → pad top/bottom
+        // 游戏区域宽于 16:9：上下补边。
         (pf_w, (pf_w as f64 * 9.0 / 16.0).round() as u32)
     } else {
-        // playfield narrower than 16:9 → pad left/right
+        // 游戏区域窄于 16:9：左右补边。
         ((pf_h as f64 * 16.0 / 9.0).round() as u32, pf_h)
     };
     (w.max(2) & !1, h.max(2) & !1)
 }
 
-/// Place the playfield frame centered on a black 16:9 canvas and draw the
-/// "current / total" gameplay-time label in the top-right corner.
+/// 将游戏区域帧居中放置到黑色 16:9 画布，并在右上角绘制
+///“当前 / 总时长”游戏时间标签。
 fn compose_frame(pf: Img, current_ms: i64, total_ms: i64, out_w: u32, out_h: u32) -> Img {
     let mut canvas = Img::new(
         out_w,
@@ -622,10 +602,9 @@ fn format_mmss(ms: i64) -> String {
     crate::render::text::format_mmss_floor(ms)
 }
 
-/// Temporarily redirect stdout → stderr so that third-party `println!` calls
-/// (the `nvenc` crate's `Drop` debug messages: "Dropping bitstream buffer" /
-/// "Dropping encoder") don't pollute stdout, which must contain only the JSON
-/// result. After the closure returns, stdout is restored.
+/// 临时将 stdout 重定向到 stderr，避免第三方 `println!` 调用
+///（`nvenc` crate 的 Drop 调试信息）污染 stdout。stdout 必须只包含 JSON 结果；
+/// 闭包返回后恢复 stdout。
 #[cfg(windows)]
 fn drop_stdout_silence<F: FnOnce()>(f: F) {
     use std::io::Write;

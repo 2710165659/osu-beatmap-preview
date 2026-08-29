@@ -148,20 +148,11 @@ The program prints a JSON object to stdout. Its schema is as follows:
   "beatmap-info": {
     "meta-data": { "title": "...", "artist": "...", ... },
     "difficulty": { ... }
-  },
-  "build-info": {
-    "version": "1.0.3",
-    "build_time": "2026-06-22T16:01:06.623636800Z"
-  },
-  "log": {
-    "progress": "C:/Users/.../AppData/Local/Temp/osu-beatmap-preview/logs/progress.log",
-    "render": "C:/Users/.../AppData/Local/Temp/osu-beatmap-preview/logs/render.log"
   }
 }
 ```
 
 > `preview-img` is an absolute path. Its extension follows `--fmt`: `.gif`, `.png`, or `.mp4`.
-> `log` is optional and is present only when logging is enabled; it does not affect existing parsers.
 
 ## Preview
 

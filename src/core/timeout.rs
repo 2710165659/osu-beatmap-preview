@@ -54,22 +54,23 @@ impl RequestDeadline {
         self.inner.cancelled.store(true, Ordering::Relaxed);
     }
 
-    #[cfg(test)]
-    pub(crate) fn configured_timeout(&self) -> Duration {
-        self.inner.timeout
-    }
-
-    #[cfg(test)]
-    pub(crate) fn format(&self) -> &str {
-        &self.inner.format
-    }
-
     fn error(&self) -> PreviewError {
         PreviewError::render(format!(
             "{} preview request timed out after {}s",
             self.inner.format,
             self.inner.timeout.as_secs()
         ))
+    }
+}
+
+#[cfg(test)]
+impl RequestDeadline {
+    pub(crate) fn configured_timeout(&self) -> Duration {
+        self.inner.timeout
+    }
+
+    pub(crate) fn format(&self) -> &str {
+        &self.inner.format
     }
 }
 

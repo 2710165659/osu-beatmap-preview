@@ -1,4 +1,4 @@
-//! Slider rendering: path data, body, ball, reverse arrows for osu!standard.
+//! osu!standard 滑条渲染：路径数据、主体、滑条球和反向箭头。
 
 use crate::common::slider_path::{
     build_path, build_standard_slider_path, path_position_at, SliderPath,
@@ -11,7 +11,7 @@ use std::sync::Arc;
 use super::constants::*;
 use super::context::{color_id, py_round, to_frame_point, CachedLayer, RenderCache, RenderContext};
 
-// ——— data ———
+// ——— 数据 ———
 
 pub(crate) struct SliderRenderData {
     pub(crate) frame_path: SliderPath,
@@ -20,7 +20,7 @@ pub(crate) struct SliderRenderData {
     pub(crate) reverse_angles: Vec<f64>,
 }
 
-// ——— slider body ———
+// ——— 滑条主体 ———
 
 pub(crate) fn draw_slider_body(
     frame: &mut Img,
@@ -48,23 +48,25 @@ pub(crate) fn draw_cached_slider_body(
     traceable: bool,
 ) {
     let cache_key = (index, traceable);
-    if !cache.slider_body_layers.contains_key(&cache_key) {
-        let layer = render_slider_body_layer(
-            &slider_data.frame_path.points,
-            context.slider_body_width,
-            color,
-            255,
-            traceable,
-        );
-        cache.slider_body_layers.insert(cache_key, layer);
-    }
+    cache
+        .slider_body_layers
+        .entry(cache_key)
+        .or_insert_with(|| {
+            render_slider_body_layer(
+                &slider_data.frame_path.points,
+                context.slider_body_width,
+                color,
+                255,
+                traceable,
+            )
+        });
 
     let alpha_key = alpha_to_byte(alpha);
     let (offset_x, offset_y) = {
         let layer = &cache.slider_body_layers[&cache_key];
         layer.offset
     };
-    if alpha_key >= 255 {
+    if alpha_key == 255 {
         let layer = &cache.slider_body_layers[&cache_key];
         frame.alpha_composite(&layer.image, offset_x, offset_y);
         return;
@@ -130,9 +132,9 @@ pub(crate) fn render_slider_body_layer(
     let inner_color = darken(color, 4.0);
 
     if traceable {
-        // TC: AccentColour=transparent, BorderColour=accent
-        // Draw full body shape with border_color, then erase center with background color
-        // to create a hollow border-only look while preserving shape/size.
+        // TC：AccentColour=transparent，BorderColour=accent。
+        // 先用 border_color 绘制完整主体，再用背景色擦除中心，
+        // 保留形状和尺寸并得到仅边框的外观。
         layer.stroke_polyline(
             &scaled_points,
             (width * scale) as f64,
@@ -144,7 +146,7 @@ pub(crate) fn render_slider_body_layer(
             ],
             true,
         );
-        // Erase the center fill with background color (playfield is black)
+        // 用背景色擦除中心填充（游戏区域为黑色）。
         let bg = crate::config::current()
             .layout
             .standard
@@ -183,7 +185,7 @@ pub(crate) fn render_slider_body_layer(
     }
 }
 
-// ——— slider data ———
+// ——— 滑条数据 ———
 
 pub(crate) fn get_slider_render_data(
     cache: &mut RenderCache,
@@ -285,7 +287,7 @@ pub(crate) fn slider_snaked_range(
     (start, end)
 }
 
-// ——— slider ball ———
+// ——— 滑条球 ———
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_slider_ball(
@@ -389,7 +391,7 @@ fn build_follow_circle(diameter: i64, circle_diameter: i64, color: [u8; 3]) -> I
     img
 }
 
-// ——— reverse arrows ———
+// ——— 反向箭头 ———
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_slider_reverse_arrows(
@@ -453,12 +455,10 @@ pub(crate) fn draw_slider_reverse_arrows(
 
         // 绘制 repeat-edge-piece（白色半圆 + 水平 alpha 渐变）
         let edge_key = (angle_key,); // 不依赖颜色，纯白色
-        if !cache.reverse_edges.contains_key(&edge_key) {
+        cache.reverse_edges.entry(edge_key).or_insert_with(|| {
             let edge_base = build_reverse_edge_piece(context.frame_circle_diameter);
-            cache
-                .reverse_edges
-                .insert(edge_key, edge_base.rotate_expand(angle_deg));
-        }
+            edge_base.rotate_expand(angle_deg)
+        });
         let edge_rotated = &cache.reverse_edges[&edge_key];
         let edge_id = color_id(ID_REVERSE_EDGE + (angle_key + 720) as u64, [255, 255, 255]);
         let edge = with_alpha(
@@ -473,12 +473,10 @@ pub(crate) fn draw_slider_reverse_arrows(
 
         // 绘制 << 箭头（覆盖在 edge piece 之上）
         let rotated_key = (angle_key, color);
-        if !cache.reverse_arrows.contains_key(&rotated_key) {
+        cache.reverse_arrows.entry(rotated_key).or_insert_with(|| {
             let base = build_reverse_arrow(context.frame_circle_diameter, color);
-            cache
-                .reverse_arrows
-                .insert(rotated_key, base.rotate_expand(angle_deg));
-        }
+            base.rotate_expand(angle_deg)
+        });
         let rotated = &cache.reverse_arrows[&rotated_key];
         let arrow_id = color_id(ID_ARROW_BASE + (angle_key + 720) as u64, color);
         let arrow = with_alpha(&mut cache.resized_alpha, rotated, arrow_id, effective_alpha);
@@ -574,7 +572,7 @@ fn build_reverse_edge_piece(diameter: i64) -> Img {
     img
 }
 
-// ——— helpers ———
+// ——— 辅助函数 ———
 
 /// 模拟 C# osu-framework 的 Color4.Darken(amount) 函数。
 /// 将 RGB 通道各减去 amount * 255（加法变暗）。
@@ -631,7 +629,7 @@ pub(crate) fn with_alpha<'a>(
     resized_with_alpha(cache, img, id, size, alpha)
 }
 
-// ——— AA drawing helpers ———
+// ——— 抗锯齿绘制辅助函数 ———
 
 pub(crate) fn fill_circle_gradient_aa(
     img: &mut Img,
@@ -648,8 +646,8 @@ pub(crate) fn fill_circle_gradient_aa(
     let yb = (cy + r + 1.0).ceil().min(img.h as f64 - 1.0) as i64;
     let xa = (cx - r - 1.0).floor().max(0.0) as i64;
     let xb = (cx + r + 1.0).ceil().min(img.w as f64 - 1.0) as i64;
-    // Step by 2 px — sample at half resolution, write 2×2 blocks.
-    // ~4× speed-up with negligible visual difference on AA circles.
+    // 每次步进 2 像素，在半分辨率采样并写入 2×2 区块。
+    // 在抗锯齿圆上视觉差异可忽略，速度约提升 4 倍。
     let mut y = ya;
     while y <= yb {
         let t = ((y as f64 + 0.5 - (cy - r)) / (2.0 * r)).clamp(0.0, 1.0);

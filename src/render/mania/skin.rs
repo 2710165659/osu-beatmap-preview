@@ -73,7 +73,7 @@ where
     }
 }
 
-/// Common view over generated `SkinMANIAKEYS_NConfig` structs.
+/// 对生成的 `SkinMANIAKEYS_NConfig` 结构体提供统一视图。
 trait ManiaSkinBlock {
     fn hit_position(&self) -> i64;
     fn column_widths(&self) -> &[i64];

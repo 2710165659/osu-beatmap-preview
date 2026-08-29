@@ -1,5 +1,5 @@
-//! Timing/scrolling helpers for osu!taiko: scroll segments, redline sections,
-//! kiai sections, timing lines, SV changes, and mod helpers.
+//! osu!taiko 的时间与滚动辅助函数：滚动区段、红线区段、激昂区段、
+//! 节拍线、SV 变化和模组辅助函数。
 
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TaikoHitObject, TimingPoint};
@@ -9,14 +9,14 @@ use std::collections::BTreeMap;
 
 use super::constants::*;
 
-// ─── helpers ───
+// ─── 辅助函数 ───
 
 #[inline]
 pub(crate) fn pyround(v: f64) -> i64 {
     round_half_even(v)
 }
 
-// ─── data structs ───
+// ─── 数据结构 ───
 
 #[derive(Debug, Clone)]
 pub(crate) struct ScrollSegment {
@@ -88,7 +88,7 @@ impl ScrollPositionMapper {
     }
 }
 
-// ─── scroll mapper ───
+// ─── 滚动映射 ───
 
 pub(crate) fn build_scroll_mapper(
     timing_points: &[TimingPoint],
@@ -204,7 +204,7 @@ fn build_scroll_segments(
     segments
 }
 
-// ─── redline sections ───
+// ─── 红线区段 ───
 
 pub(crate) fn build_redline_sections(
     timing_points: &[TimingPoint],
@@ -226,9 +226,8 @@ pub(crate) fn build_redline_sections(
         }
     }
 
-    // If the last red line before time 0 has a negative time (happens after
-    // chart trimming), start the first section from that negative time so
-    // beat phase is preserved.
+    // 如果 0 时刻之前最后一条红线时间为负（谱面裁剪后可能出现），
+    // 则从该负时间开始第一段，以保持节拍相位。
     if let Some(t) = last_pre_zero_red {
         if t < 0.0 {
             section_start = pyround(t);
@@ -263,7 +262,7 @@ pub(crate) fn build_redline_sections(
     sections
 }
 
-// ─── kiai sections ───
+// ─── 激昂区段 ───
 
 pub(crate) fn build_kiai_sections(
     timing_points: &[TimingPoint],
@@ -315,7 +314,7 @@ pub(crate) fn build_kiai_sections(
     sections
 }
 
-// ─── timing lines ───
+// ─── 节拍线 ───
 
 #[allow(clippy::too_many_arguments)]
 fn merge_timing_line(
@@ -525,7 +524,7 @@ fn dedupe_display_labels(lines: Vec<TimingLine>, display_offset_ms: i64) -> Vec<
     deduped
 }
 
-// ─── SV changes ───
+// ─── SV 变化 ───
 
 pub(crate) fn build_sv_changes(
     timing_points: &[TimingPoint],
@@ -564,7 +563,7 @@ pub(crate) fn build_sv_changes(
     changes
 }
 
-// ─── shared mod helpers (renderer.py) ───
+// ─── 共享模组辅助函数（renderer.py） ───
 
 pub(crate) fn apply_taiko_object_mods(
     hit_objects: Vec<TaikoHitObject>,
@@ -575,7 +574,7 @@ pub(crate) fn apply_taiko_object_mods(
         return hit_objects;
     }
 
-    // SW only swaps centre/rim for plain hits; rolls and swells are untouched.
+    // SW 只交换普通音符的鼓面/鼓边，连打和大连打不受影响。
     hit_objects
         .into_iter()
         .map(|hit_object| {
@@ -623,7 +622,7 @@ pub(crate) fn effective_timing_points(
     mods: Option<&ModSettings>,
 ) -> Vec<TimingPoint> {
     if mods.map(|m| m.cs_override).unwrap_or(false) {
-        // Constant Speed: keep only red lines, equivalent to disabling SV.
+        // Constant Speed：仅保留红线，等价于禁用 SV。
         return beatmap
             .timing_points
             .iter()
@@ -635,8 +634,8 @@ pub(crate) fn effective_timing_points(
 }
 
 pub(crate) fn spacing_timing_points_for_png(timing_points: &[TimingPoint]) -> Vec<TimingPoint> {
-    // Static chart spacing follows red-line BPM only; neutralize green-line SV
-    // while keeping inherited point times and kiai flags.
+    // 静态谱面间距只跟随红线 BPM；将绿线 SV 置为中性，
+    // 同时保留继承后的时间和激昂标志。
     timing_points
         .iter()
         .map(|point| {
