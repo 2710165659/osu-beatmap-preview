@@ -3,7 +3,7 @@
 # 颜色为 [R, G, B, A]（或无透明通道的 [R, G, B]），各通道取值范围为 0～255。
 paths:
   OUTPUT_DIR: "%TEMP%/osu-beatmap-preview/outputs" # 渲染结果输出目录
-  CACHE_DIR: "%TEMP%/osu-beatmap-preview" # 下载内容及中间文件的缓存目录
+  CACHE_DIR: "%TEMP%/osu-beatmap-preview" # 缓存目录，osz、osu、优选ip缓存
   CONFIG_DIR: "./" # 外部 config.yml 的查找目录，相对路径以当前工作目录为基准
   LOG_DIR: "%TEMP%/osu-beatmap-preview/logs" # 日志文件目录
 logging:
@@ -25,6 +25,40 @@ timeouts:
     PNG_TIMEOUT: 300 # PNG 渲染超时，单位秒，必须大于 0
     GIF_TIMEOUT: 300 # GIF 渲染超时，单位秒，必须大于 0
     MP4_TIMEOUT: 300 # MP4 渲染超时，单位秒，必须大于 0
+palette:
+  mania_utils:
+    # Mania 图表按键数组合使用的五种键道配色（RGBA；W/B/G/Y/R 表示白/蓝/绿/黄/红）。
+    MANIA_COLOR_W: [0xe9, 0xee, 0xf4, 255] # 白色键道
+    MANIA_COLOR_B: [0xbc, 0xdb, 0xf1, 255] # 蓝色键道
+    MANIA_COLOR_G: [0xcc, 0xfc, 0xb2, 255] # 绿色键道
+    MANIA_COLOR_Y: [0xff, 0xe2, 0x74, 255] # 黄色键道
+    MANIA_COLOR_R: [0xff, 0x7a, 0x5c, 255] # 红色键道
+effects:
+  catch_drawing:
+    BLOB_SPRITE_SCALE: 0.5 # Catch 光斑精灵的内部渲染缩放倍率，越小越省资源
+video:
+  composer:
+    PAR_CHUNK_SIZE: 8 # GIF 每批并行渲染的最大帧数
+    MAX_PAR_FRAME_BYTES: 67108864 # GIF 并行帧允许占用的最大原始图像字节数
+    PALETTE_COLORS: 127 # GIF 调色板中的不透明颜色数，另保留一个透明色索引
+  video:
+    PAR_CHUNK_SIZE: 8 # MP4 每批并行渲染的最大帧数
+    MAX_PAR_FRAME_BYTES: 67108864 # MP4 并行帧允许占用的最大原始图像字节数
+    VIDEO_BITRATE: 900000 # 硬件编码器目标视频码率，单位 bit/s
+    VIDEO_END_PADDING_MS: 2000 # 最后一个物件后继续渲染的时长
+    ENABLE_BACKGROUND_IMAGE: true # MP4 是否启用谱面背景图
+    BACKGROUND_DIM: 0.7 # MP4 谱面背景图暗化程度（0 表示不暗化，1 表示全黑）
+    LABEL_COLOR: [232, 232, 232, 255] # 视频右上角时间标签颜色（RGBA）
+    LABEL_FONT_SIZE: 24 # 视频时间标签字号
+    LABEL_PAD: 12 # 视频时间标签与画布边缘的内边距
+    BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成时使用的不透明黑色（RGBA）
+  video_cpu:
+    CPU_VIDEO_BITRATE: 500000 # CPU 编码器目标视频码率，单位 bit/s
+audio:
+  video_audio:
+    AUDIO_SAMPLE_RATE: 48000 # 输出音频采样率，单位 Hz
+    AUDIO_BITRATE: 96000 # 输出音频码率，单位 bit/s
+    MAX_EXTRACTED_AUDIO_BYTES: 268435456 # 解码后音频允许占用的最大字节数
 # 四模式布局设置
 layout:
   standard:
@@ -544,37 +578,3 @@ skin:
           [0, 0, 0, 255],
         ]
       HIT_POSITION: 460
-palette:
-  mania_utils:
-    # Mania 图表按键数组合使用的五种键道配色（RGBA；W/B/G/Y/R 表示白/蓝/绿/黄/红）。
-    MANIA_COLOR_W: [0xe9, 0xee, 0xf4, 255] # 白色键道
-    MANIA_COLOR_B: [0xbc, 0xdb, 0xf1, 255] # 蓝色键道
-    MANIA_COLOR_G: [0xcc, 0xfc, 0xb2, 255] # 绿色键道
-    MANIA_COLOR_Y: [0xff, 0xe2, 0x74, 255] # 黄色键道
-    MANIA_COLOR_R: [0xff, 0x7a, 0x5c, 255] # 红色键道
-effects:
-  catch_drawing:
-    BLOB_SPRITE_SCALE: 0.5 # Catch 光斑精灵的内部渲染缩放倍率，越小越省资源
-video:
-  composer:
-    PAR_CHUNK_SIZE: 8 # GIF 每批并行渲染的最大帧数
-    MAX_PAR_FRAME_BYTES: 67108864 # GIF 并行帧允许占用的最大原始图像字节数
-    PALETTE_COLORS: 127 # GIF 调色板中的不透明颜色数，另保留一个透明色索引
-  video:
-    PAR_CHUNK_SIZE: 8 # MP4 每批并行渲染的最大帧数
-    MAX_PAR_FRAME_BYTES: 67108864 # MP4 并行帧允许占用的最大原始图像字节数
-    VIDEO_BITRATE: 900000 # 硬件编码器目标视频码率，单位 bit/s
-    VIDEO_END_PADDING_MS: 2000 # 最后一个物件后继续渲染的时长
-    ENABLE_BACKGROUND_IMAGE: true # MP4 是否启用谱面背景图
-    BACKGROUND_DIM: 0.7 # MP4 谱面背景图暗化程度（0 表示不暗化，1 表示全黑）
-    LABEL_COLOR: [232, 232, 232, 255] # 视频右上角时间标签颜色（RGBA）
-    LABEL_FONT_SIZE: 24 # 视频时间标签字号
-    LABEL_PAD: 12 # 视频时间标签与画布边缘的内边距
-    BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成时使用的不透明黑色（RGBA）
-  video_cpu:
-    CPU_VIDEO_BITRATE: 500000 # CPU 编码器目标视频码率，单位 bit/s
-audio:
-  video_audio:
-    AUDIO_SAMPLE_RATE: 48000 # 输出音频采样率，单位 Hz
-    AUDIO_BITRATE: 96000 # 输出音频码率，单位 bit/s
-    MAX_EXTRACTED_AUDIO_BYTES: 268435456 # 解码后音频允许占用的最大字节数

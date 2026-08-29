@@ -2,70 +2,141 @@
 
 [中文](README.md) | [English](docs/README.en.md)
 
-> 一个快速的 osu! 谱面预览工具，支持四种模式（Standard / Taiko / Catch / Mania）的 GIF 动图、PNG 静态图与 MP4 视频渲染。
+一个快速、可独立运行的 osu! 谱面预览渲染器，支持 Standard、Taiko、Catch 和 Mania 四种模式，可输出 PNG 静态图、GIF 动图与带谱面原始音频的 MP4 视频。
 
-## 特性
+![四种模式的渲染效果](docs/total.png)
 
-- **单可执行文件**：所有资源在编译时嵌入二进制，运行时无任何外部依赖，即开即用。  
-- **跨平台**：原生支持 Windows、Linux 与 macOS。  
-- **功能完备**：支持四种游戏模式、MOD、转谱及 SV（变速）功能。  
-- **三种输出格式**：GIF 动图、PNG 静态长图，以及包含原始谱面音频的 MP4 视频。  
-- **高性能**：视频编码采用 GPU 加速，整体处理流程速度快、内存占用低、输出文件体积小。详见[批量渲染报告](docs/report.txt)。
+## 功能亮点
 
-> 如果这个项目对你有帮助，欢迎点个 ⭐ Star 支持一下～
+- **四模式渲染**：支持 osu!standard、osu!taiko、osu!catch 与 osu!mania。
+- **三种输出格式**：生成 PNG 谱面概览、GIF 分段预览或带音频的 H.264 MP4 视频。
+- **转谱与 Mod**：支持从 Standard 转换到 Taiko、Catch、Mania，并可组合常用 Mod 和自定义倍速。
+- **单文件运行**：皮肤、字体和编解码组件随程序构建，常规使用无需额外资源文件或 FFmpeg。
+- **跨平台**：支持 Windows、Linux 与 macOS；Windows 会依次尝试 NVIDIA NVENC、AMD AMF，均不可用时自动回退到 CPU OpenH264，其他平台使用 CPU 编码。
+- **缓存与配置隔离**：缓存下载内容和渲染结果；不同有效配置使用独立输出目录，避免误用旧结果。
 
-## 使用
+性能与资源占用数据见[批量渲染报告](docs/report.txt)。
+
+## 获取与运行
+
+可以从 [Releases](https://github.com/2710165659/osu-beatmap-preview/releases) 下载对应平台的可执行文件：
+
+| 平台 | 发布文件 |
+| --- | --- |
+| Windows x64 | `osu-beatmap-preview-windows-amd64.exe` |
+| Linux x64 | `osu-beatmap-preview-linux-amd64` |
+| macOS Intel | `osu-beatmap-preview-macos-amd64` |
+| macOS Apple Silicon | `osu-beatmap-preview-macos-arm64` |
+
+Linux 和 macOS 首次运行前需要添加执行权限：
 
 ```bash
+chmod +x ./osu-beatmap-preview-*
+```
+
+随后使用下载文件的实际名称运行，例如：
+
+```bash
+# Linux x64
+./osu-beatmap-preview-linux-amd64 --bid=738063
+
+# macOS Apple Silicon
+./osu-beatmap-preview-macos-arm64 --bid=738063
+```
+
+macOS 发布文件未经过 Apple 签名或公证。若系统阻止首次启动，可在“系统设置 > 隐私与安全性”中选择仍要打开，或在 Finder 中右键程序并选择“打开”。
+
+也可以按下文的[从源码构建](#从源码构建)自行编译。
+
+## 快速开始
+
+最少只需提供数字格式的 Beatmap ID：
+
+```bash
+osu-beatmap-preview --bid=738063
+```
+
+以下示例假定已将程序重命名为 `osu-beatmap-preview` 并加入 `PATH`。未指定 `--fmt` 时，Standard 默认输出 GIF，Taiko、Catch 和 Mania 默认输出 PNG。成功后，程序会向 stdout 输出 JSON，其中 `preview-img` 是生成文件的绝对路径。
+
+### 常用示例
+
+```bash
+# 明确输出格式
+osu-beatmap-preview --bid=738063 --fmt=png
+
+# 将 Standard 谱面转为 Mania 并输出 GIF
+osu-beatmap-preview --bid=738063 --convert=mania --fmt=gif
+
+# 转谱后使用 4K 和 1.25 倍 DT
+osu-beatmap-preview --bid=738063 --convert=mania --mod=4k --mod=dt1.25 --fmt=gif
+
+# 组合多个 Mod；每个 Mod 都要单独传入
+osu-beatmap-preview --bid=738063 --mod=hd --mod=hr
+
+# 从谱面的 PreviewTime 开始输出 30 秒 MP4
+osu-beatmap-preview --bid=738063 --fmt=mp4 --time-points=preview --duration-time=30
+
+# 为 GIF 指定四个片段起点
+osu-beatmap-preview --bid=738063 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20
+
+# 跳过下载缓存和输出缓存，同时关闭日志
+osu-beatmap-preview --bid=738063 --no-cache --no-log
+```
+
+Windows PowerShell 中，如果程序位于当前目录，需要使用 `.\osu-beatmap-preview-windows-amd64.exe` 或重命名后的实际文件名调用。
+
+## 命令行参数
+
+```text
 osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>]
 ```
 
-### 参数
-
 | 参数 | 说明 |
 | --- | --- |
-| `--bid` | 必填，纯数字的 Beatmap ID。 |
-| `--convert` | 转谱模式，支持 `mania` / `ctb` / `taiko` / `standard` / `std`。仅 Standard 可用。 |
-| `--mod` | 单个 Mod，组合时重复传入，例如 `--mod=hd --mod=hr`；倍速类可带数值，如 `--mod=dt1.25`。 |
-| `--fmt` | 输出格式：`gif` / `png` / `mp4`。不填时按模式取默认值。 |
-| `--time-points` | 时间点列表。GIF 和 Standard PNG 可重复传入多个点；MP4 最多传入一个点。每个点为游戏时间秒数或 `preview`。未传时自动选择；若 GIF/Standard PNG 只传入部分点，会优先补入谱面的 `PreviewTime`。MP4 未传时默认从 `0` 开始。 |
-| `--duration-time` | 仅 MP4 可用，输出时长（秒）。默认 `600`；若谱面完整可播放范围更短，则输出完整范围，不补足空白。 |
-| `--no-log` | 关闭日志。 |
-| `--no-cache` | 跳过下载缓存与输出缓存，强制重新渲染。 |
-| `--config` | 配置文件路径，或 JSON/YAML 格式的配置对象。嵌套映射递归合并；数组和标量整体替换，未传入字段保留默认值。视频背景图由 `video.video.ENABLE_BACKGROUND_IMAGE` 控制，默认启用；`video.video.BACKGROUND_DIM` 默认 `0.7`。 |
-| `--version` | 打印版本号与构建时间后退出。 |
+| `--bid` | 必填。纯数字的 Beatmap ID。 |
+| `--convert` | 目标模式：`mania`、`ctb`、`taiko`、`standard` 或 `std`。只有 Standard 谱面能转换到其他模式；目标与原模式相同时按不转谱处理。 |
+| `--fmt` | 输出格式：`png`、`gif` 或 `mp4`。省略时，Standard 使用 GIF，其他模式使用 PNG。 |
+| `--mod` | 单个 Mod。组合时重复传入；参数不区分大小写。 |
+| `--time-points` | 游戏时间点，单位为秒，也可传 `preview`。GIF 和 Standard PNG 可重复传入，MP4 最多传入一次。 |
+| `--duration-time` | MP4 输出时长，单位为秒，必须为有限正数，默认 `600`。 |
+| `--no-cache` | 跳过 `.osu`、OSZ 和输出文件缓存，强制重新下载和渲染。 |
+| `--no-log` | 关闭文件日志。 |
+| `--config` | 配置文件路径，或内联 JSON/YAML 对象。只能传入一次。 |
+| `--version` | 打印版本号和构建时间后退出。 |
+| `--help`、`-h` | 打印用法后退出。 |
 
-> MP4 数值起始时间使用游戏时间轴：转谱后的目标模式首个可玩物件为 `0:00`，不是编辑器左下角的绝对音轨时间。支持负数，早于音频起点的部分输出静音。
+### 时间轴与选段
 
-### 示例
+数值时间点使用游戏时间轴：转谱后目标模式的首个可玩物件是 `0:00`，并非编辑器左下角显示的绝对音轨时间。
 
-```bash
-# 使用默认参数渲染
-osu-beatmap-preview --bid=123456
+- GIF 和 Standard PNG 会把每个 `--time-points` 作为一个分段起点。指定点未占满布局容量时，程序优先补入谱面的 `PreviewTime`，再以确定性方式补齐其他不重叠片段；相同谱面和配置会得到相同选段。
+- 时间点数量不能超过当前布局的分段容量。默认 GIF 容量为 4；Standard PNG 默认有 5 行，因此最多指定 5 个行起点。
+- MP4 默认从游戏时间 `0` 开始，请求 600 秒。谱面较短时输出完整可播放范围，不填充到 600 秒；请求区间超过谱面尾部时会整体前移以保留时长。
+- MP4 支持负数起点，早于音频起点的部分输出静音。`--time-points=preview` 使用 `.osu` 文件中的 `PreviewTime`；缺失或无效时回退到首个物件。
+- `--duration-time` 仅适用于 MP4；`--time-points` 仅适用于 GIF、Standard PNG 和 MP4。
 
-# 转谱渲染
-osu-beatmap-preview --bid=123456 --convert=mania
+## 输出格式
 
-# 转谱后应用 Mod，并输出 GIF
-osu-beatmap-preview --bid=123456 --convert=mania --mod=4k --mod=dt1.25 --fmt=gif
+### PNG 静态图
 
-# 应用多个 Mod 渲染
-osu-beatmap-preview --bid=123456 --mod=hd --mod=hr
+- **Standard**：默认输出 5 行、每行 8 帧的游戏画面快照；每行起点可由 `--time-points` 指定。
+- **Taiko**：按游玩顺序排成多行，并绘制节拍线、BPM 与 SV 信息。
+- **Catch**：按谱面进度排成多列。
+- **Mania**：按键道绘制谱面，长谱面自动拆分为多列，并显示 BPM 与 SV 信息。
 
-# 按谱面预览时间输出 30 秒 MP4
-osu-beatmap-preview --bid=123456 --fmt=mp4 --time-points=preview --duration-time=30
+布局、颜色、间距和标签等均可通过配置调整。
 
-# GIF 指定四个渲染时间点（列表参数必须重复传入）
-osu-beatmap-preview --bid=123456 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20
+### GIF 动图
 
-# 组合使用转谱和 PNG；Taiko 间距由配置项控制
-osu-beatmap-preview --bid=123456 --convert=taiko --fmt=png --mod=sw
+四种模式都会把多个谱面片段组合到同一张动图中。默认布局为：Standard 和 Catch 使用 `2 x 2` 网格，Taiko 使用 4 行，Mania 使用 4 列。每种模式可以独立配置片段数量、片段时长、帧率和时间标签。
 
-# 强制重新渲染并关闭日志
-osu-beatmap-preview --bid=123456 --no-cache --no-log
-```
+### MP4 视频
 
-### Mod 支持情况
+四种模式均可输出带谱面原始音频的 MP4，支持 MP3、OGG 和 WAV 音源。视频默认读取 OSZ 中 `[Events]` 声明的背景图，并按 `BACKGROUND_DIM=0.7` 暗化；可通过配置关闭背景图。
+
+Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退到 CPU OpenH264。设置环境变量 `OSU_PREVIEW_NO_GPU=1` 可以强制使用 CPU 编码，便于兼容性检查或性能对比。
+
+## Mod 支持
 
 | 模式 | GIF / MP4 | PNG |
 | --- | --- | --- |
@@ -74,119 +145,122 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | Catch | `EZ` `HR` `DT` `HT` | `EZ` `HR` |
 | Mania | `CS` `DT` `HT` `1K`-`10K` `DS` `IN` `HO` | `1K`-`10K` `DS` `IN` `HO` |
 
-### Mod 冲突规则
+主要规则如下：
 
-| 组合 | 说明 |
-| --- | --- |
-| `DT` / `HT` | 互斥。`DT` 默认 `1.5x`，范围 `1.01-2.00`；`HT` 默认 `0.75x`，范围 `0.50-0.99`。 |
-| `EZ` / `HR` | 互斥。 |
-| `TC` / `HD` | 互斥。 |
-| `1K`-`10K` | 互斥，仅 `--convert=mania` 时生效。 |
-| `IN` / `HO` | 互斥。 |
-| `DA` / `EZ` / `HR` | `DA` 不能与 `EZ` 或 `HR` 同时使用，仅 Standard 可用。 |
-| `DA` 参数 | 格式为 `da<参数><值>`，如 `dacs5`、`daar9.5`，也可叠加成 `dacs5ar9.5`。 |
+- `DT` 与 `HT` 互斥。`DT` 默认 `1.5x`，可设为 `1.01` 至 `2.00`；`HT` 默认 `0.75x`，可设为 `0.50` 至 `0.99`，例如 `--mod=dt1.25`。
+- `EZ` 与 `HR`、`TC` 与 `HD`、`IN` 与 `HO` 分别互斥。
+- `DA` 仅适用于 Standard，不能与 `EZ` 或 `HR` 同时使用。格式为 `da<参数><值>`，参数支持 `cs`、`ar`、`od`、`hp`，例如 `--mod=dacs5ar9.5`。
+- `1K` 至 `10K` 互斥；`DS` 和键数 Mod 只会在 Standard 转 Mania 时改变转谱结果。
+- `DT` 和 `HT` 不适用于 PNG；MP4 使用与 GIF 相同的 Mod 支持规则。
+- 重复的 Mod 或不受当前模式、格式支持的 Mod 会直接报错，不会静默忽略。
 
-## 输出
+## 配置
 
-| 路径 | 说明 |
-| --- | --- |
-| 谱面缓存 | `<临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
-| OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
-| 优选 IP 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
-| 输出文件 | 默认配置写入 `<OUTPUT_DIR>/<mode>_<bid>...<fmt>`；MP4 只有显式传入时间参数时才追加时间后缀；非默认配置写入 `<OUTPUT_DIR>/<config-hash>/<mode>_<bid>...<fmt>` |
-| 配置文件夹 | 二进制文件同级目录 |
-| 日志文件 | `<临时目录>/osu-beatmap-preview/logs/` — `progress.log`（实时进度，`tail -f`）与 `render.log`（NDJSON 汇总） |
+完整默认配置及字段说明见 [assets/default_config.yml](assets/default_config.yml)。通常只需在自定义配置中写出要覆盖的字段。
 
-上述目录由 `assets/default_config.yml` 顶层 `paths` 配置项定义；默认 `CONFIG_DIR: "./"` 表示二进制文件所在目录。程序会尝试读取二进制文件同级的 `config.yml`，其后再应用 `--config` 覆盖。配置文件不存在时继续使用默认值；存在但格式错误会导致启动失败。
+配置按以下优先级递归合并：
 
-配置来源按“内置默认值 < `CONFIG_DIR/config.yml` < `--config`”合并。`--config` 可以是文件路径，也可以直接传入 JSON/YAML 对象，例如：
+```text
+内置默认值 < 可执行文件同目录的 config.yml < --config
+```
 
-配置字段必须来自内置配置；未知字段、顶层非对象和无法转换的类型会导致启动失败。数字和布尔值也接受可安全转换的字符串形式。
-配置会先与内置默认值合并并归一化；若最终生效值与默认配置相同，仍使用 `OUTPUT_DIR`。否则程序对差异配置计算稳定的 SHA-256（取末 6 位）并使用 `OUTPUT_DIR/<config-hash>/`，同时在该目录写入只包含非默认字段的规范 `config.yml`。因此等价的 JSON、YAML、配置文件及显式填写默认值不会拆分输出缓存；以后新增且仍采用默认值的配置项也不会改变已有 hash。
+映射会递归合并，数组和标量会整体替换。未知字段、非对象的顶层值或无法转换为目标类型的值会导致启动失败；数字和布尔值也接受可安全转换的字符串形式。`config.yml` 不存在时继续使用默认值，但文件存在且内容无效时会报错。
 
-PNG、GIF 和 MP4 的整次请求超时分别由 `timeouts.render.PNG_TIMEOUT`、`GIF_TIMEOUT` 和 `MP4_TIMEOUT` 控制，单位为秒，默认均为 `300`，且必须是正整数。计时从请求入口开始，覆盖下载、解析、转谱、缓存检查、渲染、音频处理、编码和输出落盘。省略 `--fmt` 且下载前无法确定谱面模式时，前置阶段暂用 PNG/GIF 中较大的超时；模式确定后改用实际格式基于原始请求起点计算的截止时间。
+`--config` 可以指向 JSON/YAML 文件，也可以直接接收内联对象：
+
+```bash
+# 配置文件
+osu-beatmap-preview --bid=738063 --config=C:/path/to/config.yml
+
+# 内联 JSON
+osu-beatmap-preview --bid=738063 --config='{"layout":{"standard":{"gif":{"ROW_COUNT":1}}}}'
+
+# 内联 YAML
+osu-beatmap-preview --bid=738063 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'
+```
+
+以下示例关闭 MP4 背景图、调整暗化程度，并分别设置三种格式的整次请求超时：
 
 ```yaml
+video:
+  video:
+    ENABLE_BACKGROUND_IMAGE: false
+    BACKGROUND_DIM: 0.5
 timeouts:
   render:
     PNG_TIMEOUT: 300
     GIF_TIMEOUT: 300
-    MP4_TIMEOUT: 300
+    MP4_TIMEOUT: 900
 ```
 
-```bash
-osu-beatmap-preview --bid=123456 --config='{"layout":{"standard":{"gif":{"ROW_COUNT":1}}}}'
-osu-beatmap-preview --bid=123456 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'
-osu-beatmap-preview --bid=123456 --config=C:/path/to/config.yml
-```
+超时单位为秒且必须是正整数。计时从请求入口开始，覆盖下载、解析、转谱、缓存检查、渲染、音频处理、编码和落盘。
 
-### 图片（PNG）
+### 默认路径
 
-使用 `--fmt=png` 输出静态 PNG 图片。
+| 内容 | 默认位置 |
+| --- | --- |
+| 输出文件 | `<临时目录>/osu-beatmap-preview/outputs/` |
+| `.osu` 缓存 | `<临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
+| OSZ 与音频缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/` |
+| osu.direct 优选 IP 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
+| 自动配置文件 | `<可执行文件所在目录>/config.yml` |
+| 日志 | `<临时目录>/osu-beatmap-preview/logs/` |
 
-- Standard GIF 网格可在 `assets/default_config.yml` 中配置行数和列数。
-- Taiko 输出按谱面滚动排列的长图，间距由配置项 `SPACING_PER_BPM` 控制，`0` 表示自动计算。
-- Catch 输出按谱面排列的长图。
-- Mania 输出按键道排列的长图，谱面较长时会自动分成多列。
+路径由默认配置中的 `paths` 控制。`%TEMP%` 在所有平台都展开为系统临时目录。程序会单独解析 `CONFIG_DIR`：相对路径始终以可执行文件所在目录为基准，不受启动命令时所在目录影响。
 
-### GIF 动图
+默认配置的输出文件直接写入 `OUTPUT_DIR`。只要最终有效配置与默认值不同，程序就会根据差异配置计算稳定的 6 位哈希，并改用 `OUTPUT_DIR/<config-hash>/`；该目录内会写入只包含非默认字段的 `config.yml`。因此等价的配置内容会复用同一输出缓存。
 
-使用 `--fmt=gif` 输出 GIF 动图。四种模式分别在 `assets/default_config.yml` 中配置网格、时长和 `SHOW_TIME_LABEL`。将网格设为 `1×1` 并启用标签即可得到单画面带时间标签的预览。自动选段结果是确定性的，并优先使用谱面的 `PreviewTime`。
+## 程序输出、缓存与日志
 
-### MP4 视频
+### stdout JSON
 
-使用 `--fmt=mp4` 输出带谱面音频的视频，支持四种模式。默认从游戏时间 `0` 开始请求 600 秒；若谱面不足 600 秒，则只输出完整可播放范围。使用单个 `--time-points` 和 `--duration-time` 指定区间；当区间超出谱面尾部时会整体向前调整。未显式指定这两个参数时，文件名不包含时间后缀；显式指定任一参数时会保留后缀。`--time-points=preview` 使用谱面的 `PreviewTime`。GIF 和 Standard PNG 可以重复传入 `--time-points` 指定多个渲染点；只传入部分点时会优先补入 `PreviewTime`；旧的 `5+10+15` 拼接格式不再支持。
-
-MP4 默认从 OSZ 读取 `[Events]` 中的谱面背景图，并以 `BACKGROUND_DIM=0.7` 暗化；设置 `video.video.ENABLE_BACKGROUND_IMAGE: false` 可关闭。
-
-### 命令行输出
-
-程序向 stdout 输出 JSON，schema 如下：
+命令行参数解析成功后，配置、下载、谱面解析、校验或渲染阶段的成功与失败结果都会以 JSON 输出到 stdout，便于脚本调用：
 
 ```json
 {
   "status": "success",
   "msg": "preview generated successfully for bid 738063",
-  "preview-img": "/path/to/output.png",
+  "preview-img": "/absolute/path/to/standard_738063.gif",
   "beatmap-info": {
-    "meta-data": { "title": "...", "artist": "...", ... },
-    "difficulty": { ... }
+    "meta-data": { "title": "...", "artist": "..." },
+    "difficulty": { "circle-size": "...", "approach-rate": "..." }
   }
 }
 ```
 
-> `preview-img` 字段为输出文件的绝对路径，格式由 `--fmt` 决定（`.gif` / `.png` / `.mp4`）。
-
-## 效果预览
-
-![总览](docs/total.png)
-
-## 其他说明
-
-### 参数限制
-
-- `--mod` 每次只能传入一个 Mod，组合时必须重复参数；使用 `+` 拼接会报错。
-- `--time-points` 和 `--duration-time` 只能用于 GIF、Standard PNG 或 MP4（`--duration-time` 仅 MP4）。
+`preview-img` 始终是绝对路径，扩展名与实际输出格式一致。诊断信息写入 stderr，不会混入 JSON。成功退出码为 `0`；参数解析后的请求错误为 `1`；命令行参数错误只写入 stderr、不输出 JSON，退出码为 `2`。`--version` 向 stdout 输出普通文本，`--help` 向 stderr 输出用法，二者均以 `0` 退出。
 
 ### 缓存与日志
 
-日志默认开启，目录始终由配置项 `LOG_DIR` 决定；可用 `--no-log` 关闭。日志写入失败只降级到 stderr 提示，不影响渲染与 stdout 结果。
+- 输出文件名包含目标模式、Beatmap ID、转谱标记、Mod 和显式时间参数。未显式传入 MP4 时间参数时，文件名不追加默认时间范围。
+- 日志默认开启。`progress.log` 记录可实时跟踪的阶段事件，`render.log` 以 NDJSON 记录每次请求的状态、谱面信息、缓存命中和耗时。
+- 日志写入失败只会在 stderr 给出提示，不影响渲染结果。使用 `--no-log` 可以关闭日志。
+- 下载与输出缓存不会自动清理；空间占用过大时可以手动删除对应临时目录。
+- 输出采用原子写入，只有完整渲染成功后才替换目标文件；中断渲染不会留下可被误判为有效缓存的半成品。
 
-缓存文件不会自动删除，占用过大时可手动清理临时目录。输出文件采用原子写入（先写临时文件、完成后才替换），渲染中断不会产生可被当作有效缓存的损坏文件。
+## 从源码构建
 
-## 构建
-
-### 环境要求
-
-需要 Rust 1.73+ 和 C++ 编译器。安装 Rust：<https://rustup.rs>
-
-### 构建命令
+需要稳定版 Rust 工具链和可用的 C/C++ 编译环境。安装 Rust：<https://rustup.rs>
 
 ```bash
+git clone https://github.com/2710165659/osu-beatmap-preview.git
+cd osu-beatmap-preview
 cargo build --release
-# 产物: target/release/osu-beatmap-preview(.exe)
 ```
 
-## License
+构建产物位于：
 
-[MIT](LICENSE)。内嵌 AAC 编码器使用 Fraunhofer FDK-AAC，许可证不授予专利权，详见 [第三方声明](docs/THIRD_PARTY_NOTICES.md)。
+```text
+target/release/osu-beatmap-preview       # Linux / macOS
+target/release/osu-beatmap-preview.exe   # Windows
+```
+
+运行测试：
+
+```bash
+cargo test
+```
+
+## 许可证
+
+本项目使用 [MIT License](LICENSE)。内嵌 AAC 编码器使用 Fraunhofer FDK-AAC，其许可证不授予专利权，详见[第三方声明](docs/THIRD_PARTY_NOTICES.md)。
