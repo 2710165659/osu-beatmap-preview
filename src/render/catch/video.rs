@@ -12,7 +12,7 @@ use crate::core::timeout::RequestDeadline;
 use crate::core::validate::TimePoint;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
-use crate::render::video::{prepare_video_background, resolve_video_time_range, save_mp4_streamed};
+use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::path::Path;
 
 use super::gif::{build_gif_layout, render_gif_frame};
@@ -48,11 +48,12 @@ pub(crate) fn render_catch_video(
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);
-    let frame_background = background.as_ref().map(|image| {
-        prepare_video_background(
-            image,
+    // 视频背景在最终 16:9 画布上统一处理，playfield 只提供透明对象层。
+    let frame_background = background.as_ref().map(|_| {
+        Img::new(
             crate::render::catch::constants::IMAGE_WIDTH as u32,
             crate::render::catch::constants::IMAGE_HEIGHT as u32,
+            [0, 0, 0, 0],
         )
     });
     render_objects.sort_by_key(|o| std::cmp::Reverse(o.start_time));

@@ -13,7 +13,7 @@ use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
-use crate::render::video::{prepare_video_background, resolve_video_time_range, save_mp4_streamed};
+use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -46,11 +46,13 @@ pub(crate) fn render_standard_video(
     let total_ms = end - start;
     let fps = crate::config::current().layout.standard.mp4.FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
-    let frame_background = background.as_ref().map(|image| {
-        prepare_video_background(
-            image,
+    // 视频背景在最终 16:9 画布上统一处理；playfield 只提供透明对象层，
+    // 避免同一张图在 playfield 和画布中被分别缩放、裁剪。
+    let frame_background = background.as_ref().map(|_| {
+        Img::new(
             crate::render::standard::constants::IMAGE_WIDTH as u32,
             crate::render::standard::constants::IMAGE_HEIGHT as u32,
+            [0, 0, 0, 0],
         )
     });
 

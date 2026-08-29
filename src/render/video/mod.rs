@@ -591,22 +591,29 @@ fn letterbox_dims(pf_w: u32, pf_h: u32) -> (u32, u32) {
     (w.max(2) & !1, h.max(2) & !1)
 }
 
-/// 将谱面背景图按 osu! 的填充方式等比缩放并居中裁剪，再应用暗化配置。
+/// 将谱面背景图按 osu! 的等比适应方式缩放并居中，超出部分保留黑边，
+/// 再应用暗化配置。背景只在最终视频画布上处理一次，避免 playfield 与画布
+/// 分别裁剪同一张图片造成画面不连续。
 pub(crate) fn prepare_video_background(source: &Img, width: u32, height: u32) -> Img {
-    let scale = (width as f64 / source.w.max(1) as f64).max(height as f64 / source.h.max(1) as f64);
-    let resized_width = ((source.w as f64 * scale).ceil() as u32).max(width);
-    let resized_height = ((source.h as f64 * scale).ceil() as u32).max(height);
-    let resized = source.resize(resized_width, resized_height);
-    let left = (resized_width - width) / 2;
-    let top = (resized_height - height) / 2;
-    let cropped = resized.crop(left, top, left + width, top + height);
-
     let mut result = Img::new(
         width,
         height,
         crate::config::current().video.video.BLACK_OPAQUE,
     );
-    result.alpha_composite(&cropped, 0, 0);
+    if source.w == 0 || source.h == 0 || width == 0 || height == 0 {
+        return result;
+    }
+
+    // FitMode.Fit 的等价处理：以较小缩放比例完整容纳原图，避免裁掉边缘。
+    let scale = (width as f64 / source.w as f64).min(height as f64 / source.h as f64);
+    let resized_width = ((source.w as f64 * scale).round() as u32).max(1).min(width);
+    let resized_height = ((source.h as f64 * scale).round() as u32)
+        .max(1)
+        .min(height);
+    let resized = source.resize(resized_width, resized_height);
+    let left = ((width - resized_width) / 2) as i64;
+    let top = ((height - resized_height) / 2) as i64;
+    result.alpha_composite(&resized, left, top);
     let brightness = 1.0
         - crate::config::current()
             .video
@@ -903,12 +910,20 @@ mod tests {
     }
 
     #[test]
-    fn video_background_is_cover_cropped_and_dimmed() {
-        let source = Img::new(2, 1, [255, 100, 0, 255]);
+    fn video_background_fits_entire_image_and_keeps_black_borders() {
+        let mut source = Img::new(4, 2, [255, 100, 0, 255]);
+        for y in 0..2 {
+            for x in 2..4 {
+                source.put(x, y, [0, 100, 255, 255]);
+            }
+        }
         let background = prepare_video_background(&source, 4, 4);
         assert_eq!((background.w, background.h), (4, 4));
-        assert_eq!(background.get(0, 0), [77, 30, 0, 255]);
-        assert_eq!(background.get(3, 3), [77, 30, 0, 255]);
+        assert_eq!(background.get(0, 0), [0, 0, 0, 255]);
+        assert_eq!(background.get(0, 1), [77, 30, 0, 255]);
+        assert_eq!(background.get(0, 2), [77, 30, 0, 255]);
+        assert_eq!(background.get(3, 1), [0, 30, 77, 255]);
+        assert_eq!(background.get(0, 3), [0, 0, 0, 255]);
     }
 
     #[test]

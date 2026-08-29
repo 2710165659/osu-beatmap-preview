@@ -13,7 +13,7 @@ use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::video::audio::AudioSourceJob;
-use crate::render::video::{prepare_video_background, resolve_video_time_range, save_mp4_streamed};
+use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::path::Path;
 
 use super::gif::{
@@ -106,22 +106,16 @@ pub(crate) fn render_mania_video(
 
     // 单段静态背景：一列背景和判定线，不绘制段间分隔线。
     let static_bg = {
-        let mut bg = background
-            .as_ref()
-            .map(|image| {
-                prepare_video_background(
-                    image,
-                    layout.image_width as u32,
-                    layout.image_height as u32,
-                )
-            })
-            .unwrap_or_else(|| {
-                Img::new(
-                    layout.image_width as u32,
-                    layout.image_height as u32,
-                    crate::config::current().layout.mania.mp4.IMAGE_BACKGROUND,
-                )
-            });
+        // 背景图在最终视频画布上统一处理；这里仅绘制 Mania 轨道和侧板。
+        let mut bg = Img::new(
+            layout.image_width as u32,
+            layout.image_height as u32,
+            if background.is_some() {
+                [0, 0, 0, 0]
+            } else {
+                crate::config::current().layout.mania.mp4.IMAGE_BACKGROUND
+            },
+        );
         draw_segment_background(&mut bg, segment_left(0, &layout), &layout);
         bg
     };

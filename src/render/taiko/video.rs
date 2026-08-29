@@ -12,7 +12,7 @@ use crate::core::timeout::RequestDeadline;
 use crate::core::validate::TimePoint;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
-use crate::render::video::{prepare_video_background, resolve_video_time_range, save_mp4_streamed};
+use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -59,22 +59,16 @@ pub(crate) fn render_taiko_video(
     let layout = build_video_layout(time_range);
 
     let static_bg = {
-        let mut bg = background
-            .as_ref()
-            .map(|image| {
-                prepare_video_background(
-                    image,
-                    layout.image_width as u32,
-                    layout.image_height as u32,
-                )
-            })
-            .unwrap_or_else(|| {
-                Img::new(
-                    layout.image_width as u32,
-                    layout.image_height as u32,
-                    crate::config::current().layout.taiko.mp4.IMAGE_BACKGROUND,
-                )
-            });
+        // 背景图在最终视频画布上统一处理；这里仅绘制 Taiko 自身的轨道面板。
+        let mut bg = Img::new(
+            layout.image_width as u32,
+            layout.image_height as u32,
+            if background.is_some() {
+                [0, 0, 0, 0]
+            } else {
+                crate::config::current().layout.taiko.mp4.IMAGE_BACKGROUND
+            },
+        );
         draw_row_background(&mut bg, &layout, 0);
         bg
     };
