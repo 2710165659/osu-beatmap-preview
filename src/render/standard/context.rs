@@ -62,6 +62,7 @@ pub(crate) struct RenderCache {
     pub(crate) slider_body_alpha_layers: HashMap<(usize, u8), Img>,
     pub(crate) reverse_arrows: HashMap<(i64, [u8; 3]), Img>,
     pub(crate) reverse_edges: HashMap<(i64,), Img>,
+    pub(crate) slider_tick_sprites: HashMap<(i64, [u8; 3]), Img>,
 }
 
 /// std 渲染使用的皮肤参数。
@@ -85,6 +86,10 @@ pub(crate) struct RenderContext {
     pub(crate) spinner_size: i64,
     pub(crate) slider_follow_size: i64,
     pub(crate) slider_ball_size: i64,
+    pub(crate) slider_tick_rate: f64,
+    pub(crate) slider_multiplier: f64,
+    /// 每个音符开始时生效的 (beat_length, slider_velocity) 缓存。
+    pub(crate) slider_timings: Vec<(f64, f64)>,
     pub(crate) time_axis: TimeAxis,
 }
 
@@ -290,6 +295,21 @@ pub(crate) fn build_render_context(
     let combo_info = build_combo_info(&hit_objects, &skin.combo_colors);
     let frame_circle_diameter =
         py_round(settings.circle_diameter as f64 * frame_layout.scale).max(1);
+    let slider_tick_rate = beatmap.difficulty.get_f64("SliderTickRate").unwrap_or(1.0);
+    let slider_multiplier = beatmap
+        .difficulty
+        .get_f64("SliderMultiplier")
+        .unwrap_or(1.4);
+    let slider_timings = hit_objects
+        .iter()
+        .map(|hit_object| {
+            if beatmap.timing_points.is_empty() {
+                (500.0, 1.0)
+            } else {
+                crate::parser::resolve_slider_timing(hit_object.start_time, &beatmap.timing_points)
+            }
+        })
+        .collect();
     RenderContext {
         hit_objects,
         combo_info,
@@ -318,6 +338,9 @@ pub(crate) fn build_render_context(
                 * frame_layout.scale,
         )
         .max(1),
+        slider_tick_rate,
+        slider_multiplier,
+        slider_timings,
         time_axis,
     }
 }

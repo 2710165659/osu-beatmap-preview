@@ -9,7 +9,7 @@ mod hit_objects;
 mod sections;
 mod timing;
 
-pub use hit_objects::round_half_even;
+pub use hit_objects::{resolve_slider_timing, round_half_even};
 pub use sections::{
     default_metadata, parse_combo_colors, parse_format_version, parse_key_value, split_sections,
 };

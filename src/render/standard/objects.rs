@@ -11,7 +11,7 @@ use super::context::{
 use super::draw_centered_text;
 use super::slider::{
     darken, draw_cached_slider_body, draw_ring_aa, draw_slider_ball, draw_slider_body,
-    draw_slider_reverse_arrows, fill_circle_gradient_aa, get_slider_render_data,
+    draw_slider_reverse_arrows, draw_slider_ticks, fill_circle_gradient_aa, get_slider_render_data,
     is_full_slider_body, resized_with_alpha, slider_snaked_range, with_alpha,
 };
 
@@ -150,6 +150,16 @@ fn draw_slider(
             context.settings.traceable,
         );
     }
+
+    draw_slider_ticks(
+        frame,
+        context,
+        cache,
+        &slider_data,
+        snapshot_time,
+        combo.color,
+        overlay_alpha,
+    );
 
     draw_slider_reverse_arrows(
         frame,

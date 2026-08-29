@@ -5,6 +5,8 @@ pub(crate) const ID_CIRCLE_PIECE: u64 = 100;
 pub(crate) const ID_SLIDER_BALL: u64 = 102;
 /// 跟随圈图层缓存 ID 基值。
 pub(crate) const ID_FOLLOW: u64 = 103;
+/// 滑条 tick 精灵图层缓存 ID 基值。
+pub(crate) const ID_SLIDER_TICK: u64 = 104;
 /// 反向箭头图层缓存 ID 基值。
 pub(crate) const ID_ARROW_BASE: u64 = 4096;
 /// 反向边缘图层缓存 ID 基值。
@@ -62,6 +64,10 @@ pub(crate) const ARGON_SLIDER_WIDTH_RATIO: f64 = 0.8620703125;
 pub(crate) const ARGON_SLIDER_BORDER_PORTION: f64 = 0.2;
 /// Argon 滑条主体透明度。
 pub(crate) const ARGON_SLIDER_BODY_ALPHA: f64 = 0.98;
+/// Argon 滑条 tick 的基准尺寸（相对于 128px 物件尺寸）。
+pub(crate) const ARGON_SLIDER_TICK_SIZE_RATIO: f64 = 12.0 / 128.0;
+/// Argon 滑条 tick 边框占自身半径的比例。
+pub(crate) const ARGON_SLIDER_TICK_BORDER_RATIO: f64 = 3.0 / 12.0;
 /// Argon 默认连击颜色。
 pub(crate) const ARGON_COMBO_COLORS: [[u8; 3]; 4] =
     [[255, 192, 0], [0, 202, 0], [18, 124, 255], [242, 24, 57]];
