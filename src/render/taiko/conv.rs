@@ -213,6 +213,7 @@ fn taiko_convert_timing_points(
                     meter: point.meter,
                     uninherited: false,
                     kiai_mode: point.kiai_mode,
+                    omit_first_bar_line: point.omit_first_bar_line,
                 }
             }
         })
@@ -239,6 +240,7 @@ fn taiko_convert_timing_points(
             meter: cursor.meter,
             uninherited: false,
             kiai_mode: cursor.kiai,
+            omit_first_bar_line: false,
         });
         last_scroll_speed = next_scroll_speed;
     }

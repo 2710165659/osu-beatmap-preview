@@ -489,6 +489,20 @@ mod tests {
     }
 
     #[test]
+    fn taiko_animation_outputs_have_independent_measure_line_switches() {
+        let defaults = load_snapshot(None).unwrap();
+        assert!(defaults.layout.taiko.gif.SHOW_MEASURE_LINES);
+        assert!(defaults.layout.taiko.mp4.SHOW_MEASURE_LINES);
+
+        let config = load_snapshot(Some(
+            r#"{"layout":{"taiko":{"gif":{"SHOW_MEASURE_LINES":false}}}}"#,
+        ))
+        .unwrap();
+        assert!(!config.layout.taiko.gif.SHOW_MEASURE_LINES);
+        assert!(config.layout.taiko.mp4.SHOW_MEASURE_LINES);
+    }
+
+    #[test]
     fn render_timeout_overlays_accept_positive_integer_seconds() {
         let config = load_snapshot(Some(
             r#"{"timeouts":{"render":{"PNG_TIMEOUT":"10","GIF_TIMEOUT":20,"MP4_TIMEOUT":30}}}"#,

@@ -12,10 +12,13 @@ use crate::render::text::{draw_text, text_size};
 use std::cell::RefCell;
 use std::path::Path;
 
+use super::animation::{
+    drum_roll_tick_transform, generate_drum_roll_ticks, generate_measure_lines, measure_line_alpha,
+};
 use super::constants::*;
 use super::notes::{
-    cached_note_disc, cached_roll_tail, draw_drum_panel, draw_note_disc, draw_track_background,
-    paste_clipped, RenderCache,
+    cached_drum_roll_tick, cached_note_disc, cached_roll_tail, draw_drum_panel, draw_note_disc,
+    draw_track_background, paste_clipped, RenderCache,
 };
 use super::timing::*;
 
@@ -68,6 +71,13 @@ pub(crate) struct PreparedTaikoHitObject {
     end_multiplier: f64,
     min_multiplier: f64,
     max_multiplier: f64,
+    drum_roll_ticks: Vec<PreparedAnimationPoint>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PreparedAnimationPoint {
+    time: f64,
+    multiplier: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -137,7 +147,19 @@ fn render_taiko_segment_gif(
     let multiplier_lookup = MultiplierLookup {
         points: build_multiplier_points(&timing_points, slider_multiplier),
     };
-    let prepared_hit_objects = prepare_hit_objects(&hit_objects, &multiplier_lookup);
+    let slider_tick_rate = beatmap.difficulty.get_f64_or("SliderTickRate", 1.0);
+    let prepared_hit_objects = prepare_hit_objects(
+        &hit_objects,
+        &multiplier_lookup,
+        &timing_points,
+        slider_tick_rate,
+    );
+    let prepared_measure_lines = prepare_measure_lines(
+        &hit_objects,
+        &timing_points,
+        &multiplier_lookup,
+        crate::config::current().layout.taiko.gif.SHOW_MEASURE_LINES,
+    );
     let time_range = compute_time_range() / speed_multiplier;
 
     let layout = build_gif_layout(time_range);
@@ -200,6 +222,7 @@ fn render_taiko_segment_gif(
                 draw_hit_objects(
                     &mut canvas,
                     &prepared_hit_objects,
+                    &prepared_measure_lines,
                     &layout,
                     segment_index as i64,
                     snapshot_time,
@@ -294,6 +317,8 @@ pub(crate) fn build_multiplier_points(
 pub(crate) fn prepare_hit_objects(
     hit_objects: &[TaikoHitObject],
     multiplier_lookup: &MultiplierLookup,
+    timing_points: &[TimingPoint],
+    slider_tick_rate: f64,
 ) -> Vec<PreparedTaikoHitObject> {
     hit_objects
         .iter()
@@ -306,7 +331,45 @@ pub(crate) fn prepare_hit_objects(
                 end_multiplier,
                 min_multiplier: start_multiplier.min(end_multiplier),
                 max_multiplier: start_multiplier.max(end_multiplier),
+                drum_roll_ticks: generate_drum_roll_ticks(
+                    hit_object,
+                    timing_points,
+                    slider_tick_rate,
+                )
+                .into_iter()
+                .map(|tick| PreparedAnimationPoint {
+                    time: tick.time,
+                    multiplier: multiplier_lookup.at(tick.time),
+                })
+                .collect(),
             }
+        })
+        .collect()
+}
+
+pub(crate) fn prepare_measure_lines(
+    hit_objects: &[TaikoHitObject],
+    timing_points: &[TimingPoint],
+    multiplier_lookup: &MultiplierLookup,
+    enabled: bool,
+) -> Vec<PreparedAnimationPoint> {
+    if !enabled {
+        return Vec::new();
+    }
+    let Some(first_hit_time) = hit_objects.iter().map(|object| object.start_time).min() else {
+        return Vec::new();
+    };
+    let last_hit_time = hit_objects
+        .iter()
+        .map(|object| object.end_time)
+        .max()
+        .unwrap_or(first_hit_time);
+
+    generate_measure_lines(timing_points, first_hit_time, last_hit_time)
+        .into_iter()
+        .map(|line| PreparedAnimationPoint {
+            time: line.time,
+            multiplier: multiplier_lookup.at(line.time),
         })
         .collect()
 }
@@ -419,6 +482,7 @@ pub(crate) fn draw_row_background(image: &mut Img, layout: &GifLayout, row_index
 pub(crate) fn draw_hit_objects(
     image: &mut Img,
     hit_objects: &[PreparedTaikoHitObject],
+    measure_lines: &[PreparedAnimationPoint],
     layout: &GifLayout,
     row_index: i64,
     snapshot_time: i64,
@@ -429,11 +493,59 @@ pub(crate) fn draw_hit_objects(
         + layout.left_panel_width
         + layout.right_panel_width;
 
+    draw_measure_lines(
+        image,
+        measure_lines,
+        layout,
+        row_index,
+        snapshot_time,
+        left_bound,
+        right_bound,
+    );
+
     for hit_object in hit_objects.iter().rev() {
         if can_skip(hit_object, snapshot_time, layout, left_bound, right_bound) {
             continue;
         }
         draw_hit_object(image, hit_object, layout, row_index, snapshot_time, cache);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_measure_lines(
+    image: &mut Img,
+    measure_lines: &[PreparedAnimationPoint],
+    layout: &GifLayout,
+    row_index: i64,
+    snapshot_time: i64,
+    left_bound: i64,
+    right_bound: i64,
+) {
+    let height = pyround(layout.row_height as f64 * MEASURE_LINE_HEIGHT_RATIO).max(1);
+    let center_y = gif_row_center_y(row_index, layout);
+    let top = center_y - height / 2;
+    let base_color = ANIMATION_MEASURE_LINE_COLOR;
+
+    for line in measure_lines {
+        let alpha = measure_line_alpha(line.time, snapshot_time);
+        if alpha <= 0.0 {
+            continue;
+        }
+        let center_x = object_x(line.time, snapshot_time as f64, line.multiplier, layout);
+        let left = center_x - MEASURE_LINE_WIDTH / 2;
+        let right = left + MEASURE_LINE_WIDTH - 1;
+        if right < left_bound || left > right_bound {
+            continue;
+        }
+        let mut color = base_color;
+        color[3] = pyround(color[3] as f64 * alpha).clamp(0, 255) as u8;
+        image.fill_rect(
+            left.max(left_bound),
+            top,
+            right.min(right_bound),
+            top + height - 1,
+            color,
+        );
     }
 }
 
@@ -561,7 +673,7 @@ fn draw_span_object(
     row_index: i64,
     snapshot_time: i64,
     cache: &mut RenderCache,
-    is_swell: bool,
+    use_large_geometry: bool,
     span_color: [u8; 3],
     draw_swell_marker: bool,
 ) {
@@ -584,12 +696,12 @@ fn draw_span_object(
         + layout.left_panel_width
         + layout.right_panel_width;
 
-    let head_diameter = if is_swell {
+    let head_diameter = if use_large_geometry {
         layout.big_note_diameter
     } else {
         layout.normal_note_diameter
     };
-    let body_ratio = if is_swell {
+    let body_ratio = if use_large_geometry {
         crate::render::taiko::constants::SWELL_BODY_HEIGHT_RATIO
     } else {
         crate::render::taiko::constants::SPAN_BODY_HEIGHT_RATIO
@@ -606,6 +718,30 @@ fn draw_span_object(
         clip_left,
         clip_right,
     );
+    draw_span_tail(
+        image,
+        span_color,
+        end_x,
+        center_y,
+        body_height,
+        cache,
+        clip_left,
+        clip_right,
+    );
+    if base.hit_type & DRUMROLL_FLAG != 0 {
+        // 尾端 tick 必须位于尾部半圆上方，否则交界处会被覆盖一半；
+        // 头部最后绘制，仍保持 osu! 中头部遮挡首个 tick 的层级。
+        draw_drum_roll_ticks(
+            image,
+            &hit_object.drum_roll_ticks,
+            layout,
+            snapshot_time,
+            center_y,
+            cache,
+            clip_left,
+            clip_right,
+        );
+    }
     draw_span_head(
         image,
         span_color,
@@ -617,16 +753,38 @@ fn draw_span_object(
         clip_left,
         clip_right,
     );
-    draw_span_tail(
-        image,
-        span_color,
-        end_x,
-        center_y,
-        body_height,
-        cache,
-        clip_left,
-        clip_right,
-    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_drum_roll_ticks(
+    image: &mut Img,
+    ticks: &[PreparedAnimationPoint],
+    layout: &GifLayout,
+    snapshot_time: i64,
+    center_y: i64,
+    cache: &mut RenderCache,
+    clip_left: i64,
+    clip_right: i64,
+) {
+    let base_diameter =
+        pyround(layout.normal_note_diameter as f64 * DRUM_ROLL_TICK_DIAMETER_RATIO).max(1);
+
+    for tick in ticks {
+        let (alpha, scale) = drum_roll_tick_transform(tick.time, snapshot_time);
+        if alpha <= 0.0 {
+            continue;
+        }
+        let diameter = pyround(base_diameter as f64 * scale).max(1);
+        let center_x = object_x(tick.time, snapshot_time as f64, tick.multiplier, layout);
+        // 奇数尺寸按整数半径定位，避免银行家舍入让极小菱形偏离逻辑中心 1px。
+        let x = center_x - diameter / 2;
+        if x + diameter < clip_left || x > clip_right {
+            continue;
+        }
+        let y = center_y - diameter / 2;
+        let sprite = cached_drum_roll_tick(cache, diameter, alpha);
+        paste_clipped(image, sprite, x, y, clip_left, clip_right);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -782,6 +940,108 @@ fn draw_time_label(
                 .gif
                 .TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drum_roll_end_tick_is_drawn_above_tail() {
+        let layout = GifLayout {
+            segment_width: 100,
+            row_height: 80,
+            left_panel_width: 0,
+            right_panel_width: 200,
+            image_width: 216,
+            image_height: 96,
+            normal_note_diameter: 38,
+            big_note_diameter: 58,
+            time_range: 1000.0,
+        };
+        let hit_object = PreparedTaikoHitObject {
+            hit_object: TaikoHitObject {
+                start_time: 0,
+                end_time: 1000,
+                hit_type: DRUMROLL_FLAG,
+                hitsound: 0,
+            },
+            start_multiplier: 1.0,
+            end_multiplier: 1.0,
+            min_multiplier: 1.0,
+            max_multiplier: 1.0,
+            drum_roll_ticks: vec![PreparedAnimationPoint {
+                time: 1000.0,
+                multiplier: 1.0,
+            }],
+        };
+        let mut image = Img::new(216, 96, [0, 0, 0, 255]);
+        let mut cache = RenderCache::default();
+
+        draw_span_object(
+            &mut image,
+            &hit_object,
+            &layout,
+            0,
+            0,
+            &mut cache,
+            false,
+            ROLL_COLOR,
+            false,
+        );
+
+        let end_x = object_x(1000.0, 0.0, 1.0, &layout);
+        let center_y = gif_row_center_y(0, &layout);
+        let right_half_contains_tick = (end_x..=end_x + 4).any(|x| {
+            (center_y - 4..=center_y + 4).any(|y| {
+                let pixel = image.get(x as u32, y as u32);
+                pixel[2] > 100
+            })
+        });
+        assert!(right_half_contains_tick);
+    }
+
+    #[test]
+    fn strong_drum_roll_still_draws_ticks() {
+        let layout = GifLayout {
+            segment_width: 100,
+            row_height: 80,
+            left_panel_width: 0,
+            right_panel_width: 200,
+            image_width: 216,
+            image_height: 96,
+            normal_note_diameter: 38,
+            big_note_diameter: 58,
+            time_range: 1000.0,
+        };
+        let hit_object = PreparedTaikoHitObject {
+            hit_object: TaikoHitObject {
+                start_time: 0,
+                end_time: 1000,
+                hit_type: DRUMROLL_FLAG,
+                hitsound: HIT_SOUNDS_STRONG,
+            },
+            start_multiplier: 1.0,
+            end_multiplier: 1.0,
+            min_multiplier: 1.0,
+            max_multiplier: 1.0,
+            drum_roll_ticks: vec![PreparedAnimationPoint {
+                time: 500.0,
+                multiplier: 1.0,
+            }],
+        };
+        let mut image = Img::new(216, 96, [0, 0, 0, 255]);
+        let mut cache = RenderCache::default();
+
+        draw_hit_object(&mut image, &hit_object, &layout, 0, 0, &mut cache);
+
+        let tick_x = object_x(500.0, 0.0, 1.0, &layout);
+        let tick_y = gif_row_center_y(0, &layout);
+        assert_eq!(
+            image.get(tick_x as u32, tick_y as u32),
+            [255, 255, 255, 255]
         );
     }
 }

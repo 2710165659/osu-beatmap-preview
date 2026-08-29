@@ -648,6 +648,7 @@ pub(crate) fn spacing_timing_points_for_png(timing_points: &[TimingPoint]) -> Ve
                     meter: point.meter,
                     uninherited: false,
                     kiai_mode: point.kiai_mode,
+                    omit_first_bar_line: point.omit_first_bar_line,
                 }
             }
         })

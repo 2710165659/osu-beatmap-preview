@@ -31,6 +31,7 @@ pub fn parse_timing_points(lines: &[&str]) -> Option<Vec<TimingPoint>> {
             meter,
             uninherited,
             kiai_mode: effects & 1 != 0,
+            omit_first_bar_line: effects & 8 != 0,
         });
     }
     // 稳定排序可保留相同时间红线/绿线在文件中的顺序。
@@ -101,6 +102,13 @@ pub fn parse_background_filename(lines: Option<&Vec<&str>>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timing_effects_preserve_omit_first_bar_line() {
+        let points = parse_timing_points(&["0,500,4,2,0,100,1,9"]).unwrap();
+        assert!(points[0].kiai_mode);
+        assert!(points[0].omit_first_bar_line);
+    }
 
     #[test]
     fn background_filename_supports_quoted_commas_and_windows_separators() {

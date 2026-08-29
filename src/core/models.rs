@@ -7,6 +7,8 @@ pub struct TimingPoint {
     pub meter: i32,
     pub uninherited: bool,
     pub kiai_mode: bool,
+    /// effects 位 3：省略该红线区段的第一条小节线。
+    pub omit_first_bar_line: bool,
 }
 
 #[derive(Debug, Clone, Copy)]

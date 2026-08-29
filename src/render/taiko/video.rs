@@ -18,7 +18,8 @@ use std::path::Path;
 
 use super::gif::{
     build_gif_layout, build_multiplier_points, compute_time_range, draw_hit_objects,
-    draw_row_background, prepare_hit_objects, pyround, GifLayout, MultiplierLookup,
+    draw_row_background, prepare_hit_objects, prepare_measure_lines, pyround, GifLayout,
+    MultiplierLookup,
 };
 use super::notes::RenderCache;
 use super::timing::*;
@@ -54,7 +55,19 @@ pub(crate) fn render_taiko_video(
     let multiplier_lookup = MultiplierLookup {
         points: build_multiplier_points(&timing_points, slider_multiplier),
     };
-    let prepared_hit_objects = prepare_hit_objects(&hit_objects, &multiplier_lookup);
+    let slider_tick_rate = beatmap.difficulty.get_f64_or("SliderTickRate", 1.0);
+    let prepared_hit_objects = prepare_hit_objects(
+        &hit_objects,
+        &multiplier_lookup,
+        &timing_points,
+        slider_tick_rate,
+    );
+    let prepared_measure_lines = prepare_measure_lines(
+        &hit_objects,
+        &timing_points,
+        &multiplier_lookup,
+        crate::config::current().layout.taiko.mp4.SHOW_MEASURE_LINES,
+    );
     let time_range = compute_time_range() / speed;
     let layout = build_video_layout(time_range);
 
@@ -86,6 +99,7 @@ pub(crate) fn render_taiko_video(
             draw_hit_objects(
                 &mut canvas,
                 &prepared_hit_objects,
+                &prepared_measure_lines,
                 &layout,
                 0,
                 snapshot_time,

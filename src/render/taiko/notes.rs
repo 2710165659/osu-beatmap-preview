@@ -18,6 +18,7 @@ fn pyround(v: f64) -> i64 {
 pub(crate) struct RenderCache {
     discs: HashMap<([u8; 3], i64, bool), Img>,
     tails: HashMap<([u8; 3], i64), Img>,
+    drum_roll_ticks: HashMap<(i64, u8), Img>,
 }
 
 // ─── 行背景（程序化，替代原 taiko-bar-left/right 图片） ───
@@ -167,6 +168,44 @@ pub(crate) fn cached_roll_tail(cache: &mut RenderCache, color: [u8; 3], height: 
         .or_insert_with(|| build_roll_tail_sprite(color, height))
 }
 
+/// 构造白色实心菱形连打点，并通过高分辨率光栅化保留小尺寸边缘。
+pub(crate) fn build_drum_roll_tick_sprite(diameter: i64, alpha: f64) -> Img {
+    let diameter = diameter.max(1);
+    let scale = 4i64;
+    let scaled_diameter = diameter * scale;
+    let center = scaled_diameter as f64 / 2.0;
+    let radius = center;
+    let alpha = alpha.clamp(0.0, 1.0);
+    let color = crate::render::taiko::constants::DRUM_ROLL_TICK_COLOR;
+    let output_alpha = pyround(color[3] as f64 * alpha).clamp(0, 255) as u8;
+    let mut sprite = Img::new(scaled_diameter as u32, scaled_diameter as u32, [0, 0, 0, 0]);
+
+    for y in 0..scaled_diameter {
+        for x in 0..scaled_diameter {
+            let dx = x as f64 + 0.5 - center;
+            let dy = y as f64 + 0.5 - center;
+            if dx.abs() + dy.abs() > radius {
+                continue;
+            }
+            sprite.put(
+                x as u32,
+                y as u32,
+                [color[0], color[1], color[2], output_alpha],
+            );
+        }
+    }
+
+    sprite.resize(diameter as u32, diameter as u32)
+}
+
+pub(crate) fn cached_drum_roll_tick(cache: &mut RenderCache, diameter: i64, alpha: f64) -> &Img {
+    let alpha_byte = pyround(alpha.clamp(0.0, 1.0) * 255.0).clamp(0, 255) as u8;
+    cache
+        .drum_roll_ticks
+        .entry((diameter.max(1), alpha_byte))
+        .or_insert_with(|| build_drum_roll_tick_sprite(diameter, alpha_byte as f64 / 255.0))
+}
+
 pub(crate) fn draw_note_disc(
     image: &mut Img,
     cache: &mut RenderCache,
@@ -197,8 +236,35 @@ pub(crate) fn paste_clipped(
     if visible_right <= visible_left {
         return;
     }
+    if visible_left == sprite_left && visible_right == sprite_right {
+        image.alpha_composite(sprite, x, y);
+        return;
+    }
     let crop_left = (visible_left - sprite_left) as u32;
     let crop_right = crop_left + (visible_right - visible_left) as u32;
     let cropped = sprite.crop(crop_left, 0, crop_right.min(sprite.w), sprite.h);
     image.alpha_composite(&cropped, visible_left, y);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drum_roll_tick_is_a_solid_white_diamond() {
+        let sprite = build_drum_roll_tick_sprite(16, 1.0);
+        assert_eq!(sprite.get(8, 8), [255, 255, 255, 255]);
+        assert!(sprite.get(8, 1)[3] > 0);
+        assert!(sprite.get(0, 0)[3] < sprite.get(8, 1)[3]);
+    }
+
+    #[test]
+    fn drum_roll_tick_cache_reuses_frames_and_separates_animation_states() {
+        let mut cache = RenderCache::default();
+        let first = cached_drum_roll_tick(&mut cache, 8, 1.0) as *const Img;
+        let repeated = cached_drum_roll_tick(&mut cache, 8, 1.0) as *const Img;
+        assert_eq!(first, repeated);
+        let _ = cached_drum_roll_tick(&mut cache, 10, 0.5);
+        assert_eq!(cache.drum_roll_ticks.len(), 2);
+    }
 }

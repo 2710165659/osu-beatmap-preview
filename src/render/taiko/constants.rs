@@ -48,6 +48,16 @@ pub(crate) const NOTE_RING_COLOR: [u8; 4] = [245, 242, 235, 255];
 pub(crate) const NOTE_EDGE_COLOR: [u8; 4] = [0, 0, 0, 60];
 /// 音符环厚度占音符直径比例。
 pub(crate) const NOTE_RING_THICKNESS_RATIO: f64 = 0.055;
+/// 连打点白色菱形的外接尺寸相对普通 Taiko 音符直径。
+pub(crate) const DRUM_ROLL_TICK_DIAMETER_RATIO: f64 = 8.0 / 95.0;
+/// 连打点主体颜色。
+pub(crate) const DRUM_ROLL_TICK_COLOR: [u8; 4] = [255, 255, 255, 255];
+/// classic-2013 小节线占轨道高度的比例。
+pub(crate) const MEASURE_LINE_HEIGHT_RATIO: f64 = 0.88;
+/// osu! 的小节线跟踪器宽度。
+pub(crate) const MEASURE_LINE_WIDTH: i64 = 1;
+/// 动画小节线颜色，独立于 PNG 图表的配色配置。
+pub(crate) const ANIMATION_MEASURE_LINE_COLOR: [u8; 4] = [255, 255, 255, 170];
 /// PNG 时间轴每毫秒滚动像素数。
 pub(crate) const BASE_PIXELS_PER_SCROLL_MS: f64 = 0.07;
 /// 时间轴滚动长度比例。
