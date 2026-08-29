@@ -117,6 +117,7 @@ fn render_standard_segment_gif(
                     snapshot_time,
                     &row_timing.break_periods,
                     &segment_visible_indexes[segment_index][frame_index],
+                    None,
                 )
             });
             canvas.alpha_composite(&frame, x, y);

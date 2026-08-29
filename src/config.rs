@@ -79,10 +79,28 @@ fn load_layers(
         merge_values(&mut merged, &overlay, "")?;
     }
     validate_positive_timeouts(&merged)?;
+    validate_video_background(&merged)?;
     let runtime = serde_json::from_value(merged.clone())
         .map_err(|error| format!("invalid merged configuration: {error}"))?;
     let variant = config_variant(&defaults, &merged)?;
     Ok(ConfigSnapshot { runtime, variant })
+}
+
+fn validate_video_background(config: &Value) -> Result<(), String> {
+    let value = config
+        .pointer("/video/video/BACKGROUND_DIM")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| {
+            "configuration field 'video.video.BACKGROUND_DIM' must be a number from 0 to 1"
+                .to_string()
+        })?;
+    if !(0.0..=1.0).contains(&value) {
+        return Err(
+            "configuration field 'video.video.BACKGROUND_DIM' must be a number from 0 to 1"
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn validate_positive_timeouts(config: &Value) -> Result<(), String> {
@@ -706,5 +724,28 @@ layout:
             serde_json::json!({"layout": {"standard": {"gif": {"ROW_COUNT": 1}}}})
         );
         let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn video_background_defaults_and_overlays_are_typed() {
+        let defaults = load_snapshot(None).unwrap();
+        assert!(defaults.video.video.ENABLE_BACKGROUND_IMAGE);
+        assert_eq!(defaults.video.video.BACKGROUND_DIM, 0.7);
+
+        let configured = load_snapshot(Some(
+            r#"{"video":{"video":{"ENABLE_BACKGROUND_IMAGE":false,"BACKGROUND_DIM":0.25}}}"#,
+        ))
+        .unwrap();
+        assert!(!configured.video.video.ENABLE_BACKGROUND_IMAGE);
+        assert_eq!(configured.video.video.BACKGROUND_DIM, 0.25);
+    }
+
+    #[test]
+    fn video_background_dim_rejects_values_outside_unit_interval() {
+        for value in [-0.1, 1.1] {
+            let source = format!(r#"{{"video":{{"video":{{"BACKGROUND_DIM":{value}}}}}}}"#);
+            let error = load_snapshot(Some(&source)).expect_err("暗化程度超出范围时必须报错");
+            assert!(error.contains("video.video.BACKGROUND_DIM"), "{error}");
+        }
     }
 }

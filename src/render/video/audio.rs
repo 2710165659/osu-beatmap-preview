@@ -1,6 +1,7 @@
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::timeout::RequestDeadline;
+use crate::render::canvas::Img;
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
 use std::fs::File;
 use std::io::{Read, Seek, Write};
@@ -22,6 +23,7 @@ pub(crate) struct AudioSource {
 pub(crate) struct AudioSourceJob {
     handle: Option<std::thread::JoinHandle<Result<AudioSource>>>,
     deadline: RequestDeadline,
+    background: Option<Img>,
 }
 
 impl AudioSourceJob {
@@ -46,22 +48,32 @@ impl AudioSourceJob {
             &format!("set_id={set_id} audio={audio_filename}"),
         );
 
+        let osz_path = crate::pipeline::downloader::download_beatmapset_archive(
+            &request_bid,
+            set_id,
+            &cache_dir,
+            no_cache,
+            &deadline,
+        )?;
+        let background = if crate::config::current().video.video.ENABLE_BACKGROUND_IMAGE {
+            load_background_image(beatmap.background_filename.as_deref(), &osz_path, &deadline)?
+        } else {
+            None
+        };
         let worker_deadline = deadline.clone();
         let handle = std::thread::spawn(move || {
             worker_deadline.check()?;
-            let osz_path = crate::pipeline::downloader::download_beatmapset_archive(
-                &request_bid,
-                set_id,
-                &cache_dir,
-                no_cache,
-                &worker_deadline,
-            )?;
             prepare_audio_source(&beatmap, &osz_path, &cache_dir, no_cache, &worker_deadline)
         });
         Ok(Self {
             handle: Some(handle),
             deadline,
+            background,
         })
+    }
+
+    pub(crate) fn take_background(&mut self) -> Option<Img> {
+        self.background.take()
     }
 
     pub(crate) fn wait(mut self) -> Result<AudioSource> {
@@ -98,6 +110,8 @@ struct DecodedAudio {
     sample_rate: u32,
     stereo_samples: Vec<i16>,
 }
+
+const MAX_BACKGROUND_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
 
 pub(crate) fn prepare_audio_source(
     beatmap: &Beatmap,
@@ -157,6 +171,105 @@ pub(crate) fn prepare_audio_source(
         path: target_path,
         lead_in_ms: beatmap.audio_lead_in_ms(),
     })
+}
+
+/// 从 OSZ 中读取并解码谱面背景图；缺少背景图时回退到纯色背景。
+fn load_background_image(
+    filename: Option<&str>,
+    osz_path: &Path,
+    deadline: &RequestDeadline,
+) -> Result<Option<Img>> {
+    let Some(filename) = filename else {
+        crate::log::event(
+            "background-prepare",
+            "skip",
+            None,
+            "beatmap has no background event",
+        );
+        return Ok(None);
+    };
+    let file = File::open(osz_path)
+        .map_err(|e| PreviewError::download(format!("failed to open osz archive: {e}")))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| PreviewError::download(format!("invalid osz archive: {e}")))?;
+    let wanted = match normalize_archive_path(filename) {
+        Ok(path) => path,
+        Err(error) => {
+            crate::log::event("background-prepare", "skip", None, &error);
+            return Ok(None);
+        }
+    };
+    let index = (0..archive.len()).find(|&index| {
+        archive
+            .by_index(index)
+            .ok()
+            .and_then(|entry| normalize_archive_path(entry.name()).ok())
+            .is_some_and(|name| name.eq_ignore_ascii_case(&wanted))
+    });
+    let Some(index) = index else {
+        crate::log::event(
+            "background-prepare",
+            "skip",
+            None,
+            &format!("background file was not found in osz: {wanted}"),
+        );
+        return Ok(None);
+    };
+    let mut entry = archive
+        .by_index(index)
+        .map_err(|e| PreviewError::download(format!("failed to open background entry: {e}")))?;
+    if entry.is_dir() || entry.size() == 0 || entry.size() > MAX_BACKGROUND_IMAGE_BYTES {
+        crate::log::event(
+            "background-prepare",
+            "skip",
+            None,
+            "invalid background image size",
+        );
+        return Ok(None);
+    }
+    let mut bytes = Vec::with_capacity(entry.size() as usize);
+    entry
+        .by_ref()
+        .take(MAX_BACKGROUND_IMAGE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| PreviewError::download(format!("failed to extract background image: {e}")))?;
+    if bytes.len() as u64 > MAX_BACKGROUND_IMAGE_BYTES {
+        crate::log::event(
+            "background-prepare",
+            "skip",
+            None,
+            "background image is too large",
+        );
+        return Ok(None);
+    }
+    deadline.check()?;
+    let decoded = match image::load_from_memory(&bytes) {
+        Ok(image) => image.to_rgba8(),
+        Err(error) => {
+            crate::log::event(
+                "background-prepare",
+                "skip",
+                None,
+                &format!("failed to decode background image: {error}"),
+            );
+            return Ok(None);
+        }
+    };
+    let (w, h) = decoded.dimensions();
+    if w == 0 || h == 0 {
+        return Ok(None);
+    }
+    crate::log::event(
+        "background-prepare",
+        "done",
+        None,
+        &format!("loaded {wanted} ({w}x{h})"),
+    );
+    Ok(Some(Img {
+        w,
+        h,
+        data: decoded.into_raw(),
+    }))
 }
 
 pub(crate) fn encode_audio_segment(
@@ -501,21 +614,21 @@ fn find_audio_entry<R: Read + Seek>(
 fn normalize_archive_path(path: &str) -> std::result::Result<String, String> {
     let replaced = path.trim().replace('\\', "/");
     if replaced.starts_with('/') {
-        return Err("AudioFilename must be relative".to_string());
+        return Err("archive path must be relative".to_string());
     }
     let mut segments = Vec::new();
     for segment in replaced.split('/') {
         match segment {
             "" | "." => continue,
-            ".." => return Err("AudioFilename contains a parent-directory component".to_string()),
+            ".." => return Err("archive path contains a parent-directory component".to_string()),
             value if value.contains(':') => {
-                return Err("AudioFilename contains an absolute path prefix".to_string())
+                return Err("archive path contains an absolute path prefix".to_string())
             }
             value => segments.push(value),
         }
     }
     if segments.is_empty() {
-        return Err("AudioFilename is empty".to_string());
+        return Err("archive path is empty".to_string());
     }
     Ok(segments.join("/"))
 }
@@ -597,6 +710,53 @@ mod tests {
         extract_audio_entry(&osz, "audio/song.mp3", &output, &deadline).unwrap();
         assert_eq!(std::fs::read(&output).unwrap(), b"requested-audio");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn loads_referenced_background_from_osz_case_insensitively() {
+        let _log_guard = crate::log::test_guard();
+        let unique = format!(
+            "osu-preview-background-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let dir = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&dir).unwrap();
+        let osz = dir.join("fixture.osz");
+        let mut png_bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_bytes, 2, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer
+                .write_image_data(&[255, 0, 0, 255, 0, 255, 0, 255])
+                .unwrap();
+        }
+        {
+            let file = File::create(&osz).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            writer
+                .start_file("Backgrounds/BG.PNG", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(&png_bytes).unwrap();
+            writer.finish().unwrap();
+        }
+        let deadline = RequestDeadline::new(
+            std::time::Instant::now(),
+            "mp4",
+            std::time::Duration::from_secs(300),
+        );
+        let background = load_background_image(Some(r"backgrounds\bg.png"), &osz, &deadline)
+            .unwrap()
+            .unwrap();
+        assert_eq!((background.w, background.h), (2, 1));
+        assert_eq!(background.get(0, 0), [255, 0, 0, 255]);
+        assert_eq!(background.get(1, 0), [0, 255, 0, 255]);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

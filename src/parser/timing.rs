@@ -65,3 +65,58 @@ pub fn parse_break_periods(lines: Option<&Vec<&str>>) -> Vec<BreakPeriod> {
     }
     breaks
 }
+
+/// 从 `[Events]` 区段解析第一张谱面背景图文件名。
+pub fn parse_background_filename(lines: Option<&Vec<&str>>) -> Option<String> {
+    let lines = lines?;
+    for line in lines {
+        let mut fields = line.splitn(3, ',');
+        if fields.next().map(str::trim) != Some("0") {
+            continue;
+        }
+        let Some(_) = fields.next() else {
+            continue;
+        };
+        let Some(remainder) = fields.next().map(str::trim) else {
+            continue;
+        };
+        let name = if let Some(quoted) = remainder.strip_prefix('"') {
+            let Some((name, _)) = quoted.split_once('"') else {
+                continue;
+            };
+            name.trim()
+        } else {
+            let Some(name) = remainder.split(',').next().map(str::trim) else {
+                continue;
+            };
+            name
+        };
+        if !name.is_empty() {
+            return Some(name.replace('\\', "/"));
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn background_filename_supports_quoted_commas_and_windows_separators() {
+        let lines = vec!["2,1000,2000", "0,0,\"Backgrounds\\artist, title.jpg\",0,0"];
+        assert_eq!(
+            parse_background_filename(Some(&lines)).as_deref(),
+            Some("Backgrounds/artist, title.jpg")
+        );
+    }
+
+    #[test]
+    fn background_filename_supports_unquoted_legacy_events() {
+        let lines = vec!["0,0,bg.png,0,0"];
+        assert_eq!(
+            parse_background_filename(Some(&lines)).as_deref(),
+            Some("bg.png")
+        );
+    }
+}

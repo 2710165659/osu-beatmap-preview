@@ -13,7 +13,7 @@ use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
-use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
+use crate::render::video::{prepare_video_background, resolve_video_time_range, save_mp4_streamed};
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -29,6 +29,7 @@ pub(crate) fn render_standard_video(
     start_time: Option<TimePoint>,
     duration_time: Option<f64>,
     output_path: &Path,
+    background: Option<Img>,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
     deadline: &RequestDeadline,
@@ -45,6 +46,13 @@ pub(crate) fn render_standard_video(
     let total_ms = end - start;
     let fps = crate::config::current().layout.standard.mp4.FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
+    let frame_background = background.as_ref().map(|image| {
+        prepare_video_background(
+            image,
+            crate::render::standard::constants::IMAGE_WIDTH as u32,
+            crate::render::standard::constants::IMAGE_HEIGHT as u32,
+        )
+    });
 
     let break_periods = beatmap.break_periods.clone();
     let context_ref = &context;
@@ -70,6 +78,7 @@ pub(crate) fn render_standard_video(
                 snapshot_time,
                 break_ref,
                 &groups[0],
+                frame_background.as_ref(),
             )
         });
         (frame, snapshot_time)
@@ -84,6 +93,7 @@ pub(crate) fn render_standard_video(
         output_path,
         fps,
         audio_job,
+        background,
         time_axis,
         deadline,
     )

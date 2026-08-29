@@ -13,7 +13,7 @@ pub use hit_objects::round_half_even;
 pub use sections::{
     default_metadata, parse_combo_colors, parse_format_version, parse_key_value, split_sections,
 };
-pub use timing::{parse_break_periods, parse_timing_points};
+pub use timing::{parse_background_filename, parse_break_periods, parse_timing_points};
 
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::*;
@@ -62,6 +62,7 @@ fn parse_beatmap_str(content: &str) -> Option<Beatmap> {
     general.insert("FormatVersion", parse_format_version(content).to_string());
     let timing_points = parse_timing_points(sections.get("TimingPoints")?)?;
     let break_periods = parse_break_periods(sections.get("Events"));
+    let background_filename = parse_background_filename(sections.get("Events"));
     let mode: i32 = general.get("Mode").unwrap_or("0").parse().ok()?;
 
     let combo_colors = parse_combo_colors(sections.get("Colours"));
@@ -103,6 +104,7 @@ fn parse_beatmap_str(content: &str) -> Option<Beatmap> {
         timing_points,
         hit_objects,
         break_periods,
+        background_filename,
         combo_colors,
         beat_divisor,
     })

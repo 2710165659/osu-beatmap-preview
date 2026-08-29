@@ -12,7 +12,7 @@ use crate::core::timeout::RequestDeadline;
 use crate::core::validate::TimePoint;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
-use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
+use crate::render::video::{prepare_video_background, resolve_video_time_range, save_mp4_streamed};
 use std::path::Path;
 
 use super::gif::{build_gif_layout, render_gif_frame};
@@ -25,6 +25,7 @@ pub(crate) fn render_catch_video(
     start_time: Option<TimePoint>,
     duration_time: Option<f64>,
     output_path: &Path,
+    background: Option<Img>,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
     deadline: &RequestDeadline,
@@ -47,12 +48,25 @@ pub(crate) fn render_catch_video(
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);
+    let frame_background = background.as_ref().map(|image| {
+        prepare_video_background(
+            image,
+            crate::render::catch::constants::IMAGE_WIDTH as u32,
+            crate::render::catch::constants::IMAGE_HEIGHT as u32,
+        )
+    });
     render_objects.sort_by_key(|o| std::cmp::Reverse(o.start_time));
     let start_times: Vec<i64> = render_objects.iter().map(|o| o.start_time).collect();
 
     let render = move |frame_index: usize| -> (Img, i64) {
         let snapshot_time = start + rhe(frame_index as f64 * 1000.0 * speed / fps as f64);
-        let frame = render_gif_frame(&render_objects, &start_times, snapshot_time, &layout);
+        let frame = render_gif_frame(
+            &render_objects,
+            &start_times,
+            snapshot_time,
+            &layout,
+            frame_background.as_ref(),
+        );
         (frame, snapshot_time)
     };
 
@@ -65,6 +79,7 @@ pub(crate) fn render_catch_video(
         output_path,
         fps,
         audio_job,
+        background,
         time_axis,
         deadline,
     )

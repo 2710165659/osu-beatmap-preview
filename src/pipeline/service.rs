@@ -6,6 +6,7 @@ use crate::core::timeout::RequestDeadline;
 use crate::core::validate::{self, TimePoint, ValidateContext};
 use crate::log::{self, CacheKind, SummaryRecord};
 use crate::pipeline::cache;
+use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -375,6 +376,7 @@ trait ModeRenderer {
         time_point: Option<TimePoint>,
         duration_time: Option<f64>,
         output_path: &Path,
+        background: Option<Img>,
         audio_job: AudioSourceJob,
         _time_axis: TimeAxis,
         deadline: &RequestDeadline,
@@ -449,6 +451,7 @@ impl ModeRenderer for StandardRenderer {
         time_point: Option<TimePoint>,
         duration_time: Option<f64>,
         output_path: &Path,
+        background: Option<Img>,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
         deadline: &RequestDeadline,
@@ -459,6 +462,7 @@ impl ModeRenderer for StandardRenderer {
             time_point,
             duration_time,
             output_path,
+            background,
             audio_job,
             time_axis,
             deadline,
@@ -510,6 +514,7 @@ impl ModeRenderer for TaikoRenderer {
         time_point: Option<TimePoint>,
         duration_time: Option<f64>,
         output_path: &Path,
+        background: Option<Img>,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
         deadline: &RequestDeadline,
@@ -520,6 +525,7 @@ impl ModeRenderer for TaikoRenderer {
             time_point,
             duration_time,
             output_path,
+            background,
             audio_job,
             time_axis,
             deadline,
@@ -571,6 +577,7 @@ impl ModeRenderer for CatchRenderer {
         time_point: Option<TimePoint>,
         duration_time: Option<f64>,
         output_path: &Path,
+        background: Option<Img>,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
         deadline: &RequestDeadline,
@@ -581,6 +588,7 @@ impl ModeRenderer for CatchRenderer {
             time_point,
             duration_time,
             output_path,
+            background,
             audio_job,
             time_axis,
             deadline,
@@ -632,6 +640,7 @@ impl ModeRenderer for ManiaRenderer {
         time_point: Option<TimePoint>,
         duration_time: Option<f64>,
         output_path: &Path,
+        background: Option<Img>,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
         deadline: &RequestDeadline,
@@ -642,6 +651,7 @@ impl ModeRenderer for ManiaRenderer {
             time_point,
             duration_time,
             output_path,
+            background,
             audio_job,
             time_axis,
             deadline,
@@ -785,14 +795,16 @@ fn render_preview_for_mode(
             deadline,
         )
     } else if fmt == "mp4" {
-        let audio_job =
+        let mut audio_job =
             audio_job.ok_or_else(|| PreviewError::render("MP4 audio job was not started"))?;
+        let background = audio_job.take_background();
         renderer.render_video(
             &beatmap,
             mods_ref,
             time_points.first().copied(),
             duration_time,
             output_path,
+            background,
             audio_job,
             time_axis,
             deadline,

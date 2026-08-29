@@ -12,7 +12,7 @@ use crate::core::timeout::RequestDeadline;
 use crate::core::validate::TimePoint;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
-use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
+use crate::render::video::{prepare_video_background, resolve_video_time_range, save_mp4_streamed};
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -29,6 +29,7 @@ pub(crate) fn render_taiko_video(
     start_time: Option<TimePoint>,
     duration_time: Option<f64>,
     output_path: &Path,
+    background: Option<Img>,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
     deadline: &RequestDeadline,
@@ -58,11 +59,22 @@ pub(crate) fn render_taiko_video(
     let layout = build_video_layout(time_range);
 
     let static_bg = {
-        let mut bg = Img::new(
-            layout.image_width as u32,
-            layout.image_height as u32,
-            crate::config::current().layout.taiko.mp4.IMAGE_BACKGROUND,
-        );
+        let mut bg = background
+            .as_ref()
+            .map(|image| {
+                prepare_video_background(
+                    image,
+                    layout.image_width as u32,
+                    layout.image_height as u32,
+                )
+            })
+            .unwrap_or_else(|| {
+                Img::new(
+                    layout.image_width as u32,
+                    layout.image_height as u32,
+                    crate::config::current().layout.taiko.mp4.IMAGE_BACKGROUND,
+                )
+            });
         draw_row_background(&mut bg, &layout, 0);
         bg
     };
@@ -98,6 +110,7 @@ pub(crate) fn render_taiko_video(
         output_path,
         fps,
         audio_job,
+        background,
         time_axis,
         deadline,
     )

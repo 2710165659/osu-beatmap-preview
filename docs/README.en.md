@@ -32,7 +32,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--duration-time` | MP4 only. Output duration in seconds. Defaults to `600`; shorter beatmaps use their complete playable range instead of padding to 600 seconds. |
 | `--no-log` | Disables logging. |
 | `--no-cache` | Skips download and output caches and forces a fresh render. |
-| `--config` | A configuration file path or an inline JSON/YAML object. Nested mappings merge recursively; arrays and scalars replace the whole field. Unspecified fields keep their defaults. |
+| `--config` | A configuration file path or an inline JSON/YAML object. Nested mappings merge recursively; arrays and scalars replace the whole field. Unspecified fields keep their defaults. MP4 background images are controlled by `video.video.ENABLE_BACKGROUND_IMAGE` (enabled by default) and `video.video.BACKGROUND_DIM` (default `0.7`). |
 | `--version` | Prints the version and build time, then exits. |
 
 > MP4 numeric start times use the gameplay timeline: the first playable object in the target mode after conversion is `0:00`. Negative starts are allowed and portions before the audio begins are silent.
@@ -135,6 +135,8 @@ Use `--fmt=gif` to output a GIF animation. Each mode has independent grid, durat
 ### MP4 Videos
 
 Use `--fmt=mp4` to output a video with beatmap audio for all four modes. The default request is 600 seconds from gameplay time `0`; shorter beatmaps use their complete playable range. Use one `--time-points` value and `--duration-time` to select another interval; intervals that run past the chart tail are shifted backward as a unit. The default output name omits the time suffix; the suffix is kept when either option is explicitly supplied. `--time-points=preview` uses the beatmap `PreviewTime`. GIF and Standard PNG accept repeated `--time-points` values and prioritize adding `PreviewTime` when capacity remains. The old `5+10+15` joined format is invalid.
+
+By default, MP4 renders load the beatmap background declared in `[Events]` from the OSZ archive and darken it with `BACKGROUND_DIM=0.7`. Set `video.video.ENABLE_BACKGROUND_IMAGE: false` to disable it.
 
 ### Command-Line Output
 

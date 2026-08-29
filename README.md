@@ -32,7 +32,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--duration-time` | 仅 MP4 可用，输出时长（秒）。默认 `600`；若谱面完整可播放范围更短，则输出完整范围，不补足空白。 |
 | `--no-log` | 关闭日志。 |
 | `--no-cache` | 跳过下载缓存与输出缓存，强制重新渲染。 |
-| `--config` | 配置文件路径，或 JSON/YAML 格式的配置对象。嵌套映射递归合并；数组和标量整体替换，未传入字段保留默认值。 |
+| `--config` | 配置文件路径，或 JSON/YAML 格式的配置对象。嵌套映射递归合并；数组和标量整体替换，未传入字段保留默认值。视频背景图由 `video.video.ENABLE_BACKGROUND_IMAGE` 控制，默认启用；`video.video.BACKGROUND_DIM` 默认 `0.7`。 |
 | `--version` | 打印版本号与构建时间后退出。 |
 
 > MP4 数值起始时间使用游戏时间轴：转谱后的目标模式首个可玩物件为 `0:00`，不是编辑器左下角的绝对音轨时间。支持负数，早于音频起点的部分输出静音。
@@ -136,6 +136,8 @@ osu-beatmap-preview --bid=123456 --config=C:/path/to/config.yml
 ### MP4 视频
 
 使用 `--fmt=mp4` 输出带谱面音频的视频，支持四种模式。默认从游戏时间 `0` 开始请求 600 秒；若谱面不足 600 秒，则只输出完整可播放范围。使用单个 `--time-points` 和 `--duration-time` 指定区间；当区间超出谱面尾部时会整体向前调整。未显式指定这两个参数时，文件名不包含时间后缀；显式指定任一参数时会保留后缀。`--time-points=preview` 使用谱面的 `PreviewTime`。GIF 和 Standard PNG 可以重复传入 `--time-points` 指定多个渲染点；只传入部分点时会优先补入 `PreviewTime`；旧的 `5+10+15` 拼接格式不再支持。
+
+MP4 默认从 OSZ 读取 `[Events]` 中的谱面背景图，并以 `BACKGROUND_DIM=0.7` 暗化；设置 `video.video.ENABLE_BACKGROUND_IMAGE: false` 可关闭。
 
 ### 命令行输出
 

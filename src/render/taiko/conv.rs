@@ -64,6 +64,7 @@ pub(crate) fn taiko_convert(
         timing_points: taiko_convert_timing_points(beatmap, objects),
         hit_objects: HitObjects::Taiko(taiko_objects),
         break_periods: beatmap.break_periods.clone(),
+        background_filename: beatmap.background_filename.clone(),
         combo_colors: beatmap.combo_colors.clone(),
         beat_divisor: beatmap.beat_divisor,
     })

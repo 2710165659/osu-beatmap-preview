@@ -59,6 +59,7 @@ pub(crate) fn catch_convert(
         timing_points: beatmap.timing_points.clone(),
         hit_objects: HitObjects::Catch(catch_objects),
         break_periods: beatmap.break_periods.clone(),
+        background_filename: beatmap.background_filename.clone(),
         beat_divisor: 0,
         combo_colors: beatmap.combo_colors.clone(),
     })

@@ -2,8 +2,9 @@
 //! 流式写入 MP4 文件。流程类似 `save_animated_gif_streamed`：
 //! rayon 分块并行渲染，再顺序编码以保持帧顺序。
 //!
-//! 每帧游戏区域会放入 16:9 黑色画布，在右上角绘制“当前 / 总时长”标签，
-//! 转换为后端所需格式后编码为 H.264，并写入一个 MP4 sample。
+//! 每帧游戏区域会放入带暗化谱面背景的 16:9 画布；背景不可用或已关闭时使用黑色，
+//! 并在右上角绘制“当前 / 总时长”标签。随后转换为后端所需格式并编码为 H.264，
+//! 再写入一个 MP4 sample。
 //! 完整动画不会同时驻留内存，最多保留 `PAR_CHUNK_SIZE` 个原始帧。
 //!
 //! ## GPU 加速
@@ -187,6 +188,7 @@ pub(crate) fn save_mp4_streamed(
     output_path: &Path,
     fps: u32,
     audio_job: AudioSourceJob,
+    background: Option<Img>,
     time_axis: TimeAxis,
     deadline: &RequestDeadline,
 ) -> Result<()> {
@@ -243,6 +245,9 @@ pub(crate) fn save_mp4_streamed(
     deadline.check()?;
     let (pf_w, pf_h) = (first_frame.w, first_frame.h);
     let (out_w, out_h) = letterbox_dims(pf_w, pf_h);
+    let background = background
+        .as_ref()
+        .map(|image| prepare_video_background(image, out_w, out_h));
 
     // ── 选择最佳可用编码后端 ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
@@ -275,6 +280,7 @@ pub(crate) fn save_mp4_streamed(
         time_axis.to_display(last_object_ms),
         out_w,
         out_h,
+        background.as_ref(),
     );
     let first_encoded = encoder.encode(&first_comp)?;
     deadline.check()?;
@@ -371,7 +377,14 @@ pub(crate) fn save_mp4_streamed(
                 .map(|fi| {
                     let (pf, time) = render(fi);
                     // 在此并行合成，避免串行瓶颈。
-                    compose_frame(pf, time_axis.to_display(time), gameplay_total, out_w, out_h)
+                    compose_frame(
+                        pf,
+                        time_axis.to_display(time),
+                        gameplay_total,
+                        out_w,
+                        out_h,
+                        background.as_ref(),
+                    )
                 })
                 .collect();
             deadline.check()?;
@@ -578,14 +591,53 @@ fn letterbox_dims(pf_w: u32, pf_h: u32) -> (u32, u32) {
     (w.max(2) & !1, h.max(2) & !1)
 }
 
-/// 将游戏区域帧居中放置到黑色 16:9 画布，并在右上角绘制
-///“当前 / 总时长”游戏时间标签。
-fn compose_frame(pf: Img, current_ms: i64, total_ms: i64, out_w: u32, out_h: u32) -> Img {
-    let mut canvas = Img::new(
-        out_w,
-        out_h,
+/// 将谱面背景图按 osu! 的填充方式等比缩放并居中裁剪，再应用暗化配置。
+pub(crate) fn prepare_video_background(source: &Img, width: u32, height: u32) -> Img {
+    let scale = (width as f64 / source.w.max(1) as f64).max(height as f64 / source.h.max(1) as f64);
+    let resized_width = ((source.w as f64 * scale).ceil() as u32).max(width);
+    let resized_height = ((source.h as f64 * scale).ceil() as u32).max(height);
+    let resized = source.resize(resized_width, resized_height);
+    let left = (resized_width - width) / 2;
+    let top = (resized_height - height) / 2;
+    let cropped = resized.crop(left, top, left + width, top + height);
+
+    let mut result = Img::new(
+        width,
+        height,
         crate::config::current().video.video.BLACK_OPAQUE,
     );
+    result.alpha_composite(&cropped, 0, 0);
+    let brightness = 1.0
+        - crate::config::current()
+            .video
+            .video
+            .BACKGROUND_DIM
+            .clamp(0.0, 1.0);
+    for pixel in result.data.chunks_exact_mut(4) {
+        pixel[0] = (pixel[0] as f64 * brightness).round() as u8;
+        pixel[1] = (pixel[1] as f64 * brightness).round() as u8;
+        pixel[2] = (pixel[2] as f64 * brightness).round() as u8;
+    }
+    result
+}
+
+/// 将游戏区域帧居中放置到 16:9 背景画布，并在右上角绘制
+///“当前 / 总时长”游戏时间标签；没有谱面背景时画布为黑色。
+fn compose_frame(
+    pf: Img,
+    current_ms: i64,
+    total_ms: i64,
+    out_w: u32,
+    out_h: u32,
+    background: Option<&Img>,
+) -> Img {
+    let mut canvas = background.cloned().unwrap_or_else(|| {
+        Img::new(
+            out_w,
+            out_h,
+            crate::config::current().video.video.BLACK_OPAQUE,
+        )
+    });
     let ox = ((out_w - pf.w) / 2) as i64;
     let oy = ((out_h - pf.h) / 2) as i64;
     canvas.alpha_composite(&pf, ox, oy);
@@ -681,6 +733,7 @@ mod tests {
             timing_points: Vec::new(),
             hit_objects: HitObjects::Standard(Vec::new()),
             break_periods: Vec::new(),
+            background_filename: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         }
@@ -847,6 +900,15 @@ mod tests {
             format_progress_label(time_axis.to_display(92_500), total_ms),
             "1:20/1:30"
         );
+    }
+
+    #[test]
+    fn video_background_is_cover_cropped_and_dimmed() {
+        let source = Img::new(2, 1, [255, 100, 0, 255]);
+        let background = prepare_video_background(&source, 4, 4);
+        assert_eq!((background.w, background.h), (4, 4));
+        assert_eq!(background.get(0, 0), [77, 30, 0, 255]);
+        assert_eq!(background.get(3, 3), [77, 30, 0, 255]);
     }
 
     #[test]

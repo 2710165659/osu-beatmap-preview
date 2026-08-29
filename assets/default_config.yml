@@ -563,7 +563,9 @@ video:
     MAX_PAR_FRAME_BYTES: 67108864 # MP4 并行帧允许占用的最大原始图像字节数
     VIDEO_BITRATE: 900000 # 硬件编码器目标视频码率，单位 bit/s
     VIDEO_END_PADDING_MS: 2000 # 最后一个物件后继续渲染的时长
-    LABEL_COLOR: [232, 232, 232, 255] # 视频右下角时间标签颜色（RGBA）
+    ENABLE_BACKGROUND_IMAGE: true # MP4 是否启用谱面背景图
+    BACKGROUND_DIM: 0.7 # MP4 谱面背景图暗化程度（0 表示不暗化，1 表示全黑）
+    LABEL_COLOR: [232, 232, 232, 255] # 视频右上角时间标签颜色（RGBA）
     LABEL_FONT_SIZE: 24 # 视频时间标签字号
     LABEL_PAD: 12 # 视频时间标签与画布边缘的内边距
     BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成时使用的不透明黑色（RGBA）

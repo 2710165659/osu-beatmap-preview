@@ -185,7 +185,8 @@ fn render_catch_segment_gif(
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
             let (frame_x, frame_y) = frame_origin(segment_index);
-            let frame = render_gif_frame(&render_objects, &start_times, snapshot_time, &layout);
+            let frame =
+                render_gif_frame(&render_objects, &start_times, snapshot_time, &layout, None);
             canvas.alpha_composite(&frame, frame_x, frame_y);
             if crate::config::current().layout.catch.gif.SHOW_TIME_LABEL {
                 draw_gif_time_label(
@@ -217,32 +218,37 @@ pub(crate) fn render_gif_frame(
     start_times_desc: &[i64],
     snapshot_time: i64,
     layout: &GifLayout,
+    background: Option<&Img>,
 ) -> Img {
-    let mut frame = Img::new(
-        crate::render::catch::constants::IMAGE_WIDTH as u32,
-        crate::render::catch::constants::IMAGE_HEIGHT as u32,
-        crate::config::current()
-            .layout
-            .catch
-            .gif
-            .PLAYFIELD_BACKGROUND,
-    );
+    let mut frame = background.cloned().unwrap_or_else(|| {
+        Img::new(
+            crate::render::catch::constants::IMAGE_WIDTH as u32,
+            crate::render::catch::constants::IMAGE_HEIGHT as u32,
+            crate::config::current()
+                .layout
+                .catch
+                .gif
+                .PLAYFIELD_BACKGROUND,
+        )
+    });
 
     let playfield_left = layout.playfield_left;
     let playfield_right =
         playfield_left + crate::render::catch::constants::PLAYFIELD_WIDTH * layout.playfield_scale;
     // playfield 区域底色
-    frame.set_rect(
-        rhe(playfield_left),
-        0,
-        rhe(playfield_right),
-        crate::render::catch::constants::IMAGE_HEIGHT,
-        crate::config::current()
-            .layout
-            .catch
-            .gif
-            .PLAYFIELD_BACKGROUND,
-    );
+    if background.is_none() {
+        frame.set_rect(
+            rhe(playfield_left),
+            0,
+            rhe(playfield_right),
+            crate::render::catch::constants::IMAGE_HEIGHT,
+            crate::config::current()
+                .layout
+                .catch
+                .gif
+                .PLAYFIELD_BACKGROUND,
+        );
+    }
 
     // 判定线（接手所在高度）
     let judgement_y = layout.playfield_top

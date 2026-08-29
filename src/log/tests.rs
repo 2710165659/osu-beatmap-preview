@@ -5,14 +5,6 @@
 use super::config::{init_for_tests, paths, PROGRESS_FILE, RENDER_FILE};
 use super::*;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-
-/// 日志测试共享进程级全局配置，必须串行执行避免互相覆盖目录。
-static TEST_LOCK: Mutex<()> = Mutex::new(());
-
-fn test_guard() -> std::sync::MutexGuard<'static, ()> {
-    TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 fn unique_dir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(

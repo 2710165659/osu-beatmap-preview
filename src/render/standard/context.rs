@@ -560,6 +560,7 @@ mod tests {
             timing_points: Vec::new(),
             hit_objects: HitObjects::Standard(Vec::new()),
             break_periods: Vec::new(),
+            background_filename: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         }

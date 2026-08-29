@@ -23,16 +23,19 @@ pub(crate) fn render_frame(
     snapshot_time: i64,
     break_periods: &[BreakPeriod],
     visible_indexes: &[usize],
+    background: Option<&Img>,
 ) -> Img {
-    let mut frame = Img::new(
-        crate::render::standard::constants::IMAGE_WIDTH as u32,
-        crate::render::standard::constants::IMAGE_HEIGHT as u32,
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .IMAGE_BACKGROUND_COLOR,
-    );
+    let mut frame = background.cloned().unwrap_or_else(|| {
+        Img::new(
+            crate::render::standard::constants::IMAGE_WIDTH as u32,
+            crate::render::standard::constants::IMAGE_HEIGHT as u32,
+            crate::config::current()
+                .layout
+                .standard
+                .png
+                .IMAGE_BACKGROUND_COLOR,
+        )
+    });
 
     for &index in visible_indexes {
         let hit_object = &context.hit_objects[index];

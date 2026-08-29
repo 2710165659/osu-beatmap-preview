@@ -103,6 +103,7 @@ pub(crate) fn render_standard_png(
                 snapshot_time,
                 breaks,
                 &visible_groups[image_index],
+                None,
             );
             canvas.alpha_composite(&frame, x, y);
             let note = if image_index == 0 && row_timing.is_preview {

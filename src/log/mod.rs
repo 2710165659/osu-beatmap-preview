@@ -25,6 +25,15 @@ pub use summary::{write_summary, SummaryRecord};
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
 
+/// 日志测试会修改进程级配置，其他会产生日志的测试也必须共用此锁。
+#[cfg(test)]
+static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+pub(crate) fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+    TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner())
+}
+
 #[cfg(test)]
 pub(crate) fn reset_for_tests() {
     config::reset_for_tests();

@@ -182,6 +182,8 @@ pub struct Beatmap {
     pub timing_points: Vec<TimingPoint>,
     pub hit_objects: HitObjects,
     pub break_periods: Vec<BreakPeriod>,
+    /// `[Events]` 区段中的谱面背景文件名。
+    pub background_filename: Option<String>,
     /// 谱面 [Colours] 区段中的连击颜色（按 Combo1..ComboN 顺序）。
     pub combo_colors: Vec<[u8; 3]>,
     /// [Editor] 区段中的 BeatDivisor，未设置时为 0。
@@ -256,6 +258,7 @@ mod tests {
             timing_points: Vec::new(),
             hit_objects: HitObjects::Standard(Vec::new()),
             break_periods: Vec::new(),
+            background_filename: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         }
