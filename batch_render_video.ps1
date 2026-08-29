@@ -1,12 +1,11 @@
-# osu-beatmap-preview MP4 full-chart benchmark
+# osu-beatmap-preview MP4 默认行为批量基准
 #
-# Usage:
+# 用法：
 #   powershell -File ".\batch_render_video.ps1"
 #   powershell -File ".\batch_render_video.ps1" -NoCache
 #
-# The default run removes only the 13 target MP4 outputs before rendering, so
-# .osu and OSZ caches are reused. -NoCache also refreshes those input caches.
-# ffprobe is required to read the exact duration of each completed MP4.
+# 默认运行删除 13 个目标 MP4 及其旧版命名文件，复用 .osu 和 OSZ 缓存。
+# -NoCache 会同时刷新输入缓存。ffprobe 用于读取完成视频的精确时长。
 
 param(
     [switch]$NoCache,
@@ -21,9 +20,6 @@ $appOutputDir = [System.IO.Path]::GetFullPath(
     (Join-Path $env:TEMP "osu-beatmap-preview\outputs")
 )
 $outdir = Join-Path $appOutputDir "batch-video"
-$videoStart = 0
-$videoDuration = 600
-
 if (-not (Test-Path -LiteralPath $bin -PathType Leaf)) {
     throw "Release binary not found: $bin`nRun cargo build --release first."
 }
@@ -53,7 +49,7 @@ function New-VideoTask {
     [pscustomobject]@{ mode = $Mode; bid = $Bid }
 }
 
-# Only native-mode, full-chart MP4 renders.
+# 仅渲染原生模式，并使用程序的默认 MP4 区间行为。
 $tasks = @(
     New-VideoTask "std"   "5242890"
     New-VideoTask "std"   "4897202"
@@ -82,7 +78,19 @@ function Get-ExpectedOutputName {
         "mania" { "mania" }
         default { throw "Unknown mode: $($Task.mode)" }
     }
-    return "${prefix}_$($Task.bid)_video-start${videoStart}-duration${videoDuration}.mp4"
+    return "${prefix}_$($Task.bid).mp4"
+}
+
+function Get-LegacyOutputName {
+    param($Task)
+    $prefix = switch ($Task.mode) {
+        "std"   { "standard" }
+        "taiko" { "taiko" }
+        "ctb"   { "catch" }
+        "mania" { "mania" }
+        default { throw "Unknown mode: $($Task.mode)" }
+    }
+    return "${prefix}_$($Task.bid)_video-start0-duration600.mp4"
 }
 
 function Get-Mp4DurationSeconds {
@@ -102,8 +110,7 @@ function Get-Mp4DurationSeconds {
     return 0.0
 }
 
-# Prefer Windows' per-process GPU engine counters. On systems where those are
-# unavailable, fall back to nvidia-smi's whole-GPU utilization.
+# 优先使用 Windows 的进程级 GPU 引擎计数器；不可用时回退到 nvidia-smi 的整卡利用率。
 $script:gpuCounterFailed = $false
 $script:nvidiaSmi = Resolve-Executable "nvidia-smi.exe"
 
@@ -119,8 +126,7 @@ function Get-GpuUsageSample {
                     ForEach-Object { [double]$_.CookedValue }
             )
             if ($samples.Count -gt 0) {
-                # Task Manager reports the busiest engine, rather than summing
-                # independent 3D/copy/video-encode engines above 100%.
+                # 任务管理器显示最繁忙的引擎，而不是把独立的 3D、复制和视频编码引擎相加到 100% 以上。
                 $maximum = ($samples | Measure-Object -Maximum).Maximum
                 return [pscustomobject]@{ value = [math]::Max(0.0, [double]$maximum); scope = "process" }
             }
@@ -171,19 +177,25 @@ foreach ($task in $tasks) {
     $expectedName = Get-ExpectedOutputName $task
     $expectedPath = [System.IO.Path]::GetFullPath((Join-Path $appOutputDir $expectedName))
 
-    # Force a fresh video render without invalidating .osu/OSZ input caches.
+    # 删除默认名称和旧版带时间后缀名称，强制重新渲染但保留输入缓存。
     if ((Split-Path -Parent $expectedPath) -ne $appOutputDir) {
         throw "Refusing to remove output outside the application output directory: $expectedPath"
     }
-    if (Test-Path -LiteralPath $expectedPath -PathType Leaf) {
-        Remove-Item -LiteralPath $expectedPath -Force
+    $pathsToRemove = @($expectedPath)
+    $legacyPath = [System.IO.Path]::GetFullPath((Join-Path $appOutputDir (Get-LegacyOutputName $task)))
+    if ((Split-Path -Parent $legacyPath) -ne $appOutputDir) {
+        throw "Refusing to remove output outside the application output directory: $legacyPath"
+    }
+    $pathsToRemove += $legacyPath
+    foreach ($pathToRemove in $pathsToRemove) {
+        if (Test-Path -LiteralPath $pathToRemove -PathType Leaf) {
+            Remove-Item -LiteralPath $pathToRemove -Force
+        }
     }
 
     $argList = @(
         "--bid=$($task.bid)",
-        "--fmt=mp4",
-        "--time-points=$videoStart",
-        "--duration-time=$videoDuration"
+        "--fmt=mp4"
     )
     if ($NoCache) { $argList += "--no-cache" }
 
@@ -279,8 +291,7 @@ foreach ($task in $tasks) {
         $message = "Process exited successfully but did not return valid JSON."
     }
 
-    # Process timestamps exclude the GPU polling interval that may remain after
-    # the process exits. The stopwatch remains a fallback for launch failures.
+    # 进程时间戳不包含进程退出后可能残留的 GPU 轮询间隔；启动失败时回退到秒表计时。
     $elapsedMs = if ($processElapsedMs -gt 0) { $processElapsedMs } else { $sw.Elapsed.TotalMilliseconds }
     $msPerChartSecond = if ($durationSec -gt 0) { $elapsedMs / $durationSec } else { 0.0 }
     $peakMB = $peakBytes / 1MB

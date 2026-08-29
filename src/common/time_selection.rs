@@ -64,7 +64,7 @@ impl SimpleRng {
 
 pub struct PreviewTimeSelector<'a> {
     beatmap: &'a Beatmap,
-    spans: Vec<(i64, i64)>, // (start_time, end_time), sorted
+    spans: Vec<(i64, i64)>, // 按 (start_time, end_time) 排序
     segment_count: usize,
     segment_duration: i64,
     requested_start_times: Vec<i64>,
@@ -101,9 +101,6 @@ impl<'a> PreviewTimeSelector<'a> {
         let valid_intervals = self.build_valid_start_intervals();
         let preview_time = self.preview_time();
         let mut chosen = self.requested_start_times.clone();
-        if chosen.is_empty() {
-            chosen.push(preview_time);
-        }
         chosen.sort_unstable();
         chosen.dedup();
         if chosen.len() > self.segment_count {
@@ -111,6 +108,10 @@ impl<'a> PreviewTimeSelector<'a> {
                 "requested time points exceed configured capacity of {}",
                 self.segment_count
             )));
+        }
+        // 用户指定的时间点未占满配置容量时，优先补入谱面预览时间。
+        if chosen.len() < self.segment_count && !chosen.contains(&preview_time) {
+            chosen.push(preview_time);
         }
 
         let seed = self.spans.iter().fold(
@@ -325,11 +326,61 @@ pub fn snap_to_beat_grid(time: i64, timing_points: &[TimingPoint]) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::models::{HitObjects, KvSection, StandardHitObject};
+
+    fn beatmap_with_preview(preview_time: Option<&str>) -> Beatmap {
+        let mut general = KvSection::default();
+        if let Some(value) = preview_time {
+            general.insert("PreviewTime", value.to_string());
+        }
+        Beatmap {
+            metadata: KvSection::default(),
+            difficulty: KvSection::default(),
+            general,
+            timing_points: Vec::new(),
+            hit_objects: HitObjects::Standard(vec![StandardHitObject {
+                start_time: 0,
+                end_time: 30_000,
+                ..StandardHitObject::default()
+            }]),
+            break_periods: Vec::new(),
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
 
     #[test]
     fn time_axis_converts_to_display_time() {
         let axis = TimeAxis::new(12_500);
         assert_eq!(axis.to_display(10_500), -2_000);
         assert_eq!(axis.to_display(i64::MIN), i64::MIN);
+    }
+
+    #[test]
+    fn requested_points_are_followed_by_preview_time_when_capacity_remains() {
+        let beatmap = beatmap_with_preview(Some("20"));
+        let selector =
+            PreviewTimeSelector::new(&beatmap, vec![(0, 30_000)], 2, 1_000, Some(vec![0])).unwrap();
+        let chosen = selector.choose().unwrap();
+        assert_eq!(chosen.len(), 2);
+        assert!(chosen.iter().any(|segment| segment.start_time == 20));
+        assert!(chosen.iter().any(|segment| segment.start_time == 0));
+        assert!(chosen.iter().any(|segment| segment.is_preview));
+    }
+
+    #[test]
+    fn preview_time_is_not_duplicated_when_explicitly_requested() {
+        let beatmap = beatmap_with_preview(Some("20"));
+        let selector =
+            PreviewTimeSelector::new(&beatmap, vec![(0, 30_000)], 2, 1_000, Some(vec![20]))
+                .unwrap();
+        let chosen = selector.choose().unwrap();
+        assert_eq!(
+            chosen
+                .iter()
+                .filter(|segment| segment.start_time == 20)
+                .count(),
+            1
+        );
     }
 }

@@ -480,5 +480,17 @@ mod tests {
             format_video_time_suffix(Some(TimePoint::Preview), Some(30.0)),
             "video-startpreview-duration30"
         );
+        assert_eq!(
+            format_video_time_suffix(Some(TimePoint::Seconds(12.5)), None),
+            "video-start12.5-duration600"
+        );
+        assert_eq!(
+            format_video_time_suffix(None, Some(30.0)),
+            "video-start0-duration30"
+        );
+        assert_eq!(
+            format_video_time_suffix(Some(TimePoint::Seconds(0.0)), Some(600.0)),
+            "video-start0-duration600"
+        );
     }
 }

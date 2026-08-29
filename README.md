@@ -28,8 +28,8 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--convert` | 转谱模式，支持 `mania` / `ctb` / `taiko` / `standard` / `std`。仅 Standard 可用。 |
 | `--mod` | 单个 Mod，组合时重复传入，例如 `--mod=hd --mod=hr`；倍速类可带数值，如 `--mod=dt1.25`。 |
 | `--fmt` | 输出格式：`gif` / `png` / `mp4`。不填时按模式取默认值。 |
-| `--time-points` | 时间点列表。GIF 和 Standard PNG 可重复传入多个点；MP4 最多传入一个点。每个点为游戏时间秒数或 `preview`。未传时自动选择（MP4 默认从 `0` 开始）。 |
-| `--duration-time` | 仅 MP4 可用，输出时长（秒）。默认 `600`。 |
+| `--time-points` | 时间点列表。GIF 和 Standard PNG 可重复传入多个点；MP4 最多传入一个点。每个点为游戏时间秒数或 `preview`。未传时自动选择；若 GIF/Standard PNG 只传入部分点，会优先补入谱面的 `PreviewTime`。MP4 未传时默认从 `0` 开始。 |
+| `--duration-time` | 仅 MP4 可用，输出时长（秒）。默认 `600`；若谱面完整可播放范围更短，则输出完整范围，不补足空白。 |
 | `--no-log` | 关闭日志。 |
 | `--no-cache` | 跳过下载缓存与输出缓存，强制重新渲染。 |
 | `--config` | 配置文件路径，或 JSON/YAML 格式的配置对象。嵌套映射递归合并；数组和标量整体替换，未传入字段保留默认值。 |
@@ -93,7 +93,7 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | 谱面缓存 | `<临时目录>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/`（谱包为 `<set-id>.osz`，提取音频按 `<set-id>/<文件名哈希>.<扩展名>` 隔离） |
 | 优选 IP 缓存 | `<临时目录>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
-| 输出文件 | 默认配置写入 `<OUTPUT_DIR>/<mode>_<bid>...<fmt>`；非默认配置写入 `<OUTPUT_DIR>/<config-hash>/<mode>_<bid>...<fmt>` |
+| 输出文件 | 默认配置写入 `<OUTPUT_DIR>/<mode>_<bid>...<fmt>`；MP4 只有显式传入时间参数时才追加时间后缀；非默认配置写入 `<OUTPUT_DIR>/<config-hash>/<mode>_<bid>...<fmt>` |
 | 配置文件夹 | 二进制文件同级目录 |
 | 日志文件 | `<临时目录>/osu-beatmap-preview/logs/` — `progress.log`（实时进度，`tail -f`）与 `render.log`（NDJSON 汇总） |
 
@@ -135,7 +135,7 @@ osu-beatmap-preview --bid=123456 --config=C:/path/to/config.yml
 
 ### MP4 视频
 
-使用 `--fmt=mp4` 输出带谱面音频的视频，支持四种模式。默认从游戏时间 `0` 开始输出 600 秒；使用单个 `--time-points` 和 `--duration-time` 指定区间。`--time-points=preview` 使用谱面的 `PreviewTime`，接近谱面尾部时会向前调整。GIF 和 Standard PNG 可以重复传入 `--time-points` 指定多个渲染点；旧的 `5+10+15` 拼接格式不再支持。
+使用 `--fmt=mp4` 输出带谱面音频的视频，支持四种模式。默认从游戏时间 `0` 开始请求 600 秒；若谱面不足 600 秒，则只输出完整可播放范围。使用单个 `--time-points` 和 `--duration-time` 指定区间；当区间超出谱面尾部时会整体向前调整。未显式指定这两个参数时，文件名不包含时间后缀；显式指定任一参数时会保留后缀。`--time-points=preview` 使用谱面的 `PreviewTime`。GIF 和 Standard PNG 可以重复传入 `--time-points` 指定多个渲染点；只传入部分点时会优先补入 `PreviewTime`；旧的 `5+10+15` 拼接格式不再支持。
 
 ### 命令行输出
 

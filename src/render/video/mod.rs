@@ -60,7 +60,9 @@ pub(crate) fn resolve_video_time_range(
     speed: f64,
 ) -> Result<VideoTimeRange> {
     let full_start = full_video_start_time(first_object_ms, beatmap.audio_lead_in_ms());
-    let full_end = last_object_ms + crate::config::current().video.video.VIDEO_END_PADDING_MS;
+    let full_end = last_object_ms
+        .checked_add(crate::config::current().video.video.VIDEO_END_PADDING_MS)
+        .ok_or_else(|| PreviewError::new("mp4 time range is outside the supported range"))?;
     let full_range = validate_video_time_range(VideoTimeRange {
         start: full_start,
         end: full_end,
@@ -73,17 +75,17 @@ pub(crate) fn resolve_video_time_range(
         ));
     }
     let span = chart_span_for_actual_duration(round_half_even(duration * 1000.0), speed)?;
-    let start = match start_time.unwrap_or(TimePoint::Seconds(0.0)) {
+    let full_duration = full_range
+        .end
+        .checked_sub(full_range.start)
+        .ok_or_else(|| PreviewError::new("mp4 time range is outside the supported range"))?;
+    if full_duration <= span {
+        return Ok(full_range);
+    }
+
+    let requested_start = match start_time.unwrap_or(TimePoint::Seconds(0.0)) {
         TimePoint::Preview => {
-            if full_range.end - full_range.start <= span {
-                return Ok(full_range);
-            }
-            let mut preview =
-                preview_time_or_first_object(beatmap, first_object_ms).max(full_range.start);
-            if preview + span > full_range.end {
-                preview = full_range.end - span;
-            }
-            preview.max(full_range.start)
+            preview_time_or_first_object(beatmap, first_object_ms).max(full_range.start)
         }
         TimePoint::Seconds(seconds) => {
             if !seconds.is_finite() {
@@ -101,6 +103,14 @@ pub(crate) fn resolve_video_time_range(
                 .ok_or_else(|| PreviewError::new("start time is outside the supported range"))?
         }
     };
+
+    // 请求区间超出谱面尾部时整体向前移动，在完整谱面足够长时保留请求时长。
+    // 早于可播放范围的起点仍然保留，以便输出对应的前置静音。
+    let latest_start = full_range
+        .end
+        .checked_sub(span)
+        .ok_or_else(|| PreviewError::new("mp4 time range is outside the supported range"))?;
+    let start = requested_start.min(latest_start);
     validate_video_time_range(VideoTimeRange {
         start,
         end: start
@@ -693,6 +703,111 @@ mod tests {
             VideoTimeRange {
                 start: 45_000,
                 end: 75_000
+            }
+        );
+    }
+
+    #[test]
+    fn default_start_uses_requested_duration_on_a_long_chart() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range =
+            resolve_video_time_range(&beatmap, 10_000, 100_000, None, Some(60.0), 1.0).unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 10_000,
+                end: 70_000
+            }
+        );
+    }
+
+    #[test]
+    fn numeric_start_shifts_backward_when_it_runs_past_chart_tail() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range = resolve_video_time_range(
+            &beatmap,
+            10_000,
+            100_000,
+            Some(TimePoint::Seconds(50.0)),
+            Some(60.0),
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 42_000,
+                end: 102_000
+            }
+        );
+    }
+
+    #[test]
+    fn short_chart_returns_full_playable_range_instead_of_padding_to_duration() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range =
+            resolve_video_time_range(&beatmap, 10_000, 20_000, None, Some(60.0), 1.0).unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 8_000,
+                end: 22_000
+            }
+        );
+    }
+
+    #[test]
+    fn short_chart_uses_full_range_even_with_a_negative_requested_start() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range = resolve_video_time_range(
+            &beatmap,
+            10_000,
+            20_000,
+            Some(TimePoint::Seconds(-20.0)),
+            Some(60.0),
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 8_000,
+                end: 22_000
+            }
+        );
+    }
+
+    #[test]
+    fn negative_start_is_preserved_when_tail_adjustment_is_not_needed() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range = resolve_video_time_range(
+            &beatmap,
+            10_000,
+            100_000,
+            Some(TimePoint::Seconds(-20.0)),
+            Some(60.0),
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: -10_000,
+                end: 50_000
+            }
+        );
+    }
+
+    #[test]
+    fn speed_multiplier_scales_chart_span() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range =
+            resolve_video_time_range(&beatmap, 10_000, 100_000, None, Some(30.0), 1.5).unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 10_000,
+                end: 55_000
             }
         );
     }

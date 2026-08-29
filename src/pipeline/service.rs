@@ -156,10 +156,12 @@ fn generate_preview_inner(
         }
     }
     if fmt == "mp4" {
-        parts.push(cache::format_video_time_suffix(
-            time_points.first().copied(),
-            duration_time,
-        ));
+        if has_explicit_video_time_options(&time_points, duration_time) {
+            parts.push(cache::format_video_time_suffix(
+                time_points.first().copied(),
+                duration_time,
+            ));
+        }
     } else if !time_points.is_empty() {
         parts.push(cache::format_time_points_suffix(&time_points));
     }
@@ -897,6 +899,10 @@ fn resolve_time_points(
     Ok(Some(result))
 }
 
+fn has_explicit_video_time_options(time_points: &[TimePoint], duration_time: Option<f64>) -> bool {
+    !time_points.is_empty() || duration_time.is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -948,5 +954,19 @@ mod tests {
         let mania = initial_deadline(Instant::now(), None, Some("mania"));
         assert_eq!(standard.format(), "GIF");
         assert_eq!(mania.format(), "PNG");
+    }
+
+    #[test]
+    fn implicit_video_defaults_use_the_short_output_name() {
+        assert!(!has_explicit_video_time_options(&[], None));
+        assert!(has_explicit_video_time_options(
+            &[TimePoint::Seconds(0.0)],
+            None
+        ));
+        assert!(has_explicit_video_time_options(&[], Some(600.0)));
+        assert!(has_explicit_video_time_options(
+            &[TimePoint::Seconds(0.0)],
+            Some(600.0)
+        ));
     }
 }

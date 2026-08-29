@@ -28,8 +28,8 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--convert` | Conversion mode: `mania` / `ctb` / `taiko` / `standard` / `std`. Only available for Standard beatmaps. |
 | `--mod` | A single Mod token; repeat the option for combinations, such as `--mod=hd --mod=hr`. |
 | `--fmt` | Output format: `gif` / `png` / `mp4`. When omitted, the default format for the mode is used. |
-| `--time-points` | A list of gameplay time points. Repeat it for multiple GIF or Standard PNG points; MP4 accepts at most one. Each value is seconds or `preview`. When omitted, points are selected automatically (MP4 starts at `0`). |
-| `--duration-time` | MP4 only. Output duration in seconds. Defaults to `600`. |
+| `--time-points` | A list of gameplay time points. Repeat it for multiple GIF or Standard PNG points; MP4 accepts at most one. Each value is seconds or `preview`. When omitted, points are selected automatically; if GIF or Standard PNG receives only some points, the beatmap `PreviewTime` is added first when capacity remains. MP4 starts at `0` when omitted. |
+| `--duration-time` | MP4 only. Output duration in seconds. Defaults to `600`; shorter beatmaps use their complete playable range instead of padding to 600 seconds. |
 | `--no-log` | Disables logging. |
 | `--no-cache` | Skips download and output caches and forces a fresh render. |
 | `--config` | A configuration file path or an inline JSON/YAML object. Nested mappings merge recursively; arrays and scalars replace the whole field. Unspecified fields keep their defaults. |
@@ -93,7 +93,7 @@ osu-beatmap-preview --bid=123456 --no-cache --no-log
 | Beatmap cache | `<temp>/osu-beatmap-preview/osu-download-cache/<bid>.osu` |
 | OSZ cache | `<temp>/osu-beatmap-preview/osz-download-cache/` (archives use `<set-id>.osz`; extracted audio is isolated under `<set-id>/<filename-hash>.<extension>`) |
 | Preferred IP cache | `<temp>/osu-beatmap-preview/osz-download-cache/osu-direct-preferred-ip.json` |
-| Output file | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_video-start...-duration...].<fmt>` |
+| Output file | `<temp>/osu-beatmap-preview/outputs/<mode>_<bid>[_convert][_mods][_video-start...-duration...].<fmt>`; MP4 adds the time suffix only when a time option is explicitly supplied |
 | Configuration directory | Directory containing the binary |
 | Log files | `<temp>/osu-beatmap-preview/logs/` — `progress.log` (live progress, `tail -f`) and `render.log` (NDJSON summary) |
 
@@ -134,7 +134,7 @@ Use `--fmt=gif` to output a GIF animation. Each mode has independent grid, durat
 
 ### MP4 Videos
 
-Use `--fmt=mp4` to output a video with beatmap audio for all four modes. The default range is 600 seconds from gameplay time `0`; use one `--time-points` value and `--duration-time` to select another interval. `--time-points=preview` uses the beatmap `PreviewTime`, shifting backward when necessary near the chart tail. GIF and Standard PNG accept repeated `--time-points` values. The old `5+10+15` joined format is invalid.
+Use `--fmt=mp4` to output a video with beatmap audio for all four modes. The default request is 600 seconds from gameplay time `0`; shorter beatmaps use their complete playable range. Use one `--time-points` value and `--duration-time` to select another interval; intervals that run past the chart tail are shifted backward as a unit. The default output name omits the time suffix; the suffix is kept when either option is explicitly supplied. `--time-points=preview` uses the beatmap `PreviewTime`. GIF and Standard PNG accept repeated `--time-points` values and prioritize adding `PreviewTime` when capacity remains. The old `5+10+15` joined format is invalid.
 
 ### Command-Line Output
 
