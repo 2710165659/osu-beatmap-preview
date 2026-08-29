@@ -31,11 +31,7 @@ pub(crate) fn normal_object_alpha(
         return 1.0;
     }
     (1.0 - (snapshot_time - end_time) as f64
-        / crate::config::current()
-            .layout
-            .standard
-            .png
-            .SLIDER_FADE_OUT_MS as f64)
+        / crate::render::standard::constants::SLIDER_FADE_OUT_MS as f64)
         .max(0.0)
 }
 
@@ -102,11 +98,7 @@ pub(crate) fn hidden_slider_body_alpha(
             .clamp(0.0, 1.0);
     }
     (1.0 - (snapshot_time - end_time) as f64
-        / crate::config::current()
-            .layout
-            .standard
-            .png
-            .SLIDER_FADE_OUT_MS as f64)
+        / crate::render::standard::constants::SLIDER_FADE_OUT_MS as f64)
         .max(0.0)
 }
 
@@ -157,21 +149,11 @@ pub(crate) fn slider_head_alpha(
     if settings.hidden && !settings.traceable {
         return 0.0;
     }
-    if snapshot_time
-        <= hit_object.start_time
-            + crate::config::current()
-                .layout
-                .standard
-                .png
-                .POST_HIT_FADE_MS
+    if snapshot_time <= hit_object.start_time + crate::render::standard::constants::POST_HIT_FADE_MS
     {
         return 1.0
             - (snapshot_time - hit_object.start_time) as f64
-                / crate::config::current()
-                    .layout
-                    .standard
-                    .png
-                    .POST_HIT_FADE_MS as f64;
+                / crate::render::standard::constants::POST_HIT_FADE_MS as f64;
     }
     0.0
 }

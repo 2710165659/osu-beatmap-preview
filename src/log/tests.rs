@@ -62,7 +62,7 @@ fn event_and_summary_write_parseable_lines() {
     assert!(lines[1].contains("bid=123"));
     assert!(lines[1].contains("msg=\"hello \\\"quoted\\\"\""));
     for line in &lines {
-        assert!(line.len() <= writer::MAX_LINE_BYTES);
+        assert!(line.len() <= super::constants::MAX_LINE_BYTES);
         assert!(!line.contains('\n'));
     }
 
@@ -91,7 +91,7 @@ fn long_message_is_truncated_to_line_limit() {
 
     let progress = read(&dir.join(PROGRESS_FILE));
     let line = progress.lines().next_back().unwrap();
-    assert!(line.len() <= writer::MAX_LINE_BYTES);
+    assert!(line.len() <= super::constants::MAX_LINE_BYTES);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

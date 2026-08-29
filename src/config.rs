@@ -86,12 +86,6 @@ fn load_layers(
         merge_values(&mut merged, &overlay, "")?;
     }
     validate_positive_timeouts(&merged)?;
-    let format = merged
-        .pointer("/logging/timestamp/LOCAL_FORMAT")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "logging.timestamp.LOCAL_FORMAT must be a string".to_string())?;
-    time::format_description::parse_owned::<2>(format)
-        .map_err(|error| format!("invalid logging.timestamp.LOCAL_FORMAT: {error}"))?;
     let runtime = serde_json::from_value(merged.clone())
         .map_err(|error| format!("invalid merged configuration: {error}"))?;
     let variant = config_variant(&defaults, &merged)?;
@@ -369,19 +363,6 @@ fn display_path(path: &str) -> &str {
     }
 }
 
-pub(crate) fn deserialize_duration_ms<'de, D>(
-    deserializer: D,
-) -> Result<std::time::Duration, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-    let millis = value.as_u64().ok_or_else(|| {
-        D::Error::custom("expected a non-negative integer number of milliseconds")
-    })?;
-    Ok(std::time::Duration::from_millis(millis))
-}
-
 pub(crate) fn deserialize_duration_secs<'de, D>(
     deserializer: D,
 ) -> Result<std::time::Duration, D::Error>
@@ -522,19 +503,23 @@ mod tests {
     }
 
     #[test]
-    fn yaml_overlay_and_scalar_conversion_work() {
-        let config = load_snapshot(Some("logging:\n  writer:\n    MAX_LINE_BYTES: \"1024\"\n"))
-            .expect("valid overlay");
-        assert_eq!(config.logging.writer.MAX_LINE_BYTES, 1024);
+    fn removed_logging_fields_are_rejected() {
+        for source in [
+            r#"{"logging":{"timestamp":{"LOCAL_FORMAT":"[year]"}}}"#,
+            r#"{"logging":{"writer":{"MAX_LINE_BYTES":1024}}}"#,
+        ] {
+            let error = load_snapshot(Some(source)).expect_err("removed field must be rejected");
+            assert!(error.contains("unknown configuration field"), "{error}");
+        }
     }
 
     #[test]
     fn arrays_replace_and_convert_nested_scalars() {
         let config = load_snapshot(Some(
-            r#"{"layout":{"catch":{"png":{"BANANA_COLORS":[["1","2","3"]]}}}}"#,
+            r#"{"skin":{"MANIA":{"KEYS_3":{"COLUMN_WIDTHS":["70","71","72"]}}}}"#,
         ))
         .expect("valid array overlay");
-        assert_eq!(config.layout.catch.png.BANANA_COLORS, vec![[1, 2, 3]]);
+        assert_eq!(config.skin.MANIA.KEYS_3.COLUMN_WIDTHS, vec![70, 71, 72]);
     }
 
     #[test]
@@ -591,21 +576,18 @@ mod tests {
     }
 
     #[test]
-    fn boolean_strings_are_converted() {
-        let config = load_snapshot(Some(
-            r#"{"layout":{"standard":{"png":{"SNAKING_IN_SLIDERS":"false"}}}}"#,
-        ))
-        .expect("valid boolean overlay");
-        assert!(!config.layout.standard.png.SNAKING_IN_SLIDERS);
-    }
-
-    #[test]
-    fn invalid_scalar_types_include_field_path() {
-        let error = load_snapshot(Some(
-            r#"{"layout":{"standard":{"png":{"SNAKING_IN_SLIDERS":"maybe"}}}}"#,
-        ))
-        .expect_err("must reject invalid boolean");
-        assert!(error.contains("layout.standard.png.SNAKING_IN_SLIDERS"));
+    fn removed_layout_fields_are_rejected() {
+        for source in [
+            r#"{"layout":{"standard":{"gif":{"IMAGE_WIDTH":640}}}}"#,
+            r#"{"layout":{"taiko":{"mp4":{"ROW_HEIGHT":80}}}}"#,
+            r#"{"layout":{"catch":{"gif":{"IMAGE_HEIGHT":384}}}}"#,
+            r#"{"layout":{"catch":{"gif":{"PAGE_MARGIN_X":15}}}}"#,
+            r#"{"layout":{"mania":{"gif":{"FRAME_HEIGHT":768}}}}"#,
+            r#"{"layout":{"standard":{"png":{"SNAKING_IN_SLIDERS":false}}}}"#,
+        ] {
+            let error = load_snapshot(Some(source)).expect_err("removed field must be rejected");
+            assert!(error.contains("unknown configuration field"), "{error}");
+        }
     }
 
     #[test]
@@ -615,12 +597,12 @@ mod tests {
     }
 
     #[test]
-    fn invalid_timestamp_format_is_rejected() {
+    fn removed_timestamp_format_is_rejected() {
         let error = load_snapshot(Some(
             r#"{"logging":{"timestamp":{"LOCAL_FORMAT":"[not-a-format]"}}}"#,
         ))
-        .expect_err("must reject invalid format");
-        assert!(error.contains("LOCAL_FORMAT"));
+        .expect_err("removed field must be rejected");
+        assert!(error.contains("unknown configuration field"), "{error}");
     }
 
     #[test]

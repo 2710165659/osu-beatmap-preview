@@ -194,10 +194,7 @@ impl AttemptMonitor {
         while self.samples.len() > 1
             && self.samples.get(1).is_some_and(|(time, _)| {
                 now.duration_since(*time)
-                    >= crate::config::current()
-                        .network
-                        .downloader_osz
-                        .LOW_SPEED_WINDOW
+                    >= crate::pipeline::downloader::constants::LOW_SPEED_WINDOW
             })
         {
             self.samples.pop_front();
@@ -205,25 +202,15 @@ impl AttemptMonitor {
 
         let reason = if !progress.has_first_byte()
             && now.duration_since(started)
-                >= crate::config::current()
-                    .network
-                    .downloader_osz
-                    .NO_FIRST_BYTE_TIMEOUT
+                >= crate::pipeline::downloader::constants::NO_FIRST_BYTE_TIMEOUT
         {
             Some("no-first-byte")
         } else if let Some((oldest, old_bytes)) = self.samples.front().copied() {
             let elapsed = now.duration_since(oldest);
             let received = bytes.saturating_sub(old_bytes);
-            if elapsed
-                >= crate::config::current()
-                    .network
-                    .downloader_osz
-                    .LOW_SPEED_WINDOW
+            if elapsed >= crate::pipeline::downloader::constants::LOW_SPEED_WINDOW
                 && received.saturating_mul(1000)
-                    < crate::config::current()
-                        .network
-                        .downloader_osz
-                        .LOW_SPEED_BYTES_PER_SECOND
+                    < crate::pipeline::downloader::constants::LOW_SPEED_BYTES_PER_SECOND
                         .saturating_mul(elapsed.as_millis() as u64)
             {
                 Some("low-speed")
@@ -268,9 +255,7 @@ pub fn download_beatmapset_archive(
         deadline.check()?;
         let size_mib = target_path
             .metadata()
-            .map(|m| {
-                m.len() as f64 / crate::config::current().network.downloader_osz.MIB_BYTES as f64
-            })
+            .map(|m| m.len() as f64 / crate::pipeline::downloader::constants::MIB_BYTES as f64)
             .unwrap_or(0.0);
         log.event("done", format!("cache hit ({size_mib:.1} MiB)"));
         crate::log::record_cache(crate::log::CacheKind::Osz, "hit");
@@ -321,7 +306,7 @@ pub fn download_beatmapset_archive(
     let ms = started.elapsed().as_secs_f64() * 1000.0;
     let size_mib = target_path
         .metadata()
-        .map(|m| m.len() as f64 / crate::config::current().network.downloader_osz.MIB_BYTES as f64)
+        .map(|m| m.len() as f64 / crate::pipeline::downloader::constants::MIB_BYTES as f64)
         .unwrap_or(0.0);
     log.event(
         "done",
@@ -363,19 +348,13 @@ fn build_agent(preferred_ip: Option<Ipv4Addr>, deadline: &RequestDeadline) -> ur
     };
     let builder = ureq::AgentBuilder::new()
         .timeout_connect(min_timeout(
-            crate::config::current()
-                .network
-                .downloader_osz
-                .CONNECT_TIMEOUT,
+            crate::pipeline::downloader::constants::CONNECT_TIMEOUT,
         ))
         .timeout_read(min_timeout(
-            crate::config::current().network.downloader_osz.READ_TIMEOUT,
+            crate::pipeline::downloader::constants::READ_TIMEOUT,
         ))
         .timeout_write(min_timeout(
-            crate::config::current()
-                .network
-                .downloader_osz
-                .WRITE_TIMEOUT,
+            crate::pipeline::downloader::constants::WRITE_TIMEOUT,
         ));
     if let Some(ip) = preferred_ip {
         builder
@@ -432,12 +411,7 @@ fn run_download_race(
         }
 
         let poll_interval = request_deadline
-            .cap(
-                crate::config::current()
-                    .network
-                    .downloader_osz
-                    .POLL_INTERVAL,
-            )
+            .cap(crate::pipeline::downloader::constants::POLL_INTERVAL)
             .unwrap_or_else(|_| Duration::from_millis(1));
         match receiver.recv_timeout(poll_interval) {
             Ok(message) => {
@@ -522,10 +496,7 @@ fn run_download_race(
             }
             if attempt.progress.has_first_byte()
                 && now.duration_since(attempt.last_speed_log)
-                    >= crate::config::current()
-                        .network
-                        .downloader_osz
-                        .LOW_SPEED_WINDOW
+                    >= crate::pipeline::downloader::constants::LOW_SPEED_WINDOW
             {
                 attempt.last_speed_log = now;
                 let speed = attempt
@@ -997,7 +968,7 @@ fn download_range_part(
         .map_err(|_| format!("{range_header} is too large for this platform"))?;
     let mut data = Vec::with_capacity(capacity);
     let mut reader = response.into_reader();
-    let mut buffer = vec![0u8; crate::config::current().network.downloader_osz.BUFFER_SIZE];
+    let mut buffer = vec![0u8; crate::pipeline::downloader::constants::BUFFER_SIZE];
     loop {
         check_cancelled_with_worker(context, worker_cancel)?;
         let count = reader
@@ -1072,7 +1043,7 @@ fn download_response(
     let mut output =
         File::create(part_path).map_err(|e| format!("failed to create temporary osz: {e}"))?;
     let mut reader = response.into_reader();
-    let mut buffer = vec![0u8; crate::config::current().network.downloader_osz.BUFFER_SIZE];
+    let mut buffer = vec![0u8; crate::pipeline::downloader::constants::BUFFER_SIZE];
     let mut copied = 0u64;
     loop {
         check_cancelled(context)?;
@@ -1093,7 +1064,7 @@ fn download_response(
             return Err(format!(
                 "OSZ is too large while reading the response: received more than {} bytes ({:.2} MiB)",
                 crate::config::current().network.downloader_osz.MAX_OSZ_BYTES,
-                crate::config::current().network.downloader_osz.MAX_OSZ_BYTES as f64 / crate::config::current().network.downloader_osz.MIB_BYTES as f64,
+                crate::config::current().network.downloader_osz.MAX_OSZ_BYTES as f64 / crate::pipeline::downloader::constants::MIB_BYTES as f64,
             ));
         }
         output
@@ -1168,9 +1139,9 @@ fn validate_declared_size(length: u64) -> std::result::Result<(), String> {
     {
         return Err(format!(
             "OSZ is too large: server declared {length} bytes ({:.2} MiB), exceeding the download limit of {} bytes ({:.2} MiB)",
-            length as f64 / crate::config::current().network.downloader_osz.MIB_BYTES as f64,
+            length as f64 / crate::pipeline::downloader::constants::MIB_BYTES as f64,
             crate::config::current().network.downloader_osz.MAX_OSZ_BYTES,
-            crate::config::current().network.downloader_osz.MAX_OSZ_BYTES as f64 / crate::config::current().network.downloader_osz.MIB_BYTES as f64,
+            crate::config::current().network.downloader_osz.MAX_OSZ_BYTES as f64 / crate::pipeline::downloader::constants::MIB_BYTES as f64,
         ));
     }
     Ok(())
@@ -1320,11 +1291,8 @@ mod tests {
 
     #[test]
     fn no_first_byte_triggers_after_three_seconds() {
-        let started = Instant::now()
-            - crate::config::current()
-                .network
-                .downloader_osz
-                .NO_FIRST_BYTE_TIMEOUT;
+        let started =
+            Instant::now() - crate::pipeline::downloader::constants::NO_FIRST_BYTE_TIMEOUT;
         let progress = AttemptProgress {
             started,
             bytes: AtomicU64::new(0),
@@ -1348,10 +1316,7 @@ mod tests {
         };
         let mut monitor = AttemptMonitor::new();
         monitor.samples.push_back((
-            now - crate::config::current()
-                .network
-                .downloader_osz
-                .LOW_SPEED_WINDOW,
+            now - crate::pipeline::downloader::constants::LOW_SPEED_WINDOW,
             0,
         ));
         assert_eq!(

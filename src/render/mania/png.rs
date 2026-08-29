@@ -187,7 +187,7 @@ fn build_png_layout(
     let column_height = (time_per_column as f64
         * crate::config::current().layout.mania.png.PIXELS_PER_MS)
         .ceil() as i64;
-    let total_column_height = crate::config::current().layout.mania.png.TOP_BUFFER + column_height;
+    let total_column_height = crate::render::mania::constants::TOP_BUFFER + column_height;
     let lane_area_width = key_count as i64 * crate::config::current().layout.mania.png.LANE_WIDTH
         + (key_count as i64 - 1) * crate::config::current().layout.mania.png.LANE_GAP;
     let column_width = crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH + lane_area_width;
@@ -339,7 +339,7 @@ fn draw_timing_line(
             * (layout.column_width + crate::config::current().layout.mania.png.COLUMN_GAP);
     let lane_area_left = column_left + crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH;
     let chart_top = crate::config::current().layout.mania.png.PAGE_MARGIN_Y
-        + crate::config::current().layout.mania.png.TOP_BUFFER;
+        + crate::render::mania::constants::TOP_BUFFER;
     let y = chart_top + layout.column_height
         - round_half_even(
             local_time as f64 * crate::config::current().layout.mania.png.PIXELS_PER_MS,
@@ -459,7 +459,7 @@ fn draw_png_hit_object(
         let lane_area_left =
             column_left + crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH;
         let chart_top = crate::config::current().layout.mania.png.PAGE_MARGIN_Y;
-        let chart_axis_top = chart_top + crate::config::current().layout.mania.png.TOP_BUFFER;
+        let chart_axis_top = chart_top + crate::render::mania::constants::TOP_BUFFER;
         let chart_bottom = chart_axis_top + layout.column_height;
         let lane_left = lane_area_left
             + lane as i64
@@ -632,7 +632,7 @@ fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &RenderLayo
         + column_index
             * (layout.column_width + crate::config::current().layout.mania.png.COLUMN_GAP);
     let chart_top = crate::config::current().layout.mania.png.PAGE_MARGIN_Y
-        + crate::config::current().layout.mania.png.TOP_BUFFER;
+        + crate::render::mania::constants::TOP_BUFFER;
     let y = chart_top + layout.column_height
         - round_half_even(
             local_time as f64 * crate::config::current().layout.mania.png.PIXELS_PER_MS,

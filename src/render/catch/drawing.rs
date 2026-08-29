@@ -374,7 +374,7 @@ pub(crate) fn draw_catch_object(
 
 /// 对象直径：基础半径 × 对象缩放 × 类型缩放 × playfield 缩放。
 pub(crate) fn object_diameter(object_scale: f64, playfield_scale: f64, scale_factor: f64) -> f64 {
-    crate::config::current().layout.catch.png.OBJECT_RADIUS
+    crate::render::catch::constants::OBJECT_RADIUS
         * 2.0
         * object_scale
         * scale_factor

@@ -201,7 +201,7 @@ pub(crate) fn render_mania_gif(
     // sprite once.  Label text is constant within a segment, so this avoids
     // 150 × format! + text_size + draw_text calls per segment — each frame
     // just alpha_composites the pre-built sprite.
-    let label_y = crate::config::current().layout.mania.gif.PAGE_MARGIN_Y
+    let label_y = crate::render::mania::constants::PAGE_MARGIN_Y
         + layout.playfield_height
         + crate::config::current().layout.mania.gif.TIME_LABEL_TOP_GAP;
     let pre_labels: Vec<PreLabel> = if show_time_label {
@@ -306,22 +306,21 @@ fn build_gif_layout(
         build_column_left_offsets(&skin_config.column_widths, &skin_config.column_line_widths);
     let lane_area_width: i64 = skin_config.column_widths.iter().sum::<i64>()
         + skin_config.column_line_widths.iter().sum::<i64>();
-    let segment_width =
-        crate::config::current().layout.mania.gif.LEFT_PANEL_WIDTH * 2 + lane_area_width;
-    let playfield_height = crate::config::current().layout.mania.gif.FRAME_HEIGHT;
+    let segment_width = crate::render::mania::constants::LEFT_PANEL_WIDTH * 2 + lane_area_width;
+    let playfield_height = crate::render::mania::constants::FRAME_HEIGHT;
     let hit_position_y = round_half_even(playfield_height as f64 - skin_config.hit_position);
     let scroll_length =
-        (hit_position_y - crate::config::current().layout.mania.gif.STAGE_TOP_PADDING).max(1);
+        (hit_position_y - crate::render::mania::constants::STAGE_TOP_PADDING).max(1);
     let average_column_width = skin_config.column_widths.iter().sum::<i64>() as f64
         / skin_config.column_widths.len() as f64;
     // PNG uses a 38px lane with 15px notes; scale the GIF note height with the skin
     // column width so wide columns don't get squashed-looking notes.
     let note_head_height = round_half_even(
-        crate::config::current().layout.mania.gif.NOTE_HEAD_HEIGHT as f64 * average_column_width
-            / crate::config::current().layout.mania.gif.LANE_WIDTH as f64,
+        crate::render::mania::constants::NOTE_HEAD_HEIGHT as f64 * average_column_width
+            / crate::render::mania::constants::LANE_WIDTH as f64,
     )
     .max(1);
-    let image_width = crate::config::current().layout.mania.gif.PAGE_MARGIN_X * 2
+    let image_width = crate::render::mania::constants::PAGE_MARGIN_X * 2
         + segment_count * segment_width
         + (segment_count - 1) * crate::config::current().layout.mania.gif.GRID_GAP;
     let label_height = if show_time_label {
@@ -330,9 +329,8 @@ fn build_gif_layout(
     } else {
         0
     };
-    let image_height = crate::config::current().layout.mania.gif.PAGE_MARGIN_Y * 2
-        + playfield_height
-        + label_height;
+    let image_height =
+        crate::render::mania::constants::PAGE_MARGIN_Y * 2 + playfield_height + label_height;
     GifLayout {
         segment_count,
         segment_width,
@@ -368,15 +366,10 @@ pub(crate) fn build_column_left_offsets(
 
 /// Mirrors DrawableManiaRuleset.updateTimeRange(): base 33-speed window adjusted by HitPosition.
 pub(crate) fn compute_time_range(speed_multiplier: f64, hit_position: f64) -> f64 {
-    let hit_position_scale = (crate::config::current().layout.mania.gif.FRAME_HEIGHT as f64
-        - hit_position)
-        / (crate::config::current().layout.mania.gif.FRAME_HEIGHT as f64
-            - crate::config::current()
-                .layout
-                .mania
-                .gif
-                .DEFAULT_HIT_POSITION_FROM_BOTTOM);
-    (crate::config::current().layout.mania.gif.BASE_TIME_RANGE_MS
+    let hit_position_scale = (crate::render::mania::constants::FRAME_HEIGHT as f64 - hit_position)
+        / (crate::render::mania::constants::FRAME_HEIGHT as f64
+            - crate::render::mania::constants::DEFAULT_HIT_POSITION_FROM_BOTTOM);
+    (crate::render::mania::constants::BASE_TIME_RANGE_MS
         / crate::config::current().layout.mania.gif.SCROLL_SPEED
         * hit_position_scale
         * speed_multiplier)
@@ -494,13 +487,13 @@ fn most_common_beat_length(timing_points: &[TimingPoint], hit_objects: &[ManiaHi
 }
 
 pub(crate) fn segment_left(segment_index: i64, layout: &GifLayout) -> i64 {
-    crate::config::current().layout.mania.gif.PAGE_MARGIN_X
+    crate::render::mania::constants::PAGE_MARGIN_X
         + segment_index
             * (layout.segment_width + crate::config::current().layout.mania.gif.GRID_GAP)
 }
 
 fn draw_segment_separators(canvas: &mut Img, layout: &GifLayout) {
-    let playfield_top = crate::config::current().layout.mania.gif.PAGE_MARGIN_Y;
+    let playfield_top = crate::render::mania::constants::PAGE_MARGIN_Y;
     let playfield_bottom = playfield_top + layout.playfield_height;
     for segment_index in 0..layout.segment_count - 1 {
         let left_segment_right = segment_left(segment_index, layout) + layout.segment_width;
@@ -524,9 +517,9 @@ fn draw_segment_separators(canvas: &mut Img, layout: &GifLayout) {
 
 pub(crate) fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &GifLayout) {
     // GIF skips bar/beat/lane-separator lines; only grey side panels + judgement line.
-    let playfield_top = crate::config::current().layout.mania.gif.PAGE_MARGIN_Y;
+    let playfield_top = crate::render::mania::constants::PAGE_MARGIN_Y;
     let playfield_bottom = playfield_top + layout.playfield_height;
-    let lane_area_left = seg_left + crate::config::current().layout.mania.gif.LEFT_PANEL_WIDTH;
+    let lane_area_left = seg_left + crate::render::mania::constants::LEFT_PANEL_WIDTH;
     let lane_area_right = lane_area_left + layout.lane_area_width;
 
     canvas.set_rect(
@@ -605,8 +598,8 @@ pub(crate) fn draw_gif_sv_indicators(
         }
         let (_, sv) = sv_changes[index];
         let y = y_at_position(position, snapshot_pos, layout, pixels_per_scroll_unit);
-        if y < crate::config::current().layout.mania.gif.PAGE_MARGIN_Y
-            || y > crate::config::current().layout.mania.gif.PAGE_MARGIN_Y + layout.playfield_height
+        if y < crate::render::mania::constants::PAGE_MARGIN_Y
+            || y > crate::render::mania::constants::PAGE_MARGIN_Y + layout.playfield_height
         {
             continue;
         }
@@ -615,10 +608,8 @@ pub(crate) fn draw_gif_sv_indicators(
             &label,
             crate::config::current().layout.mania.gif.SV_TEXT_FONT_SIZE,
         );
-        let x = (seg_left + crate::config::current().layout.mania.gif.LEFT_PANEL_WIDTH
-            - label_w as i64
-            - 3)
-        .max(0);
+        let x = (seg_left + crate::render::mania::constants::LEFT_PANEL_WIDTH - label_w as i64 - 3)
+            .max(0);
         let label_y = (y as f64 - label_h as f64 / 2.0).floor() as i64;
         draw_text(
             canvas,
@@ -646,7 +637,7 @@ pub(crate) fn draw_gif_hit_object(
 ) {
     let y_start = y_at_position(start_pos, snapshot_pos, layout, pixels_per_scroll_unit);
     let y_end = y_at_position(end_pos, snapshot_pos, layout, pixels_per_scroll_unit);
-    let playfield_top = crate::config::current().layout.mania.gif.PAGE_MARGIN_Y;
+    let playfield_top = crate::render::mania::constants::PAGE_MARGIN_Y;
     let playfield_bottom = playfield_top + layout.playfield_height;
     if y_start.max(y_end) < playfield_top - layout.note_head_height
         || y_start.min(y_end) > playfield_bottom + layout.note_head_height
@@ -659,11 +650,11 @@ pub(crate) fn draw_gif_hit_object(
     // LN body keeps the PNG look (darkened lane color), independent of lane config.
     let hold_color = hold_colors[lane.min(hold_colors.len() - 1)];
     let lane_left = seg_left
-        + crate::config::current().layout.mania.gif.LEFT_PANEL_WIDTH
+        + crate::render::mania::constants::LEFT_PANEL_WIDTH
         + layout.column_left_offsets[lane]
-        + crate::config::current().layout.mania.gif.NOTE_SIDE_PADDING;
+        + crate::render::mania::constants::NOTE_SIDE_PADDING;
     let lane_right = lane_left + layout.column_widths[lane]
-        - crate::config::current().layout.mania.gif.NOTE_SIDE_PADDING * 2;
+        - crate::render::mania::constants::NOTE_SIDE_PADDING * 2;
 
     if hit_object.is_long_note {
         let body_top = playfield_top.max(y_end.min(y_start - layout.note_head_height));
@@ -690,7 +681,7 @@ fn y_at_time(
     pixels_per_scroll_unit: f64,
 ) -> i64 {
     let distance = scroll_map.position_at(time) - scroll_map.position_at(snapshot_time as f64);
-    crate::config::current().layout.mania.gif.PAGE_MARGIN_Y + layout.hit_position_y
+    crate::render::mania::constants::PAGE_MARGIN_Y + layout.hit_position_y
         - round_half_even(distance * pixels_per_scroll_unit)
 }
 
@@ -705,7 +696,7 @@ fn y_at_position(
     pixels_per_scroll_unit: f64,
 ) -> i64 {
     let distance = object_pos - snapshot_pos;
-    crate::config::current().layout.mania.gif.PAGE_MARGIN_Y + layout.hit_position_y
+    crate::render::mania::constants::PAGE_MARGIN_Y + layout.hit_position_y
         - round_half_even(distance * pixels_per_scroll_unit)
 }
 
@@ -868,16 +859,15 @@ fn draw_gif_sv_indicators_fast(
             break;
         }
         let y = y_at_position(position, snapshot_pos, layout, pixels_per_scroll_unit);
-        if y < crate::config::current().layout.mania.gif.PAGE_MARGIN_Y
-            || y > crate::config::current().layout.mania.gif.PAGE_MARGIN_Y + layout.playfield_height
+        if y < crate::render::mania::constants::PAGE_MARGIN_Y
+            || y > crate::render::mania::constants::PAGE_MARGIN_Y + layout.playfield_height
         {
             continue;
         }
         let label_h = sprite.h as i64;
-        let x = (seg_left + crate::config::current().layout.mania.gif.LEFT_PANEL_WIDTH
-            - sprite.w as i64
-            - 3)
-        .max(0);
+        let x =
+            (seg_left + crate::render::mania::constants::LEFT_PANEL_WIDTH - sprite.w as i64 - 3)
+                .max(0);
         let label_y = (y as f64 - label_h as f64 / 2.0).floor() as i64;
         canvas.alpha_composite(sprite, x, label_y);
     }
@@ -963,8 +953,8 @@ mod tests {
                         &scroll_map,
                         pixels_per_scroll_unit,
                     );
-                    (y >= crate::config::current().layout.mania.gif.PAGE_MARGIN_Y
-                        && y <= crate::config::current().layout.mania.gif.PAGE_MARGIN_Y
+                    (y >= crate::render::mania::constants::PAGE_MARGIN_Y
+                        && y <= crate::render::mania::constants::PAGE_MARGIN_Y
                             + layout.playfield_height)
                         .then_some(index)
                 })
@@ -982,8 +972,8 @@ mod tests {
                         &layout,
                         pixels_per_scroll_unit,
                     );
-                    y >= crate::config::current().layout.mania.gif.PAGE_MARGIN_Y
-                        && y <= crate::config::current().layout.mania.gif.PAGE_MARGIN_Y
+                    y >= crate::render::mania::constants::PAGE_MARGIN_Y
+                        && y <= crate::render::mania::constants::PAGE_MARGIN_Y
                             + layout.playfield_height
                 })
                 .collect();

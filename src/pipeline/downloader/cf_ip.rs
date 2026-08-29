@@ -13,12 +13,7 @@ pub fn read_preferred_ip(temp_dir: &Path) -> Option<Ipv4Addr> {
     let tested_at = value.get("tested_at")?.as_u64()?;
     let now = unix_seconds();
     if now < tested_at
-        || now - tested_at
-            > crate::config::current()
-                .network
-                .downloader_cf_ip
-                .CACHE_TTL
-                .as_secs()
+        || now - tested_at > crate::pipeline::downloader::constants::CACHE_TTL.as_secs()
     {
         return None;
     }
@@ -72,12 +67,7 @@ fn refresh(temp_dir: &Path, force: bool) -> io::Result<()> {
     let tcp = probe_tcp_candidates();
     let mut finalists = tcp;
     finalists.sort_by_key(|(_, latency)| *latency);
-    finalists.truncate(
-        crate::config::current()
-            .network
-            .downloader_cf_ip
-            .HTTP_CANDIDATES,
-    );
+    finalists.truncate(crate::pipeline::downloader::constants::HTTP_CANDIDATES);
 
     let winner = probe_http_candidates(finalists)?
         .into_iter()
@@ -107,10 +97,7 @@ fn probe_tcp_candidates() -> Vec<(Ipv4Addr, Duration)> {
             let started = std::time::Instant::now();
             let result = TcpStream::connect_timeout(
                 &SocketAddr::new(IpAddr::V4(ip), 443),
-                crate::config::current()
-                    .network
-                    .downloader_cf_ip
-                    .TCP_TIMEOUT,
+                crate::pipeline::downloader::constants::TCP_TIMEOUT,
             )
             .map(|_| (ip, started.elapsed()));
             if let Ok(result) = result {
@@ -131,18 +118,8 @@ fn probe_http_candidates(
         thread::spawn(move || {
             let agent = ureq::AgentBuilder::new()
                 .resolver(resolver_for(ip))
-                .timeout_connect(
-                    crate::config::current()
-                        .network
-                        .downloader_cf_ip
-                        .HTTP_TIMEOUT,
-                )
-                .timeout(
-                    crate::config::current()
-                        .network
-                        .downloader_cf_ip
-                        .HTTP_TIMEOUT,
-                )
+                .timeout_connect(crate::pipeline::downloader::constants::HTTP_TIMEOUT)
+                .timeout(crate::pipeline::downloader::constants::HTTP_TIMEOUT)
                 .build();
             let started = std::time::Instant::now();
             let usable = match agent
@@ -165,10 +142,7 @@ fn probe_http_candidates(
 
 fn build_candidates() -> Vec<Ipv4Addr> {
     let seed = unix_seconds() as u32 ^ std::process::id();
-    crate::config::current()
-        .network
-        .downloader_cf_ip
-        .CLOUDFLARE_IPV4_RANGES
+    crate::pipeline::downloader::constants::CLOUDFLARE_IPV4_RANGES
         .iter()
         .enumerate()
         .flat_map(|(index, range)| sample_range(range, seed.wrapping_add(index as u32)))
@@ -295,10 +269,7 @@ mod tests {
 
     #[test]
     fn samples_are_ipv4_addresses_inside_ranges() {
-        for (range, sample) in crate::config::current()
-            .network
-            .downloader_cf_ip
-            .CLOUDFLARE_IPV4_RANGES
+        for (range, sample) in crate::pipeline::downloader::constants::CLOUDFLARE_IPV4_RANGES
             .iter()
             .zip(std::iter::repeat(0))
         {

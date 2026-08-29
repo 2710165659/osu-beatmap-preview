@@ -118,11 +118,7 @@ pub(crate) fn render_taiko_grid(
     let timing_lines = build_timing_lines(
         &redline_sections,
         &mapper,
-        crate::config::current()
-            .layout
-            .taiko
-            .png
-            .MIN_BEAT_LINE_SPACING,
+        crate::render::taiko::constants::MIN_BEAT_LINE_SPACING,
         &kiai_sections,
         first_note_time,
         time_axis.to_display(chart_start_time),
@@ -294,15 +290,10 @@ fn build_png_layout(
         + row_count * crate::config::current().layout.taiko.png.ROW_GAP;
     let normal_note_diameter = pyround(
         crate::config::current().layout.taiko.png.ROW_HEIGHT as f64
-            * crate::config::current()
-                .layout
-                .taiko
-                .png
-                .NORMAL_NOTE_SIZE_RATIO,
+            * crate::render::taiko::constants::NORMAL_NOTE_SIZE_RATIO,
     );
-    let big_note_diameter = pyround(
-        normal_note_diameter as f64 * crate::config::current().layout.taiko.png.BIG_NOTE_SCALE,
-    );
+    let big_note_diameter =
+        pyround(normal_note_diameter as f64 * crate::render::taiko::constants::BIG_NOTE_SCALE);
     RenderLayout {
         row_count,
         max_row_width,
@@ -685,7 +676,7 @@ fn draw_hit_object(
             layout,
             cache,
             true,
-            crate::config::current().layout.taiko.png.SWELL_COLOR,
+            crate::render::taiko::constants::SWELL_COLOR,
             true,
         );
         return;
@@ -699,7 +690,7 @@ fn draw_hit_object(
             layout,
             cache,
             is_big_roll,
-            crate::config::current().layout.taiko.png.ROLL_COLOR,
+            crate::render::taiko::constants::ROLL_COLOR,
             false,
         );
         return;
@@ -726,9 +717,9 @@ fn draw_circle_object(
         layout.normal_note_diameter
     };
     let color = if is_rim {
-        crate::config::current().layout.taiko.png.RIM_NOTE_COLOR
+        crate::render::taiko::constants::RIM_NOTE_COLOR
     } else {
-        crate::config::current().layout.taiko.png.CENTRE_NOTE_COLOR
+        crate::render::taiko::constants::CENTRE_NOTE_COLOR
     };
 
     draw_note_disc(image, cache, color, diameter, center_x, center_y, false);
@@ -757,17 +748,9 @@ fn draw_span_object(
         layout.normal_note_diameter
     };
     let body_ratio = if is_swell {
-        crate::config::current()
-            .layout
-            .taiko
-            .png
-            .SWELL_BODY_HEIGHT_RATIO
+        crate::render::taiko::constants::SWELL_BODY_HEIGHT_RATIO
     } else {
-        crate::config::current()
-            .layout
-            .taiko
-            .png
-            .SPAN_BODY_HEIGHT_RATIO
+        crate::render::taiko::constants::SPAN_BODY_HEIGHT_RATIO
     };
     let body_height = pyround(head_diameter as f64 * body_ratio);
 

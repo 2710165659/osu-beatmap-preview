@@ -8,6 +8,7 @@
 //! 日志写入失败只降级到 stderr 提示，绝不阻断渲染。
 
 pub(crate) mod config;
+mod constants;
 mod context;
 mod event;
 mod summary;

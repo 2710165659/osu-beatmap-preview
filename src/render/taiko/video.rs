@@ -108,7 +108,7 @@ pub(crate) fn render_taiko_video(
 /// (no 4-row stack, no inter-row gap, no bottom label strip).
 fn build_video_layout(time_range: f64) -> GifLayout {
     let mut layout = build_gif_layout(time_range);
-    layout.image_height = crate::config::current().layout.taiko.mp4.PAGE_MARGIN_Y * 2
-        + crate::config::current().layout.taiko.mp4.ROW_HEIGHT;
+    layout.image_height = crate::render::taiko::constants::PAGE_MARGIN_Y * 2
+        + crate::render::taiko::constants::ROW_HEIGHT;
     layout
 }

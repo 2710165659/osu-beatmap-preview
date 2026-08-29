@@ -181,22 +181,20 @@ fn build_video_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
         build_column_left_offsets(&skin_config.column_widths, &skin_config.column_line_widths);
     let lane_area_width: i64 = skin_config.column_widths.iter().sum::<i64>()
         + skin_config.column_line_widths.iter().sum::<i64>();
-    let segment_width =
-        crate::config::current().layout.mania.mp4.LEFT_PANEL_WIDTH * 2 + lane_area_width;
-    let playfield_height = crate::config::current().layout.mania.mp4.FRAME_HEIGHT;
+    let segment_width = crate::render::mania::constants::LEFT_PANEL_WIDTH * 2 + lane_area_width;
+    let playfield_height = crate::render::mania::constants::FRAME_HEIGHT;
     let hit_position_y = round_half_even(playfield_height as f64 - skin_config.hit_position);
     let scroll_length =
-        (hit_position_y - crate::config::current().layout.mania.mp4.STAGE_TOP_PADDING).max(1);
+        (hit_position_y - crate::render::mania::constants::STAGE_TOP_PADDING).max(1);
     let average_column_width = skin_config.column_widths.iter().sum::<i64>() as f64
         / skin_config.column_widths.len() as f64;
     let note_head_height = round_half_even(
-        crate::config::current().layout.mania.mp4.NOTE_HEAD_HEIGHT as f64 * average_column_width
-            / crate::config::current().layout.mania.mp4.LANE_WIDTH as f64,
+        crate::render::mania::constants::NOTE_HEAD_HEIGHT as f64 * average_column_width
+            / crate::render::mania::constants::LANE_WIDTH as f64,
     )
     .max(1);
-    let image_width = crate::config::current().layout.mania.mp4.PAGE_MARGIN_X * 2 + segment_width;
-    let image_height =
-        crate::config::current().layout.mania.mp4.PAGE_MARGIN_Y * 2 + playfield_height;
+    let image_width = crate::render::mania::constants::PAGE_MARGIN_X * 2 + segment_width;
+    let image_height = crate::render::mania::constants::PAGE_MARGIN_Y * 2 + playfield_height;
     GifLayout {
         segment_count: 1,
         segment_width,

@@ -138,7 +138,7 @@ fn render_standard_segment_gif(
                     &mut canvas,
                     &label,
                     x,
-                    y + crate::config::current().layout.standard.gif.IMAGE_HEIGHT
+                    y + crate::render::standard::constants::IMAGE_HEIGHT
                         + crate::config::current()
                             .layout
                             .standard

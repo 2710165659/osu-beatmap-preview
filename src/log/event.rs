@@ -28,7 +28,7 @@ fn fit_line(step: &str, status: &str, bid: &str, msg: &str) -> String {
     let mut msg = msg.to_string();
     loop {
         let line = build_line(step, status, bid, &msg);
-        if line.len() <= crate::config::current().logging.writer.MAX_LINE_BYTES || msg.is_empty() {
+        if line.len() <= super::constants::MAX_LINE_BYTES || msg.is_empty() {
             return line;
         }
         let cut = msg.char_indices().next_back().map(|(i, _)| i).unwrap_or(0);

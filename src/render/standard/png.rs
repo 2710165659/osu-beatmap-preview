@@ -64,7 +64,7 @@ pub(crate) fn render_standard_png(
             .png
             .VERTICAL_PAGE_MARGIN
             + row_index as i64
-                * (crate::config::current().layout.standard.png.IMAGE_HEIGHT
+                * (crate::render::standard::constants::IMAGE_HEIGHT
                     + crate::config::current()
                         .layout
                         .standard
@@ -85,7 +85,7 @@ pub(crate) fn render_standard_png(
                 .png
                 .HORIZONTAL_PAGE_MARGIN
                 + image_index as i64
-                    * (crate::config::current().layout.standard.png.IMAGE_WIDTH
+                    * (crate::render::standard::constants::IMAGE_WIDTH
                         + crate::config::current()
                             .layout
                             .standard
@@ -115,7 +115,7 @@ pub(crate) fn render_standard_png(
                 &mut canvas,
                 &format_mmssmmm(time_axis.to_display(snapshot_time)),
                 x,
-                y + crate::config::current().layout.standard.png.IMAGE_HEIGHT
+                y + crate::render::standard::constants::IMAGE_HEIGHT
                     + crate::config::current()
                         .layout
                         .standard

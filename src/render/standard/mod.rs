@@ -28,7 +28,7 @@ pub(crate) fn draw_centered_text(
     color: [u8; 4],
 ) {
     let (text_w, _) = text_size(text, size);
-    let text_x = x + (crate::config::current().layout.standard.png.IMAGE_WIDTH - text_w as i64) / 2;
+    let text_x = x + (crate::render::standard::constants::IMAGE_WIDTH - text_w as i64) / 2;
     draw_text(canvas, text_x, y, text, size, color);
 }
 

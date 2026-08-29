@@ -105,16 +105,8 @@ pub(crate) fn build_scroll_mapper(
 }
 
 fn pixels_per_ms(slider_multiplier: f64, scroll_speed: f64, display_beat_length: f64) -> f64 {
-    crate::config::current()
-        .layout
-        .taiko
-        .png
-        .BASE_PIXELS_PER_SCROLL_MS
-        * crate::config::current()
-            .layout
-            .taiko
-            .png
-            .SCROLL_LENGTH_RATIO
+    crate::render::taiko::constants::BASE_PIXELS_PER_SCROLL_MS
+        * crate::render::taiko::constants::SCROLL_LENGTH_RATIO
         * slider_multiplier
         * scroll_speed
         * 1000.0

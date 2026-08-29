@@ -42,12 +42,8 @@ struct RenderLayout {
 /// AR 决定的纵向密度：AR 时间窗内的下落距离映射为像素。
 fn pixels_per_ms_for_ar(approach_rate: f64, playfield_scale: f64) -> f64 {
     let time_range = super::objects::catch_time_range(approach_rate);
-    let visible_fall_height = (crate::config::current().layout.catch.png.STABLE_CATCHER_Y
-        - crate::config::current()
-            .layout
-            .catch
-            .png
-            .STABLE_FRUIT_START_Y)
+    let visible_fall_height = (crate::render::catch::constants::STABLE_CATCHER_Y
+        - crate::render::catch::constants::STABLE_FRUIT_START_Y)
         * playfield_scale;
     visible_fall_height / time_range
 }
@@ -113,12 +109,8 @@ fn build_layout(
             "songs longer than 10 minutes are not supported",
         ));
     }
-    let playfield_scale = crate::config::current()
-        .layout
-        .catch
-        .png
-        .PLAYFIELD_DISPLAY_WIDTH as f64
-        / crate::config::current().layout.catch.png.PLAYFIELD_WIDTH;
+    let playfield_scale = crate::render::catch::constants::PLAYFIELD_DISPLAY_WIDTH as f64
+        / crate::render::catch::constants::PLAYFIELD_WIDTH;
     let object_scale = super::objects::circle_scale(circle_size);
 
     // 纵向密度上限：限制谱面总像素高度，防止高 AR + 长曲导致内存爆炸
@@ -154,11 +146,7 @@ fn build_layout(
     Ok(RenderLayout {
         column_count,
         total_column_height,
-        visible_playfield_width: crate::config::current()
-            .layout
-            .catch
-            .png
-            .PLAYFIELD_DISPLAY_WIDTH,
+        visible_playfield_width: crate::render::catch::constants::PLAYFIELD_DISPLAY_WIDTH,
         image_width,
         image_height,
         playfield_scale,

@@ -104,25 +104,14 @@ pub(crate) fn build_note_disc(color: [u8; 3], diameter: i64, swell_marker: bool)
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
     let r = c;
-    let ring = (d as f64
-        * crate::config::current()
-            .layout
-            .taiko
-            .png
-            .NOTE_RING_THICKNESS_RATIO)
-        .max(1.0);
+    let ring = (d as f64 * crate::render::taiko::constants::NOTE_RING_THICKNESS_RATIO).max(1.0);
     let fill: [u8; 4] = [color[0], color[1], color[2], 255];
-    img.fill_circle_aa(
-        c,
-        c,
-        r,
-        crate::config::current().layout.taiko.png.NOTE_EDGE_COLOR,
-    );
+    img.fill_circle_aa(c, c, r, crate::render::taiko::constants::NOTE_EDGE_COLOR);
     img.fill_circle_aa(
         c,
         c,
         r - 1.0,
-        crate::config::current().layout.taiko.png.NOTE_RING_COLOR,
+        crate::render::taiko::constants::NOTE_RING_COLOR,
     );
     img.fill_circle_aa(c, c, r - 1.0 - ring, fill);
     if swell_marker {
@@ -131,7 +120,7 @@ pub(crate) fn build_note_disc(color: [u8; 3], diameter: i64, swell_marker: bool)
             c,
             c,
             inner_r,
-            crate::config::current().layout.taiko.png.NOTE_RING_COLOR,
+            crate::render::taiko::constants::NOTE_RING_COLOR,
         );
         img.fill_circle_aa(c, c, inner_r - ring.max(1.0), fill);
     }

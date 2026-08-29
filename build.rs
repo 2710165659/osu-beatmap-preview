@@ -101,11 +101,7 @@ fn generate_runtime_struct(
         child_path.push(key);
         let ty = runtime_field_type(&child_path, child)?;
         if let Some(kind) = special_kind(path, key) {
-            if kind == "duration_ms" {
-                generated.push_str(&format!(
-                    "    #[serde(deserialize_with = \"crate::config::deserialize_duration_ms\")]\n"
-                ));
-            } else if kind == "duration_secs" {
+            if kind == "duration_secs" {
                 generated.push_str(&format!(
                     "    #[serde(deserialize_with = \"crate::config::deserialize_duration_secs\")]\n"
                 ));
@@ -131,10 +127,7 @@ fn runtime_field_type(path: &[&str], value: &Value) -> Result<String, Box<dyn st
         return Ok("Vec<i64>".to_string());
     }
     if let Some(kind) = special_kind(&path[..path.len() - 1], path[path.len() - 1]) {
-        if matches!(
-            kind,
-            "duration_ms" | "duration_secs" | "positive_duration_secs"
-        ) {
+        if matches!(kind, "duration_secs" | "positive_duration_secs") {
             return Ok("std::time::Duration".to_string());
         }
     }
@@ -217,9 +210,7 @@ fn generate_entries_from_mapping(
 
 fn module_prelude(module: &str, section: &str) -> &'static str {
     match (module, section) {
-        ("network", "downloader_cf_ip") | ("network", "downloader_osz") => {
-            "use std::time::Duration;\n"
-        }
+        ("network", "downloader_osz") => "use std::time::Duration;\n",
         ("timeouts", "render") => "use std::time::Duration;\n",
         _ => "",
     }
@@ -234,18 +225,12 @@ fn generate_constant(
     let kind = special_kind(path, name);
     let rust_type = inferred_type(path, name, raw_value);
     let declaration = match kind {
-        Some("duration_ms") => format!(
-            "pub const {name}: std::time::Duration = Duration::from_millis({value});\n"
-        ),
-        Some("duration_secs") => format!(
-            "pub const {name}: std::time::Duration = Duration::from_secs({value});\n"
-        ),
-        Some("positive_duration_secs") => format!(
-            "pub const {name}: std::time::Duration = Duration::from_secs({value});\n"
-        ),
-        Some("format") => format!(
-            "pub const {name}: &[time::format_description::FormatItem<'static>] = time::macros::format_description!({value});\n"
-        ),
+        Some("duration_secs") => {
+            format!("pub const {name}: std::time::Duration = Duration::from_secs({value});\n")
+        }
+        Some("positive_duration_secs") => {
+            format!("pub const {name}: std::time::Duration = Duration::from_secs({value});\n")
+        }
         Some("test_axis") => format!("pub const {name}: TimeAxis = TimeAxis::new({value});\n"),
         _ => format!("pub const {name}: {rust_type} = {value};\n"),
     };
@@ -254,12 +239,6 @@ fn generate_constant(
 
 fn special_kind(path: &[&str], name: &str) -> Option<&'static str> {
     match path {
-        ["logging", "timestamp"] if name == "LOCAL_FORMAT" => Some("format"),
-        ["network", "downloader_cf_ip"] if name == "CACHE_TTL" => Some("duration_secs"),
-        ["network", "downloader_cf_ip"] if matches!(name, "TCP_TIMEOUT" | "HTTP_TIMEOUT") => {
-            Some("duration_ms")
-        }
-        ["network", "downloader_osz"] if name == "POLL_INTERVAL" => Some("duration_ms"),
         ["network", "downloader_osz"]
             if matches!(
                 name,
@@ -295,11 +274,8 @@ fn inferred_type(path: &[&str], name: &str, value: &Value) -> String {
 fn integer_type(path: &[&str], name: &str) -> &'static str {
     if matches!(
         (path, name),
-        (["logging", "writer"], "MAX_LINE_BYTES")
-            | (["network", "downloader_cf_ip"], "HTTP_CANDIDATES")
-            | (["network", "downloader_osz"], "PARALLEL_PARTS")
+        (["network", "downloader_osz"], "PARALLEL_PARTS")
             | (["network", "downloader_osz"], "MAX_ACTIVE_ATTEMPTS")
-            | (["network", "downloader_osz"], "BUFFER_SIZE")
             | (["layout", "catch", "gif"], "SEGMENT_COUNT")
             | (["layout", "taiko", "gif"], "SEGMENT_COUNT")
             | (["layout", "standard", "png"], "ROW_COUNT")

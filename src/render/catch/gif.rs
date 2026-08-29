@@ -33,37 +33,33 @@ pub(crate) struct GifLayout {
 }
 
 pub(crate) fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayout {
-    let playfield_scale = crate::config::current().layout.catch.gif.PLAYFIELD_SCALE;
-    let playfield_left = (crate::config::current().layout.catch.gif.IMAGE_WIDTH as f64
-        - crate::config::current().layout.catch.gif.PLAYFIELD_WIDTH * playfield_scale)
+    let playfield_scale = crate::render::catch::constants::PLAYFIELD_SCALE;
+    let playfield_left = (crate::render::catch::constants::IMAGE_WIDTH as f64
+        - crate::render::catch::constants::PLAYFIELD_WIDTH * playfield_scale)
         / 2.0;
-    let playfield_top = crate::config::current().layout.catch.gif.PLAYFIELD_TOP;
+    let playfield_top = crate::render::catch::constants::PLAYFIELD_TOP;
     let object_scale = super::objects::circle_scale(circle_size);
 
     // 下落速度：AR 时间窗对应「起始高度→接手」的可视下落距离
     let time_range = super::objects::catch_time_range(approach_rate);
-    let visible_fall_height = (crate::config::current().layout.catch.gif.STABLE_CATCHER_Y
-        - crate::config::current()
-            .layout
-            .catch
-            .gif
-            .STABLE_FRUIT_START_Y)
+    let visible_fall_height = (crate::render::catch::constants::STABLE_CATCHER_Y
+        - crate::render::catch::constants::STABLE_FRUIT_START_Y)
         * playfield_scale;
     let pixels_per_ms = visible_fall_height / time_range;
 
-    let row_height = crate::config::current().layout.catch.gif.IMAGE_HEIGHT
+    let row_height = crate::render::catch::constants::IMAGE_HEIGHT
         + if crate::config::current().layout.catch.gif.SHOW_TIME_LABEL {
             crate::config::current().layout.catch.gif.TIME_LABEL_TOP_GAP
                 + crate::config::current().layout.catch.gif.TIME_LABEL_HEIGHT
         } else {
             0
         };
-    let canvas_width = crate::config::current().layout.catch.gif.PAGE_MARGIN_X * 2
+    let canvas_width = crate::render::catch::constants::PAGE_MARGIN_X * 2
         + crate::config::current().layout.catch.gif.IMAGES_PER_ROW
-            * crate::config::current().layout.catch.gif.IMAGE_WIDTH
+            * crate::render::catch::constants::IMAGE_WIDTH
         + (crate::config::current().layout.catch.gif.IMAGES_PER_ROW - 1)
             * crate::config::current().layout.catch.gif.GRID_GAP;
-    let canvas_height = crate::config::current().layout.catch.gif.PAGE_MARGIN_Y * 2
+    let canvas_height = crate::render::catch::constants::PAGE_MARGIN_Y * 2
         + crate::config::current().layout.catch.gif.ROW_COUNT * row_height
         + (crate::config::current().layout.catch.gif.ROW_COUNT - 1)
             * crate::config::current().layout.catch.gif.GRID_GAP;
@@ -83,18 +79,18 @@ pub(crate) fn build_gif_layout(circle_size: f64, approach_rate: f64) -> GifLayou
 fn frame_origin(segment_index: usize) -> (i64, i64) {
     let row_index = segment_index as i64 / crate::config::current().layout.catch.gif.IMAGES_PER_ROW;
     let col_index = segment_index as i64 % crate::config::current().layout.catch.gif.IMAGES_PER_ROW;
-    let row_height = crate::config::current().layout.catch.gif.IMAGE_HEIGHT
+    let row_height = crate::render::catch::constants::IMAGE_HEIGHT
         + if crate::config::current().layout.catch.gif.SHOW_TIME_LABEL {
             crate::config::current().layout.catch.gif.TIME_LABEL_TOP_GAP
                 + crate::config::current().layout.catch.gif.TIME_LABEL_HEIGHT
         } else {
             0
         };
-    let x = crate::config::current().layout.catch.gif.PAGE_MARGIN_X
+    let x = crate::render::catch::constants::PAGE_MARGIN_X
         + col_index
-            * (crate::config::current().layout.catch.gif.IMAGE_WIDTH
+            * (crate::render::catch::constants::IMAGE_WIDTH
                 + crate::config::current().layout.catch.gif.GRID_GAP);
-    let y = crate::config::current().layout.catch.gif.PAGE_MARGIN_Y
+    let y = crate::render::catch::constants::PAGE_MARGIN_Y
         + row_index * (row_height + crate::config::current().layout.catch.gif.GRID_GAP);
     (x, y)
 }
@@ -223,8 +219,8 @@ pub(crate) fn render_gif_frame(
     layout: &GifLayout,
 ) -> Img {
     let mut frame = Img::new(
-        crate::config::current().layout.catch.gif.IMAGE_WIDTH as u32,
-        crate::config::current().layout.catch.gif.IMAGE_HEIGHT as u32,
+        crate::render::catch::constants::IMAGE_WIDTH as u32,
+        crate::render::catch::constants::IMAGE_HEIGHT as u32,
         crate::config::current()
             .layout
             .catch
@@ -233,14 +229,14 @@ pub(crate) fn render_gif_frame(
     );
 
     let playfield_left = layout.playfield_left;
-    let playfield_right = playfield_left
-        + crate::config::current().layout.catch.gif.PLAYFIELD_WIDTH * layout.playfield_scale;
+    let playfield_right =
+        playfield_left + crate::render::catch::constants::PLAYFIELD_WIDTH * layout.playfield_scale;
     // playfield 区域底色
     frame.set_rect(
         rhe(playfield_left),
         0,
         rhe(playfield_right),
-        crate::config::current().layout.catch.gif.IMAGE_HEIGHT,
+        crate::render::catch::constants::IMAGE_HEIGHT,
         crate::config::current()
             .layout
             .catch
@@ -250,7 +246,7 @@ pub(crate) fn render_gif_frame(
 
     // 判定线（接手所在高度）
     let judgement_y = layout.playfield_top
-        + crate::config::current().layout.catch.gif.STABLE_CATCHER_Y * layout.playfield_scale;
+        + crate::render::catch::constants::STABLE_CATCHER_Y * layout.playfield_scale;
     let judgement_y_px = rhe(judgement_y);
     frame.set_rect(
         rhe(playfield_left),
@@ -261,10 +257,9 @@ pub(crate) fn render_gif_frame(
     );
 
     // 可见时间窗：对象在 [snapshot, snapshot + 下落时间窗 + 余量] 内才可能出现在帧中
-    let fall_window_ms = (crate::config::current().layout.catch.gif.IMAGE_HEIGHT as f64
-        / layout.pixels_per_ms)
-        .ceil() as i64
-        + 2000;
+    let fall_window_ms =
+        (crate::render::catch::constants::IMAGE_HEIGHT as f64 / layout.pixels_per_ms).ceil() as i64
+            + 2000;
     // start_times_desc 为降序；找到可见区间 [lo, hi)
     let lo = start_times_desc.partition_point(|&t| t > snapshot_time + fall_window_ms);
     let hi = start_times_desc.partition_point(|&t| t >= snapshot_time - 2000);
@@ -344,9 +339,9 @@ fn draw_gif_time_label(
             .gif
             .TIME_LABEL_FONT_SIZE,
     );
-    let x = frame_x + (crate::config::current().layout.catch.gif.IMAGE_WIDTH - label_w as i64) / 2;
+    let x = frame_x + (crate::render::catch::constants::IMAGE_WIDTH - label_w as i64) / 2;
     let y = frame_y
-        + crate::config::current().layout.catch.gif.IMAGE_HEIGHT
+        + crate::render::catch::constants::IMAGE_HEIGHT
         + crate::config::current().layout.catch.gif.TIME_LABEL_TOP_GAP;
     draw_text(
         canvas,
@@ -371,8 +366,7 @@ fn draw_gif_time_label(
                 .gif
                 .TIME_LABEL_NOTE_FONT_SIZE,
         );
-        let note_x =
-            frame_x + (crate::config::current().layout.catch.gif.IMAGE_WIDTH - note_w as i64) / 2;
+        let note_x = frame_x + (crate::render::catch::constants::IMAGE_WIDTH - note_w as i64) / 2;
         draw_text(
             canvas,
             note_x,

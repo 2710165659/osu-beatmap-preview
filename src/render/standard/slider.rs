@@ -99,10 +99,9 @@ pub(crate) fn render_slider_body_layer(
     let max_y = points.iter().map(|p| p.1).fold(f64::MIN, f64::max);
     let left = ((min_x - pad).floor() as i64).max(0);
     let top = ((min_y - pad).floor() as i64).max(0);
-    let right =
-        ((max_x + pad).ceil() as i64).min(crate::config::current().layout.standard.png.IMAGE_WIDTH);
-    let bottom = ((max_y + pad).ceil() as i64)
-        .min(crate::config::current().layout.standard.png.IMAGE_HEIGHT);
+    let right = ((max_x + pad).ceil() as i64).min(crate::render::standard::constants::IMAGE_WIDTH);
+    let bottom =
+        ((max_y + pad).ceil() as i64).min(crate::render::standard::constants::IMAGE_HEIGHT);
 
     let layer_w = ((right - left) * scale).max(1) as u32;
     let layer_h = ((bottom - top) * scale).max(1) as u32;
@@ -118,24 +117,12 @@ pub(crate) fn render_slider_body_layer(
         .collect();
 
     let inner_width = py_round(
-        width as f64
-            * (1.0
-                - crate::config::current()
-                    .layout
-                    .standard
-                    .png
-                    .ARGON_SLIDER_BORDER_PORTION),
+        width as f64 * (1.0 - crate::render::standard::constants::ARGON_SLIDER_BORDER_PORTION),
     )
     .max(1);
-    let body_alpha = py_round(
-        alpha_byte as f64
-            * crate::config::current()
-                .layout
-                .standard
-                .png
-                .ARGON_SLIDER_BODY_ALPHA,
-    )
-    .clamp(0, 255) as u8;
+    let body_alpha =
+        py_round(alpha_byte as f64 * crate::render::standard::constants::ARGON_SLIDER_BODY_ALPHA)
+            .clamp(0, 255) as u8;
     // 边框颜色：使用 combo 颜色（与 C# Argon 的 AccentColour 一致）
     // 轨道内部颜色：使用 Darken(4)（与 C# Argon 的 AccentColour.Darken(4) 一致）
     // 注意：SliderBorder / SliderTrackOverride 不在当前 skin 配置中，以匹配 Argon 风格
@@ -273,12 +260,7 @@ pub(crate) fn slider_snaked_range(
     let mut end = 1.0;
 
     if snapshot_time < hit_object.start_time {
-        if crate::config::current()
-            .layout
-            .standard
-            .png
-            .SNAKING_IN_SLIDERS
-        {
+        if crate::render::standard::constants::SNAKING_IN_SLIDERS {
             let snake_start = hit_object.start_time - settings.preempt_ms;
             end = ((snapshot_time - snake_start) as f64 / (settings.preempt_ms as f64 / 3.0))
                 .clamp(0.0, 1.0);
@@ -293,13 +275,7 @@ pub(crate) fn slider_snaked_range(
     let span = ((completion * span_count as f64) as i64).min(span_count - 1);
     let span_progress = super::alpha::slider_path_progress(span_count, completion);
 
-    if span >= span_count - 1
-        && crate::config::current()
-            .layout
-            .standard
-            .png
-            .SNAKING_OUT_SLIDERS
-    {
+    if span >= span_count - 1 && crate::render::standard::constants::SNAKING_OUT_SLIDERS {
         if span % 2 == 1 {
             end = span_progress;
         } else {
@@ -383,13 +359,8 @@ fn build_slider_ball(diameter: i64, circle_diameter: i64, color: [u8; 3]) -> Img
     let d = diameter.max(1);
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
-    let border = 2.5
-        * circle_diameter as f64
-        * crate::config::current()
-            .layout
-            .standard
-            .png
-            .ARGON_BORDER_RATIO;
+    let border =
+        2.5 * circle_diameter as f64 * crate::render::standard::constants::ARGON_BORDER_RATIO;
     // C# Argon: fill = accentColour -> accentColour.Darken(0.5) 垂直渐变
     fill_circle_gradient_aa(&mut img, c, c, d as f64 / 2.0, color, darken(color, 0.5));
     draw_ring_aa(&mut img, c, c, d as f64 / 2.0, border, [255, 255, 255, 255]);

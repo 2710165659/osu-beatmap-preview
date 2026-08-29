@@ -23,8 +23,8 @@ pub(crate) fn render_frame(
     visible_indexes: &[usize],
 ) -> Img {
     let mut frame = Img::new(
-        crate::config::current().layout.standard.png.IMAGE_WIDTH as u32,
-        crate::config::current().layout.standard.png.IMAGE_HEIGHT as u32,
+        crate::render::standard::constants::IMAGE_WIDTH as u32,
+        crate::render::standard::constants::IMAGE_HEIGHT as u32,
         crate::config::current()
             .layout
             .standard
@@ -205,13 +205,8 @@ fn draw_spinner(
         return;
     }
     let center = to_frame_point(
-        crate::config::current().layout.standard.png.PLAYFIELD_WIDTH / 2.0,
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .PLAYFIELD_HEIGHT
-            / 2.0,
+        crate::render::standard::constants::PLAYFIELD_WIDTH / 2.0,
+        crate::render::standard::constants::PLAYFIELD_HEIGHT / 2.0,
         &context.frame_layout,
     );
     let scale = context.spinner_size as f64 / 256.0;
@@ -222,11 +217,7 @@ fn draw_spinner(
         / (hit_object.end_time - hit_object.start_time).max(1) as f64)
         .clamp(0.0, 1.0);
     let disc_r = base_r * (0.8 + 0.6 * progress);
-    let pink = crate::config::current()
-        .layout
-        .standard
-        .png
-        .ARGON_SPINNER_PINK;
+    let pink = crate::render::standard::constants::ARGON_SPINNER_PINK;
     frame.fill_circle_aa(
         center.0,
         center.1,
@@ -335,12 +326,7 @@ fn build_circle_piece(diameter: i64, color: [u8; 3]) -> Img {
     let d = diameter.max(1);
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
-    let border = d as f64
-        * crate::config::current()
-            .layout
-            .standard
-            .png
-            .ARGON_BORDER_RATIO;
+    let border = d as f64 * crate::render::standard::constants::ARGON_BORDER_RATIO;
     // C# Argon: outerFill = accentColour.Darken(4)
     let dark = darken(color, 4.0);
 
@@ -442,8 +428,8 @@ fn draw_break_overlay(
     }
 
     let mut layer = Img::new(frame.w, frame.h, [0, 0, 0, 0]);
-    let center_x = crate::config::current().layout.standard.png.IMAGE_WIDTH as f64 / 2.0;
-    let center_y = crate::config::current().layout.standard.png.IMAGE_HEIGHT as f64 / 2.0;
+    let center_x = crate::render::standard::constants::IMAGE_WIDTH as f64 / 2.0;
+    let center_y = crate::render::standard::constants::IMAGE_HEIGHT as f64 / 2.0;
 
     draw_break_arrows(&mut layer, alpha);
     draw_break_remaining_bar(
@@ -459,49 +445,22 @@ fn draw_break_overlay(
     let counter_label = remaining_seconds.to_string();
     let (_, counter_h) = crate::render::text::text_size(
         &counter_label,
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_COUNTER_FONT_SIZE,
+        crate::render::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
     );
     let counter_y = py_round(center_y - 15.0) - counter_h as i64;
     let counter_color = [
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_COLOR[0],
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_COLOR[1],
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_COLOR[2],
-        py_round(
-            crate::config::current()
-                .layout
-                .standard
-                .png
-                .BREAK_OVERLAY_COLOR[3] as f64
-                * alpha,
-        )
-        .clamp(0, 255) as u8,
+        crate::render::standard::constants::BREAK_OVERLAY_COLOR[0],
+        crate::render::standard::constants::BREAK_OVERLAY_COLOR[1],
+        crate::render::standard::constants::BREAK_OVERLAY_COLOR[2],
+        py_round(crate::render::standard::constants::BREAK_OVERLAY_COLOR[3] as f64 * alpha)
+            .clamp(0, 255) as u8,
     ];
     draw_centered_text(
         &mut layer,
         &counter_label,
         0,
         counter_y,
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_COUNTER_FONT_SIZE,
+        crate::render::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
         counter_color,
     );
 
@@ -510,48 +469,21 @@ fn draw_break_overlay(
         crate::render::text::format_mmssmmm(time_axis.to_display(break_period.start_time)),
         crate::render::text::format_mmssmmm(time_axis.to_display(break_period.end_time))
     );
-    let info_y = py_round(center_y)
-        + crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_INFO_TOP_GAP;
+    let info_y =
+        py_round(center_y) + crate::render::standard::constants::BREAK_OVERLAY_INFO_TOP_GAP;
     let info_color = [
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_INFO_COLOR[0],
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_INFO_COLOR[1],
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_INFO_COLOR[2],
-        py_round(
-            crate::config::current()
-                .layout
-                .standard
-                .png
-                .BREAK_OVERLAY_INFO_COLOR[3] as f64
-                * alpha,
-        )
-        .clamp(0, 255) as u8,
+        crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[0],
+        crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[1],
+        crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[2],
+        py_round(crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[3] as f64 * alpha)
+            .clamp(0, 255) as u8,
     ];
     draw_centered_text(
         &mut layer,
         &break_label,
         0,
         info_y,
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_OVERLAY_INFO_FONT_SIZE,
+        crate::render::standard::constants::BREAK_OVERLAY_INFO_FONT_SIZE,
         info_color,
     );
 
@@ -567,18 +499,10 @@ fn draw_break_remaining_bar(
     alpha: f64,
 ) {
     let track_width = py_round(
-        crate::config::current().layout.standard.png.IMAGE_WIDTH as f64
-            * crate::config::current()
-                .layout
-                .standard
-                .png
-                .BREAK_OVERLAY_BAR_WIDTH_RATIO,
+        crate::render::standard::constants::IMAGE_WIDTH as f64
+            * crate::render::standard::constants::BREAK_OVERLAY_BAR_WIDTH_RATIO,
     ) as f64;
-    let track_height = crate::config::current()
-        .layout
-        .standard
-        .png
-        .BREAK_OVERLAY_BAR_HEIGHT;
+    let track_height = crate::render::standard::constants::BREAK_OVERLAY_BAR_HEIGHT;
     let track_left = center_x - track_width / 2.0;
     let track_top = center_y - track_height / 2.0;
     layer.fill_rounded_rect(
@@ -606,10 +530,10 @@ fn draw_break_remaining_bar(
 fn draw_break_arrows(layer: &mut Img, alpha: f64) {
     let color = [238, 238, 238, py_round(80.0 * alpha).clamp(0, 255) as u8];
     let glow_color = [238, 238, 238, py_round(35.0 * alpha).clamp(0, 255) as u8];
-    let center_y = crate::config::current().layout.standard.png.IMAGE_HEIGHT as f64 / 2.0;
+    let center_y = crate::render::standard::constants::IMAGE_HEIGHT as f64 / 2.0;
     for (offset, direction) in [(-0.22, 1.0), (0.22, -1.0)] {
-        let center_x = crate::config::current().layout.standard.png.IMAGE_WIDTH as f64 / 2.0
-            + crate::config::current().layout.standard.png.IMAGE_WIDTH as f64 * offset;
+        let center_x = crate::render::standard::constants::IMAGE_WIDTH as f64 / 2.0
+            + crate::render::standard::constants::IMAGE_WIDTH as f64 * offset;
         draw_chevron(layer, center_x, center_y, 32.0, direction, glow_color, 9.0);
         draw_chevron(layer, center_x, center_y, 20.0, direction, color, 4.0);
     }
@@ -633,11 +557,7 @@ fn draw_chevron(
 
 fn break_overlay_alpha(break_period: &BreakPeriod, snapshot_time: i64) -> f64 {
     if break_period.end_time - break_period.start_time
-        < crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_MIN_DURATION_MS
+        < crate::render::standard::constants::BREAK_MIN_DURATION_MS
     {
         return 0.0;
     }
@@ -645,55 +565,29 @@ fn break_overlay_alpha(break_period: &BreakPeriod, snapshot_time: i64) -> f64 {
         return 0.0;
     }
     if snapshot_time
-        < break_period.start_time
-            + crate::config::current()
-                .layout
-                .standard
-                .png
-                .BREAK_FADE_DURATION_MS
+        < break_period.start_time + crate::render::standard::constants::BREAK_FADE_DURATION_MS
     {
         return (snapshot_time - break_period.start_time) as f64
-            / crate::config::current()
-                .layout
-                .standard
-                .png
-                .BREAK_FADE_DURATION_MS as f64;
+            / crate::render::standard::constants::BREAK_FADE_DURATION_MS as f64;
     }
     if snapshot_time
-        > break_period.end_time
-            - crate::config::current()
-                .layout
-                .standard
-                .png
-                .BREAK_FADE_DURATION_MS
+        > break_period.end_time - crate::render::standard::constants::BREAK_FADE_DURATION_MS
     {
         return (break_period.end_time - snapshot_time) as f64
-            / crate::config::current()
-                .layout
-                .standard
-                .png
-                .BREAK_FADE_DURATION_MS as f64;
+            / crate::render::standard::constants::BREAK_FADE_DURATION_MS as f64;
     }
     1.0
 }
 
 fn break_remaining_bar_ratio(break_period: &BreakPeriod, snapshot_time: i64) -> f64 {
     let effective_duration = break_period.end_time
-        - crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_FADE_DURATION_MS
+        - crate::render::standard::constants::BREAK_FADE_DURATION_MS
         - break_period.start_time;
     if effective_duration <= 0 {
         return 0.0;
     }
     let remaining = break_period.end_time
-        - crate::config::current()
-            .layout
-            .standard
-            .png
-            .BREAK_FADE_DURATION_MS
+        - crate::render::standard::constants::BREAK_FADE_DURATION_MS
         - snapshot_time;
     (remaining as f64 / effective_duration as f64).clamp(0.0, 1.0)
 }
