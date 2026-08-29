@@ -30,6 +30,7 @@ pub struct StandardHitObject {
     pub slider_repeats: i32,
     pub slider_pixel_length: f64,
     pub slider_edge_hitsounds: Vec<i32>,
+    pub stack_height: i32,
 }
 
 impl Default for StandardHitObject {
@@ -48,6 +49,7 @@ impl Default for StandardHitObject {
             slider_repeats: 1,
             slider_pixel_length: 0.0,
             slider_edge_hitsounds: Vec::new(),
+            stack_height: 0,
         }
     }
 }
@@ -221,6 +223,10 @@ impl Beatmap {
             .and_then(|value| value.trim().parse().ok())
             .unwrap_or(0)
     }
+
+    pub fn stack_leniency(&self) -> f64 {
+        self.general.get_f64_or("StackLeniency", 0.7)
+    }
 }
 
 #[cfg(test)]
@@ -266,5 +272,19 @@ mod tests {
         assert_eq!(defaults.beatmap_set_id(), None);
         assert_eq!(defaults.audio_filename(), None);
         assert_eq!(defaults.audio_lead_in_ms(), 0);
+    }
+
+    #[test]
+    fn stack_leniency_uses_general_value_or_game_default() {
+        let mut beatmap = beatmap_with_audio_fields(None, None, None);
+        assert_eq!(beatmap.stack_leniency(), 0.7);
+
+        beatmap.general.insert("StackLeniency", "0.2".to_string());
+        assert_eq!(beatmap.stack_leniency(), 0.2);
+
+        beatmap
+            .general
+            .insert("StackLeniency", "invalid".to_string());
+        assert_eq!(beatmap.stack_leniency(), 0.7);
     }
 }

@@ -9,6 +9,7 @@ mod gif;
 mod objects;
 mod png;
 pub(crate) mod slider;
+mod stacking;
 mod video;
 
 pub(crate) use gif::render_standard_gif;

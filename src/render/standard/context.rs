@@ -41,6 +41,7 @@ pub(crate) struct ComboInfo {
 #[derive(Clone, Copy)]
 pub(crate) struct RenderSettings {
     pub(crate) circle_diameter: i64,
+    pub(crate) object_scale: f64,
     pub(crate) preempt_ms: i64,
     pub(crate) fade_in_ms: f64,
     pub(crate) hidden: bool,
@@ -135,14 +136,18 @@ pub(crate) fn apply_standard_object_mods(
 // ——— 难度 ———
 
 struct EffectiveDifficulty {
-    circle_size: f64,
-    approach_rate: f64,
+    circle_size: f32,
+    approach_rate: f32,
 }
 
 fn effective_difficulty(beatmap: &Beatmap, mods: Option<&ModSettings>) -> EffectiveDifficulty {
-    let od = beatmap.difficulty.get_f64_or("OverallDifficulty", 5.0);
-    let mut cs = beatmap.difficulty.get_f64_or("CircleSize", 5.0);
-    let mut ar = beatmap.difficulty.get_f64("ApproachRate").unwrap_or(od);
+    let od = beatmap.difficulty.get_f64_or("OverallDifficulty", 5.0) as f32;
+    let mut cs = beatmap.difficulty.get_f64_or("CircleSize", 5.0) as f32;
+    let mut ar = beatmap
+        .difficulty
+        .get_f64("ApproachRate")
+        .map(|value| value as f32)
+        .unwrap_or(od);
 
     if let Some(m) = mods {
         if m.easy {
@@ -155,10 +160,10 @@ fn effective_difficulty(beatmap: &Beatmap, mods: Option<&ModSettings>) -> Effect
         }
         if m.has_da() {
             if let Some(v) = m.da_cs {
-                cs = v;
+                cs = v as f32;
             }
             if let Some(v) = m.da_ar {
-                ar = v;
+                ar = v as f32;
             }
         }
     }
@@ -173,11 +178,13 @@ pub(crate) fn build_render_settings(
     mods: Option<&ModSettings>,
 ) -> RenderSettings {
     let difficulty = effective_difficulty(beatmap, mods);
-    let scale = (1.0 - 0.7 * ((difficulty.circle_size - 5.0) / 5.0)) / 2.0
-        * crate::render::standard::constants::BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE;
+    let difficulty_range = (difficulty.circle_size as f64 - 5.0) / 5.0;
+    let scale = ((1.0 - 0.7_f32 as f64 * difficulty_range) as f32 / 2.0
+        * crate::render::standard::constants::BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE as f32)
+        as f64;
     let circle_radius = crate::render::standard::constants::OBJECT_RADIUS * scale;
     let circle_diameter = py_round(circle_radius * 2.0).max(1);
-    let preempt_ms = difficulty_range_int(difficulty.approach_rate, 1800, 1200, 450);
+    let preempt_ms = super::stacking::calculate_preempt(difficulty.approach_rate);
     let hidden = mods.map(|m| m.hidden).unwrap_or(false);
     let traceable = mods.map(|m| m.traceable).unwrap_or(false);
     let fade_in_ms = if hidden {
@@ -187,20 +194,11 @@ pub(crate) fn build_render_settings(
     };
     RenderSettings {
         circle_diameter,
+        object_scale: scale,
         preempt_ms,
         fade_in_ms,
         hidden,
         traceable,
-    }
-}
-
-fn difficulty_range_int(difficulty: f64, minimum: i64, middle: i64, maximum: i64) -> i64 {
-    if difficulty > 5.0 {
-        (middle as f64 + (maximum - middle) as f64 * ((difficulty - 5.0) / 5.0)) as i64
-    } else if difficulty < 5.0 {
-        (middle as f64 + (middle - minimum) as f64 * ((difficulty - 5.0) / 5.0)) as i64
-    } else {
-        middle
     }
 }
 
@@ -277,12 +275,17 @@ pub(crate) fn load_skin(beatmap: &Beatmap) -> Skin {
 
 pub(crate) fn build_render_context(
     beatmap: &Beatmap,
-    hit_objects: Vec<StandardHitObject>,
+    mut hit_objects: Vec<StandardHitObject>,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
 ) -> RenderContext {
     let skin = load_skin(beatmap);
     let settings = build_render_settings(beatmap, mods);
+    super::stacking::apply_stacking(
+        &mut hit_objects,
+        beatmap.format_version(),
+        settings.preempt_ms as f32 * beatmap.stack_leniency() as f32,
+    );
     let frame_layout = build_frame_layout();
     let combo_info = build_combo_info(&hit_objects, &skin.combo_colors);
     let frame_circle_diameter =
@@ -528,4 +531,87 @@ pub(crate) fn to_frame_point(x: f64, y: f64, frame_layout: &FrameLayout) -> (f64
         frame_layout.playfield_left + x * frame_layout.scale,
         frame_layout.playfield_top + y * frame_layout.scale,
     )
+}
+
+pub(crate) fn stack_offset(hit_object: &StandardHitObject, settings: &RenderSettings) -> f64 {
+    (hit_object.stack_height as f32 * settings.object_scale as f32 * -6.4) as f64
+}
+
+pub(crate) fn stacked_position(
+    hit_object: &StandardHitObject,
+    settings: &RenderSettings,
+) -> (f64, f64) {
+    let offset = stack_offset(hit_object, settings);
+    (hit_object.x as f64 + offset, hit_object.y as f64 + offset)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn beatmap_with_difficulty(circle_size: &str, approach_rate: &str) -> Beatmap {
+        let mut difficulty = crate::core::models::KvSection::default();
+        difficulty.insert("CircleSize", circle_size.to_string());
+        difficulty.insert("ApproachRate", approach_rate.to_string());
+        Beatmap {
+            metadata: Default::default(),
+            difficulty,
+            general: Default::default(),
+            timing_points: Vec::new(),
+            hit_objects: HitObjects::Standard(Vec::new()),
+            break_periods: Vec::new(),
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
+
+    fn circle(x: i32, y: i32, start_time: i64) -> StandardHitObject {
+        StandardHitObject {
+            x,
+            y,
+            start_time,
+            end_time: start_time,
+            hit_type: 1,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn hard_rock_flips_objects_before_stacking_and_offsetting() {
+        let mods = ModSettings {
+            hard_rock: true,
+            ..ModSettings::new()
+        };
+        let mut objects = apply_standard_object_mods(
+            vec![circle(100, 100, 1000), circle(100, 100, 1050)],
+            Some(&mods),
+        );
+        super::super::stacking::apply_stacking(&mut objects, 14, 100.0);
+
+        assert_eq!(objects[0].y, 284);
+        assert_eq!(objects[0].stack_height, 1);
+        let settings = RenderSettings {
+            circle_diameter: 128,
+            object_scale: 0.5,
+            preempt_ms: 1200,
+            fade_in_ms: 400.0,
+            hidden: false,
+            traceable: false,
+        };
+        let (x, y) = stacked_position(&objects[0], &settings);
+        assert!((x - 96.8).abs() < 0.0001);
+        assert!((y - 280.8).abs() < 0.0001);
+    }
+
+    #[test]
+    fn render_settings_use_game_precision_for_difficulty_values() {
+        let beatmap = beatmap_with_difficulty("4", "9.3");
+        let settings = build_render_settings(&beatmap, None);
+
+        assert_eq!(settings.preempt_ms, 554);
+        let expected_scale = ((1.0 - 0.7_f32 as f64 * ((4.0_f32 as f64 - 5.0) / 5.0)) as f32 / 2.0
+            * crate::render::standard::constants::BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE as f32)
+            as f64;
+        assert_eq!(settings.object_scale, expected_scale);
+    }
 }

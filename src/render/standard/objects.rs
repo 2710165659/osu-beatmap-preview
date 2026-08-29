@@ -5,7 +5,9 @@ use crate::render::canvas::Img;
 
 use super::alpha::*;
 use super::constants::*;
-use super::context::{color_id, py_round, to_frame_point, RenderCache, RenderContext};
+use super::context::{
+    color_id, py_round, stacked_position, to_frame_point, RenderCache, RenderContext,
+};
 use super::draw_centered_text;
 use super::slider::{
     darken, draw_cached_slider_body, draw_ring_aa, draw_slider_ball, draw_slider_body,
@@ -50,7 +52,7 @@ pub(crate) fn render_frame(
                 &mut frame,
                 context,
                 cache,
-                hit_object,
+                index,
                 context.combo_info[index].color,
                 snapshot_time,
             );
@@ -85,11 +87,8 @@ fn draw_hit_circle(
         // TC：只显示接近圈，跳过打击圈主体。
         return;
     }
-    let center = to_frame_point(
-        hit_object.x as f64,
-        hit_object.y as f64,
-        &context.frame_layout,
-    );
+    let position = stacked_position(hit_object, &context.settings);
+    let center = to_frame_point(position.0, position.1, &context.frame_layout);
     draw_circle_piece(
         frame,
         context,
@@ -249,10 +248,11 @@ fn draw_approach_circle(
     frame: &mut Img,
     context: &RenderContext,
     _cache: &mut RenderCache,
-    hit_object: &StandardHitObject,
+    index: usize,
     color: [u8; 3],
     snapshot_time: i64,
 ) {
+    let hit_object = &context.hit_objects[index];
     if context.settings.hidden {
         return;
     }
@@ -268,11 +268,8 @@ fn draw_approach_circle(
     }
     let approach_scale = 4.0 - 3.0 * progress;
     let d = context.frame_circle_diameter as f64 * approach_scale;
-    let center = to_frame_point(
-        hit_object.x as f64,
-        hit_object.y as f64,
-        &context.frame_layout,
-    );
+    let position = stacked_position(hit_object, &context.settings);
+    let center = to_frame_point(position.0, position.1, &context.frame_layout);
     let thickness = (d * 0.03).max(1.0);
     draw_ring_aa(
         frame,

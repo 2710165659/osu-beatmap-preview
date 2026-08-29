@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::constants::*;
-use super::context::{color_id, py_round, to_frame_point, CachedLayer, RenderCache, RenderContext};
+use super::context::{
+    color_id, py_round, stack_offset, to_frame_point, CachedLayer, RenderCache, RenderContext,
+};
 
 // ——— 数据 ———
 
@@ -205,10 +207,11 @@ pub(crate) fn get_slider_render_data(
         slider_type,
         hit_object.slider_pixel_length,
     );
+    let offset = stack_offset(hit_object, &context.settings);
     let frame_points: Vec<(f64, f64)> = world_path
         .points
         .iter()
-        .map(|&(x, y)| to_frame_point(x, y, &context.frame_layout))
+        .map(|&(x, y)| to_frame_point(x + offset, y + offset, &context.frame_layout))
         .collect();
     let frame_path = build_path(&frame_points);
 
