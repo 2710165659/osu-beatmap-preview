@@ -143,19 +143,18 @@ pub(crate) fn build_roll_tail_sprite(color: [u8; 3], height: i64) -> Img {
     let scaled_height = height * scale;
     let scaled_width = (((height as f64) / 2.0).ceil() as i64 * scale).max(1);
     let radius = scaled_height as f64 / 2.0;
-    let border_width = pyround(height as f64 * 0.05).max(1) * scale;
 
     let mut tail = Img::new(
         scaled_width.max(1) as u32,
         scaled_height.max(1) as u32,
         [0, 0, 0, 0],
     );
-    tail.fill_ellipse(-radius, 0.0, radius, scaled_height as f64, [0, 0, 0, 255]);
+    // 尾部外缘与主体必须同色；黑色底层会在滑条和转盘末端形成一圈黑边。
     tail.fill_ellipse(
-        -radius + border_width as f64,
-        border_width as f64,
-        radius - border_width as f64,
-        (scaled_height - border_width) as f64,
+        -radius,
+        0.0,
+        radius,
+        scaled_height as f64,
         [color[0], color[1], color[2], 255],
     );
     tail.resize(((scaled_width / scale).max(1)) as u32, height.max(1) as u32)
@@ -249,6 +248,15 @@ pub(crate) fn paste_clipped(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn roll_tail_uses_body_color_at_the_outer_edge() {
+        let color = [232, 198, 61];
+        let sprite = build_roll_tail_sprite(color, 20);
+        let edge = sprite.get(8, 10);
+        assert_eq!(&edge[..3], &color);
+        assert!(edge[3] > 0);
+    }
 
     #[test]
     fn drum_roll_tick_is_a_solid_white_diamond() {
