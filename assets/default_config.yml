@@ -1,376 +1,576 @@
-# Default configuration values. build.rs generates typed Rust constants from this YAML.
+# 默认配置文件
+# 通用约定：尺寸、边距、间距和字号均以像素为单位；名称含 _MS 的时长以毫秒为单位。
+# 颜色为 [R, G, B, A]（或无透明通道的 [R, G, B]），各通道取值范围为 0～255。
 paths:
-  OUTPUT_DIR: "%TEMP%/osu-beatmap-preview/outputs"
-  CACHE_DIR: "%TEMP%/osu-beatmap-preview"
-  CONFIG_DIR: "./"
-  LOG_DIR: "%TEMP%/osu-beatmap-preview/logs"
+  OUTPUT_DIR: "%TEMP%/osu-beatmap-preview/outputs" # 渲染结果输出目录
+  CACHE_DIR: "%TEMP%/osu-beatmap-preview" # 下载内容及中间文件的缓存目录
+  CONFIG_DIR: "./" # 外部 config.yml 的查找目录，相对路径以当前工作目录为基准
+  LOG_DIR: "%TEMP%/osu-beatmap-preview/logs" # 日志文件目录
 logging:
   config:
-    PROGRESS_FILE: "progress.log"
-    RENDER_FILE: "render.log"
+    PROGRESS_FILE: "progress.log" # 下载和处理进度日志文件名
+    RENDER_FILE: "render.log" # 渲染日志文件名
 network:
   downloader_cf_ip:
-    CACHE_FILE: "osu-direct-preferred-ip.json"
-    LOCK_FILE: "osu-direct-preferred-ip.json.lock"
+    CACHE_FILE: "osu-direct-preferred-ip.json" # 优选下载 IP 的缓存文件名
+    LOCK_FILE: "osu-direct-preferred-ip.json.lock" # 更新优选 IP 缓存时使用的锁文件名
   downloader_osz:
-    MAX_OSZ_BYTES: 52428800
-    PARALLEL_PARTS: 4
-    USER_AGENT: "osu-beatmap-preview/1.0"
-    MAX_ACTIVE_ATTEMPTS: 3
-    DOWNLOAD_HARD_TIMEOUT: 120
+    MAX_OSZ_BYTES: 52428800 # osz 文件下载的最大字节数，超过该值将被拒绝下载
+    PARALLEL_PARTS: 4 # osz 文件下载的并行分块数
+    USER_AGENT: "osu-beatmap-preview/1.0" # 下载请求使用的 HTTP User-Agent
+    MAX_ACTIVE_ATTEMPTS: 3 # 同一下载任务允许同时进行的最大尝试数
+    DOWNLOAD_HARD_TIMEOUT: 120 # 单次完整下载的硬超时，单位秒
 timeouts:
   render:
-    PNG_TIMEOUT: 300
-    GIF_TIMEOUT: 300
-    MP4_TIMEOUT: 300
-# Output-specific layout values. Shared entries are repeated only where the renderer uses them.
+    PNG_TIMEOUT: 300 # PNG 渲染超时，单位秒，必须大于 0
+    GIF_TIMEOUT: 300 # GIF 渲染超时，单位秒，必须大于 0
+    MP4_TIMEOUT: 300 # MP4 渲染超时，单位秒，必须大于 0
+# 四模式布局设置
 layout:
   standard:
     png:
-      MS_PER_IMAGE: 400
-      ROW_COUNT: 5
-      IMAGES_PER_ROW: 8
-      HORIZONTAL_PAGE_MARGIN: 20
-      VERTICAL_PAGE_MARGIN: 20
-      INTRA_ROW_IMAGE_GAP: 20
-      INTER_ROW_GAP: 100
-      CANVAS_BACKGROUND_COLOR: [0, 0, 0, 255]
-      IMAGE_BACKGROUND_COLOR: [0, 0, 0, 255]
-      TIME_LABEL_FONT_SIZE: 30
-      TIME_LABEL_NOTE_FONT_SIZE: 22
-      TIME_LABEL_HEIGHT: 76
-      TIME_LABEL_TOP_GAP: 8
-      TIME_LABEL_NOTE_TOP_GAP: 9
-      TIME_LABEL_COLOR: [232, 232, 232, 255]
-      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255]
-      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255]
-      SLIDER_BODY_SUPERSAMPLE: 2
+      MS_PER_IMAGE: 400 # 同一行相邻图片之间的时间间隔，单位毫秒
+      ROW_COUNT: 5 # 行数
+      IMAGES_PER_ROW: 8 # 每行图片数
+      HORIZONTAL_PAGE_MARGIN: 20 # 页面左右边距
+      VERTICAL_PAGE_MARGIN: 20 # 页面上下边距
+      INTRA_ROW_IMAGE_GAP: 20 # 同一行相邻图片之间的间距
+      INTER_ROW_GAP: 100 # 不同行之间的间距
+      CANVAS_BACKGROUND_COLOR: [0, 0, 0, 255] # 最终拼图画布的背景色
+      IMAGE_BACKGROUND_COLOR: [0, 0, 0, 255] # 单张游玩区域截图的背景色
+      TIME_LABEL_FONT_SIZE: 30 # 主时间标签字号
+      TIME_LABEL_NOTE_FONT_SIZE: 22 # 时间标签附注字号
+      TIME_LABEL_HEIGHT: 76 # 每张截图下方时间标签区域的高度
+      TIME_LABEL_TOP_GAP: 8 # 主时间标签与截图的垂直间距
+      TIME_LABEL_NOTE_TOP_GAP: 9 # 附注与主时间标签的垂直间距
+      TIME_LABEL_COLOR: [232, 232, 232, 255] # 普通主时间标签颜色
+      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255] # 时间标签附注颜色
+      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255] # 预览时间点标签的强调色
+      SLIDER_BODY_SUPERSAMPLE: 2 # 滑条本体的超采样倍数，越大越平滑但渲染越慢
     gif:
-      ROW_COUNT: 2
-      IMAGES_PER_ROW: 2
-      SHOW_TIME_LABEL: true
-      DURATION_MS: 5000
-      FPS: 15
-      GRID_GAP: 20
-      HORIZONTAL_PAGE_MARGIN: 20
-      VERTICAL_PAGE_MARGIN: 20
-      INTRA_ROW_IMAGE_GAP: 20
-      INTER_ROW_GAP: 100
-      CANVAS_BACKGROUND_COLOR: [0, 0, 0, 255]
-      IMAGE_BACKGROUND_COLOR: [0, 0, 0, 255]
-      TIME_LABEL_FONT_SIZE: 30
-      TIME_LABEL_NOTE_FONT_SIZE: 22
-      TIME_LABEL_HEIGHT: 76
-      TIME_LABEL_TOP_GAP: 8
-      TIME_LABEL_NOTE_TOP_GAP: 9
-      TIME_LABEL_COLOR: [232, 232, 232, 255]
-      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255]
-      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255]
-      SLIDER_BODY_SUPERSAMPLE: 2
+      ROW_COUNT: 2 # 动画画面的网格行数
+      IMAGES_PER_ROW: 2 # 动画画面每行包含的游玩区域数
+      SHOW_TIME_LABEL: true # 是否在每个游玩区域下方显示时间标签
+      DURATION_MS: 5000 # 每个游玩区域覆盖的谱面时长
+      FPS: 15 # GIF 帧率
+      GRID_GAP: 20 # 网格单元之间的基础间距
+      HORIZONTAL_PAGE_MARGIN: 20 # 画布左右边距
+      VERTICAL_PAGE_MARGIN: 20 # 画布上下边距
+      INTRA_ROW_IMAGE_GAP: 20 # 同一行相邻游玩区域的间距
+      INTER_ROW_GAP: 100 # 相邻行之间的间距
+      CANVAS_BACKGROUND_COLOR: [0, 0, 0, 255] # 最终 GIF 画布的背景色
+      IMAGE_BACKGROUND_COLOR: [0, 0, 0, 255] # 单个游玩区域的背景色
+      TIME_LABEL_FONT_SIZE: 30 # 主时间标签字号
+      TIME_LABEL_NOTE_FONT_SIZE: 22 # 时间标签附注字号
+      TIME_LABEL_HEIGHT: 76 # 时间标签区域高度
+      TIME_LABEL_TOP_GAP: 8 # 主时间标签与游玩区域的垂直间距
+      TIME_LABEL_NOTE_TOP_GAP: 9 # 附注与主时间标签的垂直间距
+      TIME_LABEL_COLOR: [232, 232, 232, 255] # 普通主时间标签颜色
+      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255] # 时间标签附注颜色
+      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255] # 预览时间点标签的强调色
+      SLIDER_BODY_SUPERSAMPLE: 2 # 滑条本体的超采样倍数
     mp4:
-      FPS: 15
-      HORIZONTAL_PAGE_MARGIN: 20
-      VERTICAL_PAGE_MARGIN: 20
-      INTRA_ROW_IMAGE_GAP: 20
-      INTER_ROW_GAP: 100
-      CANVAS_BACKGROUND_COLOR: [0, 0, 0, 255]
-      IMAGE_BACKGROUND_COLOR: [0, 0, 0, 255]
-      TIME_LABEL_FONT_SIZE: 30
-      TIME_LABEL_NOTE_FONT_SIZE: 22
-      TIME_LABEL_HEIGHT: 76
-      TIME_LABEL_TOP_GAP: 8
-      TIME_LABEL_NOTE_TOP_GAP: 9
-      TIME_LABEL_COLOR: [232, 232, 232, 255]
-      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255]
-      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255]
+      FPS: 15 # MP4 帧率
+      HORIZONTAL_PAGE_MARGIN: 20 # 画布左右边距
+      VERTICAL_PAGE_MARGIN: 20 # 画布上下边距
+      INTRA_ROW_IMAGE_GAP: 20 # 同一行相邻游玩区域的间距
+      INTER_ROW_GAP: 100 # 相邻行之间的间距
+      CANVAS_BACKGROUND_COLOR: [0, 0, 0, 255] # 最终视频画布的背景色
+      IMAGE_BACKGROUND_COLOR: [0, 0, 0, 255] # 游玩区域背景色
+      TIME_LABEL_FONT_SIZE: 30 # 主时间标签字号
+      TIME_LABEL_NOTE_FONT_SIZE: 22 # 时间标签附注字号
+      TIME_LABEL_HEIGHT: 76 # 时间标签区域高度
+      TIME_LABEL_TOP_GAP: 8 # 主时间标签与游玩区域的垂直间距
+      TIME_LABEL_NOTE_TOP_GAP: 9 # 附注与主时间标签的垂直间距
+      TIME_LABEL_COLOR: [232, 232, 232, 255] # 普通主时间标签颜色
+      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255] # 时间标签附注颜色
+      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255] # 预览时间点标签的强调色
   taiko:
     png:
-      MAX_SUPPORTED_DURATION_MS: 600000
-      BASE_ROW_WIDTH_0_TO_1_MINUTES: 2600
-      BASE_ROW_WIDTH_1_TO_2_MINUTES: 3200
-      BASE_ROW_WIDTH_2_TO_3_MINUTES: 3800
-      BASE_ROW_WIDTH_3_TO_4_MINUTES: 4400
-      BASE_ROW_WIDTH_4_TO_5_MINUTES: 5000
-      BASE_ROW_WIDTH_5_TO_6_MINUTES: 5600
-      BASE_ROW_WIDTH_6_TO_10_MINUTES: 6400
-      ROW_WIDTH_MULTIPLIER_BPM_0_TO_180: 1.0
-      ROW_WIDTH_MULTIPLIER_BPM_180_TO_240: 1.15
-      ROW_WIDTH_MULTIPLIER_BPM_240_TO_300: 1.3
-      ROW_WIDTH_MULTIPLIER_BPM_300_PLUS: 1.45
-      ROW_GAP: 80
-      ROW_HEIGHT: 80
-      ROW_INNER_PADDING_X: 33
-      PAGE_MARGIN_X: 8
-      PAGE_MARGIN_Y: 8
-      SPACING_PER_BPM: 0.0
-      FIRST_ROW_SV_TOP_MARGIN: 24
-      LABEL_RIGHT_PADDING: 1
-      TIME_LABEL_FONT_SIZE: 24
-      TIME_LABEL_NOTE_FONT_SIZE: 17
-      BPM_FONT_SIZE: 22
-      TIME_LABEL_TOP_GAP: 0
-      TIME_LABEL_NOTE_TOP_GAP: 5
-      BPM_TOP_GAP: 5
-      TIME_LABEL_MIN_INTERVAL_MS: 2000
-      SV_TEXT_COLOR: [255, 217, 102, 255]
-      SV_TEXT_FONT_SIZE: 15
-      SV_TOP_GAP: 0
-      IMAGE_BACKGROUND: [0, 0, 0, 255]
-      BEAT_LINE_COLOR: [83, 83, 83, 255]
-      RULER_TEXT_COLOR: [232, 232, 232, 255]
-      ACCENT_LABEL_COLOR: [95, 221, 108, 255]
-      MEASURE_LINE_COLOR: [255, 255, 255, 170]
-      TRACK_BACKGROUND_COLOR: [55, 55, 55, 255]
-      TRACK_EDGE_COLOR: [80, 80, 80, 255]
-      TRACK_ACCENT_COLOR: [254, 59, 1, 255]
+      MAX_SUPPORTED_DURATION_MS: 600000 # 支持的谱面最大时长
+      BASE_ROW_WIDTH_0_TO_1_MINUTES: 2600 # 0～1 分钟谱面使用的基础行宽
+      BASE_ROW_WIDTH_1_TO_2_MINUTES: 3200 # 1～2 分钟谱面使用的基础行宽
+      BASE_ROW_WIDTH_2_TO_3_MINUTES: 3800 # 2～3 分钟谱面使用的基础行宽
+      BASE_ROW_WIDTH_3_TO_4_MINUTES: 4400 # 3～4 分钟谱面使用的基础行宽
+      BASE_ROW_WIDTH_4_TO_5_MINUTES: 5000 # 4～5 分钟谱面使用的基础行宽
+      BASE_ROW_WIDTH_5_TO_6_MINUTES: 5600 # 5～6 分钟谱面使用的基础行宽
+      BASE_ROW_WIDTH_6_TO_10_MINUTES: 6400 # 6～10 分钟谱面使用的基础行宽
+      ROW_WIDTH_MULTIPLIER_BPM_0_TO_180: 1.0 # BPM 0～180 时的行宽倍率
+      ROW_WIDTH_MULTIPLIER_BPM_180_TO_240: 1.15 # BPM 180～240 时的行宽倍率
+      ROW_WIDTH_MULTIPLIER_BPM_240_TO_300: 1.3 # BPM 240～300 时的行宽倍率
+      ROW_WIDTH_MULTIPLIER_BPM_300_PLUS: 1.45 # BPM 300 以上时的行宽倍率
+      ROW_GAP: 80 # 相邻轨道行之间的间距
+      ROW_HEIGHT: 80 # 单行轨道高度
+      ROW_INNER_PADDING_X: 33 # 轨道内容左右内边距
+      PAGE_MARGIN_X: 8 # 画布左右边距
+      PAGE_MARGIN_Y: 8 # 画布上下边距
+      SPACING_PER_BPM: 0.0 # 按 BPM 额外增加的水平间距，0 表示禁用
+      FIRST_ROW_SV_TOP_MARGIN: 24 # 第一行顶部 SV 标签预留空间
+      LABEL_RIGHT_PADDING: 1 # 行末标签右侧内边距
+      TIME_LABEL_FONT_SIZE: 24 # 时间标签字号
+      TIME_LABEL_NOTE_FONT_SIZE: 17 # 时间标签附注字号
+      BPM_FONT_SIZE: 22 # BPM 标签字号
+      TIME_LABEL_TOP_GAP: 0 # 时间标签与轨道的垂直间距
+      TIME_LABEL_NOTE_TOP_GAP: 5 # 附注与时间标签的垂直间距
+      BPM_TOP_GAP: 5 # BPM 标签与上方内容的垂直间距
+      TIME_LABEL_MIN_INTERVAL_MS: 2000 # 时间标签的最小时间间隔
+      SV_TEXT_COLOR: [255, 217, 102, 255] # SV 文本颜色（RGBA）
+      SV_TEXT_FONT_SIZE: 15 # SV 文本字号
+      SV_TOP_GAP: 0 # SV 文本与轨道顶部的间距
+      IMAGE_BACKGROUND: [0, 0, 0, 255] # 图片背景色（RGBA）
+      BEAT_LINE_COLOR: [83, 83, 83, 255] # 拍线颜色（RGBA）
+      RULER_TEXT_COLOR: [232, 232, 232, 255] # 标尺文本颜色（RGBA）
+      ACCENT_LABEL_COLOR: [95, 221, 108, 255] # 强调标签颜色（RGBA）
+      MEASURE_LINE_COLOR: [255, 255, 255, 170] # 小节线颜色（RGBA）
+      TRACK_BACKGROUND_COLOR: [55, 55, 55, 255] # 轨道背景色（RGBA）
+      TRACK_EDGE_COLOR: [80, 80, 80, 255] # 轨道边缘颜色（RGBA）
+      TRACK_ACCENT_COLOR: [254, 59, 1, 255] # 轨道强调色（RGBA）
     gif:
-      IMAGE_BACKGROUND: [0, 0, 0, 255]
-      TRACK_BACKGROUND_COLOR: [55, 55, 55, 255]
-      TRACK_EDGE_COLOR: [80, 80, 80, 255]
-      TRACK_ACCENT_COLOR: [254, 59, 1, 255]
-      ROW_COUNT: 4
-      SHOW_TIME_LABEL: true
-      DURATION_MS: 5000.0
-      FPS: 15.0
-      ROW_GAP: 60
-      TIME_LABEL_FONT_SIZE: 20
-      TIME_LABEL_NOTE_FONT_SIZE: 14
-      TIME_LABEL_COLOR: [232, 232, 232, 255]
-      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255]
-      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255]
-      JUDGEMENT_LINE_COLOR: [255, 255, 255, 255]
+      IMAGE_BACKGROUND: [0, 0, 0, 255] # 图片背景色（RGBA）
+      TRACK_BACKGROUND_COLOR: [55, 55, 55, 255] # 轨道背景色（RGBA）
+      TRACK_EDGE_COLOR: [80, 80, 80, 255] # 轨道边缘颜色（RGBA）
+      TRACK_ACCENT_COLOR: [254, 59, 1, 255] # 轨道强调色（RGBA）
+      ROW_COUNT: 4 # 同时显示的轨道行数
+      SHOW_TIME_LABEL: true # 是否显示时间标签
+      DURATION_MS: 5000.0 # 每个动画片段覆盖的谱面时长
+      FPS: 15.0 # GIF 帧率
+      ROW_GAP: 60 # 动画中轨道行之间的间距
+      TIME_LABEL_FONT_SIZE: 20 # 时间标签字号
+      TIME_LABEL_NOTE_FONT_SIZE: 14 # 时间标签附注字号
+      TIME_LABEL_COLOR: [232, 232, 232, 255] # 时间标签颜色（RGBA）
+      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255] # 附注颜色（RGBA）
+      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255] # 预览时间点标签颜色（RGBA）
+      JUDGEMENT_LINE_COLOR: [255, 255, 255, 255] # 判定线颜色（RGBA）
     mp4:
-      IMAGE_BACKGROUND: [0, 0, 0, 255]
-      TRACK_BACKGROUND_COLOR: [55, 55, 55, 255]
-      TRACK_EDGE_COLOR: [80, 80, 80, 255]
-      TRACK_ACCENT_COLOR: [254, 59, 1, 255]
-      FPS: 15.0
+      IMAGE_BACKGROUND: [0, 0, 0, 255] # 图片背景色（RGBA）
+      TRACK_BACKGROUND_COLOR: [55, 55, 55, 255] # 轨道背景色（RGBA）
+      TRACK_EDGE_COLOR: [80, 80, 80, 255] # 轨道边缘颜色（RGBA）
+      TRACK_ACCENT_COLOR: [254, 59, 1, 255] # 轨道强调色（RGBA）
+      FPS: 15.0 # MP4 帧率
   catch:
     png:
-      MAX_SUPPORTED_DURATION_MS: 600000
-      MAX_AREA_HEIGHT_0_TO_1_MINUTES: 3000
-      MAX_AREA_HEIGHT_1_TO_2_MINUTES: 4125
-      MAX_AREA_HEIGHT_2_TO_3_MINUTES: 5250
-      MAX_AREA_HEIGHT_3_TO_4_MINUTES: 6375
-      MAX_AREA_HEIGHT_4_TO_5_MINUTES: 7500
-      MAX_AREA_HEIGHT_5_TO_6_MINUTES: 8625
-      MAX_TOTAL_CHART_HEIGHT: 180000
-      PAGE_MARGIN_X: 15
-      PAGE_MARGIN_Y: 15
-      LEFT_PANEL_WIDTH: 9
-      COLUMN_WIDTH: 315
-      COLUMN_GAP: 75
-      LEFT_PANEL_BACKGROUND: [112, 112, 112, 255]
-      IMAGE_BACKGROUND: [7, 7, 7, 255]
-      PLAYFIELD_BACKGROUND: [7, 7, 7, 255]
-      PLAYFIELD_BORDER: [34, 34, 34, 255]
-      MEASURE_LINE_COLOR: [87, 87, 87, 255]
-      BEAT_LINE_COLOR: [62, 62, 62, 255]
-      TIME_LABEL_FONT_SIZE: 14
-      TIME_LABEL_MIN_INTERVAL_MS: 2000
-      TIME_LABEL_COLOR: [200, 200, 200, 255]
-      LABEL_RIGHT_MARGIN: 80
+      MAX_SUPPORTED_DURATION_MS: 600000 # 支持的谱面最大时长
+      MAX_AREA_HEIGHT_0_TO_1_MINUTES: 3000 # 0～1 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_1_TO_2_MINUTES: 4125 # 1～2 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_2_TO_3_MINUTES: 5250 # 2～3 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_3_TO_4_MINUTES: 6375 # 3～4 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_4_TO_5_MINUTES: 7500 # 4～5 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_5_TO_6_MINUTES: 8625 # 5～6 分钟谱面的单列最大高度
+      MAX_TOTAL_CHART_HEIGHT: 180000 # 整张 Catch 图表允许的最大高度
+      PAGE_MARGIN_X: 15 # 画布左右边距
+      PAGE_MARGIN_Y: 15 # 画布上下边距
+      LEFT_PANEL_WIDTH: 9 # 左侧时间标尺面板宽度
+      COLUMN_WIDTH: 315 # 每列游玩区域宽度
+      COLUMN_GAP: 75 # 相邻列之间的间距
+      LEFT_PANEL_BACKGROUND: [112, 112, 112, 255] # 左侧面板背景色（RGBA）
+      IMAGE_BACKGROUND: [7, 7, 7, 255] # 图片背景色（RGBA）
+      PLAYFIELD_BACKGROUND: [7, 7, 7, 255] # 游玩区域背景色（RGBA）
+      PLAYFIELD_BORDER: [34, 34, 34, 255] # 游玩区域边框颜色（RGBA）
+      MEASURE_LINE_COLOR: [87, 87, 87, 255] # 小节线颜色（RGBA）
+      BEAT_LINE_COLOR: [62, 62, 62, 255] # 拍线颜色（RGBA）
+      TIME_LABEL_FONT_SIZE: 14 # 时间标签字号
+      TIME_LABEL_MIN_INTERVAL_MS: 2000 # 时间标签的最小时间间隔
+      TIME_LABEL_COLOR: [200, 200, 200, 255] # 时间标签颜色（RGBA）
+      LABEL_RIGHT_MARGIN: 80 # 时间标签距右侧的边距
     gif:
-      PLAYFIELD_BACKGROUND: [7, 7, 7, 255]
-      ROW_COUNT: 2
-      IMAGES_PER_ROW: 2
-      SHOW_TIME_LABEL: true
-      DURATION_MS: 5000.0
-      FPS: 15.0
-      GRID_GAP: 20
-      TIME_LABEL_FONT_SIZE: 30
-      TIME_LABEL_NOTE_FONT_SIZE: 22
-      TIME_LABEL_HEIGHT: 76
-      TIME_LABEL_TOP_GAP: 8
-      TIME_LABEL_NOTE_TOP_GAP: 9
-      TIME_LABEL_COLOR: [232, 232, 232, 255]
-      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255]
-      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255]
+      PLAYFIELD_BACKGROUND: [7, 7, 7, 255] # 游玩区域背景色（RGBA）
+      ROW_COUNT: 2 # 动画画面的网格行数
+      IMAGES_PER_ROW: 2 # 动画画面每行包含的游玩区域数
+      SHOW_TIME_LABEL: true # 是否显示时间标签
+      DURATION_MS: 5000.0 # 每个动画片段覆盖的谱面时长
+      FPS: 15.0 # GIF 帧率
+      GRID_GAP: 20 # 网格单元之间的间距
+      TIME_LABEL_FONT_SIZE: 30 # 主时间标签字号
+      TIME_LABEL_NOTE_FONT_SIZE: 22 # 时间标签附注字号
+      TIME_LABEL_HEIGHT: 76 # 时间标签区域高度
+      TIME_LABEL_TOP_GAP: 8 # 主时间标签与游玩区域的垂直间距
+      TIME_LABEL_NOTE_TOP_GAP: 9 # 附注与主时间标签的垂直间距
+      TIME_LABEL_COLOR: [232, 232, 232, 255] # 时间标签颜色（RGBA）
+      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255] # 附注颜色（RGBA）
+      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255] # 预览时间点标签颜色（RGBA）
     mp4:
-      PLAYFIELD_BACKGROUND: [7, 7, 7, 255]
-      FPS: 15.0
+      PLAYFIELD_BACKGROUND: [7, 7, 7, 255] # 游玩区域背景色（RGBA）
+      FPS: 15.0 # MP4 帧率
   mania:
     png:
-      PIXELS_PER_MS: 0.4
-      PAGE_MARGIN_X: 20
-      PAGE_MARGIN_Y: 20
-      LANE_WIDTH: 38
-      COLUMN_GAP: 100
-      NOTE_HEAD_HEIGHT: 15
-      LEFT_PANEL_WIDTH: 12
-      HIT_TARGET_FROM_BOTTOM: 110
-      LEFT_PANEL_BACKGROUND: [112, 112, 112, 255]
-      NOTE_SIDE_PADDING: 2
-      IMAGE_BACKGROUND: [0, 0, 0, 255]
-      LANE_BACKGROUND: [0, 0, 0, 255]
-      RULER_TEXT_COLOR: [232, 232, 232, 255]
-      SV_TEXT_COLOR: [95, 221, 108, 255]
-      SV_TEXT_FONT_SIZE: 10
-      LANE_GAP: 0
-      LANE_SEPARATOR: [32, 32, 32, 255]
-      TIME_LABEL_FONT_SIZE: 20
-      TIME_LABEL_MIN_INTERVAL_MS: 2000
-      MAX_AREA_HEIGHT_0_TO_1_MINUTES: 4000
-      MAX_AREA_HEIGHT_1_TO_2_MINUTES: 5500
-      MAX_AREA_HEIGHT_2_TO_3_MINUTES: 7000
-      MAX_AREA_HEIGHT_3_TO_4_MINUTES: 8500
-      MAX_AREA_HEIGHT_4_TO_5_MINUTES: 10000
-      MAX_AREA_HEIGHT_5_TO_6_MINUTES: 11500
-      FIXED_COLUMN_COUNT_6_TO_10_MINUTES: 30
-      MAX_SUPPORTED_DURATION_MS: 600000
-      BOTTOM_PADDING_MS: 2000
-      MEASURE_LINE_COLOR: [83, 83, 83, 255]
-      BEAT_LINE_COLOR: [56, 56, 56, 255]
-      SUBDIVISION_LINE: [34, 34, 34, 255]
+      PIXELS_PER_MS: 0.4 # 时间轴缩放：每毫秒对应的像素数
+      PAGE_MARGIN_X: 20 # 画布左右边距
+      PAGE_MARGIN_Y: 20 # 画布上下边距
+      LANE_WIDTH: 38 # 单个键道宽度
+      COLUMN_GAP: 100 # 相邻时间列之间的间距
+      NOTE_HEAD_HEIGHT: 15 # 普通音符头高度
+      LEFT_PANEL_WIDTH: 12 # 左侧时间标尺面板宽度
+      HIT_TARGET_FROM_BOTTOM: 110 # 判定线距底部的距离
+      LEFT_PANEL_BACKGROUND: [112, 112, 112, 255] # 左侧面板背景色（RGBA）
+      NOTE_SIDE_PADDING: 2 # 音符左右内边距
+      IMAGE_BACKGROUND: [0, 0, 0, 255] # 图片背景色（RGBA）
+      LANE_BACKGROUND: [0, 0, 0, 255] # 键道背景色（RGBA）
+      RULER_TEXT_COLOR: [232, 232, 232, 255] # 标尺文本颜色（RGBA）
+      SV_TEXT_COLOR: [95, 221, 108, 255] # SV 文本颜色（RGBA）
+      SV_TEXT_FONT_SIZE: 10 # SV 文本字号
+      LANE_GAP: 0 # 键道之间的额外间距
+      LANE_SEPARATOR: [32, 32, 32, 255] # 键道分隔线颜色（RGBA）
+      TIME_LABEL_FONT_SIZE: 20 # 时间标签字号
+      TIME_LABEL_MIN_INTERVAL_MS: 2000 # 时间标签的最小时间间隔
+      MAX_AREA_HEIGHT_0_TO_1_MINUTES: 4000 # 0～1 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_1_TO_2_MINUTES: 5500 # 1～2 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_2_TO_3_MINUTES: 7000 # 2～3 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_3_TO_4_MINUTES: 8500 # 3～4 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_4_TO_5_MINUTES: 10000 # 4～5 分钟谱面的单列最大高度
+      MAX_AREA_HEIGHT_5_TO_6_MINUTES: 11500 # 5～6 分钟谱面的单列最大高度
+      FIXED_COLUMN_COUNT_6_TO_10_MINUTES: 30 # 6～10 分钟谱面固定使用的列数
+      MAX_SUPPORTED_DURATION_MS: 600000 # 支持的谱面最大时长
+      BOTTOM_PADDING_MS: 2000 # 图表底部额外留白时长
+      MEASURE_LINE_COLOR: [83, 83, 83, 255] # 小节线颜色（RGBA）
+      BEAT_LINE_COLOR: [56, 56, 56, 255] # 拍线颜色（RGBA）
+      SUBDIVISION_LINE: [34, 34, 34, 255] # 拍内细分线颜色（RGBA）
     gif:
-      LEFT_PANEL_BACKGROUND: [112, 112, 112, 255]
-      IMAGES_PER_ROW: 4
-      SHOW_TIME_LABEL: true
-      DURATION_MS: 10000
-      FPS: 15
-      SCROLL_SPEED: 33.0
-      GRID_GAP: 128
-      SEPARATOR_WIDTH: 10
-      TIME_LABEL_HEIGHT: 38
-      TIME_LABEL_TOP_GAP: 5
-      TIME_LABEL_FONT_SIZE: 20
-      TIME_LABEL_NOTE_FONT_SIZE: 14
-      TIME_LABEL_COLOR: [232, 232, 232, 255]
-      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255]
-      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255]
-      JUDGEMENT_LINE_COLOR: [238, 238, 238, 255]
-      SEPARATOR_BACKGROUND: [8, 8, 8, 255]
-      IMAGE_BACKGROUND: [0, 0, 0, 255]
-      LANE_BACKGROUND: [0, 0, 0, 255]
-      SV_TEXT_COLOR: [95, 221, 108, 255]
-      SV_TEXT_FONT_SIZE: 10
+      LEFT_PANEL_BACKGROUND: [112, 112, 112, 255] # 左侧面板背景色（RGBA）
+      IMAGES_PER_ROW: 4 # 动画画面每行包含的游玩区域数
+      SHOW_TIME_LABEL: true # 是否显示时间标签
+      DURATION_MS: 10000 # 每个动画片段覆盖的谱面时长
+      FPS: 15 # GIF 帧率
+      SCROLL_SPEED: 33.0 # 滚动速度基准值，越大则画面内可见的时间范围越短
+      GRID_GAP: 128 # 网格单元之间的间距
+      SEPARATOR_WIDTH: 10 # 游玩区域分隔条宽度
+      TIME_LABEL_HEIGHT: 38 # 时间标签区域高度
+      TIME_LABEL_TOP_GAP: 5 # 时间标签与游玩区域的垂直间距
+      TIME_LABEL_FONT_SIZE: 20 # 主时间标签字号
+      TIME_LABEL_NOTE_FONT_SIZE: 14 # 时间标签附注字号
+      TIME_LABEL_COLOR: [232, 232, 232, 255] # 时间标签颜色（RGBA）
+      TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255] # 附注颜色（RGBA）
+      PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255] # 预览时间点标签颜色（RGBA）
+      JUDGEMENT_LINE_COLOR: [238, 238, 238, 255] # 判定线颜色（RGBA）
+      SEPARATOR_BACKGROUND: [8, 8, 8, 255] # 分隔条背景色（RGBA）
+      IMAGE_BACKGROUND: [0, 0, 0, 255] # 图片背景色（RGBA）
+      LANE_BACKGROUND: [0, 0, 0, 255] # 键道背景色（RGBA）
+      SV_TEXT_COLOR: [95, 221, 108, 255] # SV 文本颜色（RGBA）
+      SV_TEXT_FONT_SIZE: 10 # SV 文本字号
     mp4:
-      FPS: 15
-      IMAGE_BACKGROUND: [0, 0, 0, 255]
+      FPS: 15 # MP4 帧率
+      IMAGE_BACKGROUND: [0, 0, 0, 255] # 视频背景色（RGBA）
 skin:
-  COMBO_COLORS:
-    [[150, 230, 255], [255, 125, 177], [130, 255, 160]]
-  HIT_CIRCLE_OVERLAP: 10
-  HYPER_DASH: [255, 82, 139]
+  # 皮肤颜色均为 RGB/RGBA；MANIA 下的 KEYS_N 为对应键数的列布局。
+  COMBO_COLORS: [[150, 230, 255], [255, 125, 177], [130, 255, 160]] # Standard 连击颜色，按顺序循环
+  HIT_CIRCLE_OVERLAP: 10 # Standard 圆圈重叠像素数
+  HYPER_DASH: [255, 82, 139] # Hyper dash 提示颜色（RGB）
   MANIA:
+    # 每个 KEYS_N 块：COLUMN_WIDTHS 为各列宽度；COLUMN_LINE_WIDTHS 为 keys+1 条边界线宽度；
+    # COLUMN_COLORS 为各列背景色；HIT_POSITION 为 osu! stable 480 高坐标系中的判定线位置。
     KEYS_1:
-      COLUMN_WIDTHS: [68]
-      COLUMN_LINE_WIDTHS: [0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255]]
-      HIT_POSITION: 473
+      COLUMN_WIDTHS: [68] # 1 键各列宽度
+      COLUMN_LINE_WIDTHS: [0, 0] # 左边界、右边界线宽度
+      COLUMN_COLORS: [[0, 0, 0, 255]] # 各列背景色（RGBA）
+      HIT_POSITION: 473 # 判定线位置（480 高坐标系）
     KEYS_2:
-      COLUMN_WIDTHS: [68, 68]
+      COLUMN_WIDTHS: [68, 68] # 各列宽度
       COLUMN_LINE_WIDTHS: [0, 0, 0]
       COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255]]
-      HIT_POSITION: 473
+      HIT_POSITION: 473 # 判定线位置（480 高坐标系）
     KEYS_3:
-      COLUMN_WIDTHS: [68, 68, 68]
+      COLUMN_WIDTHS: [68, 68, 68] # 各列宽度
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0]
       COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
-      HIT_POSITION: 473
+      HIT_POSITION: 473 # 判定线位置（480 高坐标系）
     KEYS_4:
-      COLUMN_WIDTHS: [68, 68, 68, 68]
+      COLUMN_WIDTHS: [68, 68, 68, 68] # 各列宽度
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
-      HIT_POSITION: 473
+      COLUMN_COLORS:
+        [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      HIT_POSITION: 473 # 判定线位置（480 高坐标系）
     KEYS_5:
       COLUMN_WIDTHS: [60, 60, 60, 60, 60]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_6:
       COLUMN_WIDTHS: [55, 55, 55, 55, 55, 55]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_7:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_8:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_9:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_10:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_11:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_12:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_13:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_14:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_15:
-      COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
+      COLUMN_WIDTHS:
+        [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_16:
-      COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
+      COLUMN_WIDTHS:
+        [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_17:
-      COLUMN_WIDTHS: [48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48]
+      COLUMN_WIDTHS:
+        [48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
     KEYS_18:
-      COLUMN_WIDTHS: [48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48]
-      COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0]
-      COLUMN_COLORS: [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+      COLUMN_WIDTHS:
+        [48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48]
+      COLUMN_LINE_WIDTHS:
+        [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0]
+      COLUMN_COLORS:
+        [
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+          [0, 0, 0, 255],
+        ]
       HIT_POSITION: 460
 palette:
   mania_utils:
-    MANIA_COLOR_W: [0xe9, 0xee, 0xf4, 255]
-    MANIA_COLOR_B: [0xbc, 0xdb, 0xf1, 255]
-    MANIA_COLOR_G: [0xcc, 0xfc, 0xb2, 255]
-    MANIA_COLOR_Y: [0xff, 0xe2, 0x74, 255]
-    MANIA_COLOR_R: [0xff, 0x7a, 0x5c, 255]
+    # Mania 图表按键数组合使用的五种键道配色（RGBA；W/B/G/Y/R 表示白/蓝/绿/黄/红）。
+    MANIA_COLOR_W: [0xe9, 0xee, 0xf4, 255] # 白色键道
+    MANIA_COLOR_B: [0xbc, 0xdb, 0xf1, 255] # 蓝色键道
+    MANIA_COLOR_G: [0xcc, 0xfc, 0xb2, 255] # 绿色键道
+    MANIA_COLOR_Y: [0xff, 0xe2, 0x74, 255] # 黄色键道
+    MANIA_COLOR_R: [0xff, 0x7a, 0x5c, 255] # 红色键道
 effects:
   catch_drawing:
-    BLOB_SPRITE_SCALE: 0.5
+    BLOB_SPRITE_SCALE: 0.5 # Catch 光斑精灵的内部渲染缩放倍率，越小越省资源
 video:
   composer:
-    PAR_CHUNK_SIZE: 8
-    MAX_PAR_FRAME_BYTES: 67108864
-    PALETTE_COLORS: 127
+    PAR_CHUNK_SIZE: 8 # GIF 每批并行渲染的最大帧数
+    MAX_PAR_FRAME_BYTES: 67108864 # GIF 并行帧允许占用的最大原始图像字节数
+    PALETTE_COLORS: 127 # GIF 调色板中的不透明颜色数，另保留一个透明色索引
   video:
-    PAR_CHUNK_SIZE: 8
-    MAX_PAR_FRAME_BYTES: 67108864
-    VIDEO_BITRATE: 900000
-    VIDEO_END_PADDING_MS: 2000
-    LABEL_COLOR: [232, 232, 232, 255]
-    LABEL_FONT_SIZE: 24
-    LABEL_PAD: 12
-    BLACK_OPAQUE: [0, 0, 0, 255]
+    PAR_CHUNK_SIZE: 8 # MP4 每批并行渲染的最大帧数
+    MAX_PAR_FRAME_BYTES: 67108864 # MP4 并行帧允许占用的最大原始图像字节数
+    VIDEO_BITRATE: 900000 # 硬件编码器目标视频码率，单位 bit/s
+    VIDEO_END_PADDING_MS: 2000 # 最后一个物件后继续渲染的时长
+    LABEL_COLOR: [232, 232, 232, 255] # 视频右下角时间标签颜色（RGBA）
+    LABEL_FONT_SIZE: 24 # 视频时间标签字号
+    LABEL_PAD: 12 # 视频时间标签与画布边缘的内边距
+    BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成时使用的不透明黑色（RGBA）
   video_cpu:
-    CPU_VIDEO_BITRATE: 500000
+    CPU_VIDEO_BITRATE: 500000 # CPU 编码器目标视频码率，单位 bit/s
 audio:
   video_audio:
-    AUDIO_SAMPLE_RATE: 48000
-    AUDIO_BITRATE: 96000
-    MAX_EXTRACTED_AUDIO_BYTES: 268435456
+    AUDIO_SAMPLE_RATE: 48000 # 输出音频采样率，单位 Hz
+    AUDIO_BITRATE: 96000 # 输出音频码率，单位 bit/s
+    MAX_EXTRACTED_AUDIO_BYTES: 268435456 # 解码后音频允许占用的最大字节数
