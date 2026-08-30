@@ -3,6 +3,10 @@
 All notable changes to this project will be documented in this file.
 
 ---
+## [Unreleased]
+
+- `--duration-time` 现支持 GIF，并会让每个选定时间点分别渲染指定秒数；未指定时仍使用各模式 GIF 配置中的片段时长。
+
 ## [1.0.8] - 2026.08.30
 
 ### Added

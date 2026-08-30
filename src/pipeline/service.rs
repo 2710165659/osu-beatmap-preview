@@ -163,8 +163,15 @@ fn generate_preview_inner(
                 duration_time,
             ));
         }
-    } else if !time_points.is_empty() {
-        parts.push(cache::format_time_points_suffix(&time_points));
+    } else {
+        if !time_points.is_empty() {
+            parts.push(cache::format_time_points_suffix(&time_points));
+        }
+        if fmt == "gif" {
+            if let Some(duration) = duration_time {
+                parts.push(cache::format_duration_suffix(duration));
+            }
+        }
     }
     let output_path: PathBuf = output_root.join(format!("{}.{}", parts.join("_"), fmt));
 
@@ -784,6 +791,7 @@ fn render_preview_for_mode(
     if fmt == "gif" {
         let gif_options = GifRenderOptions::Segments {
             times_ms: absolute_time_points.clone(),
+            duration_seconds: duration_time,
             time_axis,
         };
         renderer.render_gif(

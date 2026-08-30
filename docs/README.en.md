@@ -76,8 +76,8 @@ osu-beatmap-preview --bid=738063 --mod=hd --mod=hr
 # Render a 30-second MP4 starting at the beatmap PreviewTime
 osu-beatmap-preview --bid=738063 --fmt=mp4 --time-points=preview --duration-time=30
 
-# Select four segment start times for a GIF
-osu-beatmap-preview --bid=738063 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20
+# Select four GIF segment start times and render 6 seconds from each point
+osu-beatmap-preview --bid=738063 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20 --duration-time=6
 
 # Bypass download and output caches, and disable logging
 osu-beatmap-preview --bid=738063 --no-cache --no-log
@@ -98,7 +98,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--fmt` | Output format: `png`, `gif`, or `mp4`. When omitted, Standard uses GIF and the other modes use PNG. |
 | `--mod` | One Mod. Repeat the option to combine Mods; values are case-insensitive. |
 | `--time-points` | A gameplay time in seconds, or `preview`. Repeat it for GIF or Standard PNG output; MP4 accepts at most one. |
-| `--duration-time` | MP4 duration in seconds. It must be finite and positive and defaults to `600`. |
+| `--duration-time` | Duration in seconds for each GIF time point or for MP4 output. It must be finite and positive. GIF uses the mode-specific configured segment duration when omitted; MP4 defaults to `600`. |
 | `--no-cache` | Bypasses the `.osu`, OSZ, and output caches, forcing a fresh download and render. |
 | `--no-log` | Disables file logging. |
 | `--config` | A configuration file path or an inline JSON/YAML object. It may be supplied only once. |
@@ -113,7 +113,7 @@ Numeric time points use the gameplay timeline: the first playable object in the 
 - The number of time points cannot exceed the configured segment capacity. By default, GIF output has a capacity of 4. Standard PNG has 5 rows by default, so it accepts up to 5 row start times.
 - MP4 defaults to a 600-second request starting at gameplay time `0`. Shorter beatmaps use their complete playable range instead of being padded to 600 seconds. A range that extends beyond the end of the beatmap is shifted backward as a unit to preserve its duration.
 - MP4 accepts negative start times; portions before the audio begins are silent. `--time-points=preview` uses `PreviewTime` from the `.osu` file and falls back to the first object if that value is missing or invalid.
-- `--duration-time` is valid only for MP4. `--time-points` is valid only for GIF, Standard PNG, and MP4.
+- `--duration-time` is valid for GIF and MP4. For GIF, each `--time-points` value is rendered for the specified duration. `--time-points` is valid only for GIF, Standard PNG, and MP4.
 
 ## Output Formats
 

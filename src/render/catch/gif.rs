@@ -108,8 +108,17 @@ pub(crate) fn render_catch_gif(
     match options {
         GifRenderOptions::Segments {
             times_ms,
+            duration_seconds,
             time_axis,
-        } => render_catch_segment_gif(beatmap, mods, times_ms, time_axis, output_path, deadline),
+        } => render_catch_segment_gif(
+            beatmap,
+            mods,
+            times_ms,
+            duration_seconds,
+            time_axis,
+            output_path,
+            deadline,
+        ),
     }
 }
 
@@ -117,6 +126,7 @@ fn render_catch_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
+    duration_seconds: Option<f64>,
     time_axis: TimeAxis,
     output_path: &Path,
     deadline: &RequestDeadline,
@@ -130,8 +140,10 @@ fn render_catch_segment_gif(
     let mut render_objects = build_catch_render_objects(beatmap, hit_objects, mods, &difficulty)?;
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let gameplay_segment_duration =
-        rhe(crate::config::current().layout.catch.gif.DURATION_MS * speed_multiplier);
+    let segment_duration_ms = duration_seconds
+        .map(|seconds| seconds * 1000.0)
+        .unwrap_or(crate::config::current().layout.catch.gif.DURATION_MS);
+    let gameplay_segment_duration = rhe(segment_duration_ms * speed_multiplier);
     let spans: Vec<(i64, i64)> = hit_objects
         .iter()
         .map(|h| (h.start_time, h.end_time))
@@ -147,10 +159,9 @@ fn render_catch_segment_gif(
     .choose()?;
 
     let layout = build_gif_layout(difficulty.cs, difficulty.ar);
-    let frame_count = rhe(crate::config::current().layout.catch.gif.DURATION_MS
-        * crate::config::current().layout.catch.gif.FPS
-        / 1000.0)
-    .max(1) as usize;
+    let frame_count =
+        rhe(segment_duration_ms * crate::config::current().layout.catch.gif.FPS / 1000.0).max(1)
+            as usize;
     let frame_duration_ms =
         rhe(1000.0 / crate::config::current().layout.catch.gif.FPS).max(1) as u32;
 

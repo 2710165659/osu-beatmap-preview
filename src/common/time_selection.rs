@@ -37,6 +37,7 @@ pub struct PreviewSegmentTiming {
 pub enum GifRenderOptions {
     Segments {
         times_ms: Option<Vec<i64>>,
+        duration_seconds: Option<f64>,
         time_axis: TimeAxis,
     },
 }

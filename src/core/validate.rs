@@ -73,9 +73,9 @@ pub fn validate_with_context(
         return Err(PreviewError::new("bid must be numeric"));
     }
 
-    if duration_time.is_some() && ctx.fmt != "mp4" {
+    if duration_time.is_some() && !matches!(ctx.fmt, "gif" | "mp4") {
         return Err(PreviewError::new(
-            "--duration-time is only valid for mp4 output",
+            "--duration-time is only valid for GIF or MP4 output",
         ));
     }
     if ctx.fmt == "mp4" && time_points.len() > 1 {
@@ -138,9 +138,10 @@ mod tests {
     }
 
     #[test]
-    fn video_time_options_are_format_scoped_and_positive() {
+    fn duration_time_is_available_to_gif_and_mp4() {
         validate_with_context(&ctx("mp4", 0), &[TimePoint::Preview], Some(30.0), None).unwrap();
-        assert!(validate_with_context(&ctx("gif", 0), &[], Some(30.0), None).is_err());
+        validate_with_context(&ctx("gif", 0), &[], Some(30.0), None).unwrap();
+        assert!(validate_with_context(&ctx("png", 0), &[], Some(30.0), None).is_err());
         assert!(validate_with_context(&ctx("mp4", 0), &[], Some(0.0), None).is_err());
     }
 }

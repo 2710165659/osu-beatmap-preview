@@ -106,8 +106,17 @@ pub(crate) fn render_taiko_gif(
     match options {
         GifRenderOptions::Segments {
             times_ms,
+            duration_seconds,
             time_axis,
-        } => render_taiko_segment_gif(beatmap, mods, times_ms, time_axis, output_path, deadline),
+        } => render_taiko_segment_gif(
+            beatmap,
+            mods,
+            times_ms,
+            duration_seconds,
+            time_axis,
+            output_path,
+            deadline,
+        ),
     }
 }
 
@@ -115,6 +124,7 @@ fn render_taiko_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
+    duration_seconds: Option<f64>,
     time_axis: crate::common::time_selection::TimeAxis,
     output_path: &Path,
     deadline: &RequestDeadline,
@@ -125,8 +135,10 @@ fn render_taiko_segment_gif(
     }
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let gameplay_segment_duration =
-        pyround(crate::config::current().layout.taiko.gif.DURATION_MS * speed_multiplier);
+    let segment_duration_ms = duration_seconds
+        .map(|seconds| seconds * 1000.0)
+        .unwrap_or(crate::config::current().layout.taiko.gif.DURATION_MS);
+    let gameplay_segment_duration = pyround(segment_duration_ms * speed_multiplier);
 
     let spans: Vec<(i64, i64)> = hit_objects
         .iter()
@@ -164,9 +176,7 @@ fn render_taiko_segment_gif(
 
     let layout = build_gif_layout(time_range);
     let frame_count = pyround(
-        crate::config::current().layout.taiko.gif.DURATION_MS
-            * crate::config::current().layout.taiko.gif.FPS
-            / 1000.0,
+        segment_duration_ms * crate::config::current().layout.taiko.gif.FPS / 1000.0,
     )
     .max(1) as usize;
     let frame_duration_ms =

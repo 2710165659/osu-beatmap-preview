@@ -76,8 +76,8 @@ osu-beatmap-preview --bid=738063 --mod=hd --mod=hr
 # 从谱面的 PreviewTime 开始输出 30 秒 MP4
 osu-beatmap-preview --bid=738063 --fmt=mp4 --time-points=preview --duration-time=30
 
-# 为 GIF 指定四个片段起点
-osu-beatmap-preview --bid=738063 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20
+# 为 GIF 指定四个片段起点，每个时间点渲染 6 秒
+osu-beatmap-preview --bid=738063 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20 --duration-time=6
 
 # 跳过下载缓存和输出缓存，同时关闭日志
 osu-beatmap-preview --bid=738063 --no-cache --no-log
@@ -98,7 +98,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--fmt` | 输出格式：`png`、`gif` 或 `mp4`。省略时，Standard 使用 GIF，其他模式使用 PNG。 |
 | `--mod` | 单个 Mod。组合时重复传入；参数不区分大小写。 |
 | `--time-points` | 游戏时间点，单位为秒，也可传 `preview`。GIF 和 Standard PNG 可重复传入，MP4 最多传入一次。 |
-| `--duration-time` | MP4 输出时长，单位为秒，必须为有限正数，默认 `600`。 |
+| `--duration-time` | GIF 每个时间点或 MP4 的输出时长，单位为秒，必须为有限正数。GIF 未指定时使用对应模式配置的片段时长；MP4 默认 `600`。 |
 | `--no-cache` | 跳过 `.osu`、OSZ 和输出文件缓存，强制重新下载和渲染。 |
 | `--no-log` | 关闭文件日志。 |
 | `--config` | 配置文件路径，或内联 JSON/YAML 对象。只能传入一次。 |
@@ -113,7 +113,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 - 时间点数量不能超过当前布局的分段容量。默认 GIF 容量为 4；Standard PNG 默认有 5 行，因此最多指定 5 个行起点。
 - MP4 默认从游戏时间 `0` 开始，请求 600 秒。谱面较短时输出完整可播放范围，不填充到 600 秒；请求区间超过谱面尾部时会整体前移以保留时长。
 - MP4 支持负数起点，早于音频起点的部分输出静音。`--time-points=preview` 使用 `.osu` 文件中的 `PreviewTime`；缺失或无效时回退到首个物件。
-- `--duration-time` 仅适用于 MP4；`--time-points` 仅适用于 GIF、Standard PNG 和 MP4。
+- `--duration-time` 适用于 GIF 和 MP4。GIF 会从每个 `--time-points` 时间点分别渲染指定时长；`--time-points` 仅适用于 GIF、Standard PNG 和 MP4。
 
 ## 输出格式
 

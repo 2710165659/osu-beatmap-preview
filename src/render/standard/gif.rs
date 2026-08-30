@@ -26,8 +26,17 @@ pub(crate) fn render_standard_gif(
     match options {
         GifRenderOptions::Segments {
             times_ms,
+            duration_seconds,
             time_axis,
-        } => render_standard_segment_gif(beatmap, mods, times_ms, time_axis, output_path, deadline),
+        } => render_standard_segment_gif(
+            beatmap,
+            mods,
+            times_ms,
+            duration_seconds,
+            time_axis,
+            output_path,
+            deadline,
+        ),
     }
 }
 
@@ -35,6 +44,7 @@ fn render_standard_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
+    duration_seconds: Option<f64>,
     time_axis: TimeAxis,
     output_path: &Path,
     deadline: &RequestDeadline,
@@ -43,9 +53,10 @@ fn render_standard_segment_gif(
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
     let context = build_render_context(beatmap, hit_objects, mods, time_axis);
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
-    let gameplay_segment_duration = py_round(
-        crate::config::current().layout.standard.gif.DURATION_MS as f64 * speed_multiplier,
-    );
+    let segment_duration_ms = duration_seconds
+        .map(|seconds| seconds * 1000.0)
+        .unwrap_or(crate::config::current().layout.standard.gif.DURATION_MS as f64);
+    let gameplay_segment_duration = py_round(segment_duration_ms * speed_multiplier);
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
@@ -57,11 +68,10 @@ fn render_standard_segment_gif(
     )?;
 
     let (canvas_w, canvas_h) = gif_canvas_size();
-    let frame_count = (((crate::config::current().layout.standard.gif.DURATION_MS
-        * crate::config::current().layout.standard.gif.FPS) as f64
-        / 1000.0)
-        .round() as usize)
-        .max(1);
+    let frame_count =
+        ((segment_duration_ms * crate::config::current().layout.standard.gif.FPS as f64 / 1000.0)
+            .round() as usize)
+            .max(1);
     let frame_duration_ms =
         ((1000.0 / crate::config::current().layout.standard.gif.FPS as f64).round() as u32).max(1);
 

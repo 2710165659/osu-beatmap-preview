@@ -98,6 +98,10 @@ pub fn format_time_points_suffix(points: &[TimePoint]) -> String {
     format!("time-points{}", values.join("-"))
 }
 
+pub fn format_duration_suffix(duration_time: f64) -> String {
+    format!("duration{}", sanitize_suffix(&duration_time.to_string()))
+}
+
 fn sanitize_suffix(value: &str) -> String {
     value
         .chars()

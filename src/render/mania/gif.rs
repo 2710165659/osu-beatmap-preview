@@ -74,17 +74,19 @@ pub(crate) fn render_mania_gif(
         return Err(PreviewError::render("mania beatmap has no hit objects"));
     }
 
-    // DT/HT 只改变谱面时间推进速度；GIF 每段仍播放 10 秒。
+    // DT/HT 只改变谱面时间推进速度；GIF 每段的播放时长由参数或配置决定。
     let speed_multiplier = mods.map_or(1.0, |m| m.speed_multiplier);
     let (segment_timings, segment_duration, frame_count, show_time_label, time_axis) = match options
     {
         GifRenderOptions::Segments {
             times_ms,
+            duration_seconds,
             time_axis,
         } => {
-            let gameplay_segment_duration = round_half_even(
-                crate::config::current().layout.mania.gif.DURATION_MS as f64 * speed_multiplier,
-            );
+            let segment_duration_ms = duration_seconds
+                .map(|seconds| seconds * 1000.0)
+                .unwrap_or(crate::config::current().layout.mania.gif.DURATION_MS as f64);
+            let gameplay_segment_duration = round_half_even(segment_duration_ms * speed_multiplier);
             let spans: Vec<(i64, i64)> = hit_objects
                 .iter()
                 .map(|ho| (ho.start_time, ho.end_time))
@@ -98,9 +100,7 @@ pub(crate) fn render_mania_gif(
             )?
             .choose()?;
             let frame_count = round_half_even(
-                (crate::config::current().layout.mania.gif.DURATION_MS
-                    * crate::config::current().layout.mania.gif.FPS) as f64
-                    / 1000.0,
+                segment_duration_ms * crate::config::current().layout.mania.gif.FPS as f64 / 1000.0,
             )
             .max(1);
             (
