@@ -80,25 +80,122 @@ fn load_layers(
     }
     validate_positive_timeouts(&merged)?;
     validate_video_background(&merged)?;
-    let runtime = serde_json::from_value(merged.clone())
+    validate_layout_scales(&merged)?;
+    let mut runtime_value = merged.clone();
+    apply_layout_scales(&mut runtime_value)?;
+    let runtime = serde_json::from_value(runtime_value)
         .map_err(|error| format!("invalid merged configuration: {error}"))?;
     let variant = config_variant(&defaults, &merged)?;
     Ok(ConfigSnapshot { runtime, variant })
 }
 
+fn validate_layout_scales(config: &Value) -> Result<(), String> {
+    for mode in ["standard", "taiko", "catch", "mania"] {
+        for format in ["png", "gif", "mp4"] {
+            let path = format!("layout.{mode}.{format}.SCALE");
+            let pointer = format!("/layout/{mode}/{format}/SCALE");
+            let scale = config.pointer(&pointer).and_then(Value::as_f64);
+            if scale.is_none_or(|scale| !scale.is_finite() || scale <= 0.0) {
+                return Err(format!(
+                    "configuration field '{path}' must be a positive finite number"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 将配置中的像素量预先换算成目标绘制尺寸，渲染器不会再对最终图像做整体缩放。
+fn apply_layout_scales(config: &mut Value) -> Result<(), String> {
+    for mode in ["standard", "taiko", "catch", "mania"] {
+        for format in ["png", "gif", "mp4"] {
+            let pointer = format!("/layout/{mode}/{format}");
+            let Some(section) = config.pointer_mut(&pointer).and_then(Value::as_object_mut) else {
+                return Err(format!(
+                    "configuration section 'layout.{mode}.{format}' is missing"
+                ));
+            };
+            let scale = section
+                .get("SCALE")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| {
+                    format!("configuration field 'layout.{mode}.{format}.SCALE' is invalid")
+                })?;
+            for (name, value) in section.iter_mut() {
+                if name == "SCALE" || !is_pixel_layout_field(name) {
+                    continue;
+                }
+                let Some(number) = value.as_f64() else {
+                    continue;
+                };
+                // 位图字体以 8px 字形为基础。先换算旧实现实际绘制的基础高度，
+                // 再应用输出倍率，既保持 1x 外观，又允许 0.5x、1.5x 等倍率精确缩放。
+                let scaled = if name.ends_with("FONT_SIZE") {
+                    let glyph_scale = (number.max(8.0) / 8.0).floor().max(1.0);
+                    (glyph_scale * 8.0 * scale).max(1.0)
+                } else {
+                    number * scale
+                };
+                if value.as_i64().is_some() || value.as_u64().is_some() {
+                    let rounded = crate::parser::round_half_even(scaled);
+                    *value = Value::Number(rounded.into());
+                } else {
+                    *value = Value::Number(
+                        serde_json::Number::from_f64(scaled).ok_or_else(|| {
+                            format!("scaled configuration field 'layout.{mode}.{format}.{name}' is not finite")
+                        })?,
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_pixel_layout_field(name: &str) -> bool {
+    // 仅换算实际绘制长度。MAX_* 是内存/时长保护阈值，*_MS、FPS 和计数项
+    // 是时间或数量语义，不能因为输出像素倍率而改变。
+    if name.starts_with("MAX_")
+        || (name.ends_with("_MS") && name != "PIXELS_PER_MS")
+        || name == "FPS"
+        || name.ends_with("_COUNT")
+        || name.starts_with("IMAGES_PER_ROW")
+        || name.starts_with("ROW_COUNT")
+        || name == "DURATION_MS"
+        || name == "SCROLL_SPEED"
+        || name == "SLIDER_BODY_SUPERSAMPLE"
+    {
+        return false;
+    }
+    name.contains("WIDTH")
+        || name.contains("HEIGHT")
+        || name.contains("MARGIN")
+        || name.contains("GAP")
+        || name.contains("PADDING")
+        || name.ends_with("_PAD")
+        || name.ends_with("FONT_SIZE")
+        || name == "PIXELS_PER_MS"
+        || name == "SPACING_PER_BPM"
+        || name.ends_with("FROM_BOTTOM")
+        || name == "ROW_HEIGHT"
+        || name == "ROW_INNER_PADDING_X"
+        || name == "LEFT_PANEL_WIDTH"
+        || name == "LANE_WIDTH"
+        || name == "NOTE_HEAD_HEIGHT"
+        || name == "NOTE_SIDE_PADDING"
+        || name == "SEPARATOR_WIDTH"
+}
+
 fn validate_video_background(config: &Value) -> Result<(), String> {
-    let value = config
-        .pointer("/video/video/BACKGROUND_DIM")
-        .and_then(Value::as_f64)
-        .ok_or_else(|| {
-            "configuration field 'video.video.BACKGROUND_DIM' must be a number from 0 to 1"
-                .to_string()
-        })?;
-    if !(0.0..=1.0).contains(&value) {
-        return Err(
-            "configuration field 'video.video.BACKGROUND_DIM' must be a number from 0 to 1"
-                .to_string(),
-        );
+    for mode in ["standard", "taiko", "catch", "mania"] {
+        let path = format!("layout.{mode}.mp4.BACKGROUND_DIM");
+        let pointer = format!("/layout/{mode}/mp4/BACKGROUND_DIM");
+        let value = config.pointer(&pointer).and_then(Value::as_f64);
+        if value.is_none_or(|value| !(0.0..=1.0).contains(&value)) {
+            return Err(format!(
+                "configuration field '{path}' must be a number from 0 to 1"
+            ));
+        }
     }
     Ok(())
 }
@@ -743,23 +840,112 @@ layout:
     #[test]
     fn video_background_defaults_and_overlays_are_typed() {
         let defaults = load_snapshot(None).unwrap();
-        assert!(defaults.video.video.ENABLE_BACKGROUND_IMAGE);
-        assert_eq!(defaults.video.video.BACKGROUND_DIM, 0.7);
+        assert!(defaults.layout.standard.mp4.ENABLE_BACKGROUND_IMAGE);
+        assert_eq!(defaults.layout.standard.mp4.BACKGROUND_DIM, 0.7);
 
         let configured = load_snapshot(Some(
-            r#"{"video":{"video":{"ENABLE_BACKGROUND_IMAGE":false,"BACKGROUND_DIM":0.25}}}"#,
+            r#"{"layout":{"standard":{"mp4":{"ENABLE_BACKGROUND_IMAGE":false,"BACKGROUND_DIM":0.25}}}}"#,
         ))
         .unwrap();
-        assert!(!configured.video.video.ENABLE_BACKGROUND_IMAGE);
-        assert_eq!(configured.video.video.BACKGROUND_DIM, 0.25);
+        assert!(!configured.layout.standard.mp4.ENABLE_BACKGROUND_IMAGE);
+        assert_eq!(configured.layout.standard.mp4.BACKGROUND_DIM, 0.25);
     }
 
     #[test]
     fn video_background_dim_rejects_values_outside_unit_interval() {
         for value in [-0.1, 1.1] {
-            let source = format!(r#"{{"video":{{"video":{{"BACKGROUND_DIM":{value}}}}}}}"#);
+            let source =
+                format!(r#"{{"layout":{{"standard":{{"mp4":{{"BACKGROUND_DIM":{value}}}}}}}}}"#);
             let error = load_snapshot(Some(&source)).expect_err("暗化程度超出范围时必须报错");
-            assert!(error.contains("video.video.BACKGROUND_DIM"), "{error}");
+            assert!(
+                error.contains("layout.standard.mp4.BACKGROUND_DIM"),
+                "{error}"
+            );
         }
+    }
+
+    #[test]
+    fn every_mode_format_has_scale_and_pixel_scaling_is_precomputed() {
+        let configured = load_snapshot(Some(
+            r#"{
+                "layout": {
+                    "standard": {"png": {"SCALE": 2.0}},
+                    "taiko": {"gif": {"SCALE": 2.0}},
+                    "catch": {"mp4": {"SCALE": 2.0}},
+                    "mania": {"png": {"SCALE": 2.0}}
+                }
+            }"#,
+        ))
+        .unwrap();
+        assert_eq!(configured.layout.standard.png.PAGE_MARGIN_TOP, 40);
+        assert_eq!(configured.layout.taiko.gif.ROW_GAP, 14);
+        assert_eq!(configured.layout.catch.mp4.LABEL_PAD, 24);
+        assert_eq!(configured.layout.mania.png.PIXELS_PER_MS, 0.8);
+        assert_eq!(configured.layout.mania.png.SV_TEXT_FONT_SIZE, 16);
+        // 时长、帧率和内存保护阈值不是像素量，不随 SCALE 改变。
+        assert_eq!(configured.layout.standard.png.MS_PER_IMAGE, 400);
+        assert_eq!(configured.layout.taiko.gif.FPS, 15.0);
+        assert_eq!(configured.layout.catch.png.MAX_TOTAL_CHART_HEIGHT, 180000);
+    }
+
+    #[test]
+    fn mp4_visual_options_are_independent_per_mode() {
+        let configured = load_snapshot(Some(
+            r#"{
+                "layout": {
+                    "standard": {"mp4": {"ENABLE_BACKGROUND_IMAGE": false}},
+                    "taiko": {"mp4": {"BACKGROUND_DIM": 0.2}},
+                    "catch": {"mp4": {"LABEL_PAD": 3}},
+                    "mania": {"mp4": {"LABEL_FONT_SIZE": 18}}
+                }
+            }"#,
+        ))
+        .unwrap();
+        assert!(!configured.layout.standard.mp4.ENABLE_BACKGROUND_IMAGE);
+        assert_eq!(configured.layout.taiko.mp4.BACKGROUND_DIM, 0.2);
+        assert_eq!(configured.layout.catch.mp4.LABEL_PAD, 3);
+        // 18px 配置在旧 8x8 位图字体中实际为 16px；运行时保存实际绘制高度。
+        assert_eq!(configured.layout.mania.mp4.LABEL_FONT_SIZE, 16);
+        assert_eq!(configured.layout.standard.mp4.BACKGROUND_DIM, 0.7);
+        assert_eq!(configured.layout.catch.mp4.BACKGROUND_DIM, 0.7);
+    }
+
+    #[test]
+    fn mania_sv_label_switches_are_typed_and_independent() {
+        let configured = load_snapshot(Some(
+            r#"{
+                "layout": {
+                    "mania": {
+                        "png": {"SHOW_SV_LABEL": false},
+                        "gif": {"SHOW_SV_LABEL": false},
+                        "mp4": {"SHOW_SV_LABEL": false}
+                    }
+                }
+            }"#,
+        ))
+        .unwrap();
+        assert!(!configured.layout.mania.png.SHOW_SV_LABEL);
+        assert!(!configured.layout.mania.gif.SHOW_SV_LABEL);
+        assert!(!configured.layout.mania.mp4.SHOW_SV_LABEL);
+    }
+
+    #[test]
+    fn bitmap_font_sizes_follow_fractional_output_scales() {
+        let half = load_snapshot(Some(
+            r#"{
+                "layout": {
+                    "standard": {"png": {"SCALE": 0.5}},
+                    "mania": {"gif": {"SCALE": 0.5}, "mp4": {"SCALE": 0.5}}
+                }
+            }"#,
+        ))
+        .unwrap();
+        assert_eq!(half.layout.standard.png.TIME_LABEL_FONT_SIZE, 12);
+        assert_eq!(half.layout.mania.gif.SV_TEXT_FONT_SIZE, 4);
+        assert_eq!(half.layout.mania.mp4.SV_TEXT_FONT_SIZE, 4);
+
+        let one_and_half =
+            load_snapshot(Some(r#"{"layout":{"mania":{"gif":{"SCALE":1.5}}}}"#)).unwrap();
+        assert_eq!(one_and_half.layout.mania.gif.SV_TEXT_FONT_SIZE, 12);
     }
 }

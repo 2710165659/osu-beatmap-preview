@@ -33,6 +33,7 @@ impl AudioSourceJob {
         cache_dir: PathBuf,
         no_cache: bool,
         deadline: RequestDeadline,
+        mode: crate::render::geometry::GameMode,
     ) -> Result<Self> {
         let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
             PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
@@ -55,7 +56,7 @@ impl AudioSourceJob {
             no_cache,
             &deadline,
         )?;
-        let background = if crate::config::current().video.video.ENABLE_BACKGROUND_IMAGE {
+        let background = if super::video_style(mode).enable_background_image {
             load_background_image(beatmap.background_filename.as_deref(), &osz_path, &deadline)?
         } else {
             None

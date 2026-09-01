@@ -47,12 +47,16 @@ pub(crate) fn render_catch_video(
     let fps = crate::config::current().layout.catch.mp4.FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
-    let layout = build_gif_layout(difficulty.cs, difficulty.ar);
+    let layout = build_gif_layout(
+        difficulty.cs,
+        difficulty.ar,
+        crate::render::geometry::OutputFormat::Mp4,
+    );
     // 视频背景在最终 16:9 画布上统一处理，playfield 只提供透明对象层。
     let frame_background = background.as_ref().map(|_| {
         Img::new(
-            crate::render::catch::constants::IMAGE_WIDTH as u32,
-            crate::render::catch::constants::IMAGE_HEIGHT as u32,
+            layout.frame_width as u32,
+            layout.frame_height as u32,
             [0, 0, 0, 0],
         )
     });
@@ -83,5 +87,6 @@ pub(crate) fn render_catch_video(
         background,
         time_axis,
         deadline,
+        crate::render::geometry::GameMode::Catch,
     )
 }

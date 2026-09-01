@@ -32,6 +32,15 @@ pub(crate) struct GifLayout {
     pub(crate) column_left_offsets: Vec<i64>,
     pub(crate) column_widths: Vec<i64>,
     pub(crate) column_colours: Vec<Rgba>,
+    pub(crate) playfield_left: i64,
+    pub(crate) playfield_top: i64,
+    pub(crate) segment_stride: i64,
+    pub(crate) left_panel_width: i64,
+    pub(crate) note_side_padding: i64,
+    pub(crate) sv_info_margin_left: i64,
+    pub(crate) sv_label_inset: i64,
+    pub(crate) sv_font_size: u32,
+    pub(crate) sv_text_color: Rgba,
 }
 
 /// 将谱面时间映射为连续滚动距离，同时处理 BPM 和 SV 变化。
@@ -114,7 +123,12 @@ pub(crate) fn render_mania_gif(
     };
 
     let skin_config = load_mania_skin_config(key_count);
-    let layout = build_gif_layout(&skin_config, segment_timings.len() as i64, show_time_label);
+    let layout = build_layout(
+        &skin_config,
+        segment_timings.len() as i64,
+        show_time_label,
+        crate::render::geometry::OutputFormat::Gif,
+    );
     let native_mania = is_native_mania(beatmap);
     // CS 是恒定滚动：保留 33 速时间窗口，但跳过 SV 倍率。
     let scroll_map = build_scroll_map(beatmap, &original_objects, cs_mode, native_mania);
@@ -128,14 +142,15 @@ pub(crate) fn render_mania_gif(
         .map(|t| t.start_time + segment_duration)
         .max()
         .unwrap_or(0);
-    let sv_changes = if cs_mode || !native_mania {
-        Vec::new()
-    } else {
-        build_sv_changes(
-            &beatmap.timing_points,
-            max_segment_end + round_half_even(time_range),
-        )
-    };
+    let sv_changes =
+        if cs_mode || !native_mania || !crate::config::current().layout.mania.gif.SHOW_SV_LABEL {
+            Vec::new()
+        } else {
+            build_sv_changes(
+                &beatmap.timing_points,
+                max_segment_end + round_half_even(time_range),
+            )
+        };
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -195,7 +210,7 @@ pub(crate) fn render_mania_gif(
     // 每段的时间标签（及 "Preview Time" 提示）只预渲染一次为精灵图。
     // 段内文字恒定，可避免每段 150 次 format!、text_size、draw_text 调用；
     // 每帧只需合成预构建精灵图。
-    let label_y = crate::render::mania::constants::PAGE_MARGIN_Y
+    let label_y = layout.playfield_top
         + layout.playfield_height
         + crate::config::current().layout.mania.gif.TIME_LABEL_TOP_GAP;
     let pre_labels: Vec<PreLabel> = if show_time_label {
@@ -220,8 +235,8 @@ pub(crate) fn render_mania_gif(
                 scroll_map.position_at(time as f64),
                 render_text_sprite(
                     &format_sv_label(sv),
-                    crate::config::current().layout.mania.gif.SV_TEXT_FONT_SIZE,
-                    crate::config::current().layout.mania.gif.SV_TEXT_COLOR,
+                    layout.sv_font_size,
+                    layout.sv_text_color,
                 ),
             )
         })
@@ -290,22 +305,56 @@ pub(crate) fn render_mania_gif(
     )
 }
 
-fn build_gif_layout(
+pub(crate) fn build_layout(
     skin_config: &super::skin::ManiaSkinConfig,
     segment_count: i64,
     show_time_label: bool,
+    output_format: crate::render::geometry::OutputFormat,
 ) -> GifLayout {
-    let column_left_offsets =
-        build_column_left_offsets(&skin_config.column_widths, &skin_config.column_line_widths);
-    let lane_area_width: i64 = skin_config.column_widths.iter().sum::<i64>()
-        + skin_config.column_line_widths.iter().sum::<i64>();
-    let segment_width = crate::render::mania::constants::LEFT_PANEL_WIDTH * 2 + lane_area_width;
-    let playfield_height = crate::render::mania::constants::FRAME_HEIGHT;
-    let hit_position_y = round_half_even(playfield_height as f64 - skin_config.hit_position);
-    let scroll_length =
-        (hit_position_y - crate::render::mania::constants::STAGE_TOP_PADDING).max(1);
-    let average_column_width = skin_config.column_widths.iter().sum::<i64>() as f64
-        / skin_config.column_widths.len() as f64;
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Mania,
+        output_format,
+    );
+    let scale = 0.5 * render_scale;
+    let column_widths: Vec<i64> = skin_config
+        .column_widths
+        .iter()
+        .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(1))
+        .collect();
+    let column_line_widths: Vec<i64> = skin_config
+        .column_line_widths
+        .iter()
+        .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(0))
+        .collect();
+    let column_left_offsets = build_column_left_offsets(&column_widths, &column_line_widths);
+    let lane_area_width: i64 =
+        column_widths.iter().sum::<i64>() + column_line_widths.iter().sum::<i64>();
+    let left_panel_width = crate::render::geometry::scale_px(
+        crate::render::mania::constants::LEFT_PANEL_WIDTH as f64,
+        scale,
+    );
+    let note_side_padding = crate::render::geometry::scale_px(
+        crate::render::mania::constants::NOTE_SIDE_PADDING as f64,
+        scale,
+    );
+    let segment_width = left_panel_width * 2 + lane_area_width;
+    let playfield_height = crate::render::geometry::scale_px(
+        crate::render::geometry::MANIA_PLAYFIELD_HEIGHT,
+        crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Mania,
+            output_format,
+        ),
+    );
+    let hit_position_y =
+        round_half_even(playfield_height as f64 - skin_config.hit_position * scale);
+    let scroll_length = (hit_position_y
+        - crate::render::geometry::scale_px(
+            crate::render::mania::constants::STAGE_TOP_PADDING as f64,
+            scale,
+        ))
+    .max(1);
+    let average_column_width =
+        column_widths.iter().sum::<i64>() as f64 / column_widths.len() as f64;
     // PNG 使用 38px 轨道和 15px 音符；GIF 音符高度随皮肤缩放。
     // 随列宽缩放，避免宽列中的音符显得被压扁。
     let note_head_height = round_half_even(
@@ -313,17 +362,62 @@ fn build_gif_layout(
             / crate::render::mania::constants::LANE_WIDTH as f64,
     )
     .max(1);
-    let image_width = crate::render::mania::constants::PAGE_MARGIN_X * 2
-        + segment_count * segment_width
-        + (segment_count - 1) * crate::config::current().layout.mania.gif.GRID_GAP;
-    let label_height = if show_time_label {
-        crate::config::current().layout.mania.gif.TIME_LABEL_TOP_GAP
-            + crate::config::current().layout.mania.gif.TIME_LABEL_HEIGHT
+    let (
+        image_width,
+        image_height,
+        playfield_left,
+        playfield_top,
+        segment_stride,
+        sv_info_margin_left,
+        sv_font_size,
+        sv_text_color,
+    ) = if output_format == crate::render::geometry::OutputFormat::Gif {
+        let config = &crate::config::current().layout.mania.gif;
+        let unit_width = config.INFO_MARGIN_LEFT + segment_width + config.INFO_MARGIN_RIGHT;
+        // 底部信息区只属于时间标签；关闭标签时不能留下空白。
+        let info_bottom = if show_time_label {
+            config.INFO_MARGIN_BOTTOM
+        } else {
+            0
+        };
+        let label_height = if show_time_label {
+            config.TIME_LABEL_TOP_GAP + info_bottom
+        } else {
+            0
+        };
+        (
+            config.PAGE_MARGIN_LEFT
+                + config.PAGE_MARGIN_RIGHT
+                + segment_count * unit_width
+                + (segment_count - 1) * config.GRID_GAP,
+            config.PAGE_MARGIN_TOP
+                + config.PAGE_MARGIN_BOTTOM
+                + config.INFO_MARGIN_TOP
+                + playfield_height
+                + label_height,
+            config.PAGE_MARGIN_LEFT + config.INFO_MARGIN_LEFT,
+            config.PAGE_MARGIN_TOP + config.INFO_MARGIN_TOP,
+            unit_width + config.GRID_GAP,
+            config.INFO_MARGIN_LEFT,
+            config.SV_TEXT_FONT_SIZE,
+            config.SV_TEXT_COLOR,
+        )
     } else {
-        0
+        // MP4 也保留与 GIF 相同的左右信息区，SV 标签才能位于轨道左侧，
+        // 且最右侧轨道不会覆盖右侧灰色边界。最终画布再由视频编码器补齐到 16:9。
+        let config = &crate::config::current().layout.mania.mp4;
+        let unit_width = config.INFO_MARGIN_LEFT + segment_width + config.INFO_MARGIN_RIGHT;
+        (
+            unit_width,
+            playfield_height,
+            config.INFO_MARGIN_LEFT,
+            0,
+            unit_width,
+            config.INFO_MARGIN_LEFT,
+            config.SV_TEXT_FONT_SIZE,
+            config.SV_TEXT_COLOR,
+        )
     };
-    let image_height =
-        crate::render::mania::constants::PAGE_MARGIN_Y * 2 + playfield_height + label_height;
     GifLayout {
         segment_count,
         segment_width,
@@ -335,8 +429,17 @@ fn build_gif_layout(
         scroll_length,
         note_head_height,
         column_left_offsets,
-        column_widths: skin_config.column_widths.clone(),
+        column_widths,
         column_colours: skin_config.column_colours.clone(),
+        playfield_left,
+        playfield_top,
+        segment_stride,
+        left_panel_width,
+        note_side_padding,
+        sv_info_margin_left,
+        sv_label_inset: crate::render::geometry::scale_px(3.0, render_scale),
+        sv_font_size,
+        sv_text_color,
     }
 }
 
@@ -480,13 +583,11 @@ fn most_common_beat_length(timing_points: &[TimingPoint], hit_objects: &[ManiaHi
 }
 
 pub(crate) fn segment_left(segment_index: i64, layout: &GifLayout) -> i64 {
-    crate::render::mania::constants::PAGE_MARGIN_X
-        + segment_index
-            * (layout.segment_width + crate::config::current().layout.mania.gif.GRID_GAP)
+    layout.playfield_left + segment_index * layout.segment_stride
 }
 
 fn draw_segment_separators(canvas: &mut Img, layout: &GifLayout) {
-    let playfield_top = crate::render::mania::constants::PAGE_MARGIN_Y;
+    let playfield_top = layout.playfield_top;
     let playfield_bottom = playfield_top + layout.playfield_height;
     for segment_index in 0..layout.segment_count - 1 {
         let left_segment_right = segment_left(segment_index, layout) + layout.segment_width;
@@ -510,9 +611,9 @@ fn draw_segment_separators(canvas: &mut Img, layout: &GifLayout) {
 
 pub(crate) fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &GifLayout) {
     // GIF 不绘制小节线、节拍线和轨道分隔线，只保留灰色侧板与判定线。
-    let playfield_top = crate::render::mania::constants::PAGE_MARGIN_Y;
+    let playfield_top = layout.playfield_top;
     let playfield_bottom = playfield_top + layout.playfield_height;
-    let lane_area_left = seg_left + crate::render::mania::constants::LEFT_PANEL_WIDTH;
+    let lane_area_left = seg_left + layout.left_panel_width;
     let lane_area_right = lane_area_left + layout.lane_area_width;
 
     canvas.set_rect(
@@ -591,26 +692,20 @@ pub(crate) fn draw_gif_sv_indicators(
         }
         let (_, sv) = sv_changes[index];
         let y = y_at_position(position, snapshot_pos, layout, pixels_per_scroll_unit);
-        if y < crate::render::mania::constants::PAGE_MARGIN_Y
-            || y > crate::render::mania::constants::PAGE_MARGIN_Y + layout.playfield_height
-        {
+        if y < layout.playfield_top || y > layout.playfield_top + layout.playfield_height {
             continue;
         }
         let label = format_sv_label(sv);
-        let (label_w, label_h) = text_size(
-            &label,
-            crate::config::current().layout.mania.gif.SV_TEXT_FONT_SIZE,
-        );
-        let x = (seg_left + crate::render::mania::constants::LEFT_PANEL_WIDTH - label_w as i64 - 3)
-            .max(0);
+        let (_, label_h) = text_size(&label, layout.sv_font_size);
+        let x = (seg_left - layout.sv_info_margin_left + layout.sv_label_inset).max(0);
         let label_y = (y as f64 - label_h as f64 / 2.0).floor() as i64;
         draw_text(
             canvas,
             x,
             label_y,
             &label,
-            crate::config::current().layout.mania.gif.SV_TEXT_FONT_SIZE,
-            crate::config::current().layout.mania.gif.SV_TEXT_COLOR,
+            layout.sv_font_size,
+            layout.sv_text_color,
         );
     }
 }
@@ -630,7 +725,7 @@ pub(crate) fn draw_gif_hit_object(
 ) {
     let y_start = y_at_position(start_pos, snapshot_pos, layout, pixels_per_scroll_unit);
     let y_end = y_at_position(end_pos, snapshot_pos, layout, pixels_per_scroll_unit);
-    let playfield_top = crate::render::mania::constants::PAGE_MARGIN_Y;
+    let playfield_top = layout.playfield_top;
     let playfield_bottom = playfield_top + layout.playfield_height;
     if y_start.max(y_end) < playfield_top - layout.note_head_height
         || y_start.min(y_end) > playfield_bottom + layout.note_head_height
@@ -643,11 +738,10 @@ pub(crate) fn draw_gif_hit_object(
     // 长按主体保持 PNG 外观（变暗的轨道颜色），不受轨道配置影响。
     let hold_color = hold_colors[lane.min(hold_colors.len() - 1)];
     let lane_left = seg_left
-        + crate::render::mania::constants::LEFT_PANEL_WIDTH
+        + layout.left_panel_width
         + layout.column_left_offsets[lane]
-        + crate::render::mania::constants::NOTE_SIDE_PADDING;
-    let lane_right = lane_left + layout.column_widths[lane]
-        - crate::render::mania::constants::NOTE_SIDE_PADDING * 2;
+        + layout.note_side_padding;
+    let lane_right = lane_left + layout.column_widths[lane] - layout.note_side_padding * 2;
 
     if hit_object.is_long_note {
         let body_top = playfield_top.max(y_end.min(y_start - layout.note_head_height));
@@ -674,7 +768,7 @@ fn y_at_position(
     pixels_per_scroll_unit: f64,
 ) -> i64 {
     let distance = object_pos - snapshot_pos;
-    crate::render::mania::constants::PAGE_MARGIN_Y + layout.hit_position_y
+    layout.playfield_top + layout.hit_position_y
         - round_half_even(distance * pixels_per_scroll_unit)
 }
 
@@ -800,7 +894,14 @@ fn build_pre_label(
         Some(Box::new(PreLabel {
             sprite: note_sprite,
             x: note_x,
-            y: y + label_h as i64 + 4,
+            y: y + label_h as i64
+                + crate::render::geometry::scale_px(
+                    4.0,
+                    crate::render::geometry::output_scale(
+                        crate::render::geometry::GameMode::Mania,
+                        crate::render::geometry::OutputFormat::Gif,
+                    ),
+                ),
             note: None,
         }))
     } else {
@@ -829,15 +930,11 @@ fn draw_gif_sv_indicators_fast(
             break;
         }
         let y = y_at_position(position, snapshot_pos, layout, pixels_per_scroll_unit);
-        if y < crate::render::mania::constants::PAGE_MARGIN_Y
-            || y > crate::render::mania::constants::PAGE_MARGIN_Y + layout.playfield_height
-        {
+        if y < layout.playfield_top || y > layout.playfield_top + layout.playfield_height {
             continue;
         }
         let label_h = sprite.h as i64;
-        let x =
-            (seg_left + crate::render::mania::constants::LEFT_PANEL_WIDTH - sprite.w as i64 - 3)
-                .max(0);
+        let x = (seg_left - layout.sv_info_margin_left + layout.sv_label_inset).max(0);
         let label_y = (y as f64 - label_h as f64 / 2.0).floor() as i64;
         canvas.alpha_composite(sprite, x, label_y);
     }
@@ -856,7 +953,7 @@ mod tests {
         pixels_per_scroll_unit: f64,
     ) -> i64 {
         let distance = scroll_map.position_at(time) - scroll_map.position_at(snapshot_time as f64);
-        crate::render::mania::constants::PAGE_MARGIN_Y + layout.hit_position_y
+        layout.playfield_top + layout.hit_position_y
             - round_half_even(distance * pixels_per_scroll_unit)
     }
 
@@ -874,6 +971,15 @@ mod tests {
             column_left_offsets: vec![0],
             column_widths: vec![80],
             column_colours: vec![[0, 0, 0, 255]],
+            playfield_left: 0,
+            playfield_top: 20,
+            segment_stride: 100,
+            left_panel_width: 12,
+            note_side_padding: 2,
+            sv_info_margin_left: 40,
+            sv_label_inset: 3,
+            sv_font_size: 8,
+            sv_text_color: [95, 221, 108, 255],
         }
     }
 
@@ -936,9 +1042,8 @@ mod tests {
                         &scroll_map,
                         pixels_per_scroll_unit,
                     );
-                    (y >= crate::render::mania::constants::PAGE_MARGIN_Y
-                        && y <= crate::render::mania::constants::PAGE_MARGIN_Y
-                            + layout.playfield_height)
+                    (y >= layout.playfield_top
+                        && y <= layout.playfield_top + layout.playfield_height)
                         .then_some(index)
                 })
                 .collect();
@@ -955,9 +1060,7 @@ mod tests {
                         &layout,
                         pixels_per_scroll_unit,
                     );
-                    y >= crate::render::mania::constants::PAGE_MARGIN_Y
-                        && y <= crate::render::mania::constants::PAGE_MARGIN_Y
-                            + layout.playfield_height
+                    y >= layout.playfield_top && y <= layout.playfield_top + layout.playfield_height
                 })
                 .collect();
 

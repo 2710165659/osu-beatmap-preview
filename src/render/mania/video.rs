@@ -17,7 +17,7 @@ use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::path::Path;
 
 use super::gif::{
-    build_column_left_offsets, build_scroll_map, compute_time_range, draw_gif_hit_object,
+    build_layout, build_scroll_map, compute_time_range, draw_gif_hit_object,
     draw_gif_sv_indicators, draw_segment_background, segment_left, visible_pos_window, GifLayout,
 };
 use super::skin::load_mania_skin_config;
@@ -76,11 +76,12 @@ pub(crate) fn render_mania_video(
     let scroll_map = build_scroll_map(beatmap, &original_objects, cs_mode, native_mania);
     let time_range = compute_time_range(speed, skin_config.hit_position);
     let pixels_per_scroll_unit = layout.scroll_length as f64 / time_range;
-    let sv_changes = if cs_mode || !native_mania {
-        Vec::new()
-    } else {
-        build_sv_changes(&beatmap.timing_points, end + round_half_even(time_range))
-    };
+    let sv_changes =
+        if cs_mode || !native_mania || !crate::config::current().layout.mania.mp4.SHOW_SV_LABEL {
+            Vec::new()
+        } else {
+            build_sv_changes(&beatmap.timing_points, end + round_half_even(time_range))
+        };
     let sv_positions: Vec<f64> = sv_changes
         .iter()
         .map(|&(time, _)| scroll_map.position_at(time as f64))
@@ -176,41 +177,16 @@ pub(crate) fn render_mania_video(
         background,
         time_axis,
         deadline,
+        crate::render::geometry::GameMode::Mania,
     )
 }
 
 /// MP4 的单段布局：单列宽度、无段间间隔、无底部标签区域（全局右上角标签由编码器绘制）。
 fn build_video_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
-    let column_left_offsets =
-        build_column_left_offsets(&skin_config.column_widths, &skin_config.column_line_widths);
-    let lane_area_width: i64 = skin_config.column_widths.iter().sum::<i64>()
-        + skin_config.column_line_widths.iter().sum::<i64>();
-    let segment_width = crate::render::mania::constants::LEFT_PANEL_WIDTH * 2 + lane_area_width;
-    let playfield_height = crate::render::mania::constants::FRAME_HEIGHT;
-    let hit_position_y = round_half_even(playfield_height as f64 - skin_config.hit_position);
-    let scroll_length =
-        (hit_position_y - crate::render::mania::constants::STAGE_TOP_PADDING).max(1);
-    let average_column_width = skin_config.column_widths.iter().sum::<i64>() as f64
-        / skin_config.column_widths.len() as f64;
-    let note_head_height = round_half_even(
-        crate::render::mania::constants::NOTE_HEAD_HEIGHT as f64 * average_column_width
-            / crate::render::mania::constants::LANE_WIDTH as f64,
+    build_layout(
+        skin_config,
+        1,
+        false,
+        crate::render::geometry::OutputFormat::Mp4,
     )
-    .max(1);
-    let image_width = crate::render::mania::constants::PAGE_MARGIN_X * 2 + segment_width;
-    let image_height = crate::render::mania::constants::PAGE_MARGIN_Y * 2 + playfield_height;
-    GifLayout {
-        segment_count: 1,
-        segment_width,
-        playfield_height,
-        lane_area_width,
-        image_width,
-        image_height,
-        hit_position_y,
-        scroll_length,
-        note_head_height,
-        column_left_offsets,
-        column_widths: skin_config.column_widths.clone(),
-        column_colours: skin_config.column_colours.clone(),
-    }
 }

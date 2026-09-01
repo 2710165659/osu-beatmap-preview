@@ -36,6 +36,39 @@ use std::time::Instant;
 
 pub(crate) mod audio;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct VideoStyle {
+    pub(crate) enable_background_image: bool,
+    pub(crate) background_dim: f64,
+    pub(crate) label_color: [u8; 4],
+    pub(crate) label_font_size: u32,
+    pub(crate) label_pad: i64,
+    pub(crate) black_opaque: [u8; 4],
+}
+
+pub(crate) fn video_style(mode: crate::render::geometry::GameMode) -> VideoStyle {
+    let layout = &crate::config::current().layout;
+    macro_rules! make {
+        ($section:expr) => {{
+            let section = $section;
+            VideoStyle {
+                enable_background_image: section.ENABLE_BACKGROUND_IMAGE,
+                background_dim: section.BACKGROUND_DIM,
+                label_color: section.LABEL_COLOR,
+                label_font_size: section.LABEL_FONT_SIZE,
+                label_pad: section.LABEL_PAD,
+                black_opaque: section.BLACK_OPAQUE,
+            }
+        }};
+    }
+    match mode {
+        crate::render::geometry::GameMode::Standard => make!(&layout.standard.mp4),
+        crate::render::geometry::GameMode::Taiko => make!(&layout.taiko.mp4),
+        crate::render::geometry::GameMode::Catch => make!(&layout.catch.mp4),
+        crate::render::geometry::GameMode::Mania => make!(&layout.mania.mp4),
+    }
+}
+
 #[allow(non_camel_case_types, dead_code)]
 mod amf;
 mod cpu;
@@ -191,6 +224,7 @@ pub(crate) fn save_mp4_streamed(
     background: Option<Img>,
     time_axis: TimeAxis,
     deadline: &RequestDeadline,
+    mode: crate::render::geometry::GameMode,
 ) -> Result<()> {
     deadline.check()?;
     if frame_count == 0 {
@@ -244,10 +278,11 @@ pub(crate) fn save_mp4_streamed(
     let (first_frame, first_time) = render(0);
     deadline.check()?;
     let (pf_w, pf_h) = (first_frame.w, first_frame.h);
-    let (out_w, out_h) = letterbox_dims(pf_w, pf_h);
+    let (out_w, out_h) = crate::render::geometry::video_canvas_16_9(pf_w, pf_h);
+    let style = video_style(mode);
     let background = background
         .as_ref()
-        .map(|image| prepare_video_background(image, out_w, out_h));
+        .map(|image| prepare_video_background(image, out_w, out_h, style));
 
     // ── 选择最佳可用编码后端 ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
@@ -281,6 +316,7 @@ pub(crate) fn save_mp4_streamed(
         out_w,
         out_h,
         background.as_ref(),
+        style,
     );
     let first_encoded = encoder.encode(&first_comp)?;
     deadline.check()?;
@@ -374,19 +410,26 @@ pub(crate) fn save_mp4_streamed(
             let t0 = Instant::now();
             let frames: Vec<Img> = (chunk_start..chunk_end)
                 .into_par_iter()
-                .map(|fi| {
+                .map(|fi| -> Result<Img> {
                     let (pf, time) = render(fi);
+                    if pf.w != pf_w || pf.h != pf_h {
+                        return Err(PreviewError::render(format!(
+                            "video frame {fi} has size {}x{}, expected {}x{}",
+                            pf.w, pf.h, pf_w, pf_h
+                        )));
+                    }
                     // 在此并行合成，避免串行瓶颈。
-                    compose_frame(
+                    Ok(compose_frame(
                         pf,
                         time_axis.to_display(time),
                         gameplay_total,
                         out_w,
                         out_h,
                         background.as_ref(),
-                    )
+                        style,
+                    ))
                 })
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
             deadline.check()?;
             t_render += t0.elapsed();
 
@@ -578,28 +621,16 @@ fn create_encoder(w: u32, h: u32, fps: u32) -> Result<Box<dyn FrameEncoder>> {
     Ok(Box::new(cpu::CpuEncoder::new(w, h, fps)?))
 }
 
-/// 计算游戏区域帧的 16:9 信箱画布尺寸，并取整到偶数
-///（YUV420 要求宽高都是 2 的倍数）。
-fn letterbox_dims(pf_w: u32, pf_h: u32) -> (u32, u32) {
-    let (w, h) = if pf_w as f64 * 9.0 > pf_h as f64 * 16.0 {
-        // 游戏区域宽于 16:9：上下补边。
-        (pf_w, (pf_w as f64 * 9.0 / 16.0).round() as u32)
-    } else {
-        // 游戏区域窄于 16:9：左右补边。
-        ((pf_h as f64 * 16.0 / 9.0).round() as u32, pf_h)
-    };
-    (w.max(2) & !1, h.max(2) & !1)
-}
-
 /// 将谱面背景图按 osu! 的等比适应方式缩放并居中，超出部分保留黑边，
 /// 再应用暗化配置。背景只在最终视频画布上处理一次，避免 playfield 与画布
 /// 分别裁剪同一张图片造成画面不连续。
-pub(crate) fn prepare_video_background(source: &Img, width: u32, height: u32) -> Img {
-    let mut result = Img::new(
-        width,
-        height,
-        crate::config::current().video.video.BLACK_OPAQUE,
-    );
+pub(crate) fn prepare_video_background(
+    source: &Img,
+    width: u32,
+    height: u32,
+    style: VideoStyle,
+) -> Img {
+    let mut result = Img::new(width, height, style.black_opaque);
     if source.w == 0 || source.h == 0 || width == 0 || height == 0 {
         return result;
     }
@@ -614,12 +645,7 @@ pub(crate) fn prepare_video_background(source: &Img, width: u32, height: u32) ->
     let left = ((width - resized_width) / 2) as i64;
     let top = ((height - resized_height) / 2) as i64;
     result.alpha_composite(&resized, left, top);
-    let brightness = 1.0
-        - crate::config::current()
-            .video
-            .video
-            .BACKGROUND_DIM
-            .clamp(0.0, 1.0);
+    let brightness = 1.0 - style.background_dim.clamp(0.0, 1.0);
     for pixel in result.data.chunks_exact_mut(4) {
         pixel[0] = (pixel[0] as f64 * brightness).round() as u8;
         pixel[1] = (pixel[1] as f64 * brightness).round() as u8;
@@ -637,28 +663,25 @@ fn compose_frame(
     out_w: u32,
     out_h: u32,
     background: Option<&Img>,
+    style: VideoStyle,
 ) -> Img {
-    let mut canvas = background.cloned().unwrap_or_else(|| {
-        Img::new(
-            out_w,
-            out_h,
-            crate::config::current().video.video.BLACK_OPAQUE,
-        )
-    });
+    let mut canvas = background
+        .cloned()
+        .unwrap_or_else(|| Img::new(out_w, out_h, style.black_opaque));
     let ox = ((out_w - pf.w) / 2) as i64;
     let oy = ((out_h - pf.h) / 2) as i64;
     canvas.alpha_composite(&pf, ox, oy);
 
     let label = format_progress_label(current_ms, total_ms);
-    let (lw, _) = text_size(&label, crate::config::current().video.video.LABEL_FONT_SIZE);
-    let lx = out_w as i64 - lw as i64 - crate::config::current().video.video.LABEL_PAD;
+    let (lw, _) = text_size(&label, style.label_font_size);
+    let lx = out_w as i64 - lw as i64 - style.label_pad;
     draw_text(
         &mut canvas,
         lx,
-        crate::config::current().video.video.LABEL_PAD,
+        style.label_pad,
         &label,
-        crate::config::current().video.video.LABEL_FONT_SIZE,
-        crate::config::current().video.video.LABEL_COLOR,
+        style.label_font_size,
+        style.label_color,
     );
     canvas
 }
@@ -917,7 +940,12 @@ mod tests {
                 source.put(x, y, [0, 100, 255, 255]);
             }
         }
-        let background = prepare_video_background(&source, 4, 4);
+        let background = prepare_video_background(
+            &source,
+            4,
+            4,
+            video_style(crate::render::geometry::GameMode::Standard),
+        );
         assert_eq!((background.w, background.h), (4, 4));
         assert_eq!(background.get(0, 0), [0, 0, 0, 255]);
         assert_eq!(background.get(0, 1), [77, 30, 0, 255]);

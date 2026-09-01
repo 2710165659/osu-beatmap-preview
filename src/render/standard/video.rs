@@ -42,7 +42,13 @@ pub(crate) fn render_standard_video(
     let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
-    let context = build_render_context(beatmap, hit_objects, mods, time_axis);
+    let context = build_render_context(
+        beatmap,
+        hit_objects,
+        mods,
+        time_axis,
+        crate::render::geometry::OutputFormat::Mp4,
+    );
     let total_ms = end - start;
     let fps = crate::config::current().layout.standard.mp4.FPS as u32;
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
@@ -50,8 +56,8 @@ pub(crate) fn render_standard_video(
     // 避免同一张图在 playfield 和画布中被分别缩放、裁剪。
     let frame_background = background.as_ref().map(|_| {
         Img::new(
-            crate::render::standard::constants::IMAGE_WIDTH as u32,
-            crate::render::standard::constants::IMAGE_HEIGHT as u32,
+            context.frame_layout.frame_width as u32,
+            context.frame_layout.frame_height as u32,
             [0, 0, 0, 0],
         )
     });
@@ -98,5 +104,6 @@ pub(crate) fn render_standard_video(
         background,
         time_axis,
         deadline,
+        crate::render::geometry::GameMode::Standard,
     )
 }

@@ -30,6 +30,8 @@ pub(crate) struct FrameLayout {
     pub(crate) playfield_left: f64,
     pub(crate) playfield_top: f64,
     pub(crate) scale: f64,
+    pub(crate) frame_width: i64,
+    pub(crate) frame_height: i64,
 }
 
 #[derive(Clone, Copy)]
@@ -91,6 +93,7 @@ pub(crate) struct RenderContext {
     /// 每个音符开始时生效的 (beat_length, slider_velocity) 缓存。
     pub(crate) slider_timings: Vec<(f64, f64)>,
     pub(crate) time_axis: TimeAxis,
+    pub(crate) output_format: crate::render::geometry::OutputFormat,
 }
 
 pub(crate) struct RowTiming {
@@ -214,17 +217,21 @@ pub(crate) fn build_render_settings(
 /// 得到 819.2×614.4，即 512×384 的 1.6 倍，居中放置并整体下移 8×scale
 /// （与 storyboard 对齐的历史偏移）。本帧 683×384 恰为游戏空间的一半，
 /// 因此缩放为 0.8，上下左右留白与游戏内完全等比。
-pub(crate) fn build_frame_layout() -> FrameLayout {
-    let scale = crate::render::standard::constants::PLAYFIELD_VIEWPORT_RATIO;
-    let playfield_width = crate::render::standard::constants::PLAYFIELD_WIDTH * scale;
-    let playfield_height = crate::render::standard::constants::PLAYFIELD_HEIGHT * scale;
+pub(crate) fn build_frame_layout(
+    output_format: crate::render::geometry::OutputFormat,
+) -> FrameLayout {
+    let geometry = crate::render::geometry::standard_geometry(output_format);
+    let scale = crate::render::standard::constants::PLAYFIELD_VIEWPORT_RATIO
+        * crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Standard,
+            output_format,
+        );
     FrameLayout {
-        playfield_left: (crate::render::standard::constants::IMAGE_WIDTH as f64 - playfield_width)
-            / 2.0,
-        playfield_top: (crate::render::standard::constants::IMAGE_HEIGHT as f64 - playfield_height)
-            / 2.0
-            + crate::render::standard::constants::PLAYFIELD_STORYBOARD_SHIFT * scale,
+        playfield_left: geometry.playfield.x as f64,
+        playfield_top: geometry.playfield.y as f64,
         scale,
+        frame_width: geometry.content.width,
+        frame_height: geometry.content.height,
     }
 }
 
@@ -283,6 +290,7 @@ pub(crate) fn build_render_context(
     mut hit_objects: Vec<StandardHitObject>,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
+    output_format: crate::render::geometry::OutputFormat,
 ) -> RenderContext {
     let skin = load_skin(beatmap);
     let settings = build_render_settings(beatmap, mods);
@@ -291,7 +299,7 @@ pub(crate) fn build_render_context(
         beatmap.format_version(),
         settings.preempt_ms as f32 * beatmap.stack_leniency() as f32,
     );
-    let frame_layout = build_frame_layout();
+    let frame_layout = build_frame_layout(output_format);
     let combo_info = build_combo_info(&hit_objects, &skin.combo_colors);
     let frame_circle_diameter =
         py_round(settings.circle_diameter as f64 * frame_layout.scale).max(1);
@@ -342,6 +350,7 @@ pub(crate) fn build_render_context(
         slider_multiplier,
         slider_timings,
         time_axis,
+        output_format,
     }
 }
 
@@ -381,115 +390,67 @@ pub(crate) fn choose_row_start_times(
 // ——— 画布尺寸 ———
 
 pub(crate) fn png_canvas_size() -> (i64, i64) {
-    let width = crate::config::current()
-        .layout
-        .standard
-        .png
-        .HORIZONTAL_PAGE_MARGIN
-        * 2
-        + crate::config::current().layout.standard.png.IMAGES_PER_ROW as i64
-            * crate::render::standard::constants::IMAGE_WIDTH
+    let config = &crate::config::current().layout.standard.png;
+    let geometry =
+        crate::render::geometry::standard_geometry(crate::render::geometry::OutputFormat::Png);
+    let unit_width = geometry.content.width + config.INFO_MARGIN_LEFT + config.INFO_MARGIN_RIGHT;
+    let unit_height = geometry.content.height + config.INFO_MARGIN_TOP + config.INFO_MARGIN_BOTTOM;
+    let width = config.PAGE_MARGIN_LEFT
+        + config.PAGE_MARGIN_RIGHT
+        + config.IMAGES_PER_ROW as i64 * unit_width
         + (crate::config::current().layout.standard.png.IMAGES_PER_ROW as i64 - 1)
-            * crate::config::current()
-                .layout
-                .standard
-                .png
-                .INTRA_ROW_IMAGE_GAP;
-    let row_height = crate::render::standard::constants::IMAGE_HEIGHT
-        + crate::config::current()
-            .layout
-            .standard
-            .png
-            .TIME_LABEL_TOP_GAP
-        + crate::config::current()
-            .layout
-            .standard
-            .png
-            .TIME_LABEL_HEIGHT;
-    let height = crate::config::current()
-        .layout
-        .standard
-        .png
-        .VERTICAL_PAGE_MARGIN
-        * 2
-        + crate::config::current().layout.standard.png.ROW_COUNT as i64 * row_height
-        + (crate::config::current().layout.standard.png.ROW_COUNT as i64 - 1)
-            * crate::config::current().layout.standard.png.INTER_ROW_GAP;
+            * config.COLUMN_GAP;
+    let height = config.PAGE_MARGIN_TOP
+        + config.PAGE_MARGIN_BOTTOM
+        + config.ROW_COUNT as i64 * unit_height
+        + (crate::config::current().layout.standard.png.ROW_COUNT as i64 - 1) * config.ROW_GAP;
     (width, height)
 }
 
 pub(crate) fn gif_canvas_size() -> (i64, i64) {
-    let row_height = crate::render::standard::constants::IMAGE_HEIGHT
-        + if crate::config::current().layout.standard.gif.SHOW_TIME_LABEL {
-            crate::config::current()
-                .layout
-                .standard
-                .png
-                .TIME_LABEL_TOP_GAP
-                + crate::config::current()
-                    .layout
-                    .standard
-                    .png
-                    .TIME_LABEL_HEIGHT
-        } else {
-            0
-        };
-    let width = crate::config::current()
-        .layout
-        .standard
-        .png
-        .HORIZONTAL_PAGE_MARGIN
-        * 2
-        + crate::config::current().layout.standard.gif.IMAGES_PER_ROW as i64
-            * crate::render::standard::constants::IMAGE_WIDTH
-        + (crate::config::current().layout.standard.gif.IMAGES_PER_ROW as i64 - 1)
-            * crate::config::current().layout.standard.gif.GRID_GAP;
-    let height = crate::config::current()
-        .layout
-        .standard
-        .png
-        .VERTICAL_PAGE_MARGIN
-        * 2
-        + crate::config::current().layout.standard.gif.ROW_COUNT as i64 * row_height
-        + (crate::config::current().layout.standard.gif.ROW_COUNT as i64 - 1)
-            * crate::config::current().layout.standard.gif.GRID_GAP;
+    let config = &crate::config::current().layout.standard.gif;
+    let geometry =
+        crate::render::geometry::standard_geometry(crate::render::geometry::OutputFormat::Gif);
+    let unit_width = geometry.content.width + config.INFO_MARGIN_LEFT + config.INFO_MARGIN_RIGHT;
+    // 时间标签关闭时，底部信息区和对应的单元步进都必须消失，保持旧行为。
+    let info_bottom = if config.SHOW_TIME_LABEL {
+        config.INFO_MARGIN_BOTTOM
+    } else {
+        0
+    };
+    let unit_height = geometry.content.height + config.INFO_MARGIN_TOP + info_bottom;
+    let width = config.PAGE_MARGIN_LEFT
+        + config.PAGE_MARGIN_RIGHT
+        + config.IMAGES_PER_ROW as i64 * unit_width
+        + (config.IMAGES_PER_ROW as i64 - 1) * config.GRID_GAP;
+    let height = config.PAGE_MARGIN_TOP
+        + config.PAGE_MARGIN_BOTTOM
+        + config.ROW_COUNT as i64 * unit_height
+        + (config.ROW_COUNT as i64 - 1) * config.GRID_GAP;
     (width, height)
 }
 
 pub(crate) fn gif_frame_origin(segment_index: usize) -> (i64, i64) {
+    let config = &crate::config::current().layout.standard.gif;
+    let geometry =
+        crate::render::geometry::standard_geometry(crate::render::geometry::OutputFormat::Gif);
     let row_index =
         (segment_index / crate::config::current().layout.standard.gif.IMAGES_PER_ROW) as i64;
     let image_index =
         (segment_index % crate::config::current().layout.standard.gif.IMAGES_PER_ROW) as i64;
-    let row_height = crate::render::standard::constants::IMAGE_HEIGHT
-        + if crate::config::current().layout.standard.gif.SHOW_TIME_LABEL {
-            crate::config::current()
-                .layout
-                .standard
-                .png
-                .TIME_LABEL_TOP_GAP
-                + crate::config::current()
-                    .layout
-                    .standard
-                    .png
-                    .TIME_LABEL_HEIGHT
-        } else {
-            0
-        };
-    let x = crate::config::current()
-        .layout
-        .standard
-        .png
-        .HORIZONTAL_PAGE_MARGIN
-        + image_index
-            * (crate::render::standard::constants::IMAGE_WIDTH
-                + crate::config::current().layout.standard.gif.GRID_GAP);
-    let y = crate::config::current()
-        .layout
-        .standard
-        .png
-        .VERTICAL_PAGE_MARGIN
-        + row_index * (row_height + crate::config::current().layout.standard.gif.GRID_GAP);
+    let unit_width = geometry.content.width + config.INFO_MARGIN_LEFT + config.INFO_MARGIN_RIGHT;
+    let info_bottom = if config.SHOW_TIME_LABEL {
+        config.INFO_MARGIN_BOTTOM
+    } else {
+        0
+    };
+    let unit_height = geometry.content.height + config.INFO_MARGIN_TOP + info_bottom;
+    let x = config.PAGE_MARGIN_LEFT
+        + config.INFO_MARGIN_LEFT
+        + image_index * (unit_width + config.GRID_GAP);
+    let y = config.PAGE_MARGIN_TOP
+        + config.INFO_MARGIN_TOP
+        + row_index * (unit_height + config.GRID_GAP);
     (x, y)
 }
 

@@ -179,13 +179,14 @@ osu-beatmap-preview --bid=738063 --config='{"layout":{"standard":{"gif":{"ROW_CO
 osu-beatmap-preview --bid=738063 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'
 ```
 
-以下示例关闭 MP4 背景图、调整暗化程度，并分别设置三种格式的整次请求超时：
+以下示例关闭 Standard MP4 背景图、调整暗化程度，并分别设置三种格式的整次请求超时：
 
 ```yaml
-video:
-  video:
-    ENABLE_BACKGROUND_IMAGE: false
-    BACKGROUND_DIM: 0.5
+layout:
+  standard:
+    mp4:
+      ENABLE_BACKGROUND_IMAGE: false
+      BACKGROUND_DIM: 0.5
 timeouts:
   render:
     PNG_TIMEOUT: 300

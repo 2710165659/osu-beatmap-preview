@@ -16,14 +16,8 @@ pub(crate) const ID_REVERSE_EDGE: u64 = 8192;
 pub(crate) const PLAYFIELD_WIDTH: f64 = 512.0;
 /// osu!standard 游戏区域高度。
 pub(crate) const PLAYFIELD_HEIGHT: f64 = 384.0;
-/// GIF/MP4 单帧画布宽度。
-pub(crate) const IMAGE_WIDTH: i64 = 530;
-/// GIF/MP4 单帧画布高度。
-pub(crate) const IMAGE_HEIGHT: i64 = 384;
 /// 游戏区域在视口中的缩放比例。
 pub(crate) const PLAYFIELD_VIEWPORT_RATIO: f64 = 0.8;
-/// 游戏区域相对 storyboard 的纵向偏移。
-pub(crate) const PLAYFIELD_STORYBOARD_SHIFT: f64 = 8.0;
 /// 圆形判定物半径。
 pub(crate) const OBJECT_RADIUS: f64 = 64.0;
 /// 修正旧版游戏区域圆角误差的容差。

@@ -17,9 +17,9 @@ use std::cell::RefCell;
 use std::path::Path;
 
 use super::gif::{
-    build_gif_layout, build_multiplier_points, compute_time_range, draw_hit_objects,
-    draw_row_background, prepare_hit_objects, prepare_measure_lines, pyround, GifLayout,
-    MultiplierLookup,
+    build_gif_layout_with_segments_and_format, build_multiplier_points, compute_time_range,
+    draw_hit_objects, draw_row_background, prepare_hit_objects, prepare_measure_lines, pyround,
+    GifLayout, MultiplierLookup,
 };
 use super::notes::RenderCache;
 use super::timing::*;
@@ -121,14 +121,16 @@ pub(crate) fn render_taiko_video(
         background,
         time_axis,
         deadline,
+        crate::render::geometry::GameMode::Taiko,
     )
 }
 
 /// MP4 的单行布局：宽度与 GIF 相同，高度裁剪为一行
 ///（无四行堆叠、无行间距、无底部标签条）。
 fn build_video_layout(time_range: f64) -> GifLayout {
-    let mut layout = build_gif_layout(time_range);
-    layout.image_height = crate::render::taiko::constants::PAGE_MARGIN_Y * 2
-        + crate::render::taiko::constants::ROW_HEIGHT;
-    layout
+    build_gif_layout_with_segments_and_format(
+        time_range,
+        1,
+        crate::render::geometry::OutputFormat::Mp4,
+    )
 }

@@ -18,7 +18,7 @@ pub(crate) use video::render_standard_video;
 
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
-/// 在 `IMAGE_WIDTH` 范围内以 `(x, y)` 为基准水平居中绘制文字。
+/// 在指定内容宽度内以 `(x, y)` 为基准水平居中绘制文字。
 pub(crate) fn draw_centered_text(
     canvas: &mut Img,
     text: &str,
@@ -26,9 +26,10 @@ pub(crate) fn draw_centered_text(
     y: i64,
     size: u32,
     color: [u8; 4],
+    content_width: i64,
 ) {
     let (text_w, _) = text_size(text, size);
-    let text_x = x + (crate::render::standard::constants::IMAGE_WIDTH - text_w as i64) / 2;
+    let text_x = x + (content_width - text_w as i64) / 2;
     draw_text(canvas, text_x, y, text, size, color);
 }
 
@@ -39,48 +40,25 @@ pub(crate) fn draw_time_label(
     x: i64,
     y: i64,
     note: Option<&str>,
+    content_width: i64,
+    label_size: u32,
+    note_size: u32,
+    note_top_gap: i64,
     label_color: [u8; 4],
     note_color: [u8; 4],
 ) {
-    draw_centered_text(
-        canvas,
-        label,
-        x,
-        y,
-        crate::config::current()
-            .layout
-            .standard
-            .png
-            .TIME_LABEL_FONT_SIZE,
-        label_color,
-    );
+    draw_centered_text(canvas, label, x, y, label_size, label_color, content_width);
     if let Some(note_text) = note {
-        let (_, label_h) = text_size(
-            label,
-            crate::config::current()
-                .layout
-                .standard
-                .png
-                .TIME_LABEL_FONT_SIZE,
-        );
-        let note_y = y
-            + label_h as i64
-            + crate::config::current()
-                .layout
-                .standard
-                .png
-                .TIME_LABEL_NOTE_TOP_GAP;
+        let (_, label_h) = text_size(label, label_size);
+        let note_y = y + label_h as i64 + note_top_gap;
         draw_centered_text(
             canvas,
             note_text,
             x,
             note_y,
-            crate::config::current()
-                .layout
-                .standard
-                .png
-                .TIME_LABEL_NOTE_FONT_SIZE,
+            note_size,
             note_color,
+            content_width,
         );
     }
 }

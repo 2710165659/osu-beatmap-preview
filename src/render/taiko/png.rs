@@ -161,7 +161,7 @@ pub(crate) fn render_taiko_grid(
         let row_top = png_row_top(row_index);
         image.alpha_composite(
             &track_bg,
-            crate::config::current().layout.taiko.png.PAGE_MARGIN_X,
+            crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT,
             row_top,
         );
     }
@@ -279,15 +279,15 @@ fn build_png_layout(
         .ROW_INNER_PADDING_X
         * 2
         + used_row_width;
-    let image_width = crate::config::current().layout.taiko.png.PAGE_MARGIN_X * 2 + content_width;
-    let image_height = crate::config::current().layout.taiko.png.PAGE_MARGIN_Y * 2
-        + crate::config::current()
-            .layout
-            .taiko
-            .png
-            .FIRST_ROW_SV_TOP_MARGIN
-        + row_count * crate::config::current().layout.taiko.png.ROW_HEIGHT
-        + row_count * crate::config::current().layout.taiko.png.ROW_GAP;
+    let image_width = crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT
+        + crate::config::current().layout.taiko.png.PAGE_MARGIN_RIGHT
+        + content_width;
+    let config = &crate::config::current().layout.taiko.png;
+    let image_height = config.PAGE_MARGIN_TOP
+        + config.PAGE_MARGIN_BOTTOM
+        + config.INFO_MARGIN_TOP
+        + row_count * (config.ROW_HEIGHT + config.INFO_MARGIN_BOTTOM)
+        + (row_count - 1).max(0) * config.ROW_GAP;
     let normal_note_diameter = pyround(
         crate::config::current().layout.taiko.png.ROW_HEIGHT as f64
             * crate::render::taiko::constants::NORMAL_NOTE_SIZE_RATIO,
@@ -418,19 +418,10 @@ fn resolve_main_bpm(redline_sections: &[RedlineSection]) -> f64 {
 // ─── 行辅助函数 ───
 
 fn png_row_top(row_index: i64) -> i64 {
-    let base = crate::config::current().layout.taiko.png.PAGE_MARGIN_Y
-        + row_index
-            * (crate::config::current().layout.taiko.png.ROW_HEIGHT
-                + crate::config::current().layout.taiko.png.ROW_GAP);
-    if row_index == 0 {
-        base + crate::config::current()
-            .layout
-            .taiko
-            .png
-            .FIRST_ROW_SV_TOP_MARGIN
-    } else {
-        base
-    }
+    let config = &crate::config::current().layout.taiko.png;
+    config.PAGE_MARGIN_TOP
+        + config.INFO_MARGIN_TOP
+        + row_index * (config.ROW_HEIGHT + config.INFO_MARGIN_BOTTOM + config.ROW_GAP)
 }
 
 fn png_row_center_y(row_index: i64) -> i64 {
@@ -438,7 +429,7 @@ fn png_row_center_y(row_index: i64) -> i64 {
 }
 
 fn png_row_chart_left(_layout: &RenderLayout, _row_index: i64) -> i64 {
-    crate::config::current().layout.taiko.png.PAGE_MARGIN_X
+    crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT
         + crate::config::current()
             .layout
             .taiko
@@ -519,7 +510,7 @@ fn draw_time_label(
     );
     let label_x = pyround(line_x as f64 - label_width as f64 / 2.0)
         .min(
-            crate::config::current().layout.taiko.png.PAGE_MARGIN_X + layout.content_width
+            crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT + layout.content_width
                 - label_width as i64
                 - crate::config::current()
                     .layout
@@ -527,7 +518,7 @@ fn draw_time_label(
                     .png
                     .LABEL_RIGHT_PADDING,
         )
-        .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_X);
+        .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT);
     let label_y = row_top
         + crate::config::current().layout.taiko.png.ROW_HEIGHT
         + crate::config::current().layout.taiko.png.TIME_LABEL_TOP_GAP;
@@ -557,7 +548,7 @@ fn draw_time_label(
         );
         let note_x = pyround(line_x as f64 - note_width as f64 / 2.0)
             .min(
-                crate::config::current().layout.taiko.png.PAGE_MARGIN_X + layout.content_width
+                crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT + layout.content_width
                     - note_width as i64
                     - crate::config::current()
                         .layout
@@ -565,7 +556,7 @@ fn draw_time_label(
                         .png
                         .LABEL_RIGHT_PADDING,
             )
-            .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_X);
+            .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT);
         let note_y = next_y
             + crate::config::current()
                 .layout
@@ -595,7 +586,7 @@ fn draw_time_label(
         );
         let bpm_x = pyround(line_x as f64 - bpm_width as f64 / 2.0)
             .min(
-                crate::config::current().layout.taiko.png.PAGE_MARGIN_X + layout.content_width
+                crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT + layout.content_width
                     - bpm_width as i64
                     - crate::config::current()
                         .layout
@@ -603,7 +594,7 @@ fn draw_time_label(
                         .png
                         .LABEL_RIGHT_PADDING,
             )
-            .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_X);
+            .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT);
         let bpm_y = next_y + crate::config::current().layout.taiko.png.BPM_TOP_GAP;
         let bpm_color = if timing_line.is_kiai {
             crate::config::current().layout.taiko.png.ACCENT_LABEL_COLOR
@@ -638,7 +629,7 @@ fn draw_sv_indicators(image: &mut Img, sv_changes: &[SvChange], layout: &RenderL
         let label_x = pyround(x as f64 - label_width as f64 / 2.0);
         let label_y =
             (row_top - crate::config::current().layout.taiko.png.SV_TOP_GAP - label_height as i64)
-                .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_Y);
+                .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_TOP);
         draw_text(
             image,
             label_x,

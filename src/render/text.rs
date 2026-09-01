@@ -1,4 +1,4 @@
-//! 最小位图文字渲染（8x8 基础字体，最近邻缩放）。
+//! 最小位图文字渲染（8x8 基础字体，按目标像素高度重采样）。
 //! 字形会裁剪到实际宽度，使数字间距紧凑，效果类似 PIL 默认比例字体。
 //!
 //! 使用以（字符、尺寸、颜色）为键的线程局部惰性缓存，重复字形（数字、标点）
@@ -41,19 +41,35 @@ fn glyph_extent(g: &[u8; 8]) -> (u32, u32) {
     }
 }
 
-fn scale_for(size: u32) -> u32 {
-    (size.max(8) / 8).max(1)
+fn glyph_height(size: u32) -> u32 {
+    size.max(1)
 }
 
-/// 近似 PIL load_default(size=N)：字形单元高度约等于 size。
+/// 将逻辑字号换算为位图字体的实际输出高度。
+/// 基础字号先按旧版 8px 字形取整，再应用输出倍率，以保持 1x 外观不变。
+pub(crate) fn scaled_bitmap_font_height(base_size: u32, output_scale: f64) -> u32 {
+    let base_height = (base_size.max(8) / 8).max(1) * 8;
+    crate::parser::round_half_even(base_height as f64 * output_scale).max(1) as u32
+}
+
+fn scaled_glyph_width(base_width: u32, height: u32) -> u32 {
+    crate::parser::round_half_even(base_width as f64 * height as f64 / 8.0).max(1) as u32
+}
+
+fn glyph_spacing(height: u32) -> u32 {
+    crate::parser::round_half_even(height as f64 / 8.0).max(1) as u32
+}
+
+/// 返回按目标像素高度重采样后的字形包围盒。
 pub fn text_size(text: &str, size: u32) -> (u32, u32) {
-    let scale = scale_for(size);
+    let height = glyph_height(size);
+    let spacing = glyph_spacing(height);
     let mut w = 0u32;
     for ch in text.chars() {
         let (_, gw) = glyph_extent(&glyph(ch));
-        w += (gw + 1) * scale;
+        w += scaled_glyph_width(gw, height) + spacing;
     }
-    (w.saturating_sub(scale), 8 * scale)
+    (w.saturating_sub(spacing), height)
 }
 
 // ─── 惰性字形缓存 ───
@@ -68,16 +84,18 @@ thread_local! {
 fn build_glyph_sprite(ch: char, size: u32, color: Rgba) -> Img {
     let g = glyph(ch);
     let (min_col, gw) = glyph_extent(&g);
-    let scale = scale_for(size) as i64;
-    let w = gw as i64 * scale;
-    let h = 8i64 * scale;
-    let mut sprite = Img::new(w.max(1) as u32, h.max(1) as u32, [0, 0, 0, 0]);
+    let h = glyph_height(size);
+    let w = scaled_glyph_width(gw, h);
+    let mut sprite = Img::new(w, h, [0, 0, 0, 0]);
     for (row, bits) in g.iter().enumerate() {
-        for col in 0..8u32 {
+        for col in min_col..min_col + gw {
             if bits >> col & 1 != 0 {
-                let px = (col as i64 - min_col as i64) * scale;
-                let py = row as i64 * scale;
-                sprite.fill_rect(px, py, px + scale - 1, py + scale - 1, color);
+                let local_col = col - min_col;
+                let x0 = local_col * w / gw;
+                let x1 = ((local_col + 1) * w).div_ceil(gw).saturating_sub(1);
+                let y0 = row as u32 * h / 8;
+                let y1 = ((row as u32 + 1) * h).div_ceil(8).saturating_sub(1);
+                sprite.fill_rect(x0 as i64, y0 as i64, x1 as i64, y1 as i64, color);
             }
         }
     }
@@ -88,7 +106,7 @@ fn build_glyph_sprite(ch: char, size: u32, color: Rgba) -> Img {
 /// 重复字符（数字、':'、'.' 等）只渲染一次后进行 alpha 合成，
 /// 避免内部 scale×scale 的 blend_px 循环。
 pub fn draw_text(img: &mut Img, x: i64, y: i64, text: &str, size: u32, color: Rgba) {
-    let scale = scale_for(size) as i64;
+    let spacing = glyph_spacing(glyph_height(size)) as i64;
 
     GLYPH_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -106,7 +124,7 @@ pub fn draw_text(img: &mut Img, x: i64, y: i64, text: &str, size: u32, color: Rg
                 .or_insert_with(|| build_glyph_sprite(ch, size, color));
 
             img.alpha_composite(sprite, cx, y);
-            cx += sprite.w as i64 + scale; // advance = glyph width + 1 cell gap
+            cx += sprite.w as i64 + spacing;
         }
     });
 }
@@ -117,7 +135,7 @@ pub fn draw_text(img: &mut Img, x: i64, y: i64, text: &str, size: u32, color: Rg
 /// 可重复执行 `alpha_composite`，无需每帧重新运行字形缓存和格式化逻辑。
 /// 用于热点循环（例如每段重复 150 次的 mania GIF 时间标签）。
 pub fn render_text_sprite(text: &str, size: u32, color: Rgba) -> Img {
-    let scale = scale_for(size) as i64;
+    let spacing = glyph_spacing(glyph_height(size)) as i64;
     let (tw, th) = text_size(text, size);
     let mut img = Img::new(tw.max(1), th.max(1), [0, 0, 0, 0]);
     let mut cx = 0i64;
@@ -132,7 +150,7 @@ pub fn render_text_sprite(text: &str, size: u32, color: Rgba) -> Img {
                 .entry(key)
                 .or_insert_with(|| build_glyph_sprite(ch, size, color));
             img.alpha_composite(sprite, cx, 0);
-            cx += sprite.w as i64 + scale;
+            cx += sprite.w as i64 + spacing;
         }
     });
     img
@@ -176,5 +194,25 @@ mod time_format_tests {
         assert_eq!(format_mmss_floor(62_500), "1:02");
         assert_eq!(format_mmss_floor(-500), "-0:01");
         assert_eq!(format_seconds_tenths(-500), "-0.5s");
+    }
+
+    #[test]
+    fn bitmap_text_uses_the_requested_pixel_height() {
+        for height in [4, 8, 12, 16] {
+            assert_eq!(text_size("1.0x", height).1, height);
+            assert_eq!(
+                render_text_sprite("1.0x", height, [255, 255, 255, 255]).h,
+                height
+            );
+        }
+    }
+
+    #[test]
+    fn logical_font_size_scales_from_its_actual_bitmap_height() {
+        assert_eq!(scaled_bitmap_font_height(10, 0.5), 4);
+        assert_eq!(scaled_bitmap_font_height(10, 1.0), 8);
+        assert_eq!(scaled_bitmap_font_height(10, 1.5), 12);
+        assert_eq!(scaled_bitmap_font_height(10, 2.0), 16);
+        assert_eq!(scaled_bitmap_font_height(33, 1.0), 32);
     }
 }

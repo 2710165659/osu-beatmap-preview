@@ -26,14 +26,33 @@ pub(crate) fn render_frame(
     background: Option<&Img>,
 ) -> Img {
     let mut frame = background.cloned().unwrap_or_else(|| {
+        let color = match context.output_format {
+            crate::render::geometry::OutputFormat::Png => {
+                crate::config::current()
+                    .layout
+                    .standard
+                    .png
+                    .IMAGE_BACKGROUND_COLOR
+            }
+            crate::render::geometry::OutputFormat::Gif => {
+                crate::config::current()
+                    .layout
+                    .standard
+                    .gif
+                    .IMAGE_BACKGROUND_COLOR
+            }
+            crate::render::geometry::OutputFormat::Mp4 => {
+                crate::config::current()
+                    .layout
+                    .standard
+                    .mp4
+                    .IMAGE_BACKGROUND_COLOR
+            }
+        };
         Img::new(
-            crate::render::standard::constants::IMAGE_WIDTH as u32,
-            crate::render::standard::constants::IMAGE_HEIGHT as u32,
-            crate::config::current()
-                .layout
-                .standard
-                .png
-                .IMAGE_BACKGROUND_COLOR,
+            context.frame_layout.frame_width as u32,
+            context.frame_layout.frame_height as u32,
+            color,
         )
     });
 
@@ -63,7 +82,7 @@ pub(crate) fn render_frame(
     }
 
     if let Some(current_break) = current_break_period(break_periods, snapshot_time) {
-        draw_break_overlay(&mut frame, current_break, snapshot_time, context.time_axis);
+        draw_break_overlay(&mut frame, current_break, snapshot_time, context);
     }
 
     frame
@@ -427,7 +446,7 @@ fn draw_break_overlay(
     frame: &mut Img,
     break_period: &BreakPeriod,
     snapshot_time: i64,
-    time_axis: crate::common::time_selection::TimeAxis,
+    context: &RenderContext,
 ) {
     let alpha = break_overlay_alpha(break_period, snapshot_time);
     if alpha <= 0.0 {
@@ -435,10 +454,14 @@ fn draw_break_overlay(
     }
 
     let mut layer = Img::new(frame.w, frame.h, [0, 0, 0, 0]);
-    let center_x = crate::render::standard::constants::IMAGE_WIDTH as f64 / 2.0;
-    let center_y = crate::render::standard::constants::IMAGE_HEIGHT as f64 / 2.0;
+    let center_x = context.frame_layout.frame_width as f64 / 2.0;
+    let center_y = context.frame_layout.frame_height as f64 / 2.0;
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Standard,
+        context.output_format,
+    );
 
-    draw_break_arrows(&mut layer, alpha);
+    draw_break_arrows(&mut layer, alpha, render_scale);
     draw_break_remaining_bar(
         &mut layer,
         break_period,
@@ -446,13 +469,17 @@ fn draw_break_overlay(
         center_x,
         center_y,
         alpha,
+        render_scale,
     );
 
     let remaining_seconds = ((break_period.end_time - snapshot_time + 999).div_euclid(1000)).max(0);
     let counter_label = remaining_seconds.to_string();
     let (_, counter_h) = crate::render::text::text_size(
         &counter_label,
-        crate::render::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
+        crate::render::text::scaled_bitmap_font_height(
+            crate::render::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
+            render_scale,
+        ),
     );
     let counter_y = py_round(center_y - 15.0) - counter_h as i64;
     let counter_color = [
@@ -467,17 +494,24 @@ fn draw_break_overlay(
         &counter_label,
         0,
         counter_y,
-        crate::render::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
+        crate::render::text::scaled_bitmap_font_height(
+            crate::render::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
+            render_scale,
+        ),
         counter_color,
+        context.frame_layout.frame_width,
     );
 
     let break_label = format!(
         "Break {} - {}",
-        crate::render::text::format_mmssmmm(time_axis.to_display(break_period.start_time)),
-        crate::render::text::format_mmssmmm(time_axis.to_display(break_period.end_time))
+        crate::render::text::format_mmssmmm(context.time_axis.to_display(break_period.start_time)),
+        crate::render::text::format_mmssmmm(context.time_axis.to_display(break_period.end_time))
     );
-    let info_y =
-        py_round(center_y) + crate::render::standard::constants::BREAK_OVERLAY_INFO_TOP_GAP;
+    let info_y = py_round(center_y)
+        + crate::render::geometry::scale_px(
+            crate::render::standard::constants::BREAK_OVERLAY_INFO_TOP_GAP as f64,
+            render_scale,
+        );
     let info_color = [
         crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[0],
         crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[1],
@@ -490,8 +524,12 @@ fn draw_break_overlay(
         &break_label,
         0,
         info_y,
-        crate::render::standard::constants::BREAK_OVERLAY_INFO_FONT_SIZE,
+        crate::render::text::scaled_bitmap_font_height(
+            crate::render::standard::constants::BREAK_OVERLAY_INFO_FONT_SIZE,
+            render_scale,
+        ),
         info_color,
+        context.frame_layout.frame_width,
     );
 
     frame.alpha_composite(&layer, 0, 0);
@@ -504,12 +542,12 @@ fn draw_break_remaining_bar(
     center_x: f64,
     center_y: f64,
     alpha: f64,
+    render_scale: f64,
 ) {
     let track_width = py_round(
-        crate::render::standard::constants::IMAGE_WIDTH as f64
-            * crate::render::standard::constants::BREAK_OVERLAY_BAR_WIDTH_RATIO,
+        layer.w as f64 * crate::render::standard::constants::BREAK_OVERLAY_BAR_WIDTH_RATIO,
     ) as f64;
-    let track_height = crate::render::standard::constants::BREAK_OVERLAY_BAR_HEIGHT;
+    let track_height = crate::render::standard::constants::BREAK_OVERLAY_BAR_HEIGHT * render_scale;
     let track_left = center_x - track_width / 2.0;
     let track_top = center_y - track_height / 2.0;
     layer.fill_rounded_rect(
@@ -534,15 +572,30 @@ fn draw_break_remaining_bar(
     );
 }
 
-fn draw_break_arrows(layer: &mut Img, alpha: f64) {
+fn draw_break_arrows(layer: &mut Img, alpha: f64, render_scale: f64) {
     let color = [238, 238, 238, py_round(80.0 * alpha).clamp(0, 255) as u8];
     let glow_color = [238, 238, 238, py_round(35.0 * alpha).clamp(0, 255) as u8];
-    let center_y = crate::render::standard::constants::IMAGE_HEIGHT as f64 / 2.0;
+    let center_y = layer.h as f64 / 2.0;
     for (offset, direction) in [(-0.22, 1.0), (0.22, -1.0)] {
-        let center_x = crate::render::standard::constants::IMAGE_WIDTH as f64 / 2.0
-            + crate::render::standard::constants::IMAGE_WIDTH as f64 * offset;
-        draw_chevron(layer, center_x, center_y, 32.0, direction, glow_color, 9.0);
-        draw_chevron(layer, center_x, center_y, 20.0, direction, color, 4.0);
+        let center_x = layer.w as f64 / 2.0 + layer.w as f64 * offset;
+        draw_chevron(
+            layer,
+            center_x,
+            center_y,
+            32.0 * render_scale,
+            direction,
+            glow_color,
+            9.0 * render_scale,
+        );
+        draw_chevron(
+            layer,
+            center_x,
+            center_y,
+            20.0 * render_scale,
+            direction,
+            color,
+            4.0 * render_scale,
+        );
     }
 }
 

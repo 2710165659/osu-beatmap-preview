@@ -223,6 +223,13 @@ fn generate_preview_inner(
             cache_root.join("osz-download-cache"),
             no_cache,
             deadline.clone(),
+            match target_mode {
+                0 => crate::render::geometry::GameMode::Standard,
+                1 => crate::render::geometry::GameMode::Taiko,
+                2 => crate::render::geometry::GameMode::Catch,
+                3 => crate::render::geometry::GameMode::Mania,
+                _ => unreachable!("target mode was validated above"),
+            },
         )?)
     } else {
         None

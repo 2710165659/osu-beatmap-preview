@@ -6,16 +6,6 @@ pub(crate) const DEFAULT_BEAT_LENGTH: f64 = 500.0;
 pub(crate) const PLAYFIELD_WIDTH: f64 = 512.0;
 /// PNG 中游戏区域的显示宽度。
 pub(crate) const PLAYFIELD_DISPLAY_WIDTH: i64 = 260;
-/// GIF 中游戏区域的顶部位置。
-pub(crate) const PLAYFIELD_TOP: f64 = 57.6;
-/// GIF 单帧画布宽度。
-pub(crate) const IMAGE_WIDTH: i64 = 470;
-/// GIF 单帧画布高度。
-pub(crate) const IMAGE_HEIGHT: i64 = 384;
-/// Catch GIF/MP4 画布水平边距。
-pub(crate) const PAGE_MARGIN_X: i64 = 15;
-/// Catch GIF/MP4 画布垂直边距。
-pub(crate) const PAGE_MARGIN_Y: i64 = 15;
 /// 水果初始纵坐标。
 pub(crate) const STABLE_FRUIT_START_Y: f64 = -100.0;
 /// 接水果器纵坐标。

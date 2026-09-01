@@ -51,7 +51,13 @@ fn render_standard_segment_gif(
 ) -> Result<()> {
     let hit_objects = standard_objects(beatmap)?;
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
-    let context = build_render_context(beatmap, hit_objects, mods, time_axis);
+    let context = build_render_context(
+        beatmap,
+        hit_objects,
+        mods,
+        time_axis,
+        crate::render::geometry::OutputFormat::Gif,
+    );
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let segment_duration_ms = duration_seconds
         .map(|seconds| seconds * 1000.0)
@@ -148,13 +154,29 @@ fn render_standard_segment_gif(
                     &mut canvas,
                     &label,
                     x,
-                    y + crate::render::standard::constants::IMAGE_HEIGHT
+                    y + context.frame_layout.frame_height
                         + crate::config::current()
                             .layout
                             .standard
                             .gif
                             .TIME_LABEL_TOP_GAP,
                     note,
+                    context.frame_layout.frame_width,
+                    crate::config::current()
+                        .layout
+                        .standard
+                        .gif
+                        .TIME_LABEL_FONT_SIZE,
+                    crate::config::current()
+                        .layout
+                        .standard
+                        .gif
+                        .TIME_LABEL_NOTE_FONT_SIZE,
+                    crate::config::current()
+                        .layout
+                        .standard
+                        .gif
+                        .TIME_LABEL_NOTE_TOP_GAP,
                     if row_timing.is_preview {
                         crate::config::current()
                             .layout

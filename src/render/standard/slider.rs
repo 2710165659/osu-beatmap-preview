@@ -42,7 +42,15 @@ pub(crate) fn draw_slider_body(
     if points.len() < 2 {
         return;
     }
-    let layer = render_slider_body_layer(points, width, color, alpha_to_byte(alpha), traceable);
+    let layer = render_slider_body_layer(
+        points,
+        width,
+        color,
+        alpha_to_byte(alpha),
+        traceable,
+        frame.w as i64,
+        frame.h as i64,
+    );
     frame.alpha_composite(&layer.image, layer.offset.0, layer.offset.1);
 }
 
@@ -67,6 +75,8 @@ pub(crate) fn draw_cached_slider_body(
                 color,
                 255,
                 traceable,
+                context.frame_layout.frame_width,
+                context.frame_layout.frame_height,
             )
         });
 
@@ -97,6 +107,8 @@ pub(crate) fn render_slider_body_layer(
     color: [u8; 3],
     alpha_byte: u8,
     traceable: bool,
+    frame_width: i64,
+    frame_height: i64,
 ) -> CachedLayer {
     let scale = crate::config::current()
         .layout
@@ -110,9 +122,8 @@ pub(crate) fn render_slider_body_layer(
     let max_y = points.iter().map(|p| p.1).fold(f64::MIN, f64::max);
     let left = ((min_x - pad).floor() as i64).max(0);
     let top = ((min_y - pad).floor() as i64).max(0);
-    let right = ((max_x + pad).ceil() as i64).min(crate::render::standard::constants::IMAGE_WIDTH);
-    let bottom =
-        ((max_y + pad).ceil() as i64).min(crate::render::standard::constants::IMAGE_HEIGHT);
+    let right = ((max_x + pad).ceil() as i64).min(frame_width);
+    let bottom = ((max_y + pad).ceil() as i64).min(frame_height);
 
     let layer_w = ((right - left) * scale).max(1) as u32;
     let layer_h = ((bottom - top) * scale).max(1) as u32;

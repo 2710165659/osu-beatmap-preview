@@ -23,14 +23,8 @@ pub(crate) const BIG_NOTE_SCALE: f64 = 1.5384615384615383;
 pub(crate) const SPAN_BODY_HEIGHT_RATIO: f64 = 0.72;
 /// 大连打主体高度占行高的比例。
 pub(crate) const SWELL_BODY_HEIGHT_RATIO: f64 = 0.8;
-/// Taiko 每行的高度（像素）。
-pub(crate) const ROW_HEIGHT: i64 = 80;
-/// Taiko 行内容左右内边距（像素）。
+/// Taiko 行内容左右内边距基准（GIF/MP4）。
 pub(crate) const ROW_INNER_PADDING_X: i64 = 33;
-/// Taiko 画布水平边距（像素）。
-pub(crate) const PAGE_MARGIN_X: i64 = 8;
-/// Taiko 画布垂直边距（像素）。
-pub(crate) const PAGE_MARGIN_Y: i64 = 8;
 
 /// 鼓面面板宽度占比。
 pub(crate) const DRUM_PANEL_WIDTH_RATIO: f64 = 0.905;
@@ -66,8 +60,6 @@ pub(crate) const SCROLL_LENGTH_RATIO: f64 = 1.6;
 pub(crate) const MIN_BEAT_LINE_SPACING: f64 = 200.0;
 /// GIF 基准游戏区域高度。
 pub(crate) const TAIKO_BASE_HEIGHT: f64 = 200.0;
-/// 参考滚动长度。
-pub(crate) const REFERENCE_SCROLL_LENGTH: f64 = 1109.3333333333333;
 /// 参考判定位置横坐标。
 pub(crate) const REFERENCE_JUDGEMENT_X: f64 = 76.0;
 /// stable 游戏区域高度。

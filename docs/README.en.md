@@ -179,13 +179,14 @@ osu-beatmap-preview --bid=738063 --config='{"layout":{"standard":{"gif":{"ROW_CO
 osu-beatmap-preview --bid=738063 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'
 ```
 
-This example disables the MP4 background, changes its dim level, and configures whole-request timeouts for each format:
+This example disables the Standard MP4 background, changes its dim level, and configures whole-request timeouts for each format:
 
 ```yaml
-video:
-  video:
-    ENABLE_BACKGROUND_IMAGE: false
-    BACKGROUND_DIM: 0.5
+layout:
+  standard:
+    mp4:
+      ENABLE_BACKGROUND_IMAGE: false
+      BACKGROUND_DIM: 0.5
 timeouts:
   render:
     PNG_TIMEOUT: 300

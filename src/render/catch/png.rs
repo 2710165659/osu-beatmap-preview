@@ -109,8 +109,16 @@ fn build_layout(
             "songs longer than 10 minutes are not supported",
         ));
     }
-    let playfield_scale = crate::render::catch::constants::PLAYFIELD_DISPLAY_WIDTH as f64
-        / crate::render::catch::constants::PLAYFIELD_WIDTH;
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Catch,
+        crate::render::geometry::OutputFormat::Png,
+    );
+    let visible_playfield_width = crate::render::geometry::scale_px(
+        crate::render::catch::constants::PLAYFIELD_DISPLAY_WIDTH as f64,
+        render_scale,
+    );
+    let playfield_scale =
+        visible_playfield_width as f64 / crate::render::catch::constants::PLAYFIELD_WIDTH;
     let object_scale = super::objects::circle_scale(circle_size);
 
     // 纵向密度上限：限制谱面总像素高度，防止高 AR + 长曲导致内存爆炸
@@ -135,18 +143,21 @@ fn build_layout(
     let max_area_height = resolve_max_area_height(beatmap_duration);
     let column_count = ceil_div(total_chart_height, max_area_height).max(1);
     let total_column_height = ceil_div(total_chart_height, column_count);
-    let image_width = crate::config::current().layout.catch.png.PAGE_MARGIN_X * 2
-        + column_count
-            * (crate::config::current().layout.catch.png.COLUMN_WIDTH
-                + crate::config::current().layout.catch.png.COLUMN_GAP)
-        - crate::config::current().layout.catch.png.COLUMN_GAP
-        + crate::config::current().layout.catch.png.LABEL_RIGHT_MARGIN;
-    let image_height =
-        crate::config::current().layout.catch.png.PAGE_MARGIN_Y * 2 + total_column_height;
+    let config = &crate::config::current().layout.catch.png;
+    let unit_width = config.INFO_MARGIN_LEFT + config.COLUMN_WIDTH + config.INFO_MARGIN_RIGHT;
+    let image_width = config.PAGE_MARGIN_LEFT
+        + config.PAGE_MARGIN_RIGHT
+        + column_count * unit_width
+        + (column_count - 1) * config.COLUMN_GAP;
+    let image_height = config.PAGE_MARGIN_TOP
+        + config.PAGE_MARGIN_BOTTOM
+        + config.INFO_MARGIN_TOP
+        + total_column_height
+        + config.INFO_MARGIN_BOTTOM;
     Ok(RenderLayout {
         column_count,
         total_column_height,
-        visible_playfield_width: crate::render::catch::constants::PLAYFIELD_DISPLAY_WIDTH,
+        visible_playfield_width,
         image_width,
         image_height,
         playfield_scale,
@@ -157,10 +168,14 @@ fn build_layout(
 }
 
 fn column_left(column_index: i64) -> i64 {
-    crate::config::current().layout.catch.png.PAGE_MARGIN_X
+    let config = &crate::config::current().layout.catch.png;
+    config.PAGE_MARGIN_LEFT
+        + config.INFO_MARGIN_LEFT
         + column_index
-            * (crate::config::current().layout.catch.png.COLUMN_WIDTH
-                + crate::config::current().layout.catch.png.COLUMN_GAP)
+            * (config.INFO_MARGIN_LEFT
+                + config.COLUMN_WIDTH
+                + config.INFO_MARGIN_RIGHT
+                + config.COLUMN_GAP)
 }
 
 fn playfield_left(column_index: i64) -> i64 {
@@ -356,9 +371,9 @@ pub(crate) fn render_catch_grid(
 /// 画单列背景：左侧灰条 + playfield 底色 + 左右边界线（与 playfield 区域留 23px）。
 fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: i64) {
     let column_left = column_left(column_index);
-    let chart_top = crate::config::current().layout.catch.png.PAGE_MARGIN_Y;
-    let chart_bottom =
-        crate::config::current().layout.catch.png.PAGE_MARGIN_Y + layout.total_column_height;
+    let chart_top = crate::config::current().layout.catch.png.PAGE_MARGIN_TOP
+        + crate::config::current().layout.catch.png.INFO_MARGIN_TOP;
+    let chart_bottom = chart_top + layout.total_column_height;
     // 左侧灰条在最左边
     let panel_right = column_left + crate::config::current().layout.catch.png.LEFT_PANEL_WIDTH;
     // playfield 在灰条右侧 23px 处开始
@@ -412,8 +427,9 @@ fn locate_time(time: i64, layout: &RenderLayout) -> (i64, i64) {
         .clamp(0, layout.column_count - 1);
     let local_y_from_top = rhe(absolute_y - (column_index * layout.total_column_height) as f64);
     // 从列底部开始计算，时间 0 在底部，时间增大向上
-    let chart_bottom =
-        crate::config::current().layout.catch.png.PAGE_MARGIN_Y + layout.total_column_height;
+    let chart_bottom = crate::config::current().layout.catch.png.PAGE_MARGIN_TOP
+        + crate::config::current().layout.catch.png.INFO_MARGIN_TOP
+        + layout.total_column_height;
     let y = chart_bottom - local_y_from_top;
     (column_index, y)
 }
@@ -423,8 +439,11 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
     let left = playfield_left(column_index);
     let right = left + layout.visible_playfield_width;
     let y = y.clamp(
-        crate::config::current().layout.catch.png.PAGE_MARGIN_Y,
-        crate::config::current().layout.catch.png.PAGE_MARGIN_Y + layout.total_column_height,
+        crate::config::current().layout.catch.png.PAGE_MARGIN_TOP
+            + crate::config::current().layout.catch.png.INFO_MARGIN_TOP,
+        crate::config::current().layout.catch.png.PAGE_MARGIN_TOP
+            + crate::config::current().layout.catch.png.INFO_MARGIN_TOP
+            + layout.total_column_height,
     );
 
     if timing_line.is_measure {
@@ -456,8 +475,11 @@ fn draw_timing_label_png(
     let border_right =
         column_left(column_index) + crate::config::current().layout.catch.png.COLUMN_WIDTH;
     let y = y.clamp(
-        crate::config::current().layout.catch.png.PAGE_MARGIN_Y,
-        crate::config::current().layout.catch.png.PAGE_MARGIN_Y + layout.total_column_height,
+        crate::config::current().layout.catch.png.PAGE_MARGIN_TOP
+            + crate::config::current().layout.catch.png.INFO_MARGIN_TOP,
+        crate::config::current().layout.catch.png.PAGE_MARGIN_TOP
+            + crate::config::current().layout.catch.png.INFO_MARGIN_TOP
+            + layout.total_column_height,
     );
     let label = crate::render::text::format_seconds_tenths(
         time_axis.to_display(timing_line.time + layout.chart_start_time),
@@ -470,13 +492,23 @@ fn draw_timing_label_png(
             .png
             .TIME_LABEL_FONT_SIZE,
     );
-    let label_x = (border_right + 4).min(
+    let label_gap = crate::render::geometry::scale_px(
+        4.0,
+        crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Catch,
+            crate::render::geometry::OutputFormat::Png,
+        ),
+    );
+    let label_x = (border_right + label_gap).min(
         layout.image_width
             - label_width as i64
-            - crate::config::current().layout.catch.png.PAGE_MARGIN_X,
+            - crate::config::current().layout.catch.png.PAGE_MARGIN_LEFT,
     );
     let label_y = (y as f64 - label_height as f64 / 2.0)
-        .max(crate::config::current().layout.catch.png.PAGE_MARGIN_Y as f64)
+        .max(
+            (crate::config::current().layout.catch.png.PAGE_MARGIN_TOP
+                + crate::config::current().layout.catch.png.INFO_MARGIN_TOP) as f64,
+        )
         .floor() as i64;
     draw_text(
         image,
