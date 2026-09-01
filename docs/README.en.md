@@ -15,7 +15,7 @@ A fast, self-contained osu! beatmap preview renderer for Standard, Taiko, Catch,
 - **Cross-platform**: Supports Windows, Linux, and macOS. On Windows, the renderer tries NVIDIA NVENC and AMD AMF before falling back to CPU OpenH264. Other platforms use CPU encoding.
 - **Cache and configuration isolation**: Caches downloads and rendered output while keeping results from different effective configurations in separate directories.
 
-See the [batch rendering report](report.txt) for performance and resource usage data.
+See the [batch rendering report](report.md) for performance and resource usage data.
 
 ## Download and Run
 

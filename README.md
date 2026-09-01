@@ -15,7 +15,7 @@
 - **跨平台**：支持 Windows、Linux 与 macOS；Windows 会依次尝试 NVIDIA NVENC、AMD AMF，均不可用时自动回退到 CPU OpenH264，其他平台使用 CPU 编码。
 - **缓存与配置隔离**：缓存下载内容和渲染结果；不同有效配置使用独立输出目录，避免误用旧结果。
 
-性能与资源占用数据见[批量渲染报告](docs/report.txt)。
+性能与资源占用数据见[批量渲染报告](docs/report.md)。
 
 ## 获取与运行
 
