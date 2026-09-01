@@ -88,7 +88,7 @@ In Windows PowerShell, use `.\osu-beatmap-preview-windows-amd64.exe` or the actu
 ## Command-Line Options
 
 ```text
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]
 ```
 
 | Option | Description |
@@ -102,6 +102,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--no-cache` | Bypasses the `.osu`, OSZ, and output caches, forcing a fresh download and render. |
 | `--no-log` | Disables file logging. |
 | `--config` | A configuration file path or an inline JSON/YAML object. It may be supplied only once. |
+| `--scale` | Output scale applied to every mode and format. It overrides all `layout.*.*.SCALE` values and must be positive and finite. |
 | `--version` | Prints the version and build time, then exits. |
 | `--help`, `-h` | Prints usage information, then exits. |
 

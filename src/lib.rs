@@ -18,6 +18,8 @@ pub struct PreviewOptions {
     pub time_points: Vec<TimePoint>,
     pub duration_time: Option<f64>,
     pub no_cache: bool,
+    pub config: Option<String>,
+    pub scale: Option<f64>,
 }
 
 impl PreviewOptions {
@@ -30,11 +32,18 @@ impl PreviewOptions {
             time_points: Vec::new(),
             duration_time: None,
             no_cache: false,
+            config: None,
+            scale: None,
         }
     }
 }
 
 pub fn generate_preview(options: PreviewOptions) -> Result<serde_json::Value, PreviewError> {
+    if let Err(error) = config::initialize_for_cli(options.config.as_deref(), options.scale) {
+        if options.config.is_some() || !error.contains("already been initialized") {
+            return Err(PreviewError::new(format!("configuration error: {error}")));
+        }
+    }
     if let Some(value) = options.convert.as_deref() {
         core::validate::validate_convert_value(value)?;
     }
@@ -55,5 +64,6 @@ pub fn generate_preview(options: PreviewOptions) -> Result<serde_json::Value, Pr
         options.time_points,
         options.duration_time,
         options.no_cache,
+        options.scale,
     )
 }

@@ -22,13 +22,14 @@ struct Args {
     no_cache: bool,
     no_log: bool,
     config: Option<String>,
+    scale: Option<f64>,
 }
 
 fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] \
          [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] \
-         [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>]\n\
+         [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]\n\
          osu-beatmap-preview --version\n\
          --mod and --time-points may be repeated to provide lists"
     );
@@ -46,6 +47,7 @@ fn parse_args() -> Args {
     let mut no_cache: bool = false;
     let mut no_log: bool = false;
     let mut config: Option<String> = None;
+    let mut scale: Option<f64> = None;
 
     while let Some(arg) = parser.next().unwrap_or_else(|e| {
         eprintln!("error: {e}");
@@ -113,6 +115,18 @@ fn parse_args() -> Args {
                 }
                 config = Some(take_value(&mut parser, "--config"));
             }
+            Long("scale") => {
+                let value = take_value(&mut parser, "--scale");
+                let parsed: f64 = value.parse().unwrap_or_else(|_| {
+                    eprintln!("error: --scale must be a number, got '{value}'");
+                    print_usage_and_exit(2);
+                });
+                if !parsed.is_finite() || parsed <= 0.0 {
+                    eprintln!("error: --scale must be a positive finite number");
+                    print_usage_and_exit(2);
+                }
+                scale = Some(parsed);
+            }
             Long("version") => {
                 println!(
                     "osu-beatmap-preview v{} (built {})",
@@ -155,6 +169,7 @@ fn parse_args() -> Args {
         no_cache,
         no_log,
         config,
+        scale,
     }
 }
 
@@ -184,12 +199,13 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         args.time_points.clone(),
         args.duration_time,
         args.no_cache,
+        args.scale,
     )
 }
 
 fn main() {
     let args = parse_args();
-    if let Err(error) = config::initialize_for_cli(args.config.as_deref()) {
+    if let Err(error) = config::initialize_for_cli(args.config.as_deref(), args.scale) {
         let payload = serde_json::json!({
             "status": "error",
             "msg": format!("configuration error: {error}"),

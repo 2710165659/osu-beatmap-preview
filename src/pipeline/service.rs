@@ -20,7 +20,11 @@ pub fn generate_preview(
     time_points: Vec<TimePoint>,
     duration_time: Option<f64>,
     no_cache: bool,
+    scale: Option<f64>,
 ) -> Result<Value> {
+    if scale.is_some_and(|value| !value.is_finite() || value <= 0.0) {
+        return Err(PreviewError::new("scale must be a positive finite number"));
+    }
     let started = Instant::now();
     log::set_bid(bid);
     let deadline = initial_deadline(started, fmt, convert);
@@ -34,7 +38,7 @@ pub fn generate_preview(
         no_cache,
         ..SummaryRecord::default()
     };
-    match generate_preview_inner(
+    let result = match generate_preview_inner(
         bid,
         fmt,
         convert,
@@ -63,7 +67,8 @@ pub fn generate_preview(
             log::write_summary(&rec);
             Err(error)
         }
-    }
+    };
+    result
 }
 
 fn generate_preview_inner(
@@ -173,7 +178,26 @@ fn generate_preview_inner(
             }
         }
     }
-    let output_path: PathBuf = output_root.join(format!("{}.{}", parts.join("_"), fmt));
+    let output_scale = crate::render::geometry::output_scale(
+        match target_mode {
+            0 => crate::render::geometry::GameMode::Standard,
+            1 => crate::render::geometry::GameMode::Taiko,
+            2 => crate::render::geometry::GameMode::Catch,
+            3 => crate::render::geometry::GameMode::Mania,
+            _ => unreachable!("target mode was validated above"),
+        },
+        match fmt.as_str() {
+            "png" => crate::render::geometry::OutputFormat::Png,
+            "gif" => crate::render::geometry::OutputFormat::Gif,
+            "mp4" => crate::render::geometry::OutputFormat::Mp4,
+            _ => unreachable!("format was validated above"),
+        },
+    );
+    let scale_suffix = cache::format_scale_suffix(output_scale).unwrap_or_default();
+    // 命令行倍率只改变本次渲染内容，不改变输出文件位置；带倍率的请求跳过旧缓存，
+    // 输出文件名后缀用于区分不同倍率，但不会改变输出目录（尤其不会产生新的配置哈希目录）。
+    let output_path: PathBuf =
+        output_root.join(format!("{}{}.{}", parts.join("_"), scale_suffix, fmt));
 
     // ── 图像缓存检查 ──
     let cached = cache::output_cache_hit(&output_path, &beatmap_path, &fmt, target_mode, no_cache);

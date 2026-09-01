@@ -102,6 +102,14 @@ pub fn format_duration_suffix(duration_time: f64) -> String {
     format!("duration{}", sanitize_suffix(&duration_time.to_string()))
 }
 
+/// 根据输出倍率生成文件名后缀；1 倍保持既有命名，避免无意义的变化。
+pub fn format_scale_suffix(scale: f64) -> Option<String> {
+    if scale == 1.0 {
+        return None;
+    }
+    Some(format!("@{}x", sanitize_suffix(&scale.to_string())))
+}
+
 fn sanitize_suffix(value: &str) -> String {
     value
         .chars()
@@ -496,5 +504,12 @@ mod tests {
             format_video_time_suffix(Some(TimePoint::Seconds(0.0)), Some(600.0)),
             "video-start0-duration600"
         );
+    }
+
+    #[test]
+    fn scale_suffix_omits_default_and_formats_fractional_values() {
+        assert_eq!(format_scale_suffix(1.0), None);
+        assert_eq!(format_scale_suffix(0.5).as_deref(), Some("@0.5x"));
+        assert_eq!(format_scale_suffix(2.0).as_deref(), Some("@2x"));
     }
 }

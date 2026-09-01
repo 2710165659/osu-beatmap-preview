@@ -64,6 +64,9 @@ osu-beatmap-preview --bid=738063
 # 明确输出格式
 osu-beatmap-preview --bid=738063 --fmt=png
 
+# 使用命令行覆盖输出倍率（0.5 倍、2 倍等）
+osu-beatmap-preview --bid=738063 --scale=2
+
 # 将 Standard 谱面转为 Mania 并输出 GIF
 osu-beatmap-preview --bid=738063 --convert=mania --fmt=gif
 
@@ -88,7 +91,7 @@ Windows PowerShell 中，如果程序位于当前目录，需要使用 `.\osu-be
 ## 命令行参数
 
 ```text
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]
 ```
 
 | 参数 | 说明 |
@@ -102,6 +105,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--no-cache` | 跳过 `.osu`、OSZ 和输出文件缓存，强制重新下载和渲染。 |
 | `--no-log` | 关闭文件日志。 |
 | `--config` | 配置文件路径，或内联 JSON/YAML 对象。只能传入一次。 |
+| `--scale` | 本次输出倍率，必须为有限正数。 |
 | `--version` | 打印版本号和构建时间后退出。 |
 | `--help`、`-h` | 打印用法后退出。 |
 

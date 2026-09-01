@@ -45,20 +45,24 @@ pub(crate) fn current() -> &'static RuntimeConfig {
 
 /// 为命令行程序初始化进程级配置。
 #[allow(dead_code)]
-pub(crate) fn initialize_for_cli(cli_value: Option<&str>) -> Result<(), String> {
-    let snapshot = load_layers(cli_value, true)?;
+pub(crate) fn initialize_for_cli(
+    cli_value: Option<&str>,
+    scale_override: Option<f64>,
+) -> Result<(), String> {
+    let snapshot = load_layers(cli_value, true, scale_override)?;
     RUNTIME_CONFIG
         .set(snapshot)
         .map_err(|_| "configuration has already been initialized".to_string())
 }
 
 fn load_embedded_snapshot() -> Result<ConfigSnapshot, String> {
-    load_layers(None, false)
+    load_layers(None, false, None)
 }
 
 fn load_layers(
     cli_value: Option<&str>,
     include_config_directory: bool,
+    scale_override: Option<f64>,
 ) -> Result<ConfigSnapshot, String> {
     let defaults = parse_document(default_config_yaml(), "embedded defaults")?;
     let mut merged = defaults.clone();
@@ -82,7 +86,7 @@ fn load_layers(
     validate_video_background(&merged)?;
     validate_layout_scales(&merged)?;
     let mut runtime_value = merged.clone();
-    apply_layout_scales(&mut runtime_value)?;
+    apply_layout_scales(&mut runtime_value, scale_override)?;
     let runtime = serde_json::from_value(runtime_value)
         .map_err(|error| format!("invalid merged configuration: {error}"))?;
     let variant = config_variant(&defaults, &merged)?;
@@ -106,7 +110,10 @@ fn validate_layout_scales(config: &Value) -> Result<(), String> {
 }
 
 /// 将配置中的像素量预先换算成目标绘制尺寸，渲染器不会再对最终图像做整体缩放。
-fn apply_layout_scales(config: &mut Value) -> Result<(), String> {
+fn apply_layout_scales(config: &mut Value, scale_override: Option<f64>) -> Result<(), String> {
+    if scale_override.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) {
+        return Err("output scale override must be a positive finite number".to_string());
+    }
     for mode in ["standard", "taiko", "catch", "mania"] {
         for format in ["png", "gif", "mp4"] {
             let pointer = format!("/layout/{mode}/{format}");
@@ -115,12 +122,22 @@ fn apply_layout_scales(config: &mut Value) -> Result<(), String> {
                     "configuration section 'layout.{mode}.{format}' is missing"
                 ));
             };
-            let scale = section
-                .get("SCALE")
-                .and_then(Value::as_f64)
-                .ok_or_else(|| {
-                    format!("configuration field 'layout.{mode}.{format}.SCALE' is invalid")
+            let configured_scale =
+                section
+                    .get("SCALE")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| {
+                        format!("configuration field 'layout.{mode}.{format}.SCALE' is invalid")
+                    })?;
+            let scale = scale_override.unwrap_or(configured_scale);
+            if let Some(scale_override) = scale_override {
+                // 命令行倍率是本次请求的临时覆盖，不参与配置差异哈希，
+                // 但必须写入运行时快照，使所有渲染器读取到同一个倍率。
+                let number = serde_json::Number::from_f64(scale_override).ok_or_else(|| {
+                    "output scale override must be a positive finite number".to_string()
                 })?;
+                section.insert("SCALE".to_string(), Value::Number(number));
+            }
             for (name, value) in section.iter_mut() {
                 if name == "SCALE" || !is_pixel_layout_field(name) {
                     continue;
@@ -560,7 +577,14 @@ mod tests {
     }
 
     fn load_snapshot(cli_value: Option<&str>) -> Result<super::RuntimeConfig, String> {
-        super::load_layers(cli_value, true).map(|snapshot| snapshot.runtime)
+        super::load_layers(cli_value, true, None).map(|snapshot| snapshot.runtime)
+    }
+
+    fn load_snapshot_with_scale(
+        cli_value: Option<&str>,
+        scale_override: Option<f64>,
+    ) -> Result<super::RuntimeConfig, String> {
+        super::load_layers(cli_value, true, scale_override).map(|snapshot| snapshot.runtime)
     }
 
     #[test]
@@ -947,5 +971,42 @@ layout:
         let one_and_half =
             load_snapshot(Some(r#"{"layout":{"mania":{"gif":{"SCALE":1.5}}}}"#)).unwrap();
         assert_eq!(one_and_half.layout.mania.gif.SV_TEXT_FONT_SIZE, 12);
+    }
+
+    #[test]
+    fn command_line_scale_replaces_config_scale_for_all_pixel_fields() {
+        let configured = load_snapshot_with_scale(
+            Some(
+                r#"{
+                    "layout": {
+                        "standard": {"png": {"SCALE": 2.0}}
+                    }
+                }"#,
+            ),
+            Some(0.5),
+        )
+        .unwrap();
+        assert_eq!(configured.layout.standard.png.SCALE, 0.5);
+        assert_eq!(configured.layout.standard.png.PAGE_MARGIN_TOP, 10);
+        assert_eq!(configured.layout.standard.png.TIME_LABEL_FONT_SIZE, 12);
+        assert_eq!(configured.layout.standard.png.MS_PER_IMAGE, 400);
+    }
+
+    #[test]
+    fn command_line_scale_is_validated_before_runtime_snapshot_creation() {
+        for scale in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let error = load_snapshot_with_scale(None, Some(scale)).expect_err("倍率必须被拒绝");
+            assert!(error.contains("positive finite"), "{error}");
+        }
+    }
+
+    #[test]
+    fn command_line_scale_does_not_change_config_variant_hash() {
+        let without_scale = super::load_layers(None, true, None).unwrap();
+        let with_scale = super::load_layers(None, true, Some(2.0)).unwrap();
+        assert_eq!(
+            without_scale.variant.as_ref().map(|variant| &variant.hash),
+            with_scale.variant.as_ref().map(|variant| &variant.hash)
+        );
     }
 }
