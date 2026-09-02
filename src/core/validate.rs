@@ -144,4 +144,18 @@ mod tests {
         assert!(validate_with_context(&ctx("png", 0), &[], Some(30.0), None).is_err());
         assert!(validate_with_context(&ctx("mp4", 0), &[], Some(0.0), None).is_err());
     }
+
+    #[test]
+    fn da_range_is_checked_after_target_mode_is_known() {
+        let mania_da = crate::core::mods::parse_mods(&["DAOD-15".into()]).unwrap();
+        validate_with_context(&ctx("gif", 3), &[], None, Some(mania_da)).unwrap_err();
+
+        let standard_da = crate::core::mods::parse_mods(&["DAAR-10".into()]).unwrap();
+        validate_with_context(&ctx("gif", 0), &[], None, Some(standard_da)).unwrap();
+
+        let invalid_standard_da = crate::core::mods::parse_mods(&["DAAR-10.1".into()]).unwrap();
+        let error = validate_with_context(&ctx("gif", 0), &[], None, Some(invalid_standard_da))
+            .unwrap_err();
+        assert!(error.to_string().contains("DA AR must be in [-10.0, 11.0]"));
+    }
 }

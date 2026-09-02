@@ -599,4 +599,17 @@ mod tests {
             as f64;
         assert_eq!(settings.object_scale, expected_scale);
     }
+
+    #[test]
+    fn difficulty_adjust_negative_ar_extends_preempt_time() {
+        let beatmap = beatmap_with_difficulty("4", "5");
+        let mods = ModSettings {
+            da_ar: Some(-10.0),
+            ..ModSettings::new()
+        };
+        let settings = build_render_settings(&beatmap, Some(&mods));
+
+        // osu! 的 AR 曲线在 AR<0 时继续线性外推；AR=-10 对应 3000ms。
+        assert_eq!(settings.preempt_ms, 3000);
+    }
 }
