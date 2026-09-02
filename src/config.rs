@@ -111,8 +111,9 @@ fn validate_layout_scales(config: &Value) -> Result<(), String> {
 
 /// 将配置中的像素量预先换算成目标绘制尺寸，渲染器不会再对最终图像做整体缩放。
 fn apply_layout_scales(config: &mut Value, scale_override: Option<f64>) -> Result<(), String> {
-    if scale_override.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) {
-        return Err("output scale override must be a positive finite number".to_string());
+    if let Some(scale) = scale_override {
+        crate::core::validate::validate_positive_finite("output scale override", scale)
+            .map_err(|error| error.to_string())?;
     }
     for mode in ["standard", "taiko", "catch", "mania"] {
         for format in ["png", "gif", "mp4"] {

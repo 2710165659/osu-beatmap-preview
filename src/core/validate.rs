@@ -7,6 +7,14 @@
 use crate::core::errors::{PreviewError, Result};
 use crate::core::mods::{mods_for_mode, validate_mods, ModSettings};
 
+/// 校验 Beatmap ID。
+pub fn validate_bid(v: &str) -> Result<()> {
+    if v.is_empty() || !v.chars().all(|c| c.is_ascii_digit()) {
+        return Err(PreviewError::new("bid must be numeric"));
+    }
+    Ok(())
+}
+
 /// 校验 `--convert` 参数值。
 pub fn validate_convert_value(v: &str) -> Result<()> {
     match v {
@@ -25,6 +33,27 @@ pub fn validate_fmt_value(v: &str) -> Result<()> {
             "--fmt must be png, gif, or mp4; got '{v}'"
         ))),
     }
+}
+
+/// 将 CLI 数值参数解析为有限正数。
+// 库和二进制目标分别编译本模块；该函数由二进制入口使用，库目标中会被视为未使用。
+#[allow(dead_code)]
+pub fn parse_positive_finite(name: &str, raw: &str) -> Result<f64> {
+    let value = raw
+        .parse::<f64>()
+        .map_err(|_| PreviewError::new(format!("{name} must be a number, got '{raw}'")))?;
+    validate_positive_finite(name, value)?;
+    Ok(value)
+}
+
+/// 校验已经解析的 CLI 有限正数。
+pub fn validate_positive_finite(name: &str, value: f64) -> Result<()> {
+    if !value.is_finite() || value <= 0.0 {
+        return Err(PreviewError::new(format!(
+            "{name} must be a positive finite number"
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,6 +81,39 @@ pub fn parse_time_point(raw: &str) -> Result<TimePoint> {
     Ok(TimePoint::Seconds(value))
 }
 
+/// 统一校验 CLI 参数的值格式，并解析模组列表。
+///
+/// 这里不处理需要谱面模式和输出格式的规则；这些规则由
+/// [`validate_with_context`] 在谱面解析完成后继续校验。
+pub fn validate_cli_options(
+    bid: &str,
+    convert: Option<&str>,
+    fmt: Option<&str>,
+    mod_tokens: &[String],
+    duration_time: Option<f64>,
+    scale: Option<f64>,
+) -> Result<Option<ModSettings>> {
+    validate_bid(bid)?;
+    if let Some(value) = convert {
+        validate_convert_value(value)?;
+    }
+    if let Some(value) = fmt {
+        validate_fmt_value(value)?;
+    }
+    if let Some(duration) = duration_time {
+        validate_positive_finite("duration time", duration)?;
+    }
+    if let Some(value) = scale {
+        validate_positive_finite("scale", value)?;
+    }
+    let mods = if mod_tokens.is_empty() {
+        None
+    } else {
+        Some(crate::core::mods::parse_mods(mod_tokens)?)
+    };
+    Ok(mods)
+}
+
 /// 与模式相关的校验上下文。
 pub struct ValidateContext<'a> {
     pub bid: &'a str,
@@ -69,9 +131,7 @@ pub fn validate_with_context(
     mods: Option<ModSettings>,
 ) -> Result<Option<ModSettings>> {
     // --- 谱面 ID ---
-    if ctx.bid.is_empty() || !ctx.bid.chars().all(|c| c.is_ascii_digit()) {
-        return Err(PreviewError::new("bid must be numeric"));
-    }
+    validate_bid(ctx.bid)?;
 
     if duration_time.is_some() && !matches!(ctx.fmt, "gif" | "mp4") {
         return Err(PreviewError::new(
@@ -93,11 +153,7 @@ pub fn validate_with_context(
         ));
     }
     if let Some(duration) = duration_time {
-        if !duration.is_finite() || duration <= 0.0 {
-            return Err(PreviewError::new(
-                "duration time must be a positive finite number",
-            ));
-        }
+        validate_positive_finite("duration time", duration)?;
     }
 
     // --- 模组 ---
@@ -157,5 +213,32 @@ mod tests {
         let error = validate_with_context(&ctx("gif", 0), &[], None, Some(invalid_standard_da))
             .unwrap_err();
         assert!(error.to_string().contains("DA AR must be in [-10.0, 11.0]"));
+    }
+
+    #[test]
+    fn cli_options_use_one_value_validation_entry_point() {
+        let tokens = ["hd".to_string(), "dt1.25".to_string()];
+        let mods = validate_cli_options(
+            "123",
+            Some("std"),
+            Some("gif"),
+            &tokens,
+            Some(2.0),
+            Some(1.5),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(mods.hidden && mods.double_time);
+    }
+
+    #[test]
+    fn cli_options_reject_invalid_scalar_and_token_values() {
+        let empty = ["  ".to_string()];
+        assert!(validate_cli_options("", None, None, &[], None, None).is_err());
+        assert!(validate_cli_options("1", Some("osu"), None, &[], None, None).is_err());
+        assert!(validate_cli_options("1", None, Some("webm"), &[], None, None).is_err());
+        assert!(validate_cli_options("1", None, None, &empty, None, None).is_err());
+        assert!(validate_cli_options("1", None, None, &[], Some(0.0), None).is_err());
+        assert!(validate_cli_options("1", None, None, &[], None, Some(f64::NAN)).is_err());
     }
 }

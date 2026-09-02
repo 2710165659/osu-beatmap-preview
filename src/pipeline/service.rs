@@ -20,11 +20,7 @@ pub fn generate_preview(
     time_points: Vec<TimePoint>,
     duration_time: Option<f64>,
     no_cache: bool,
-    scale: Option<f64>,
 ) -> Result<Value> {
-    if scale.is_some_and(|value| !value.is_finite() || value <= 0.0) {
-        return Err(PreviewError::new("scale must be a positive finite number"));
-    }
     let started = Instant::now();
     log::set_bid(bid);
     let deadline = initial_deadline(started, fmt, convert);

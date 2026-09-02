@@ -39,22 +39,19 @@ impl PreviewOptions {
 }
 
 pub fn generate_preview(options: PreviewOptions) -> Result<serde_json::Value, PreviewError> {
+    let mods = core::validate::validate_cli_options(
+        &options.bid,
+        options.convert.as_deref(),
+        options.format.as_deref(),
+        &options.mods,
+        options.duration_time,
+        options.scale,
+    )?;
     if let Err(error) = config::initialize_for_cli(options.config.as_deref(), options.scale) {
         if options.config.is_some() || !error.contains("already been initialized") {
             return Err(PreviewError::new(format!("configuration error: {error}")));
         }
     }
-    if let Some(value) = options.convert.as_deref() {
-        core::validate::validate_convert_value(value)?;
-    }
-    if let Some(value) = options.format.as_deref() {
-        core::validate::validate_fmt_value(value)?;
-    }
-    let mods = if options.mods.is_empty() {
-        None
-    } else {
-        Some(core::mods::parse_mods(&options.mods)?)
-    };
 
     pipeline::service::generate_preview(
         &options.bid,
@@ -64,6 +61,5 @@ pub fn generate_preview(options: PreviewOptions) -> Result<serde_json::Value, Pr
         options.time_points,
         options.duration_time,
         options.no_cache,
-        options.scale,
     )
 }

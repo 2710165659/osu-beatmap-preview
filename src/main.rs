@@ -15,7 +15,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 struct Args {
     bid: String,
     convert: Option<String>,
-    mods: Vec<String>,
+    mods: Option<core::mods::ModSettings>,
     fmt: Option<String>,
     time_points: Vec<core::validate::TimePoint>,
     duration_time: Option<f64>,
@@ -59,26 +59,14 @@ fn parse_args() -> Args {
             }
             Long("convert") => {
                 let v = take_value(&mut parser, "--convert");
-                if let Err(e) = core::validate::validate_convert_value(&v) {
-                    eprintln!("error: {e}");
-                    print_usage_and_exit(2);
-                }
                 convert = Some(v);
             }
             Long("mod") => {
                 let value = take_value(&mut parser, "--mod");
-                if value.trim().is_empty() {
-                    eprintln!("error: --mod requires a non-empty value");
-                    print_usage_and_exit(2);
-                }
                 mods.push(value);
             }
             Long("fmt") => {
                 let v = take_value(&mut parser, "--fmt");
-                if let Err(e) = core::validate::validate_fmt_value(&v) {
-                    eprintln!("error: {e}");
-                    print_usage_and_exit(2);
-                }
                 fmt = Some(v);
             }
             Long("time-points") => {
@@ -92,14 +80,11 @@ fn parse_args() -> Args {
             }
             Long("duration-time") => {
                 let value = take_value(&mut parser, "--duration-time");
-                let parsed: f64 = value.parse().unwrap_or_else(|_| {
-                    eprintln!("error: --duration-time must be a number, got '{value}'");
-                    print_usage_and_exit(2);
-                });
-                if !parsed.is_finite() || parsed <= 0.0 {
-                    eprintln!("error: --duration-time must be a positive finite number");
-                    print_usage_and_exit(2);
-                }
+                let parsed = core::validate::parse_positive_finite("--duration-time", &value)
+                    .unwrap_or_else(|error| {
+                        eprintln!("error: {error}");
+                        print_usage_and_exit(2);
+                    });
                 duration_time = Some(parsed);
             }
             Long("no-cache") => {
@@ -117,14 +102,11 @@ fn parse_args() -> Args {
             }
             Long("scale") => {
                 let value = take_value(&mut parser, "--scale");
-                let parsed: f64 = value.parse().unwrap_or_else(|_| {
-                    eprintln!("error: --scale must be a number, got '{value}'");
-                    print_usage_and_exit(2);
-                });
-                if !parsed.is_finite() || parsed <= 0.0 {
-                    eprintln!("error: --scale must be a positive finite number");
-                    print_usage_and_exit(2);
-                }
+                let parsed = core::validate::parse_positive_finite("--scale", &value)
+                    .unwrap_or_else(|error| {
+                        eprintln!("error: {error}");
+                        print_usage_and_exit(2);
+                    });
                 scale = Some(parsed);
             }
             Long("version") => {
@@ -159,6 +141,18 @@ fn parse_args() -> Args {
             print_usage_and_exit(2);
         }
     };
+    let mods = core::validate::validate_cli_options(
+        &bid,
+        convert.as_deref(),
+        fmt.as_deref(),
+        &mods,
+        duration_time,
+        scale,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("error: {error}");
+        print_usage_and_exit(2);
+    });
     Args {
         bid,
         convert,
@@ -185,21 +179,14 @@ fn take_value(parser: &mut lexopt::Parser, name: &str) -> String {
 }
 
 fn run(args: &Args) -> Result<serde_json::Value> {
-    let mods_unvalidated = if args.mods.is_empty() {
-        None
-    } else {
-        Some(core::mods::parse_mods(&args.mods)?)
-    };
-
     pipeline::service::generate_preview(
         &args.bid,
         args.fmt.as_deref(),
         args.convert.as_deref(),
-        mods_unvalidated,
+        args.mods.clone(),
         args.time_points.clone(),
         args.duration_time,
         args.no_cache,
-        args.scale,
     )
 }
 
