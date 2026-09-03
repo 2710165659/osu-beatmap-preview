@@ -1,0 +1,1327 @@
+mode=1
+circle_size=4
+timing_points_count=274
+timing_points:
+TimingPoint { time: 1584.0, beat_length: 480.0, meter: 4, uninherited: true, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 1584.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 1584.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 2064.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 2064.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 3264.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 3264.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 3504.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 3504.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 3924.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 3924.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 4164.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 4164.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 5424.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 5424.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 5904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 6384.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 6864.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 7344.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 8304.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 8304.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 10704.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 10704.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 11184.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 11184.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 12624.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 12624.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 13104.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 13104.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 14544.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 14544.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 15024.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 15024.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 16464.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 16464.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 16944.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 16944.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 18384.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 18384.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 18864.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 18864.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 20304.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 20304.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 20784.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 20784.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 23664.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 23664.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 24384.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 24384.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 26304.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 26304.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 26544.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 26544.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 28224.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 28224.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 28464.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 28464.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 33984.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 33984.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 34224.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 34224.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 35904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 35904.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 36144.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 36264.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 39984.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 41424.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 41424.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 41904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 41904.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 43344.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 43344.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 43824.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 44304.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 48624.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 48624.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 49584.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 49584.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 50544.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 50544.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 51504.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 51504.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 51984.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 52464.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 52944.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 55344.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 55344.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 56304.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 56304.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 56664.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 56784.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 57024.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 57024.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 57264.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 57264.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 57684.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 57684.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 58464.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 58464.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 58944.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 58944.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 60144.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 60144.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 60624.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 61104.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 61104.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 61584.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 61584.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 62904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 63024.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 63024.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 63984.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 63984.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 64704.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 64704.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 64944.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 64944.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 65364.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 65364.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 66144.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 66144.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 66624.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 66624.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 68784.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 68904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 69264.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 69384.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 69744.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 69864.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 70704.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 70704.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 72384.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 72384.0, beat_length: -50.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 72624.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 72624.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 74304.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 74304.0, beat_length: -50.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 74544.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 74544.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 76224.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 76224.0, beat_length: -50.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 76464.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 76464.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 77184.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 77184.0, beat_length: -50.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 77424.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 77424.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 77784.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 77784.0, beat_length: -50.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 78024.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 78024.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 83904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 83904.0, beat_length: -50.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 84264.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 84384.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 86064.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 86064.0, beat_length: -303.030303030303, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 86184.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 86544.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 86544.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 89664.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 89664.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 89904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 89904.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 93744.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 93744.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 93864.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 94224.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 94464.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97344.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97344.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97584.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97584.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 100464.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 100704.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 101424.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 101424.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 102864.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 102864.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 103344.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 103344.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 104784.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 104784.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 109104.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 109104.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 109584.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 109584.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 110544.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 110544.0, beat_length: -303.030303030303, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 111024.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 111024.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 111504.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 111504.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 112464.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 112464.0, beat_length: -303.030303030303, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 112944.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 113424.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 116544.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 116544.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 116784.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 117744.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 117744.0, beat_length: -40.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 118224.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 118224.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 118464.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 118464.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 118704.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 118704.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 119124.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 119124.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 119904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 119904.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 120384.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 120384.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 121584.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 121584.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 122064.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 122064.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 122544.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 122544.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 123024.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 123024.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 124344.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 124464.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 124464.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 125424.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 125424.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 125904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 125904.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 126144.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 126144.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 126384.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 126384.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 126804.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 126804.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 127584.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 127704.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 128064.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 128064.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 130224.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 130344.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 130704.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 130824.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 131184.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 131304.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 132144.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 133344.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 133824.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 139824.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 140304.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 143664.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 144144.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 144624.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 144624.0, beat_length: -35.7142857142857, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 145104.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 145584.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 145584.0, beat_length: -1000.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 148944.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 149424.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 149424.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 150384.0, beat_length: 480.0, meter: 4, uninherited: true, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 165744.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 165744.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 166224.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 166224.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 173424.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 173424.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 173904.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 173904.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 174864.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 174864.0, beat_length: -33.3333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 175344.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 176784.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 181104.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+hit_objects_count=1047
+hit_objects:
+TaikoHitObject { start_time: 1584, end_time: 1983, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 2064, end_time: 2064, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 2224, end_time: 2224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 2304, end_time: 2304, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 2464, end_time: 2464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 2544, end_time: 2544, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 2704, end_time: 2704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 2784, end_time: 2784, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 2944, end_time: 2944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 3024, end_time: 3024, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 3184, end_time: 3184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 3264, end_time: 3264, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 3424, end_time: 3424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 3504, end_time: 3504, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 3744, end_time: 3744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 3924, end_time: 3924, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 4044, end_time: 4044, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 4164, end_time: 4164, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 4284, end_time: 4284, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 4404, end_time: 4404, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 4464, end_time: 4464, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 4704, end_time: 4704, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 4944, end_time: 4944, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 5184, end_time: 5184, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 5244, end_time: 5244, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 5304, end_time: 5304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 5424, end_time: 5784, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 5904, end_time: 5904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 6024, end_time: 6024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 6144, end_time: 6144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 6264, end_time: 6264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 6384, end_time: 6384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 6504, end_time: 6504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 6624, end_time: 6624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 6744, end_time: 6744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 6864, end_time: 6864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 6984, end_time: 6984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 7104, end_time: 7104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 7224, end_time: 7224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 7344, end_time: 7344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 8304, end_time: 8304, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 8464, end_time: 8464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 8544, end_time: 8544, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 8704, end_time: 8704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 8784, end_time: 8784, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 8944, end_time: 8944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 9024, end_time: 9024, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 9184, end_time: 9184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 9264, end_time: 9264, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 9424, end_time: 9424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 9504, end_time: 9504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 9664, end_time: 9664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 9744, end_time: 9744, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 9904, end_time: 9904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 9984, end_time: 9984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 10144, end_time: 10144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 10224, end_time: 10224, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 10384, end_time: 10384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 10464, end_time: 10464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 10624, end_time: 10624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 10704, end_time: 10704, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 10904, end_time: 10904, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 11104, end_time: 11104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 11184, end_time: 11184, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 11344, end_time: 11344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 11424, end_time: 11424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 11584, end_time: 11584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 11664, end_time: 11664, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 11824, end_time: 11824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 11904, end_time: 11904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 12064, end_time: 12064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 12144, end_time: 12144, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 12304, end_time: 12304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 12384, end_time: 12384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 12544, end_time: 12544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 12624, end_time: 12624, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 12824, end_time: 12824, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 13024, end_time: 13024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 13104, end_time: 13104, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 13264, end_time: 13264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 13344, end_time: 13344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 13504, end_time: 13504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 13584, end_time: 13584, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 13664, end_time: 13664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 13744, end_time: 13744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 13824, end_time: 13824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 13984, end_time: 13984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 14064, end_time: 14064, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 14224, end_time: 14224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 14304, end_time: 14304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 14464, end_time: 14464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 14544, end_time: 14544, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 14744, end_time: 14744, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 14944, end_time: 14944, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 15024, end_time: 15024, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 15184, end_time: 15184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 15264, end_time: 15264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 15424, end_time: 15424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 15504, end_time: 15504, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 15664, end_time: 15664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 15744, end_time: 15744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 15904, end_time: 15904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 15984, end_time: 15984, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 16064, end_time: 16064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 16144, end_time: 16144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 16224, end_time: 16224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 16384, end_time: 16384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 16464, end_time: 16464, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 16624, end_time: 16624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 16704, end_time: 16704, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 16864, end_time: 16864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 16944, end_time: 16944, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 17104, end_time: 17104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 17184, end_time: 17184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 17344, end_time: 17344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 17424, end_time: 17424, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 17544, end_time: 17544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 17664, end_time: 17664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 17784, end_time: 17784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 17904, end_time: 17904, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 18064, end_time: 18064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 18144, end_time: 18144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 18304, end_time: 18304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 18384, end_time: 18384, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 18584, end_time: 18584, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 18784, end_time: 18784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 18864, end_time: 18864, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 19024, end_time: 19024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 19104, end_time: 19104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 19264, end_time: 19264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 19344, end_time: 19344, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 19504, end_time: 19504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 19584, end_time: 19584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 19744, end_time: 19744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 19824, end_time: 19824, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 19904, end_time: 19904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 20064, end_time: 20064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 20144, end_time: 20144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 20304, end_time: 20304, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 20464, end_time: 20464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 20544, end_time: 20544, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 20704, end_time: 20704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 20784, end_time: 20784, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 20943, end_time: 20943, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 21024, end_time: 21024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 21264, end_time: 21264, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 21423, end_time: 21423, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 21504, end_time: 21504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 21744, end_time: 21744, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 21903, end_time: 21903, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 21984, end_time: 21984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 22224, end_time: 22224, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 22383, end_time: 22383, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 22464, end_time: 22464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 22624, end_time: 22624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 22704, end_time: 22704, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 22863, end_time: 22863, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 22944, end_time: 22944, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 23103, end_time: 23103, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 23184, end_time: 23184, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 23344, end_time: 23344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 23424, end_time: 23424, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 23584, end_time: 23584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 23664, end_time: 23664, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 23824, end_time: 23824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 23904, end_time: 23904, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 24064, end_time: 24064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 24144, end_time: 24144, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 24304, end_time: 24304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 24384, end_time: 24384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 24464, end_time: 24464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 24544, end_time: 24544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 24624, end_time: 24624, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 24744, end_time: 24744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 24864, end_time: 24864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 25104, end_time: 25104, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 25224, end_time: 25224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 25344, end_time: 25344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 25464, end_time: 25464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 25584, end_time: 25584, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 25704, end_time: 25704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 25824, end_time: 25824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 26064, end_time: 26064, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 26184, end_time: 26184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 26304, end_time: 26304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 26423, end_time: 26423, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 26544, end_time: 26544, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 26784, end_time: 26784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 26904, end_time: 26904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 27024, end_time: 27024, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 27144, end_time: 27144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 27264, end_time: 27264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 27384, end_time: 27384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 27504, end_time: 27504, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 27624, end_time: 27624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 27744, end_time: 27744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 27864, end_time: 27864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 27984, end_time: 27984, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 28104, end_time: 28104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 28224, end_time: 28224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 28343, end_time: 28343, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 28464, end_time: 28464, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 28704, end_time: 28704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 28824, end_time: 28824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 28944, end_time: 28944, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 29064, end_time: 29064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 29184, end_time: 29184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 29304, end_time: 29304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 29424, end_time: 29424, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 29544, end_time: 29544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 29784, end_time: 29784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 29904, end_time: 29904, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 30024, end_time: 30024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 30144, end_time: 30144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 30264, end_time: 30264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 30384, end_time: 30384, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 30624, end_time: 30624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 30744, end_time: 30744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 30864, end_time: 30864, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 31104, end_time: 31104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 31224, end_time: 31224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 31344, end_time: 31344, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 31464, end_time: 31464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 31584, end_time: 31584, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 31704, end_time: 31704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 31824, end_time: 31824, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 31884, end_time: 31884, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 31944, end_time: 31944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 32064, end_time: 32064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 32184, end_time: 32184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 32304, end_time: 32304, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 32424, end_time: 32424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 32664, end_time: 32664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 32784, end_time: 32784, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 32904, end_time: 32904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 33024, end_time: 33024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 33144, end_time: 33144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 33264, end_time: 33264, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 33384, end_time: 33384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 33624, end_time: 33624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 33744, end_time: 33744, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 33864, end_time: 33864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 33984, end_time: 33984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 34103, end_time: 34103, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 34224, end_time: 34224, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 34464, end_time: 34464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 34584, end_time: 34584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 34704, end_time: 34704, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 34824, end_time: 34824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 34944, end_time: 34944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 35064, end_time: 35064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 35184, end_time: 35184, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 35304, end_time: 35304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 35424, end_time: 35424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 35544, end_time: 35544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 35664, end_time: 35664, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 35784, end_time: 35784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 35904, end_time: 35904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 36023, end_time: 36023, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 36144, end_time: 36144, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 36264, end_time: 36264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 36504, end_time: 36504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 36624, end_time: 36624, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 36744, end_time: 36744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 36984, end_time: 36984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 37104, end_time: 37104, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 37224, end_time: 37224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 37344, end_time: 37344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 37464, end_time: 37464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 37584, end_time: 37584, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 37704, end_time: 37704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 37824, end_time: 37824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 38064, end_time: 38064, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 38184, end_time: 38184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 38304, end_time: 38304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 38424, end_time: 38424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 38544, end_time: 38544, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 38664, end_time: 38664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 38784, end_time: 38784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 38904, end_time: 38904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 39024, end_time: 39024, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 39144, end_time: 39144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 39264, end_time: 39264, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 39384, end_time: 39384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 39504, end_time: 39504, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 39864, end_time: 39864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 39984, end_time: 39984, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 40344, end_time: 40344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 40464, end_time: 40464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 40704, end_time: 40704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 40944, end_time: 40944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 41064, end_time: 41064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 41184, end_time: 41184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 41304, end_time: 41304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 41424, end_time: 41424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 41664, end_time: 41664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 41904, end_time: 41904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 42264, end_time: 42264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 42384, end_time: 42384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 42624, end_time: 42624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 42864, end_time: 42864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 42984, end_time: 42984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 43104, end_time: 43104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 43224, end_time: 43224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 43344, end_time: 43344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 43584, end_time: 43584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 43824, end_time: 43824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 43944, end_time: 43944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 44064, end_time: 44064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 44184, end_time: 44184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 44304, end_time: 44304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 44424, end_time: 44424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 44544, end_time: 44544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 44664, end_time: 44664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 44784, end_time: 44784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 45024, end_time: 45024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 45144, end_time: 45144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 45264, end_time: 45264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 45504, end_time: 45504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 45744, end_time: 45744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 45864, end_time: 45864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 45984, end_time: 45984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 46104, end_time: 46104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 46224, end_time: 46224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 46344, end_time: 46344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 46464, end_time: 46464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 46584, end_time: 46584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 46704, end_time: 46704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 46944, end_time: 46944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 47064, end_time: 47064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 47184, end_time: 47184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 47424, end_time: 47424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 47664, end_time: 47664, hit_type: 0, hitsound: 6 }
+TaikoHitObject { start_time: 47784, end_time: 47784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 47904, end_time: 47904, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 48024, end_time: 48024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 48144, end_time: 48144, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 48264, end_time: 48264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 48384, end_time: 48384, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 48504, end_time: 48504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 48624, end_time: 48624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 48864, end_time: 48864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 48984, end_time: 48984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 49104, end_time: 49104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 49344, end_time: 49344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 49584, end_time: 49584, hit_type: 0, hitsound: 6 }
+TaikoHitObject { start_time: 49704, end_time: 49704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 49824, end_time: 49824, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 49944, end_time: 49944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 50064, end_time: 50064, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 50184, end_time: 50184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 50304, end_time: 50304, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 50424, end_time: 50424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 50544, end_time: 50544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 50784, end_time: 50784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 50904, end_time: 50904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 51024, end_time: 51024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 51264, end_time: 51264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 51504, end_time: 51504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 51624, end_time: 51624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 51744, end_time: 51744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 51864, end_time: 51864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 51984, end_time: 51984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 52104, end_time: 52104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 52224, end_time: 52224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 52344, end_time: 52344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 52464, end_time: 52464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 52584, end_time: 52584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 52704, end_time: 52704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 52824, end_time: 52824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 52944, end_time: 52944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 53064, end_time: 53064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 53184, end_time: 53184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 53304, end_time: 53304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 53424, end_time: 53424, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 53904, end_time: 53904, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 54384, end_time: 54384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 54624, end_time: 54624, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 54744, end_time: 54744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 54864, end_time: 54864, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 54984, end_time: 54984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 55344, end_time: 55344, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 55463, end_time: 55463, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 55584, end_time: 55584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 55703, end_time: 55703, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 55824, end_time: 55824, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 55943, end_time: 55943, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 56064, end_time: 56064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 56183, end_time: 56183, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 56304, end_time: 56304, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 56544, end_time: 56544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 56664, end_time: 56664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 56784, end_time: 56784, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 56904, end_time: 56904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 57024, end_time: 57024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 57143, end_time: 57143, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 57264, end_time: 57264, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 57504, end_time: 57504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 57684, end_time: 57684, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 57803, end_time: 57803, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 57924, end_time: 57924, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 58043, end_time: 58043, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 58164, end_time: 58164, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 58224, end_time: 58224, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 58464, end_time: 58464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 58584, end_time: 58584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 58704, end_time: 58704, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 58824, end_time: 58824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 58944, end_time: 58944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 59063, end_time: 59063, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 59184, end_time: 59184, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 59303, end_time: 59303, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 59424, end_time: 59424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 59543, end_time: 59543, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 59664, end_time: 59664, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 59783, end_time: 59783, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 59904, end_time: 59904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 60023, end_time: 60023, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 60144, end_time: 60144, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 60504, end_time: 60504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 60624, end_time: 60624, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 60744, end_time: 60744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 60864, end_time: 60864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 60984, end_time: 60984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 61104, end_time: 61104, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 61464, end_time: 61464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 61584, end_time: 61584, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 61944, end_time: 61944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 62064, end_time: 62064, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 62184, end_time: 62184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 62304, end_time: 62304, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 62424, end_time: 62424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 62544, end_time: 62544, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 62783, end_time: 62783, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 62904, end_time: 62904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 63024, end_time: 63024, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 63143, end_time: 63143, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 63264, end_time: 63264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 63383, end_time: 63383, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 63504, end_time: 63504, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 63623, end_time: 63623, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 63744, end_time: 63744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 63863, end_time: 63863, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 63984, end_time: 63984, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 64344, end_time: 64344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 64464, end_time: 64464, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 64584, end_time: 64584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 64704, end_time: 64704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 64823, end_time: 64823, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 64944, end_time: 64944, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 65184, end_time: 65184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 65364, end_time: 65364, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 65483, end_time: 65483, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 65604, end_time: 65604, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 65723, end_time: 65723, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 65844, end_time: 65844, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 65904, end_time: 65904, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 66144, end_time: 66144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 66264, end_time: 66264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 66384, end_time: 66384, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 66504, end_time: 66504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 66624, end_time: 66624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 66743, end_time: 66743, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 66864, end_time: 66864, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 66983, end_time: 66983, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 67104, end_time: 67104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 67223, end_time: 67223, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 67344, end_time: 67344, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 67463, end_time: 67463, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 67584, end_time: 67584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 67703, end_time: 67703, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 67824, end_time: 67824, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 67943, end_time: 67943, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 68064, end_time: 68064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 68183, end_time: 68183, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 68304, end_time: 68304, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 68423, end_time: 68423, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 68544, end_time: 68544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 68663, end_time: 68663, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 68784, end_time: 68784, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 68904, end_time: 68904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 69024, end_time: 69024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 69264, end_time: 69264, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 69384, end_time: 69384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 69504, end_time: 69504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 69744, end_time: 69744, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 69864, end_time: 69864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 69984, end_time: 69984, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 70224, end_time: 70224, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 70464, end_time: 70464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 70704, end_time: 70704, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 70824, end_time: 70824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 70944, end_time: 70944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 71064, end_time: 71064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 71184, end_time: 71184, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 71304, end_time: 71304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 71424, end_time: 71424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 71544, end_time: 71544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 71664, end_time: 71664, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 71904, end_time: 71904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 72024, end_time: 72024, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 72264, end_time: 72264, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 72384, end_time: 72384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 72504, end_time: 72504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 72624, end_time: 72624, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 72744, end_time: 72744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 72864, end_time: 72864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 72984, end_time: 72984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 73104, end_time: 73104, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 73224, end_time: 73224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 73344, end_time: 73344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 73464, end_time: 73464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 73584, end_time: 73584, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 73824, end_time: 73824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 73944, end_time: 73944, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 74184, end_time: 74184, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 74304, end_time: 74304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 74424, end_time: 74424, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 74544, end_time: 74544, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 74784, end_time: 74784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 74904, end_time: 74904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 75024, end_time: 75024, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 75264, end_time: 75264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 75384, end_time: 75384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 75504, end_time: 75504, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 75744, end_time: 75744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 75864, end_time: 75864, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 76104, end_time: 76104, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 76224, end_time: 76224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 76344, end_time: 76344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 76464, end_time: 76464, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 76704, end_time: 76704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 76824, end_time: 76824, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 77064, end_time: 77064, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 77184, end_time: 77184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 77304, end_time: 77304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 77424, end_time: 77424, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 77664, end_time: 77664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 77784, end_time: 77784, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 77904, end_time: 77904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 78024, end_time: 78024, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 78084, end_time: 78084, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 78144, end_time: 78144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 78264, end_time: 78264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 78384, end_time: 78384, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 78504, end_time: 78504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 78624, end_time: 78624, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 78744, end_time: 78744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 78864, end_time: 78864, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 78984, end_time: 78984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 79104, end_time: 79104, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 79224, end_time: 79224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 79344, end_time: 79344, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 79584, end_time: 79584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 79704, end_time: 79704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 79824, end_time: 79824, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 79944, end_time: 79944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 80064, end_time: 80064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 80184, end_time: 80184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 80304, end_time: 80304, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 80424, end_time: 80424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 80544, end_time: 80544, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 80664, end_time: 80664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 80784, end_time: 80784, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 81024, end_time: 81024, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 81144, end_time: 81144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 81384, end_time: 81384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 81504, end_time: 81504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 81624, end_time: 81624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 81744, end_time: 81744, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 81864, end_time: 81864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 82104, end_time: 82104, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 82224, end_time: 82224, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 82344, end_time: 82344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 82464, end_time: 82464, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 82704, end_time: 82704, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 82824, end_time: 82824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 82944, end_time: 82944, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 83064, end_time: 83064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 83184, end_time: 83184, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 83304, end_time: 83304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 83424, end_time: 83424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 83544, end_time: 83544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 83664, end_time: 83664, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 83724, end_time: 83724, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 83784, end_time: 83784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 83904, end_time: 83904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 84144, end_time: 84144, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 84264, end_time: 84264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 84384, end_time: 84384, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 84504, end_time: 84504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 84624, end_time: 84624, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 84744, end_time: 84744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 84864, end_time: 84864, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 84984, end_time: 84984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 85104, end_time: 85104, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 85224, end_time: 85224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 85344, end_time: 85344, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 85464, end_time: 85464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 85584, end_time: 85584, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 85704, end_time: 85704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 85824, end_time: 85824, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 85944, end_time: 85944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 86064, end_time: 86064, hit_type: 0, hitsound: 6 }
+TaikoHitObject { start_time: 86424, end_time: 86424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 86544, end_time: 86544, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 86783, end_time: 86783, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 86904, end_time: 86904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 87024, end_time: 87024, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 87083, end_time: 87083, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 87143, end_time: 87143, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 87264, end_time: 87264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 87384, end_time: 87384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 87504, end_time: 87504, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 87624, end_time: 87624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 87744, end_time: 87744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 87864, end_time: 87864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 87984, end_time: 87984, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 88104, end_time: 88104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 88224, end_time: 88224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 88344, end_time: 88344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 88464, end_time: 88464, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 88523, end_time: 88523, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 88583, end_time: 88583, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 88704, end_time: 88704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 88824, end_time: 88824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 88944, end_time: 88944, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 89064, end_time: 89064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 89184, end_time: 89184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 89304, end_time: 89304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 89424, end_time: 89424, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 89483, end_time: 89483, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 89543, end_time: 89543, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 89664, end_time: 89664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 89783, end_time: 89783, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 89904, end_time: 89904, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 90024, end_time: 90024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 90144, end_time: 90144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 90264, end_time: 90264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 90384, end_time: 90384, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 90504, end_time: 90504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 90624, end_time: 90624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 90744, end_time: 90744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 90864, end_time: 90864, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 90923, end_time: 90923, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 90983, end_time: 90983, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 91104, end_time: 91104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 91224, end_time: 91224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 91344, end_time: 91344, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 91464, end_time: 91464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 91584, end_time: 91584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 91704, end_time: 91704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 91824, end_time: 91824, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 92184, end_time: 92184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 92304, end_time: 92304, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 92424, end_time: 92424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 92544, end_time: 92544, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 92664, end_time: 92664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 92784, end_time: 92784, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 92904, end_time: 92904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 93024, end_time: 93024, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 93144, end_time: 93144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 93264, end_time: 93264, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 93384, end_time: 93384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 93504, end_time: 93504, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 93624, end_time: 93624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 93744, end_time: 93744, hit_type: 0, hitsound: 6 }
+TaikoHitObject { start_time: 94104, end_time: 94104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 94224, end_time: 94224, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 94344, end_time: 94344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 94464, end_time: 94464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 94584, end_time: 94584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 94704, end_time: 94704, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 94763, end_time: 94763, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 94823, end_time: 94823, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 94944, end_time: 94944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 95064, end_time: 95064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 95184, end_time: 95184, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 95304, end_time: 95304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 95424, end_time: 95424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 95544, end_time: 95544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 95664, end_time: 95664, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 95784, end_time: 95784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 95904, end_time: 95904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 96024, end_time: 96024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 96144, end_time: 96144, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 96203, end_time: 96203, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 96263, end_time: 96263, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 96384, end_time: 96384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 96504, end_time: 96504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 96624, end_time: 96624, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 96744, end_time: 96744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 96864, end_time: 96864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 96984, end_time: 96984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 97104, end_time: 97104, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 97163, end_time: 97163, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 97223, end_time: 97223, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 97344, end_time: 97344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 97463, end_time: 97463, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 97584, end_time: 97584, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 97704, end_time: 97704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 97824, end_time: 97824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 97944, end_time: 97944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 98064, end_time: 98064, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 98303, end_time: 98303, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 98424, end_time: 98424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 98544, end_time: 98544, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 98603, end_time: 98603, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 98663, end_time: 98663, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 98784, end_time: 98784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 98904, end_time: 98904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 99024, end_time: 99024, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 99144, end_time: 99144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 99264, end_time: 99264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 99384, end_time: 99384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 99504, end_time: 99504, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 99624, end_time: 99624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 99744, end_time: 99744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 99864, end_time: 99864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 99984, end_time: 99984, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 100223, end_time: 100223, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 100344, end_time: 100344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 100464, end_time: 100464, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 100704, end_time: 100704, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 100824, end_time: 100824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 100944, end_time: 100944, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 101064, end_time: 101064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 101424, end_time: 101784, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 101904, end_time: 102264, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 102384, end_time: 102744, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 102864, end_time: 102864, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 102984, end_time: 102984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 103104, end_time: 103104, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 103224, end_time: 103224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 103344, end_time: 103704, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 103824, end_time: 104184, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 104304, end_time: 104664, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 104784, end_time: 104784, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 104904, end_time: 104904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 105024, end_time: 105024, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 105144, end_time: 105144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 105264, end_time: 105264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 105384, end_time: 105384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 105504, end_time: 105504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 105624, end_time: 105624, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 105744, end_time: 105744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 105984, end_time: 105984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 106104, end_time: 106104, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 106224, end_time: 106224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 106464, end_time: 106464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 106584, end_time: 106584, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 106704, end_time: 106704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 106824, end_time: 106824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 106944, end_time: 106944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 107184, end_time: 107184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 107304, end_time: 107304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 107424, end_time: 107424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 107544, end_time: 107544, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 107664, end_time: 107664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 107904, end_time: 107904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 108024, end_time: 108024, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 108144, end_time: 108144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 108384, end_time: 108384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 108504, end_time: 108504, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 108624, end_time: 108624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 108744, end_time: 108744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 108864, end_time: 108864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 108984, end_time: 108984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 109104, end_time: 109464, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 109584, end_time: 109584, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 109824, end_time: 109824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 109944, end_time: 109944, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 110064, end_time: 110064, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 110184, end_time: 110184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 110304, end_time: 110304, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 110424, end_time: 110424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 110544, end_time: 110544, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 110904, end_time: 110904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 111024, end_time: 111384, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 111504, end_time: 111504, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 111624, end_time: 111624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 111744, end_time: 111744, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 111864, end_time: 111864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 111984, end_time: 111984, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 112104, end_time: 112104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 112224, end_time: 112224, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 112344, end_time: 112344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 112464, end_time: 112464, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 112824, end_time: 112824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 112944, end_time: 112944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 113064, end_time: 113064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 113184, end_time: 113184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 113304, end_time: 113304, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 113424, end_time: 113424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 113664, end_time: 113664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 113784, end_time: 113784, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 113904, end_time: 113904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 114144, end_time: 114144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 114264, end_time: 114264, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 114384, end_time: 114384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 114504, end_time: 114504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 114624, end_time: 114624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 114864, end_time: 114864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 114984, end_time: 114984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 115104, end_time: 115104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 115224, end_time: 115224, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 115344, end_time: 115344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 115584, end_time: 115584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 115704, end_time: 115704, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 115824, end_time: 115824, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 115944, end_time: 115944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 116064, end_time: 116064, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 116124, end_time: 116124, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 116184, end_time: 116184, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 116304, end_time: 116304, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 116364, end_time: 116364, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 116424, end_time: 116424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 116544, end_time: 116544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 116663, end_time: 116663, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 116784, end_time: 116784, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 116903, end_time: 116903, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 117024, end_time: 117024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 117143, end_time: 117143, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 117264, end_time: 117264, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 117383, end_time: 117383, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 117504, end_time: 117504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 117623, end_time: 117623, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 117744, end_time: 117744, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 117984, end_time: 117984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 118104, end_time: 118104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 118224, end_time: 118224, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 118344, end_time: 118344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 118464, end_time: 118464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 118583, end_time: 118583, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 118704, end_time: 118704, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 118944, end_time: 118944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 119124, end_time: 119124, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 119243, end_time: 119243, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 119364, end_time: 119364, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 119483, end_time: 119483, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 119604, end_time: 119604, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 119664, end_time: 119664, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 119904, end_time: 119904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 120024, end_time: 120024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 120144, end_time: 120144, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 120203, end_time: 120203, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 120263, end_time: 120263, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 120384, end_time: 120384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 120503, end_time: 120503, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 120624, end_time: 120624, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 120743, end_time: 120743, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 120864, end_time: 120864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 120983, end_time: 120983, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 121104, end_time: 121104, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 121223, end_time: 121223, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 121344, end_time: 121344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 121463, end_time: 121463, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 121584, end_time: 121584, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 121944, end_time: 121944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 122064, end_time: 122064, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 122184, end_time: 122184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 122304, end_time: 122304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 122424, end_time: 122424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 122544, end_time: 122544, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 122904, end_time: 122904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 123024, end_time: 123024, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 123384, end_time: 123384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 123504, end_time: 123504, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 123624, end_time: 123624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 123744, end_time: 123744, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 123864, end_time: 123864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 123984, end_time: 123984, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 124223, end_time: 124223, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 124344, end_time: 124344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 124464, end_time: 124464, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 124583, end_time: 124583, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 124704, end_time: 124704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 124823, end_time: 124823, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 124944, end_time: 124944, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 125063, end_time: 125063, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 125184, end_time: 125184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 125303, end_time: 125303, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 125424, end_time: 125424, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 125784, end_time: 125784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 125904, end_time: 125904, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 126024, end_time: 126024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 126144, end_time: 126144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 126263, end_time: 126263, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 126384, end_time: 126384, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 126624, end_time: 126624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 126804, end_time: 126804, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 126923, end_time: 126923, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 127044, end_time: 127044, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 127163, end_time: 127163, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 127284, end_time: 127284, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 127344, end_time: 127344, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 127584, end_time: 127584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 127704, end_time: 127704, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 127824, end_time: 127824, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 127944, end_time: 127944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 128064, end_time: 128064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 128183, end_time: 128183, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 128304, end_time: 128304, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 128423, end_time: 128423, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 128544, end_time: 128544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 128663, end_time: 128663, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 128784, end_time: 128784, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 128903, end_time: 128903, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 129024, end_time: 129024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 129143, end_time: 129143, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 129264, end_time: 129264, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 129383, end_time: 129383, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 129504, end_time: 129504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 129623, end_time: 129623, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 129743, end_time: 129743, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 129862, end_time: 129862, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 129984, end_time: 129984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 130103, end_time: 130103, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 130224, end_time: 130224, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 130344, end_time: 130344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 130464, end_time: 130464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 130704, end_time: 130704, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 130824, end_time: 130824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 130944, end_time: 130944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 131184, end_time: 131184, hit_type: 0, hitsound: 4 }
+TaikoHitObject { start_time: 131304, end_time: 131304, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 131424, end_time: 131424, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 131664, end_time: 131664, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 131784, end_time: 131784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 131904, end_time: 131904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 132144, end_time: 132144, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 133344, end_time: 133344, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 133584, end_time: 133584, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 133824, end_time: 133824, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 134184, end_time: 134184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 134304, end_time: 134304, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 134664, end_time: 134664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 134784, end_time: 134784, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 135144, end_time: 135144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 135264, end_time: 135264, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 135624, end_time: 135624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 135744, end_time: 135744, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 135864, end_time: 135864, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 135984, end_time: 135984, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 136464, end_time: 136464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 137184, end_time: 137184, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 137424, end_time: 137424, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 137664, end_time: 137664, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 138024, end_time: 138024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 138144, end_time: 138144, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 138504, end_time: 138504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 138624, end_time: 138624, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 138984, end_time: 138984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 139104, end_time: 139104, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 139344, end_time: 139344, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 139584, end_time: 139584, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 139824, end_time: 139824, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 139944, end_time: 139944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 140064, end_time: 140064, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 140184, end_time: 140184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 140304, end_time: 140304, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 140424, end_time: 140424, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 140544, end_time: 140544, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 140904, end_time: 140904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 141024, end_time: 141024, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 141264, end_time: 141264, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 141504, end_time: 141504, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 141744, end_time: 141744, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 141864, end_time: 141864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 141984, end_time: 141984, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 142104, end_time: 142104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 142224, end_time: 142224, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 142344, end_time: 142344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 142464, end_time: 142464, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 142824, end_time: 142824, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 142944, end_time: 142944, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 143184, end_time: 143184, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 143424, end_time: 143424, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 143664, end_time: 143664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 143784, end_time: 143784, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 143904, end_time: 143904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 144024, end_time: 144024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 144144, end_time: 144144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 144264, end_time: 144264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 144384, end_time: 144384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 144504, end_time: 144504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 144624, end_time: 144624, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 144743, end_time: 144743, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 144864, end_time: 144864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 144983, end_time: 144983, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 145104, end_time: 145104, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 145223, end_time: 145223, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 145344, end_time: 145344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 145463, end_time: 145463, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 145584, end_time: 145584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 146064, end_time: 146064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 146544, end_time: 146544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 147024, end_time: 147024, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 147504, end_time: 147504, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 147984, end_time: 147984, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 148464, end_time: 148464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 148944, end_time: 148944, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 149424, end_time: 149424, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 149904, end_time: 149904, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 154224, end_time: 158064, hit_type: 8, hitsound: 2 }
+TaikoHitObject { start_time: 161904, end_time: 165264, hit_type: 8, hitsound: 2 }
+TaikoHitObject { start_time: 165744, end_time: 166104, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 166224, end_time: 166224, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 166464, end_time: 166464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 166584, end_time: 166584, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 166704, end_time: 166704, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 167064, end_time: 167064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 167184, end_time: 167184, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 167544, end_time: 167544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 167664, end_time: 167664, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 167904, end_time: 167904, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 168144, end_time: 168144, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 168384, end_time: 168384, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 168624, end_time: 168624, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 168864, end_time: 168864, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 169104, end_time: 169104, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 169164, end_time: 169164, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 169224, end_time: 169224, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 169344, end_time: 169344, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 169404, end_time: 169404, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 169464, end_time: 169464, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 169584, end_time: 172944, hit_type: 8, hitsound: 2 }
+TaikoHitObject { start_time: 173424, end_time: 173784, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 173904, end_time: 173904, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 174144, end_time: 174144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 174264, end_time: 174264, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 174384, end_time: 174384, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 174744, end_time: 174744, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 174864, end_time: 175224, hit_type: 2, hitsound: 0 }
+TaikoHitObject { start_time: 175344, end_time: 175344, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 175584, end_time: 175584, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 175824, end_time: 175824, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 176064, end_time: 176064, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 176304, end_time: 176304, hit_type: 0, hitsound: 8 }
+TaikoHitObject { start_time: 176544, end_time: 176544, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 176784, end_time: 176784, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 176844, end_time: 176844, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 176904, end_time: 176904, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 177024, end_time: 177024, hit_type: 0, hitsound: 2 }
+TaikoHitObject { start_time: 177084, end_time: 177084, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 177144, end_time: 177144, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 177264, end_time: 181104, hit_type: 8, hitsound: 0 }

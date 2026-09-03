@@ -9,3 +9,6 @@ pub(crate) mod standard;
 pub(crate) mod taiko;
 pub(crate) mod text;
 pub(crate) mod video;
+
+#[cfg(test)]
+mod conversion_tests;

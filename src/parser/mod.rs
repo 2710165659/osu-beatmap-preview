@@ -109,3 +109,8 @@ fn parse_beatmap_str(content: &str) -> Option<Beatmap> {
         beat_divisor,
     })
 }
+
+#[cfg(test)]
+pub(crate) fn parse_beatmap_str_for_tests(content: &str) -> Option<Beatmap> {
+    parse_beatmap_str(content)
+}
