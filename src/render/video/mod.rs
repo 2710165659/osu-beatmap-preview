@@ -1,36 +1,33 @@
-//! MP4 (H.264) video encoder: streams frames produced by a callback into an
-//! MP4 file via H.264 + the `mp4` crate. Mirrors `save_animated_gif_streamed`:
-//! parallel render chunks (rayon) + sequential encode to preserve frame order.
+//! MP4（H.264）视频编码器：将回调生成的帧通过 H.264 和 `mp4` crate
+//! 流式写入 MP4 文件。流程类似 `save_animated_gif_streamed`：
+//! rayon 分块并行渲染，再顺序编码以保持帧顺序。
 //!
-//! Each rendered playfield frame is letterboxed into a 16:9 black canvas with a
-//! "current / total" time label in the top-right, converted to the format the
-//! selected backend expects, encoded as H.264, and written as one MP4 sample.
-//! The full animation never resides in memory at once — at most `PAR_CHUNK_SIZE`
-//! raw frames are held.
+//! 每帧游戏区域会放入带暗化谱面背景的 16:9 画布；背景不可用或已关闭时使用黑色，
+//! 并在右上角绘制“当前 / 总时长”标签。随后转换为后端所需格式并编码为 H.264，
+//! 再写入一个 MP4 sample。
+//! 完整动画不会同时驻留内存，最多保留 `PAR_CHUNK_SIZE` 个原始帧。
 //!
-//! ## GPU acceleration
+//! ## GPU 加速
 //!
-//! Encoding is dispatched to the first available hardware backend:
-//!   1. **NVENC** (NVIDIA) — dynamically loads `nvEncodeAPI64.dll` at runtime.
-//!   2. **AMF** (AMD) — dynamically loads `amfrt64.dll` at runtime.
-//!   3. **openh264** (CPU) — always available fallback, single-threaded software
-//!      encoder (the original implementation).
+//! 编码按顺序分派给第一个可用的后端：
+//!   1. **NVENC**（NVIDIA）：运行时动态加载 `nvEncodeAPI64.dll`。
+//!   2. **AMF**（AMD）：运行时动态加载 `amfrt64.dll`。
+//!   3. **openh264**（CPU）：始终可用的单线程软件编码回退（原始实现）。
 //!
-//! All backends emit Annex-B H.264 NALs which are fed through the shared mux
-//! layer (`extract_nals` + `mp4` writer), so the output files are byte-for-byte
-//! compatible in structure. GPU DLLs are loaded via `libloading`; their absence
-//! at build time or runtime never breaks compilation or execution — the encoder
-//! silently falls back to CPU.
+//! 所有后端都输出 Annex-B H.264 NAL，并交给共享封装层
+//!（`extract_nals` + `mp4` writer），因此输出文件结构一致。GPU DLL 通过
+//! `libloading` 加载；构建或运行时缺少 DLL 都不会影响程序，编码器会静默回退到 CPU。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
+use crate::core::timeout::RequestDeadline;
+use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
+use crate::pipeline::cache::with_atomic_output_deadline;
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
-use crate::render::video::audio::{
-    encode_audio_segment, full_video_start_time, AudioSourceJob, AUDIO_BITRATE, AUDIO_SAMPLE_RATE,
-};
+use crate::render::video::audio::{encode_audio_segment, full_video_start_time, AudioSourceJob};
 use bytes::Bytes;
 use rayon::prelude::*;
 use std::io::BufWriter;
@@ -39,6 +36,39 @@ use std::time::Instant;
 
 pub(crate) mod audio;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct VideoStyle {
+    pub(crate) enable_background_image: bool,
+    pub(crate) background_dim: f64,
+    pub(crate) label_color: [u8; 4],
+    pub(crate) label_font_size: u32,
+    pub(crate) label_pad: i64,
+    pub(crate) black_opaque: [u8; 4],
+}
+
+pub(crate) fn video_style(mode: crate::render::geometry::GameMode) -> VideoStyle {
+    let layout = &crate::config::current().layout;
+    macro_rules! make {
+        ($section:expr) => {{
+            let section = $section;
+            VideoStyle {
+                enable_background_image: section.ENABLE_BACKGROUND_IMAGE,
+                background_dim: section.BACKGROUND_DIM,
+                label_color: section.LABEL_COLOR,
+                label_font_size: section.LABEL_FONT_SIZE,
+                label_pad: section.LABEL_PAD,
+                black_opaque: section.BLACK_OPAQUE,
+            }
+        }};
+    }
+    match mode {
+        crate::render::geometry::GameMode::Standard => make!(&layout.standard.mp4),
+        crate::render::geometry::GameMode::Taiko => make!(&layout.taiko.mp4),
+        crate::render::geometry::GameMode::Catch => make!(&layout.catch.mp4),
+        crate::render::geometry::GameMode::Mania => make!(&layout.mania.mp4),
+    }
+}
+
 #[allow(non_camel_case_types, dead_code)]
 mod amf;
 mod cpu;
@@ -46,18 +76,8 @@ mod mux;
 #[cfg(windows)]
 mod nvenc;
 
-/// Parallel-render chunk size (matches GIF: ~8 frames at once).
-const PAR_CHUNK_SIZE: usize = 8;
-/// Bound transient RGBA frame memory for unusually large playfields.
-const MAX_PAR_FRAME_BYTES: usize = 64 * 1024 * 1024;
-pub(crate) const VIDEO_BITRATE: u32 = 900_000;
-pub(crate) const VIDEO_END_PADDING_MS: i64 = 2_000;
-const PREVIEW_30S_ACTUAL_MS: i64 = 30_000;
-
-const LABEL_COLOR: [u8; 4] = [232, 232, 232, 255];
-const LABEL_FONT_SIZE: u32 = 24;
-const LABEL_PAD: i64 = 12;
-const BLACK_OPAQUE: [u8; 4] = [0, 0, 0, 255];
+/// 并行渲染分块大小（与 GIF 一致：一次约 8 帧）。
+/// 限制异常大游戏区域带来的临时 RGBA 帧内存。
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct VideoTimeRange {
@@ -69,52 +89,67 @@ pub(crate) fn resolve_video_time_range(
     beatmap: &Beatmap,
     first_object_ms: i64,
     last_object_ms: i64,
-    times_ms: Option<&[i64]>,
-    preview_30s: bool,
+    start_time: Option<TimePoint>,
+    duration_time: Option<f64>,
     speed: f64,
 ) -> Result<VideoTimeRange> {
-    if preview_30s && times_ms.is_some() {
-        return Err(PreviewError::new(
-            "--preview-30s cannot be used together with --time",
-        ));
-    }
-
-    if let Some(times) = times_ms {
-        if times.len() != 2 {
-            return Err(PreviewError::new(
-                "--time for mp4 needs exactly 2 values t1+t2 (or omit for the full chart)",
-            ));
-        }
-        return validate_video_time_range(VideoTimeRange {
-            start: times[0],
-            end: times[1],
-        });
-    }
-
     let full_start = full_video_start_time(first_object_ms, beatmap.audio_lead_in_ms());
-    let full_end = last_object_ms + VIDEO_END_PADDING_MS;
+    let full_end = last_object_ms
+        .checked_add(crate::config::current().video.video.VIDEO_END_PADDING_MS)
+        .ok_or_else(|| PreviewError::new("mp4 time range is outside the supported range"))?;
     let full_range = validate_video_time_range(VideoTimeRange {
         start: full_start,
         end: full_end,
     })?;
 
-    if !preview_30s {
+    let duration = duration_time.unwrap_or(600.0);
+    if !duration.is_finite() || duration <= 0.0 {
+        return Err(PreviewError::new(
+            "duration time must be a positive finite number",
+        ));
+    }
+    let span = chart_span_for_actual_duration(round_half_even(duration * 1000.0), speed)?;
+    let full_duration = full_range
+        .end
+        .checked_sub(full_range.start)
+        .ok_or_else(|| PreviewError::new("mp4 time range is outside the supported range"))?;
+    if full_duration <= span {
         return Ok(full_range);
     }
 
-    let span = chart_span_for_actual_duration(PREVIEW_30S_ACTUAL_MS, speed)?;
-    if full_range.end - full_range.start <= span {
-        return Ok(full_range);
-    }
+    let requested_start = match start_time.unwrap_or(TimePoint::Seconds(0.0)) {
+        TimePoint::Preview => {
+            preview_time_or_first_object(beatmap, first_object_ms).max(full_range.start)
+        }
+        TimePoint::Seconds(seconds) => {
+            if !seconds.is_finite() {
+                return Err(PreviewError::new("time point must be finite"));
+            }
+            let offset_f64 = seconds * 1000.0;
+            if !(-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(&offset_f64) {
+                return Err(PreviewError::new(
+                    "time point is outside the supported range",
+                ));
+            }
+            let offset = round_half_even(offset_f64);
+            first_object_ms
+                .checked_add(offset)
+                .ok_or_else(|| PreviewError::new("start time is outside the supported range"))?
+        }
+    };
 
-    let mut start = preview_time_or_first_object(beatmap, first_object_ms).max(full_range.start);
-    if start + span > full_range.end {
-        start = full_range.end - span;
-    }
-    start = start.max(full_range.start);
+    // 请求区间超出谱面尾部时整体向前移动，在完整谱面足够长时保留请求时长。
+    // 早于可播放范围的起点仍然保留，以便输出对应的前置静音。
+    let latest_start = full_range
+        .end
+        .checked_sub(span)
+        .ok_or_else(|| PreviewError::new("mp4 time range is outside the supported range"))?;
+    let start = requested_start.min(latest_start);
     validate_video_time_range(VideoTimeRange {
         start,
-        end: start + span,
+        end: start
+            .checked_add(span)
+            .ok_or_else(|| PreviewError::new("video range is outside the supported range"))?,
     })
 }
 
@@ -145,10 +180,10 @@ fn preview_time_or_first_object(beatmap: &Beatmap, first_object_ms: i64) -> i64 
         .unwrap_or(first_object_ms)
 }
 
-/// An encoded H.264 frame ready to be muxed into the MP4 container.
+/// 已编码并可封装进 MP4 容器的 H.264 帧。
 ///
-/// `sps`/`pps` are `Some` only on frames that carry them. `slice` is the
-/// length-prefixed slice NAL data, and `is_keyframe` reflects an actual IDR NAL.
+/// 仅携带 SPS/PPS 的帧对应字段为 `Some`。`slice` 是带长度前缀的 slice NAL 数据，
+/// `is_keyframe` 表示是否实际包含 IDR NAL。
 struct EncodedFrame {
     sps: Option<Vec<u8>>,
     pps: Option<Vec<u8>>,
@@ -156,35 +191,27 @@ struct EncodedFrame {
     is_keyframe: bool,
 }
 
-/// A backend H.264 encoder that consumes composed RGBA frames and produces
-/// Annex-B NALs. Implementations own their encoder state (GPU session, CPU
-/// codec, etc.) and must be fed frames in order.
+/// 后端 H.264 编码器：接收合成后的 RGBA 帧并产生 Annex-B NAL。
+/// 实现持有自身编码状态（GPU 会话、CPU codec 等），必须按顺序输入帧。
 ///
-/// Safety contract: `encode` is called sequentially from a single thread (the
-/// mux loop), so backends need not be `Sync` — but the trait object is held
-/// across rayon parallel render chunks, so it must not be borrowed during
-/// `into_par_iter`. The dispatch in `save_mp4_streamed` encodes *after* the
-/// parallel collect, so this is safe.
+/// 安全约定：`encode` 仅由单线程（封装循环）顺序调用，因此后端无需实现 `Sync`。
+/// trait 对象会跨 rayon 并行渲染分块持有，所以 `into_par_iter` 期间不得借用它。
+/// `save_mp4_streamed` 在并行收集完成后才编码，因此符合约定。
 trait FrameEncoder {
-    /// Encode one composed RGBA frame. Returns the NAL units split into
-    /// SPS / PPS / slice for muxing.
+    /// 编码一帧合成 RGBA，返回拆分为 SPS / PPS / slice 的 NAL 供封装。
     fn encode(&mut self, rgba: &Img) -> Result<EncodedFrame>;
 
-    /// Human-readable backend name for diagnostics (e.g. "NVENC", "AMF", "openh264").
+    /// 用于诊断的可读后端名称（例如 "NVENC"、"AMF"、"openh264"）。
     fn name(&self) -> &'static str;
 }
 
-/// Stream `frame_count` frames produced by `render(i)` into an MP4 file at
-/// `output_path`.
+/// 将 `render(i)` 产生的 `frame_count` 帧流式写入 `output_path` 指定的 MP4 文件。
 ///
-/// `render` returns the playfield frame and the current absolute chart time
-/// (ms). `last_object_ms` is the absolute end of the last playable object;
-/// both are converted through `time_axis` before drawing the top-right
-/// "current / total" gameplay label. The total is therefore independent of
-/// the selected export range and its leading/trailing padding.
-/// Frames are rendered in parallel chunks and encoded sequentially to preserve
-/// ordering; `fps` is both the encode frame rate and the MP4 timescale (1 tick
-/// per frame).
+/// `render` 返回游戏区域帧和当前绝对谱面时间（毫秒）；`last_object_ms` 是最后一个
+/// 可玩音符的绝对结束时间。绘制右上角“当前 / 总时长”标签前，两者都通过
+/// `time_axis` 转换，因此总时长独立于所选导出范围及首尾留白。
+/// 帧分块并行渲染并顺序编码以保持顺序；`fps` 同时作为编码帧率与 MP4 时间尺度
+///（每帧一个 tick）。
 pub(crate) fn save_mp4_streamed(
     frame_count: usize,
     chart_start_ms: i64,
@@ -194,47 +221,72 @@ pub(crate) fn save_mp4_streamed(
     output_path: &Path,
     fps: u32,
     audio_job: AudioSourceJob,
+    background: Option<Img>,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
+    mode: crate::render::geometry::GameMode,
 ) -> Result<()> {
+    deadline.check()?;
     if frame_count == 0 {
         return Err(PreviewError::render("no frames to encode"));
     }
     let video_started = Instant::now();
+    let audio_sample_rate = crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE;
+    let audio_bitrate = crate::config::current().audio.video_audio.AUDIO_BITRATE;
+    let audio_freq_index = sample_freq_index(audio_sample_rate)?;
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
     }
 
-    let audio_task = std::thread::spawn(move || {
-        let source = audio_job.wait()?;
-        let encoded = encode_audio_segment(&source, chart_start_ms, frame_count, fps, speed)?;
-        crate::log::event(
-            "audio-encode",
-            "done",
-            None,
-            &format!(
-                "{} AAC frames from {} (lead-in={}ms)",
+    let audio_deadline = deadline.clone();
+    let mut audio_task = JoinedAudioTask::new(
+        std::thread::spawn(move || {
+            audio_deadline.check()?;
+            let source = audio_job.wait()?;
+            let encoded = encode_audio_segment(
+                &source,
+                chart_start_ms,
+                frame_count,
+                fps,
+                speed,
+                &audio_deadline,
+            )?;
+            crate::log::event(
+                "audio-encode",
+                "done",
+                None,
+                &format!(
+                    "{} AAC frames from {} (lead-in={}ms)",
+                    encoded.frames.len(),
+                    source.path.display(),
+                    source.lead_in_ms,
+                ),
+            );
+            eprintln!(
+                "[audio] encoded {} AAC frames from {} (lead-in={}ms)",
                 encoded.frames.len(),
                 source.path.display(),
                 source.lead_in_ms,
-            ),
-        );
-        eprintln!(
-            "[audio] encoded {} AAC frames from {} (lead-in={}ms)",
-            encoded.frames.len(),
-            source.path.display(),
-            source.lead_in_ms,
-        );
-        Ok::<_, PreviewError>(encoded)
-    });
+            );
+            Ok::<_, PreviewError>(encoded)
+        }),
+        deadline.clone(),
+    );
 
-    // ── render first frame to discover playfield dimensions ──
+    // ── 渲染首帧以确定游戏区域尺寸 ──
     let (first_frame, first_time) = render(0);
+    deadline.check()?;
     let (pf_w, pf_h) = (first_frame.w, first_frame.h);
-    let (out_w, out_h) = letterbox_dims(pf_w, pf_h);
+    let (out_w, out_h) = crate::render::geometry::video_canvas_16_9(pf_w, pf_h);
+    let style = video_style(mode);
+    let background = background
+        .as_ref()
+        .map(|image| prepare_video_background(image, out_w, out_h, style));
 
-    // ── pick the best available encoder backend ──
+    // ── 选择最佳可用编码后端 ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
+    deadline.check()?;
     crate::log::event(
         "video-backend",
         "done",
@@ -253,17 +305,21 @@ pub(crate) fn save_mp4_streamed(
         .saturating_mul(out_h as usize)
         .saturating_mul(4)
         .max(1);
-    let par_chunk_size = (MAX_PAR_FRAME_BYTES / frame_bytes).clamp(1, PAR_CHUNK_SIZE);
+    let par_chunk_size = (crate::config::current().video.video.MAX_PAR_FRAME_BYTES / frame_bytes)
+        .clamp(1, crate::config::current().video.video.PAR_CHUNK_SIZE);
 
-    // ── encode first frame, extract SPS/PPS for the mp4 track config ──
+    // ── 编码首帧并提取 SPS/PPS，供 MP4 轨道配置使用 ──
     let first_comp = compose_frame(
         first_frame,
         time_axis.to_display(first_time),
         time_axis.to_display(last_object_ms),
         out_w,
         out_h,
+        background.as_ref(),
+        style,
     );
     let first_encoded = encoder.encode(&first_comp)?;
+    deadline.check()?;
     if first_encoded.slice.is_empty() {
         return Err(PreviewError::render(format!(
             "{} returned an empty H.264 sample for frame 0",
@@ -277,13 +333,11 @@ pub(crate) fn save_mp4_streamed(
         .pps
         .ok_or_else(|| PreviewError::render("missing PPS in first encoded frame"))?;
 
-    // ── mp4 writer ──
-    // Write to a sibling temp file and atomically replace the final path only
-    // after the MP4 is fully finalized, so an interrupted render never leaves
-    // a partial file that could be served from cache. The encoder is moved
-    // into the closure and returned so its `Drop` (which prints to stdout)
-    // can still be silenced after the rename.
-    let encoder = crate::pipeline::cache::with_atomic_output(output_path, "mp4.tmp", |tmp_path| {
+    // ── MP4 写入器 ──
+    // 写入同目录临时文件，MP4 完成收尾后才原子替换最终路径，
+    // 避免中断渲染留下可被缓存误用的残缺文件。编码器移入闭包再返回，
+    // 使重命名后仍可抑制其会打印到 stdout 的 Drop 输出。
+    let encoder = with_atomic_output_deadline(output_path, "mp4.tmp", deadline, |tmp_path| {
         let file = std::fs::File::create(tmp_path)
             .map_err(|e| PreviewError::render(format!("failed to write mp4: {e}")))?;
         let writer = BufWriter::new(file);
@@ -318,12 +372,12 @@ pub(crate) fn save_mp4_streamed(
 
         let audio_track_config = mp4::TrackConfig {
             track_type: mp4::TrackType::Audio,
-            timescale: AUDIO_SAMPLE_RATE,
+            timescale: audio_sample_rate,
             language: "und".to_string(),
             media_conf: mp4::MediaConfig::AacConfig(mp4::AacConfig {
-                bitrate: AUDIO_BITRATE,
+                bitrate: audio_bitrate,
                 profile: mp4::AudioObjectType::AacLowComplexity,
-                freq_index: mp4::SampleFreqIndex::Freq48000,
+                freq_index: audio_freq_index,
                 chan_conf: mp4::ChannelConfig::Stereo,
             }),
         };
@@ -331,7 +385,7 @@ pub(crate) fn save_mp4_streamed(
             .add_track(&audio_track_config)
             .map_err(|e| PreviewError::render(format!("mp4 add audio track failed: {e}")))?;
 
-        // first sample (IDR, start_time = 0 ticks)
+        // 首个 sample（IDR，start_time = 0 tick）。
         let sample = mp4::Mp4Sample {
             start_time: 0,
             duration: 1,
@@ -343,31 +397,47 @@ pub(crate) fn save_mp4_streamed(
             .write_sample(1, &sample)
             .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
 
-        // ── render + compose in parallel chunks, encode sequentially ──
-        // compose_frame is moved into the parallel loop so it runs alongside
-        // render on rayon's thread pool — this eliminates the serial compose
-        // bottleneck (~5s for 4000 frames) that previously halved the GPU
-        // speedup.
+        // ── 分块并行渲染和合成，顺序编码 ──
+        // 将 compose_frame 移入并行循环，使其在 rayon 线程池内与渲染同时执行，
+        // 消除串行合成瓶颈（4000 帧约 5 秒），避免 GPU 加速收益减半。
         let mut t_render = std::time::Duration::ZERO;
         let mut t_encode = std::time::Duration::ZERO;
         let mut t_mux = std::time::Duration::ZERO;
         let gameplay_total = time_axis.to_display(last_object_ms);
         for chunk_start in (1..frame_count).step_by(par_chunk_size) {
+            deadline.check()?;
             let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
             let t0 = Instant::now();
             let frames: Vec<Img> = (chunk_start..chunk_end)
                 .into_par_iter()
-                .map(|fi| {
+                .map(|fi| -> Result<Img> {
                     let (pf, time) = render(fi);
-                    // compose here, in parallel — avoids serial bottleneck
-                    compose_frame(pf, time_axis.to_display(time), gameplay_total, out_w, out_h)
+                    if pf.w != pf_w || pf.h != pf_h {
+                        return Err(PreviewError::render(format!(
+                            "video frame {fi} has size {}x{}, expected {}x{}",
+                            pf.w, pf.h, pf_w, pf_h
+                        )));
+                    }
+                    // 在此并行合成，避免串行瓶颈。
+                    Ok(compose_frame(
+                        pf,
+                        time_axis.to_display(time),
+                        gameplay_total,
+                        out_w,
+                        out_h,
+                        background.as_ref(),
+                        style,
+                    ))
                 })
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
+            deadline.check()?;
             t_render += t0.elapsed();
 
             for (i, comp) in (chunk_start..).zip(frames) {
+                deadline.check()?;
                 let t2 = Instant::now();
                 let encoded = encoder.encode(&comp)?;
+                deadline.check()?;
                 t_encode += t2.elapsed();
                 if encoded.slice.is_empty() {
                     return Err(PreviewError::render(format!(
@@ -401,12 +471,13 @@ pub(crate) fn save_mp4_streamed(
             );
         }
         let audio_wait_start = Instant::now();
-        let encoded_audio = audio_task
-            .join()
-            .map_err(|_| PreviewError::render("audio encoding worker panicked"))??;
+        deadline.check()?;
+        let encoded_audio = audio_task.join()?;
+        deadline.check()?;
         let audio_wait = audio_wait_start.elapsed();
         let mut audio_start = 0_u64;
         for frame in encoded_audio.frames {
+            deadline.check()?;
             let sample = mp4::Mp4Sample {
                 start_time: audio_start,
                 duration: frame.duration,
@@ -442,22 +513,20 @@ pub(crate) fn save_mp4_streamed(
         mp4_writer
             .write_end()
             .map_err(|e| PreviewError::render(format!("mp4 write_end failed: {e}")))?;
-        // Recover the BufWriter and flush it so every byte is on disk before
-        // the temp file is renamed over the final path.
+        // 取回 BufWriter 并刷新，确保临时文件覆盖最终路径前所有字节都已落盘。
         let mut writer = mp4_writer.into_writer();
         std::io::Write::flush(&mut writer)
             .map_err(|e| PreviewError::render(format!("mp4 flush failed: {e}")))?;
         drop(writer);
         mux::make_mp4_faststart(tmp_path)?;
+        deadline.check()?;
 
         Ok(encoder)
     })?;
 
-    // Explicitly drop the encoder before returning. The `nvenc` crate's Drop
-    // impl uses `println!` (stdout) for debug messages ("Dropping bitstream
-    // buffer" / "Dropping encoder"), which would pollute the JSON output on
-    // stdout. We temporarily swap stdout→stderr so those messages go to stderr
-    // instead, keeping stdout clean for the JSON payload.
+    // 返回前显式释放编码器。`nvenc` crate 的 Drop 实现使用 `println!` 向 stdout
+    // 输出调试信息，会污染 JSON 输出。临时将 stdout 切换到 stderr，使调试信息
+    // 写入 stderr，从而保持 JSON 输出纯净。
     drop_stdout_silence(|| {
         drop(encoder);
     });
@@ -465,59 +534,154 @@ pub(crate) fn save_mp4_streamed(
     Ok(())
 }
 
-/// Try hardware encoders in priority order, fall back to CPU openh264.
+struct JoinedAudioTask {
+    handle: Option<std::thread::JoinHandle<Result<audio::EncodedAudio>>>,
+    deadline: RequestDeadline,
+}
+
+impl JoinedAudioTask {
+    fn new(
+        handle: std::thread::JoinHandle<Result<audio::EncodedAudio>>,
+        deadline: RequestDeadline,
+    ) -> Self {
+        Self {
+            handle: Some(handle),
+            deadline,
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.handle
+            .as_ref()
+            .is_none_or(|handle| handle.is_finished())
+    }
+
+    fn join(&mut self) -> Result<audio::EncodedAudio> {
+        self.handle
+            .take()
+            .expect("audio task joined more than once")
+            .join()
+            .map_err(|_| PreviewError::render("audio encoding worker panicked"))?
+    }
+}
+
+impl Drop for JoinedAudioTask {
+    fn drop(&mut self) {
+        let Some(handle) = self.handle.take() else {
+            return;
+        };
+        self.deadline.cancel();
+        let _ = handle.join();
+    }
+}
+
+fn sample_freq_index(sample_rate: u32) -> Result<mp4::SampleFreqIndex> {
+    let index = match sample_rate {
+        96_000 => mp4::SampleFreqIndex::Freq96000,
+        88_200 => mp4::SampleFreqIndex::Freq88200,
+        64_000 => mp4::SampleFreqIndex::Freq64000,
+        48_000 => mp4::SampleFreqIndex::Freq48000,
+        44_100 => mp4::SampleFreqIndex::Freq44100,
+        32_000 => mp4::SampleFreqIndex::Freq32000,
+        24_000 => mp4::SampleFreqIndex::Freq24000,
+        22_050 => mp4::SampleFreqIndex::Freq22050,
+        16_000 => mp4::SampleFreqIndex::Freq16000,
+        12_000 => mp4::SampleFreqIndex::Freq12000,
+        11_025 => mp4::SampleFreqIndex::Freq11025,
+        8_000 => mp4::SampleFreqIndex::Freq8000,
+        7_350 => mp4::SampleFreqIndex::Freq7350,
+        _ => {
+            return Err(PreviewError::render(format!(
+                "unsupported configured audio sample rate: {sample_rate}"
+            )))
+        }
+    };
+    Ok(index)
+}
+
+/// 按优先级尝试硬件编码器，全部不可用时回退到 CPU openh264。
 fn create_encoder(w: u32, h: u32, fps: u32) -> Result<Box<dyn FrameEncoder>> {
-    // `OSU_PREVIEW_NO_GPU=1` forces the CPU path (for benchmarking / fallback).
+    // `OSU_PREVIEW_NO_GPU=1` 强制使用 CPU 路径（用于基准测试或回退）。
     let force_cpu = std::env::var("OSU_PREVIEW_NO_GPU").as_deref() == Ok("1");
-    // 1. NVENC (NVIDIA) — Windows only
+    // 1. NVENC（NVIDIA）——仅 Windows。
     #[cfg(windows)]
     if !force_cpu {
         if let Some(enc) = nvenc::try_create(w, h, fps)? {
             return Ok(Box::new(enc));
         }
     }
-    // 2. AMF (AMD) — Windows only (amfrt64.dll)
+    // 2. AMF（AMD）——仅 Windows（amfrt64.dll）。
     #[cfg(windows)]
     if !force_cpu {
         if let Some(enc) = amf::try_create(w, h, fps)? {
             return Ok(Box::new(enc));
         }
     }
-    // 3. CPU fallback (always available)
+    // 3. CPU 回退（始终可用）。
     Ok(Box::new(cpu::CpuEncoder::new(w, h, fps)?))
 }
 
-/// Compute the 16:9 letterbox canvas size for a playfield frame, rounding out
-/// to even dimensions (YUV420 requires width and height to be multiples of 2).
-fn letterbox_dims(pf_w: u32, pf_h: u32) -> (u32, u32) {
-    let (w, h) = if pf_w as f64 * 9.0 > pf_h as f64 * 16.0 {
-        // playfield wider than 16:9 → pad top/bottom
-        (pf_w, (pf_w as f64 * 9.0 / 16.0).round() as u32)
-    } else {
-        // playfield narrower than 16:9 → pad left/right
-        ((pf_h as f64 * 16.0 / 9.0).round() as u32, pf_h)
-    };
-    (w.max(2) & !1, h.max(2) & !1)
+/// 将谱面背景图按 osu! 的等比适应方式缩放并居中，超出部分保留黑边，
+/// 再应用暗化配置。背景只在最终视频画布上处理一次，避免 playfield 与画布
+/// 分别裁剪同一张图片造成画面不连续。
+pub(crate) fn prepare_video_background(
+    source: &Img,
+    width: u32,
+    height: u32,
+    style: VideoStyle,
+) -> Img {
+    let mut result = Img::new(width, height, style.black_opaque);
+    if source.w == 0 || source.h == 0 || width == 0 || height == 0 {
+        return result;
+    }
+
+    // FitMode.Fit 的等价处理：以较小缩放比例完整容纳原图，避免裁掉边缘。
+    let scale = (width as f64 / source.w as f64).min(height as f64 / source.h as f64);
+    let resized_width = ((source.w as f64 * scale).round() as u32).max(1).min(width);
+    let resized_height = ((source.h as f64 * scale).round() as u32)
+        .max(1)
+        .min(height);
+    let resized = source.resize(resized_width, resized_height);
+    let left = ((width - resized_width) / 2) as i64;
+    let top = ((height - resized_height) / 2) as i64;
+    result.alpha_composite(&resized, left, top);
+    let brightness = 1.0 - style.background_dim.clamp(0.0, 1.0);
+    for pixel in result.data.chunks_exact_mut(4) {
+        pixel[0] = (pixel[0] as f64 * brightness).round() as u8;
+        pixel[1] = (pixel[1] as f64 * brightness).round() as u8;
+        pixel[2] = (pixel[2] as f64 * brightness).round() as u8;
+    }
+    result
 }
 
-/// Place the playfield frame centered on a black 16:9 canvas and draw the
-/// "current / total" gameplay-time label in the top-right corner.
-fn compose_frame(pf: Img, current_ms: i64, total_ms: i64, out_w: u32, out_h: u32) -> Img {
-    let mut canvas = Img::new(out_w, out_h, BLACK_OPAQUE);
+/// 将游戏区域帧居中放置到 16:9 背景画布，并在右上角绘制
+///“当前 / 总时长”游戏时间标签；没有谱面背景时画布为黑色。
+fn compose_frame(
+    pf: Img,
+    current_ms: i64,
+    total_ms: i64,
+    out_w: u32,
+    out_h: u32,
+    background: Option<&Img>,
+    style: VideoStyle,
+) -> Img {
+    let mut canvas = background
+        .cloned()
+        .unwrap_or_else(|| Img::new(out_w, out_h, style.black_opaque));
     let ox = ((out_w - pf.w) / 2) as i64;
     let oy = ((out_h - pf.h) / 2) as i64;
     canvas.alpha_composite(&pf, ox, oy);
 
     let label = format_progress_label(current_ms, total_ms);
-    let (lw, _) = text_size(&label, LABEL_FONT_SIZE);
-    let lx = out_w as i64 - lw as i64 - LABEL_PAD;
+    let (lw, _) = text_size(&label, style.label_font_size);
+    let lx = out_w as i64 - lw as i64 - style.label_pad;
     draw_text(
         &mut canvas,
         lx,
-        LABEL_PAD,
+        style.label_pad,
         &label,
-        LABEL_FONT_SIZE,
-        LABEL_COLOR,
+        style.label_font_size,
+        style.label_color,
     );
     canvas
 }
@@ -530,10 +694,9 @@ fn format_mmss(ms: i64) -> String {
     crate::render::text::format_mmss_floor(ms)
 }
 
-/// Temporarily redirect stdout → stderr so that third-party `println!` calls
-/// (the `nvenc` crate's `Drop` debug messages: "Dropping bitstream buffer" /
-/// "Dropping encoder") don't pollute stdout, which must contain only the JSON
-/// result. After the closure returns, stdout is restored.
+/// 临时将 stdout 重定向到 stderr，避免第三方 `println!` 调用
+///（`nvenc` crate 的 Drop 调试信息）污染 stdout。stdout 必须只包含 JSON 结果；
+/// 闭包返回后恢复 stdout。
 #[cfg(windows)]
 fn drop_stdout_silence<F: FnOnce()>(f: F) {
     use std::io::Write;
@@ -581,6 +744,9 @@ fn drop_stdout_silence<F: FnOnce()>(f: F) {
 mod tests {
     use super::*;
     use crate::core::models::{HitObjects, KvSection};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
 
     fn beatmap_with_preview(preview_time: Option<&str>, lead_in: Option<&str>) -> Beatmap {
         let mut general = KvSection::default();
@@ -597,15 +763,24 @@ mod tests {
             timing_points: Vec::new(),
             hit_objects: HitObjects::Standard(Vec::new()),
             break_periods: Vec::new(),
+            background_filename: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         }
     }
 
     #[test]
-    fn preview_30s_uses_preview_time_when_available() {
+    fn preview_start_uses_preview_time_and_duration() {
         let beatmap = beatmap_with_preview(Some("45000"), None);
-        let range = resolve_video_time_range(&beatmap, 10_000, 100_000, None, true, 1.0).unwrap();
+        let range = resolve_video_time_range(
+            &beatmap,
+            10_000,
+            100_000,
+            Some(TimePoint::Preview),
+            Some(30.0),
+            1.0,
+        )
+        .unwrap();
         assert_eq!(
             range,
             VideoTimeRange {
@@ -616,55 +791,45 @@ mod tests {
     }
 
     #[test]
-    fn preview_30s_falls_back_to_first_object_for_missing_invalid_or_negative_preview_time() {
-        for preview_time in [None, Some("abc"), Some("-1")] {
-            let beatmap = beatmap_with_preview(preview_time, None);
-            let range =
-                resolve_video_time_range(&beatmap, 10_000, 100_000, None, true, 1.0).unwrap();
-            assert_eq!(range.start, 10_000);
-            assert_eq!(range.end, 40_000);
-        }
-    }
-
-    #[test]
-    fn preview_30s_scales_chart_span_to_keep_actual_video_duration() {
-        let beatmap = beatmap_with_preview(Some("10000"), None);
-        let dt = resolve_video_time_range(&beatmap, 10_000, 100_000, None, true, 1.5).unwrap();
-        assert_eq!(
-            dt,
-            VideoTimeRange {
-                start: 10_000,
-                end: 55_000
-            }
-        );
-
-        let ht = resolve_video_time_range(&beatmap, 10_000, 100_000, None, true, 0.75).unwrap();
-        assert_eq!(
-            ht,
-            VideoTimeRange {
-                start: 10_000,
-                end: 32_500
-            }
-        );
-    }
-
-    #[test]
-    fn preview_30s_shifts_back_when_preview_tail_is_too_short() {
-        let beatmap = beatmap_with_preview(Some("40000"), None);
-        let range = resolve_video_time_range(&beatmap, 10_000, 50_000, None, true, 1.0).unwrap();
+    fn default_start_uses_requested_duration_on_a_long_chart() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range =
+            resolve_video_time_range(&beatmap, 10_000, 100_000, None, Some(60.0), 1.0).unwrap();
         assert_eq!(
             range,
             VideoTimeRange {
-                start: 22_000,
-                end: 52_000
+                start: 10_000,
+                end: 70_000
             }
         );
     }
 
     #[test]
-    fn preview_30s_returns_short_clip_when_whole_chart_range_is_shorter_than_30s() {
-        let beatmap = beatmap_with_preview(Some("15000"), None);
-        let range = resolve_video_time_range(&beatmap, 10_000, 20_000, None, true, 1.0).unwrap();
+    fn numeric_start_shifts_backward_when_it_runs_past_chart_tail() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range = resolve_video_time_range(
+            &beatmap,
+            10_000,
+            100_000,
+            Some(TimePoint::Seconds(50.0)),
+            Some(60.0),
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 42_000,
+                end: 102_000
+            }
+        );
+    }
+
+    #[test]
+    fn short_chart_returns_full_playable_range_instead_of_padding_to_duration() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range =
+            resolve_video_time_range(&beatmap, 10_000, 20_000, None, Some(60.0), 1.0).unwrap();
         assert_eq!(
             range,
             VideoTimeRange {
@@ -675,41 +840,80 @@ mod tests {
     }
 
     #[test]
-    fn explicit_time_range_is_preserved() {
-        let beatmap = beatmap_with_preview(Some("45000"), None);
-        let range =
-            resolve_video_time_range(&beatmap, 10_000, 100_000, Some(&[3_000, 9_000]), false, 1.0)
-                .unwrap();
+    fn short_chart_uses_full_range_even_with_a_negative_requested_start() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range = resolve_video_time_range(
+            &beatmap,
+            10_000,
+            20_000,
+            Some(TimePoint::Seconds(-20.0)),
+            Some(60.0),
+            1.0,
+        )
+        .unwrap();
         assert_eq!(
             range,
             VideoTimeRange {
-                start: 3_000,
-                end: 9_000
+                start: 8_000,
+                end: 22_000
             }
         );
     }
 
     #[test]
-    fn explicit_time_range_rejects_unrepresentable_duration() {
+    fn negative_start_is_preserved_when_tail_adjustment_is_not_needed() {
         let beatmap = beatmap_with_preview(None, None);
-        assert!(resolve_video_time_range(
+        let range = resolve_video_time_range(
             &beatmap,
             10_000,
             100_000,
-            Some(&[i64::MIN, i64::MAX]),
-            false,
+            Some(TimePoint::Seconds(-20.0)),
+            Some(60.0),
             1.0,
         )
-        .is_err());
+        .unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: -10_000,
+                end: 50_000
+            }
+        );
     }
 
     #[test]
-    fn preview_30s_conflicts_with_explicit_time_range() {
-        let beatmap = beatmap_with_preview(Some("45000"), None);
-        let err =
-            resolve_video_time_range(&beatmap, 10_000, 100_000, Some(&[3_000, 9_000]), true, 1.0)
-                .unwrap_err();
-        assert!(err.to_string().contains("--preview-30s"));
+    fn speed_multiplier_scales_chart_span() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range =
+            resolve_video_time_range(&beatmap, 10_000, 100_000, None, Some(30.0), 1.5).unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 10_000,
+                end: 55_000
+            }
+        );
+    }
+
+    #[test]
+    fn numeric_start_is_relative_to_first_object() {
+        let beatmap = beatmap_with_preview(None, None);
+        let range = resolve_video_time_range(
+            &beatmap,
+            10_000,
+            100_000,
+            Some(TimePoint::Seconds(-2.0)),
+            Some(10.0),
+            1.5,
+        )
+        .unwrap();
+        assert_eq!(
+            range,
+            VideoTimeRange {
+                start: 8_000,
+                end: 23_000
+            }
+        );
     }
 
     #[test]
@@ -726,5 +930,48 @@ mod tests {
             format_progress_label(time_axis.to_display(92_500), total_ms),
             "1:20/1:30"
         );
+    }
+
+    #[test]
+    fn video_background_fits_entire_image_and_keeps_black_borders() {
+        let mut source = Img::new(4, 2, [255, 100, 0, 255]);
+        for y in 0..2 {
+            for x in 2..4 {
+                source.put(x, y, [0, 100, 255, 255]);
+            }
+        }
+        let background = prepare_video_background(
+            &source,
+            4,
+            4,
+            video_style(crate::render::geometry::GameMode::Standard),
+        );
+        assert_eq!((background.w, background.h), (4, 4));
+        assert_eq!(background.get(0, 0), [0, 0, 0, 255]);
+        assert_eq!(background.get(0, 1), [77, 30, 0, 255]);
+        assert_eq!(background.get(0, 2), [77, 30, 0, 255]);
+        assert_eq!(background.get(3, 1), [0, 30, 77, 255]);
+        assert_eq!(background.get(0, 3), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn dropping_audio_task_cancels_and_joins_worker() {
+        let deadline = RequestDeadline::new(Instant::now(), "mp4", Duration::from_secs(300));
+        let worker_deadline = deadline.clone();
+        let finished = Arc::new(AtomicBool::new(false));
+        let worker_finished = finished.clone();
+        let task = JoinedAudioTask::new(
+            std::thread::spawn(move || loop {
+                if let Err(error) = worker_deadline.check() {
+                    worker_finished.store(true, Ordering::Relaxed);
+                    return Err(error);
+                }
+                std::thread::yield_now();
+            }),
+            deadline,
+        );
+
+        drop(task);
+        assert!(finished.load(Ordering::Relaxed));
     }
 }

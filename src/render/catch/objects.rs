@@ -1,5 +1,5 @@
-//! osu!catch render-object expansion: fruits, juice streams, banana showers,
-//! HR offsets, hyperdash. RNG call order mirrors Python/stable exactly.
+//! osu!catch 渲染对象展开：水果、果汁流、香蕉雨、HR 偏移和 hyperdash。
+//! RNG 调用顺序严格匹配 Python/stable。
 
 use crate::common::legacy_random::{stateless_next_int, LegacyRandom};
 use crate::common::slider_path::{build_catch_slider_path, path_position_at, SliderPath};
@@ -20,7 +20,7 @@ fn to_float32(v: f64) -> f32 {
     v as f32
 }
 
-// ─── render objects ───
+// ─── 渲染对象 ───
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum ObjType {
@@ -48,7 +48,7 @@ pub(crate) struct RenderObject {
     pub(crate) scale_factor: f64,
     pub(crate) event_time: Option<f64>,
     pub(crate) hyper_dash: bool,
-    /// A wide, almost-hyperdash transition that benefits from a white guide line.
+    /// 接近 hyperdash 极限、需要引导线提示的大跨度移动。
     pub(crate) edge: bool,
 }
 
@@ -74,7 +74,7 @@ pub(crate) struct SliderEvent {
     pub(crate) path_progress: f64,
 }
 
-// ─── difficulty ───
+// ─── 难度 ───
 
 pub(crate) struct Difficulty {
     pub(crate) cs: f64,
@@ -124,13 +124,13 @@ pub(crate) fn catch_time_range(approach_rate: f64) -> f64 {
     difficulty_range(approach_rate, 1800.0, 1200.0, 450.0)
 }
 
-// ─── stateless colors ───
+// ─── 无状态颜色 ───
 
 pub(crate) fn banana_color(seed: i64) -> [u8; 3] {
-    BANANA_COLORS[stateless_next_int(3, seed, 0) as usize]
+    crate::render::catch::constants::BANANA_COLORS[stateless_next_int(3, seed, 0) as usize]
 }
 
-// ─── object expansion ───
+// ─── 对象展开 ───
 
 /// 将谱面 hit object 展开为渲染对象（水果 / 果汁流 / 香蕉雨）。
 ///
@@ -144,19 +144,19 @@ pub(crate) fn build_catch_render_objects(
 ) -> Result<Vec<RenderObject>> {
     let beatmap_format_version = beatmap.format_version();
     let mut render_objects: Vec<RenderObject> = Vec::new();
-    let mut rng = LegacyRandom::new(RNG_SEED);
+    let mut rng = LegacyRandom::new(crate::render::catch::constants::RNG_SEED as u32);
     let hard_rock_offsets = mods.is_some_and(|m| m.hard_rock);
     let mut last_position: Option<f64> = None;
     let mut last_start_time = 0.0f64;
 
-    // 谱面自带 [Colours] 优先；其次统一 skin.ini；最后 lazer 默认配色
-    let skin_combo_colors = &crate::render::skin::skin().combo_colors;
+    // 谱面自带 [Colours] 优先；其次统一 skin 配置；最后 lazer 默认配色
+    let skin_combo_colors = &crate::config::current().skin.COMBO_COLORS;
     let combo_colors: &[[u8; 3]] = if !beatmap.combo_colors.is_empty() {
         &beatmap.combo_colors
     } else if !skin_combo_colors.is_empty() {
         skin_combo_colors
     } else {
-        &LAZER_COMBO_COLORS
+        &crate::render::catch::constants::LAZER_COMBO_COLORS
     };
 
     // combo 颜色追踪：首个对象固定取第 0 组色，之后 new_combo 时前进 1 + combo_offset
@@ -262,7 +262,7 @@ fn build_banana_shower_objects(
     let first_banana = out.len();
     let mut current_time = to_float32(start_time as f64);
     while current_time <= end_time as f32 {
-        let x = rng.next_double() * PLAYFIELD_WIDTH;
+        let x = rng.next_double() * crate::render::catch::constants::PLAYFIELD_WIDTH;
         rng.next();
         rng.next();
         rng.next();
@@ -272,7 +272,7 @@ fn build_banana_shower_objects(
             x,
             start_time: rhe(current_time as f64),
             color: banana_color(current_time as i64),
-            scale_factor: BANANA_SCALE,
+            scale_factor: crate::render::catch::constants::BANANA_SCALE,
             event_time: Some(current_time as f64),
             hyper_dash: false,
             edge: false,
@@ -312,8 +312,8 @@ fn banana_transition_score(
     }
 }
 
-/// Highlight the highest-scoring reachable route through a banana shower.
-/// White marks a walkable recommendation; pink marks a transition that needs dash.
+/// 标出香蕉雨中得分最高且可到达的推荐路线。
+/// 白色表示普通移动可达，粉色表示该段需要冲刺。
 fn highlight_recommended_banana_route(bananas: &mut [RenderObject], circle_size: f64) {
     if bananas.is_empty() {
         return;
@@ -407,7 +407,7 @@ fn build_juice_stream_objects(
                     x,
                     start_time: st,
                     color: combo_color,
-                    scale_factor: DROPLET_SCALE,
+                    scale_factor: crate::render::catch::constants::DROPLET_SCALE,
                     event_time: Some(event.time),
                     hyper_dash: false,
                     edge: false,
@@ -429,10 +429,16 @@ fn build_juice_stream_objects(
     for mut obj in nested_objects {
         match obj.object_type {
             ObjType::TinyDroplet => {
-                // Python: offset = rng.next(-20, 20)
-                // which is: int(-20 + rng.next_double() * 40)
+                // Python：offset = rng.next(-20, 20)。
+                // 等价于：int(-20 + rng.next_double() * 40)。
                 let offset = (-20.0 + rng.next_double() * 40.0) as i32 as f64;
-                obj.x = (obj.x + offset).max(0.0).min(PLAYFIELD_WIDTH);
+                let shifted_x = obj.x + offset;
+                // 原 max/min 链在 NaN 时回退到下界，显式保留该行为。
+                obj.x = if shifted_x.is_nan() {
+                    0.0
+                } else {
+                    shifted_x.clamp(0.0, crate::render::catch::constants::PLAYFIELD_WIDTH)
+                };
             }
             ObjType::Droplet => {
                 rng.next();
@@ -527,9 +533,9 @@ fn build_slider_events(
         });
     }
 
-    // Always generate legacy last tick, regardless of format version
+    // 无论格式版本如何，始终生成旧版末尾 tick。
     if let Some(legacy_tick) =
-        build_legacy_last_tick(hit_object.start_time as i64, span_duration, span_count)
+        build_legacy_last_tick(hit_object.start_time, span_duration, span_count)
     {
         events.push(legacy_tick);
     }
@@ -617,7 +623,13 @@ fn precision_adjusted_beat_length(beat_length: f64, slider_velocity: f64) -> f64
     if slider_velocity <= 0.0 {
         return beat_length;
     }
-    let bpm_multiplier = to_float32(100.0 / slider_velocity).max(10.0).min(1000.0) / 100.0;
+    let raw_multiplier = to_float32(100.0 / slider_velocity);
+    // 原 max/min 链在 NaN 时回退到下界 10.0。
+    let bpm_multiplier = if raw_multiplier.is_nan() {
+        10.0
+    } else {
+        raw_multiplier.clamp(10.0, 1000.0)
+    } / 100.0;
     beat_length * bpm_multiplier as f64
 }
 
@@ -649,7 +661,7 @@ fn build_tiny_droplets_between(
             x,
             start_time: rhe(time),
             color: combo_color,
-            scale_factor: TINY_DROPLET_SCALE,
+            scale_factor: crate::render::catch::constants::TINY_DROPLET_SCALE,
             event_time: Some(time),
             hyper_dash: false,
             edge: false,
@@ -677,15 +689,16 @@ fn apply_hard_rock_fruit_offset(
 
 fn apply_random_offset(position: f64, max_offset: f64, rng: &mut LegacyRandom) -> f64 {
     let offset = rng.next_double() * max_offset * 2.0 - max_offset;
-    (position + offset).clamp(0.0, PLAYFIELD_WIDTH)
+    (position + offset).clamp(0.0, crate::render::catch::constants::PLAYFIELD_WIDTH)
 }
 
 fn apply_offset(position: f64, amount: f64) -> f64 {
-    (position + amount).min(PLAYFIELD_WIDTH)
+    (position + amount).min(crate::render::catch::constants::PLAYFIELD_WIDTH)
 }
 
 fn apply_hyper_dash(render_objects: &mut [RenderObject], circle_size: f64) {
-    let catcher_width = CATCHER_BASE_SIZE * circle_scale(circle_size);
+    let catcher_width =
+        crate::render::catch::constants::CATCHER_BASE_SIZE * circle_scale(circle_size);
     let half_catcher_width = catcher_width / 2.0;
     let mut last_direction = 0i32;
     let mut last_excess = half_catcher_width;
@@ -728,9 +741,8 @@ fn apply_hyper_dash(render_objects: &mut [RenderObject], circle_size: f64) {
             last_excess = half_catcher_width;
         } else {
             last_excess = distance_to_hyper.min(half_catcher_width).max(0.0);
-            // Match the legacy osubot catch preview: mark long jumps that are
-            // within 20px of becoming a hyperdash so the grid can connect the
-            // two palpable objects with a white guide line.
+            // 与旧版 osubot Catch 预览一致：距离 hyperdash 阈值不足 20px 的
+            // 大跨度移动标为 edge，供静态图用白线连接前后两个可接物件。
             if distance_to_next > 2.0 * half_catcher_width && distance_to_hyper < 20.0 {
                 render_objects[current_index].edge = true;
             }
@@ -740,7 +752,7 @@ fn apply_hyper_dash(render_objects: &mut [RenderObject], circle_size: f64) {
     }
 }
 
-// ─── slider timing ───
+// ─── 滑条时间 ───
 
 fn catch_resolve_slider_timing(start_time: i64, timing_points: &[TimingPoint]) -> (f64, f64) {
     let mut beat_length = DEFAULT_BEAT_LENGTH;

@@ -1,10 +1,11 @@
-//! osu!mania PNG grid renderer.
-//! Port of beatmap_preview/mania/renderer.py.
+//! osu!mania PNG 网格渲染器。
+//! 移植自 beatmap_preview/mania/renderer.py。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::Result;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::composer::save_png;
@@ -14,30 +15,8 @@ use std::path::{Path, PathBuf};
 
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
-    mania_objects, resolve_key_count, COLUMN_GAP, IMAGE_BACKGROUND, LANE_BACKGROUND, LANE_WIDTH,
-    LEFT_PANEL_BACKGROUND, LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, NOTE_SIDE_PADDING, PAGE_MARGIN_X,
-    PAGE_MARGIN_Y, PIXELS_PER_MS, RULER_TEXT, SV_TEXT_COLOR, SV_TEXT_FONT_SIZE, TOP_BUFFER,
+    mania_objects, resolve_key_count,
 };
-
-const LANE_GAP: i64 = 0;
-const LANE_SEPARATOR: Rgba = [32, 32, 32, 255];
-const TIME_LABEL_FONT_SIZE: u32 = 20;
-const TIME_LABEL_MIN_INTERVAL_MS: i64 = 2000;
-
-const MAX_AREA_HEIGHT_0_TO_1_MIN: i64 = 4000;
-const MAX_AREA_HEIGHT_1_TO_2_MIN: i64 = 5500;
-const MAX_AREA_HEIGHT_2_TO_3_MIN: i64 = 7000;
-const MAX_AREA_HEIGHT_3_TO_4_MIN: i64 = 8500;
-const MAX_AREA_HEIGHT_4_TO_5_MIN: i64 = 10000;
-const MAX_AREA_HEIGHT_5_TO_6_MIN: i64 = 11500;
-const FIXED_COLUMN_COUNT_6_TO_10_MIN: i64 = 30;
-const MAX_SUPPORTED_DURATION_MS: i64 = 10 * 60 * 1000;
-const BOTTOM_PADDING_MS: i64 = 2000;
-
-// ── colors (PNG-specific) ──
-const MEASURE_LINE: Rgba = [83, 83, 83, 255];
-const BEAT_LINE: Rgba = [56, 56, 56, 255];
-const SUBDIVISION_LINE: Rgba = [34, 34, 34, 255];
 
 #[derive(Clone)]
 struct TimingLine {
@@ -54,6 +33,9 @@ struct RenderLayout {
     total_column_height: i64,
     lane_area_width: i64,
     column_width: i64,
+    lane_widths: Vec<i64>,
+    lane_left_offsets: Vec<i64>,
+    top_buffer: i64,
     image_width: i64,
     image_height: i64,
     chart_start_time: i64,
@@ -64,8 +46,10 @@ pub(crate) fn render_mania_grid(
     output_path: &Path,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
-    // key count comes straight from the beatmap CS (mods don't change native mania lanes)
+    deadline.check()?;
+    // 键数直接来自谱面 CS（模组不会改变原生 mania 轨道数）。
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
 
@@ -80,8 +64,8 @@ pub(crate) fn render_mania_grid(
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     let native_mania = is_native_mania(beatmap);
 
-    // Trim leading silence: if first note is >= 5s in, start 1s before it,
-    // aligned to the red-line beat grid.
+    // 裁剪开头静音：若第一个音符在 5 秒之后，则从其前 1 秒开始，
+    // 并对齐到红线节拍网格。
     let first_note_time = hit_objects
         .iter()
         .map(|ho| ho.start_time)
@@ -104,7 +88,8 @@ pub(crate) fn render_mania_grid(
     }
 
     let beatmap_duration = hit_objects.iter().map(|ho| ho.end_time).max().unwrap_or(0);
-    let chart_end_time = beatmap_duration + BOTTOM_PADDING_MS;
+    let chart_end_time =
+        beatmap_duration + crate::config::current().layout.mania.png.BOTTOM_PADDING_MS;
     let timing_points_for_render: Vec<TimingPoint> = if chart_start_time > 0 {
         beatmap
             .timing_points
@@ -118,7 +103,7 @@ pub(crate) fn render_mania_grid(
     } else {
         beatmap.timing_points.clone()
     };
-    let mut timing_lines = build_timing_lines(
+    let timing_lines = build_timing_lines(
         &timing_points_for_render,
         chart_end_time,
         beatmap.beat_divisor,
@@ -128,40 +113,43 @@ pub(crate) fn render_mania_grid(
             .min()
             .unwrap_or(0),
     );
-    if let Some(first_visible) = timing_lines.iter_mut().find(|line| line.show_label) {
-        if first_visible.bpm_label.is_none() {
-            first_visible.bpm_label =
-                crate::render::timing::bpm_at(&timing_points_for_render, first_visible.time)
-                    .map(crate::render::timing::format_bpm);
-        }
-    }
-    let sv_changes = if cs_mode || !native_mania {
-        Vec::new()
-    } else {
-        build_sv_changes(&timing_points_for_render, chart_end_time)
-    };
+    let sv_changes =
+        if cs_mode || !native_mania || !crate::config::current().layout.mania.png.SHOW_SV_LABEL {
+            Vec::new()
+        } else {
+            build_sv_changes(&timing_points_for_render, chart_end_time)
+        };
     let layout = build_png_layout(
         key_count,
         beatmap_duration,
         chart_end_time,
         chart_start_time,
     )?;
+    deadline.check()?;
 
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
-        IMAGE_BACKGROUND,
+        crate::config::current().layout.mania.png.IMAGE_BACKGROUND,
     );
 
     for column_index in 0..layout.column_count {
+        deadline.check()?;
         draw_column_background(&mut image, key_count, column_index, &layout);
     }
     let mut last_label_time: Option<i64> = None;
     for timing_line in &timing_lines {
+        deadline.check()?;
         let mut tl = timing_line.clone();
         if tl.show_label {
             if let Some(prev) = last_label_time {
-                if (tl.time - prev).abs() < TIME_LABEL_MIN_INTERVAL_MS {
+                if (tl.time - prev).abs()
+                    < crate::config::current()
+                        .layout
+                        .mania
+                        .png
+                        .TIME_LABEL_MIN_INTERVAL_MS
+                {
                     tl.show_label = false;
                 }
             }
@@ -171,14 +159,20 @@ pub(crate) fn render_mania_grid(
         }
         draw_timing_line(&mut image, &tl, &layout, time_axis);
     }
-    for sv_change in &sv_changes {
+    for (index, sv_change) in sv_changes.iter().enumerate() {
+        if index % 1024 == 0 {
+            deadline.check()?;
+        }
         draw_sv_indicator(&mut image, *sv_change, &layout);
     }
-    for hit_object in &hit_objects {
+    for (index, hit_object) in hit_objects.iter().enumerate() {
+        if index % 1024 == 0 {
+            deadline.check()?;
+        }
         draw_png_hit_object(&mut image, hit_object, &palette, &layout);
     }
 
-    save_png(&image, output_path)?;
+    save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
 }
 
@@ -188,15 +182,59 @@ fn build_png_layout(
     chart_end_time: i64,
     chart_start_time: i64,
 ) -> Result<RenderLayout> {
-    let total_chart_height = ((chart_end_time as f64 * PIXELS_PER_MS).ceil() as i64).max(1);
+    let skin_config = super::skin::load_mania_skin_config(key_count);
+    let scale = 0.5
+        * crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Mania,
+            crate::render::geometry::OutputFormat::Png,
+        );
+    let lane_widths: Vec<i64> = skin_config
+        .column_widths
+        .iter()
+        .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(1))
+        .collect();
+    let lane_left_offsets = super::gif::build_column_left_offsets(
+        &lane_widths,
+        &skin_config
+            .column_line_widths
+            .iter()
+            .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(0))
+            .collect::<Vec<_>>(),
+    );
+    let total_chart_height = ((chart_end_time as f64
+        * crate::config::current().layout.mania.png.PIXELS_PER_MS)
+        .ceil() as i64)
+        .max(1);
     let column_count = calculate_column_count(beatmap_duration, total_chart_height)?;
     let time_per_column = ceil_div(chart_end_time, column_count);
-    let column_height = (time_per_column as f64 * PIXELS_PER_MS).ceil() as i64;
-    let total_column_height = TOP_BUFFER + column_height;
-    let lane_area_width = key_count as i64 * LANE_WIDTH + (key_count as i64 - 1) * LANE_GAP;
-    let column_width = LEFT_PANEL_WIDTH + lane_area_width;
-    let image_width = PAGE_MARGIN_X * 2 + column_count * column_width + column_count * COLUMN_GAP;
-    let image_height = PAGE_MARGIN_Y * 2 + total_column_height;
+    let column_height = (time_per_column as f64
+        * crate::config::current().layout.mania.png.PIXELS_PER_MS)
+        .ceil() as i64;
+    let top_buffer = crate::render::geometry::scale_px(
+        crate::render::mania::constants::TOP_BUFFER as f64,
+        scale,
+    );
+    let total_column_height = top_buffer + column_height;
+    let lane_area_width = lane_widths.iter().sum::<i64>()
+        + skin_config
+            .column_line_widths
+            .iter()
+            .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(0))
+            .sum::<i64>()
+        + (key_count as i64 - 1) * crate::config::current().layout.mania.png.LANE_GAP;
+    let column_width = crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH + lane_area_width;
+    let image_width = crate::config::current().layout.mania.png.PAGE_MARGIN_LEFT
+        + crate::config::current().layout.mania.png.PAGE_MARGIN_RIGHT
+        + column_count
+            * (crate::config::current().layout.mania.png.INFO_MARGIN_LEFT
+                + column_width
+                + crate::config::current().layout.mania.png.INFO_MARGIN_RIGHT)
+        + (column_count - 1) * crate::config::current().layout.mania.png.COLUMN_GAP;
+    let image_height = crate::config::current().layout.mania.png.PAGE_MARGIN_TOP
+        + crate::config::current().layout.mania.png.PAGE_MARGIN_BOTTOM
+        + crate::config::current().layout.mania.png.INFO_MARGIN_TOP
+        + total_column_height
+        + crate::config::current().layout.mania.png.INFO_MARGIN_BOTTOM;
     Ok(RenderLayout {
         column_count,
         time_per_column,
@@ -204,10 +242,29 @@ fn build_png_layout(
         total_column_height,
         lane_area_width,
         column_width,
+        lane_widths,
+        lane_left_offsets,
+        top_buffer,
         image_width,
         image_height,
         chart_start_time,
     })
+}
+
+fn png_column_left(column_index: i64, layout: &RenderLayout) -> i64 {
+    let config = &crate::config::current().layout.mania.png;
+    config.PAGE_MARGIN_LEFT
+        + config.INFO_MARGIN_LEFT
+        + column_index
+            * (config.INFO_MARGIN_LEFT
+                + layout.column_width
+                + config.INFO_MARGIN_RIGHT
+                + config.COLUMN_GAP)
+}
+
+fn png_chart_top() -> i64 {
+    crate::config::current().layout.mania.png.PAGE_MARGIN_TOP
+        + crate::config::current().layout.mania.png.INFO_MARGIN_TOP
 }
 
 fn ceil_div(a: i64, b: i64) -> i64 {
@@ -215,13 +272,23 @@ fn ceil_div(a: i64, b: i64) -> i64 {
 }
 
 fn calculate_column_count(beatmap_duration: i64, total_chart_height: i64) -> Result<i64> {
-    if beatmap_duration >= MAX_SUPPORTED_DURATION_MS {
+    if beatmap_duration
+        >= crate::config::current()
+            .layout
+            .mania
+            .png
+            .MAX_SUPPORTED_DURATION_MS
+    {
         return Err(crate::core::errors::PreviewError::render(
             "songs longer than 10 minutes are not supported",
         ));
     }
     if beatmap_duration >= 6 * 60 * 1000 {
-        return Ok(FIXED_COLUMN_COUNT_6_TO_10_MIN);
+        return Ok(crate::config::current()
+            .layout
+            .mania
+            .png
+            .FIXED_COLUMN_COUNT_6_TO_10_MINUTES);
     }
     let max_area_height = resolve_max_area_height(beatmap_duration);
     Ok(ceil_div(total_chart_height, max_area_height).max(1))
@@ -229,17 +296,41 @@ fn calculate_column_count(beatmap_duration: i64, total_chart_height: i64) -> Res
 
 fn resolve_max_area_height(beatmap_duration: i64) -> i64 {
     if beatmap_duration < 60 * 1000 {
-        MAX_AREA_HEIGHT_0_TO_1_MIN
+        crate::config::current()
+            .layout
+            .mania
+            .png
+            .MAX_AREA_HEIGHT_0_TO_1_MINUTES
     } else if beatmap_duration < 2 * 60 * 1000 {
-        MAX_AREA_HEIGHT_1_TO_2_MIN
+        crate::config::current()
+            .layout
+            .mania
+            .png
+            .MAX_AREA_HEIGHT_1_TO_2_MINUTES
     } else if beatmap_duration < 3 * 60 * 1000 {
-        MAX_AREA_HEIGHT_2_TO_3_MIN
+        crate::config::current()
+            .layout
+            .mania
+            .png
+            .MAX_AREA_HEIGHT_2_TO_3_MINUTES
     } else if beatmap_duration < 4 * 60 * 1000 {
-        MAX_AREA_HEIGHT_3_TO_4_MIN
+        crate::config::current()
+            .layout
+            .mania
+            .png
+            .MAX_AREA_HEIGHT_3_TO_4_MINUTES
     } else if beatmap_duration < 5 * 60 * 1000 {
-        MAX_AREA_HEIGHT_4_TO_5_MIN
+        crate::config::current()
+            .layout
+            .mania
+            .png
+            .MAX_AREA_HEIGHT_4_TO_5_MINUTES
     } else {
-        MAX_AREA_HEIGHT_5_TO_6_MIN
+        crate::config::current()
+            .layout
+            .mania
+            .png
+            .MAX_AREA_HEIGHT_5_TO_6_MINUTES
     }
 }
 
@@ -249,27 +340,33 @@ fn draw_column_background(
     column_index: i64,
     layout: &RenderLayout,
 ) {
-    let column_left = PAGE_MARGIN_X + column_index * (layout.column_width + COLUMN_GAP);
-    let chart_top = PAGE_MARGIN_Y;
-    let lane_area_left = column_left + LEFT_PANEL_WIDTH;
+    let column_left = png_column_left(column_index, layout);
+    let chart_top = png_chart_top();
+    let lane_area_left = column_left + crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH;
 
     image.set_rect(
         column_left,
         chart_top,
         lane_area_left,
         chart_top + layout.total_column_height,
-        LEFT_PANEL_BACKGROUND,
+        crate::config::current()
+            .layout
+            .mania
+            .png
+            .LEFT_PANEL_BACKGROUND,
     );
 
     for lane_index in 0..key_count as i64 {
-        let lane_left = lane_area_left + lane_index * (LANE_WIDTH + LANE_GAP);
-        let lane_right = lane_left + LANE_WIDTH;
+        let lane_left = lane_area_left
+            + layout.lane_left_offsets[lane_index as usize]
+            + lane_index * crate::config::current().layout.mania.png.LANE_GAP;
+        let lane_right = lane_left + layout.lane_widths[lane_index as usize];
         image.set_rect(
             lane_left,
             chart_top,
             lane_right,
             chart_top + layout.total_column_height,
-            LANE_BACKGROUND,
+            crate::config::current().layout.mania.png.LANE_BACKGROUND,
         );
         if lane_index > 0 {
             image.set_rect(
@@ -277,7 +374,7 @@ fn draw_column_background(
                 chart_top,
                 lane_left,
                 chart_top + layout.total_column_height,
-                LANE_SEPARATOR,
+                crate::config::current().layout.mania.png.LANE_SEPARATOR,
             );
         }
     }
@@ -292,10 +389,13 @@ fn draw_timing_line(
     let column_index =
         (timing_line.time.div_euclid(layout.time_per_column)).min(layout.column_count - 1);
     let local_time = timing_line.time - column_index * layout.time_per_column;
-    let column_left = PAGE_MARGIN_X + column_index * (layout.column_width + COLUMN_GAP);
-    let lane_area_left = column_left + LEFT_PANEL_WIDTH;
-    let chart_top = PAGE_MARGIN_Y + TOP_BUFFER;
-    let y = chart_top + layout.column_height - round_half_even(local_time as f64 * PIXELS_PER_MS);
+    let column_left = png_column_left(column_index, layout);
+    let lane_area_left = column_left + crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH;
+    let chart_top = png_chart_top() + layout.top_buffer;
+    let y = chart_top + layout.column_height
+        - round_half_even(
+            local_time as f64 * crate::config::current().layout.mania.png.PIXELS_PER_MS,
+        );
 
     image.set_rect(
         lane_area_left,
@@ -309,52 +409,71 @@ fn draw_timing_line(
         let label = crate::render::text::format_seconds_tenths(
             time_axis.to_display(timing_line.time + layout.chart_start_time),
         );
-        let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
-        let label_width = label_width as i64;
-        let mut label_x = column_left + layout.column_width + 4;
-        if column_index < layout.column_count - 1 {
-            let next_column_left = column_left + layout.column_width + COLUMN_GAP;
-            label_x = label_x.min(next_column_left - label_width - 4);
-        } else {
-            label_x = label_x.min(layout.image_width - PAGE_MARGIN_X - label_width);
-        }
-        let bpm_metrics = timing_line
-            .bpm_label
-            .as_ref()
-            .map(|bpm| text_size(bpm, TIME_LABEL_FONT_SIZE));
-        let bpm_height = bpm_metrics.map_or(0, |(_, height)| height as i64 + 3);
-        let group_height = label_height as i64 + bpm_height;
-        let chart_bottom = PAGE_MARGIN_Y + layout.total_column_height;
-        let label_y = (y - group_height / 2)
-            .max(chart_top)
-            .min(chart_bottom - group_height);
+        let (_, label_height) = text_size(
+            &label,
+            crate::config::current()
+                .layout
+                .mania
+                .png
+                .TIME_LABEL_FONT_SIZE,
+        );
+        let text_mid_y = label_height as f64 / 2.0;
+        // 右侧信息区从轨道右边缘开始左对齐，避免长文本被推回轨道内部。
+        let text_gap = crate::render::geometry::scale_px(
+            4.0,
+            crate::render::geometry::output_scale(
+                crate::render::geometry::GameMode::Mania,
+                crate::render::geometry::OutputFormat::Png,
+            ),
+        );
+        let label_x = column_left + layout.column_width + text_gap;
+        let label_y = (chart_top as f64).max(y as f64 - text_mid_y).floor() as i64;
         draw_text(
             image,
             label_x,
             label_y,
             &label,
-            TIME_LABEL_FONT_SIZE,
-            RULER_TEXT,
+            crate::config::current()
+                .layout
+                .mania
+                .png
+                .TIME_LABEL_FONT_SIZE,
+            crate::config::current().layout.mania.png.RULER_TEXT_COLOR,
         );
 
-        if let (Some(bpm_label), Some((bpm_width, _))) =
-            (timing_line.bpm_label.as_ref(), bpm_metrics)
-        {
-            let bpm_width = bpm_width as i64;
-            let mut bpm_x = column_left + layout.column_width + 4;
-            if column_index < layout.column_count - 1 {
-                let next_column_left = column_left + layout.column_width + COLUMN_GAP;
-                bpm_x = bpm_x.min(next_column_left - bpm_width - 4);
-            } else {
-                bpm_x = bpm_x.min(layout.image_width - PAGE_MARGIN_X - bpm_width);
-            }
+        if let Some(ref bpm_label) = timing_line.bpm_label {
+            let (_, bpm_h) = text_size(
+                bpm_label,
+                crate::config::current()
+                    .layout
+                    .mania
+                    .png
+                    .TIME_LABEL_FONT_SIZE,
+            );
+            let bpm_x = column_left + layout.column_width + text_gap;
+            let bpm_gap = crate::render::geometry::scale_px(
+                3.0,
+                crate::render::geometry::output_scale(
+                    crate::render::geometry::GameMode::Mania,
+                    crate::render::geometry::OutputFormat::Png,
+                ),
+            );
+            let bpm_y = (label_y + label_height as i64 + bpm_gap).min(
+                crate::config::current().layout.mania.png.PAGE_MARGIN_TOP
+                    + layout.total_column_height
+                    - bpm_h as i64,
+            );
             draw_text(
                 image,
                 bpm_x,
-                label_y + label_height as i64 + 3,
+                bpm_y,
                 bpm_label,
-                TIME_LABEL_FONT_SIZE,
-                crate::render::timing::BPM_LABEL_COLOR,
+                crate::config::current()
+                    .layout
+                    .mania
+                    .png
+                    .TIME_LABEL_FONT_SIZE,
+                crate::config::current().layout.mania.png.RULER_TEXT_COLOR,
             );
         }
     }
@@ -375,13 +494,18 @@ fn draw_png_hit_object(
     let hold_color = darken(lane_color, 0.5);
 
     for column_index in start_column..=end_column {
-        let column_left = PAGE_MARGIN_X + column_index * (layout.column_width + COLUMN_GAP);
-        let lane_area_left = column_left + LEFT_PANEL_WIDTH;
-        let chart_top = PAGE_MARGIN_Y;
-        let chart_axis_top = chart_top + TOP_BUFFER;
+        let column_left = png_column_left(column_index, layout);
+        let lane_area_left =
+            column_left + crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH;
+        let chart_top = png_chart_top();
+        let chart_axis_top = chart_top + layout.top_buffer;
         let chart_bottom = chart_axis_top + layout.column_height;
-        let lane_left = lane_area_left + lane as i64 * (LANE_WIDTH + LANE_GAP) + NOTE_SIDE_PADDING;
-        let lane_right = lane_left + LANE_WIDTH - NOTE_SIDE_PADDING * 2;
+        let lane_left = lane_area_left
+            + layout.lane_left_offsets[lane]
+            + lane as i64 * crate::config::current().layout.mania.png.LANE_GAP
+            + crate::config::current().layout.mania.png.NOTE_SIDE_PADDING;
+        let lane_right = lane_left + layout.lane_widths[lane]
+            - crate::config::current().layout.mania.png.NOTE_SIDE_PADDING * 2;
         let segment_start = hit_object
             .start_time
             .max(column_index * layout.time_per_column);
@@ -390,28 +514,34 @@ fn draw_png_hit_object(
             .min((column_index + 1) * layout.time_per_column);
         let y_start = chart_axis_top + layout.column_height
             - round_half_even(
-                (segment_start - column_index * layout.time_per_column) as f64 * PIXELS_PER_MS,
+                (segment_start - column_index * layout.time_per_column) as f64
+                    * crate::config::current().layout.mania.png.PIXELS_PER_MS,
             );
         let y_end = chart_axis_top + layout.column_height
             - round_half_even(
-                (segment_end - column_index * layout.time_per_column) as f64 * PIXELS_PER_MS,
+                (segment_end - column_index * layout.time_per_column) as f64
+                    * crate::config::current().layout.mania.png.PIXELS_PER_MS,
             );
 
         if hit_object.is_long_note {
-            let body_top = chart_top.max(y_end.min(y_start - NOTE_HEAD_HEIGHT));
+            let body_top = chart_top.max(
+                y_end.min(y_start - crate::config::current().layout.mania.png.NOTE_HEAD_HEIGHT),
+            );
             let body_bottom = chart_bottom.min(y_start);
             if body_top < body_bottom {
                 image.set_rect(lane_left, body_top, lane_right, body_bottom, hold_color);
             }
             if column_index == start_column {
-                let head_top = chart_top.max(y_start - NOTE_HEAD_HEIGHT);
+                let head_top = chart_top
+                    .max(y_start - crate::config::current().layout.mania.png.NOTE_HEAD_HEIGHT);
                 let head_bottom = chart_bottom.min(y_start);
                 if head_top < head_bottom {
                     image.set_rect(lane_left, head_top, lane_right, head_bottom, lane_color);
                 }
             }
         } else {
-            let head_top = chart_top.max(y_start - NOTE_HEAD_HEIGHT);
+            let head_top =
+                chart_top.max(y_start - crate::config::current().layout.mania.png.NOTE_HEAD_HEIGHT);
             let head_bottom = chart_bottom.min(y_start);
             if head_top < head_bottom {
                 image.set_rect(lane_left, head_top, lane_right, head_bottom, lane_color);
@@ -439,7 +569,8 @@ fn build_timing_lines(
             chart_end_time as f64
         };
 
-        let beat_pixels = point.beat_length * PIXELS_PER_MS;
+        let beat_pixels =
+            point.beat_length * crate::config::current().layout.mania.png.PIXELS_PER_MS;
         let subdivision: i64 = if beat_divisor > 0 {
             (beat_divisor as i64).max(1)
         } else if beat_pixels >= 72.0 {
@@ -450,8 +581,8 @@ fn build_timing_lines(
             1
         };
         let step = point.beat_length / subdivision as f64;
-        // NaN steps fall through (single line emitted, like Python); zero/negative
-        // steps would loop forever, so skip them.
+        // NaN 步长直接继续（与 Python 一样只输出一条线）；零或负值另行处理。
+        // 该步长会造成无限循环，因此跳过。
         if step <= 0.0 {
             continue;
         }
@@ -468,11 +599,11 @@ fn build_timing_lines(
                     TimingLine {
                         time: round_half_even(current),
                         color: if is_bar {
-                            MEASURE_LINE
+                            crate::config::current().layout.mania.png.MEASURE_LINE_COLOR
                         } else if is_beat {
-                            BEAT_LINE
+                            crate::config::current().layout.mania.png.BEAT_LINE_COLOR
                         } else {
-                            SUBDIVISION_LINE
+                            crate::config::current().layout.mania.png.SUBDIVISION_LINE
                         },
                         show_label: is_bar || is_beat,
                         bpm_label: None,
@@ -483,17 +614,17 @@ fn build_timing_lines(
             current = point.time + step_index as f64 * step;
         }
     }
-    // Attach BPM labels: at each red line's first bar line when BPM changes,
-    // and at the bar line nearest the first note.
+    // 添加 BPM 标签：BPM 变化时标在每条红线的第一条小节线，
+    // 并在最接近首个音符的小节线上标记。
     if !ordered_unique.is_empty() {
         let mut last_bpm: Option<f64> = None;
         for point in &base_points {
             let bpm = 60_000.0 / point.beat_length;
-            let bpm_changed = last_bpm.map_or(true, |prev| (bpm - prev).abs() > 0.01);
+            let bpm_changed = last_bpm.is_none_or(|prev| (bpm - prev).abs() > 0.01);
             last_bpm = Some(bpm);
 
             if bpm_changed {
-                // Find the first bar line at or after this red line's time.
+                // 查找该红线时间点或之后的第一条小节线。
                 let rounded = round_half_even(point.time);
                 let key = ordered_unique
                     .range(rounded..)
@@ -501,12 +632,12 @@ fn build_timing_lines(
                     .map(|(&k, _)| k)
                     .unwrap_or(rounded);
                 if let Some(line) = ordered_unique.get_mut(&key) {
-                    line.bpm_label = Some(crate::render::timing::format_bpm(bpm));
+                    line.bpm_label = Some(format!("{:.0}BPM", bpm.round()));
                 }
             }
         }
 
-        // First note BPM: use the current BPM at first_note_time.
+        // 首个音符 BPM：使用 first_note_time 时生效的 BPM。
         if first_note_time > 0 {
             let bpm = 60_000.0
                 / base_points
@@ -519,9 +650,9 @@ fn build_timing_lines(
                 .map(|(&k, _)| k);
             if let Some(k) = key {
                 if let Some(line) = ordered_unique.get_mut(&k) {
-                    // Only attach if not already labelled by a BPM change at the same time.
+                    // 仅当同一时刻尚未因 BPM 变化添加标签时才附加。
                     if line.bpm_label.is_none() {
-                        line.bpm_label = Some(crate::render::timing::format_bpm(bpm));
+                        line.bpm_label = Some(format!("{:.0}BPM", bpm.round()));
                     }
                 }
             }
@@ -535,12 +666,18 @@ fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &RenderLayo
     let (time, sv) = sv_change;
     let column_index = (time.div_euclid(layout.time_per_column)).min(layout.column_count - 1);
     let local_time = time - column_index * layout.time_per_column;
-    let column_left = PAGE_MARGIN_X + column_index * (layout.column_width + COLUMN_GAP);
-    let chart_top = PAGE_MARGIN_Y + TOP_BUFFER;
-    let y = chart_top + layout.column_height - round_half_even(local_time as f64 * PIXELS_PER_MS);
+    let column_left = png_column_left(column_index, layout);
+    let chart_top = png_chart_top() + layout.top_buffer;
+    let y = chart_top + layout.column_height
+        - round_half_even(
+            local_time as f64 * crate::config::current().layout.mania.png.PIXELS_PER_MS,
+        );
 
     let label = super::format_sv_label(sv);
-    let (label_width, label_height) = text_size(&label, SV_TEXT_FONT_SIZE);
+    let (label_width, label_height) = text_size(
+        &label,
+        crate::config::current().layout.mania.png.SV_TEXT_FONT_SIZE,
+    );
     let text_mid_y = label_height as f64 / 2.0;
     let label_x = (column_left - 1 - label_width as i64).max(0);
     let label_y = (chart_top as f64).max(y as f64 - text_mid_y).floor() as i64;
@@ -549,7 +686,7 @@ fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &RenderLayo
         label_x,
         label_y,
         &label,
-        SV_TEXT_FONT_SIZE,
-        SV_TEXT_COLOR,
+        crate::config::current().layout.mania.png.SV_TEXT_FONT_SIZE,
+        crate::config::current().layout.mania.png.SV_TEXT_COLOR,
     );
 }

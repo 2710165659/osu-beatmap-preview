@@ -1,4 +1,5 @@
 use crate::core::errors::{PreviewError, Result};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Default)]
 pub struct ModSettings {
@@ -56,16 +57,26 @@ impl ModSettings {
     }
 }
 
-pub fn parse_mods(mod_str: &str) -> Result<ModSettings> {
+pub fn parse_mods(mod_tokens: &[String]) -> Result<ModSettings> {
     let mut settings = ModSettings::new();
-    if mod_str.trim().is_empty() {
+    if mod_tokens.is_empty() {
         return Ok(settings);
     }
-    let tokens: Vec<String> = mod_str
-        .split('+')
-        .map(|t| t.trim().to_uppercase())
-        .filter(|t| !t.is_empty())
-        .collect();
+    if mod_tokens.iter().any(|token| token.contains('+')) {
+        return Err(PreviewError::new(
+            "mods must be supplied as repeated --mod values; '+' is not allowed",
+        ));
+    }
+    let tokens: Vec<String> = mod_tokens.iter().map(|t| t.trim().to_uppercase()).collect();
+    if tokens.iter().any(|token| token.is_empty()) {
+        return Err(PreviewError::new("mod tokens must not be empty"));
+    }
+    let mut seen = HashSet::new();
+    if let Some(duplicate) = tokens.iter().find(|token| !seen.insert(token.as_str())) {
+        return Err(PreviewError::new(format!(
+            "duplicate mod token: '{duplicate}'"
+        )));
+    }
     settings.tokens = tokens.clone();
     for token in &tokens {
         parse_one_token(token, &mut settings)?;
@@ -78,7 +89,7 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         return parse_da_token(tail, s);
     }
 
-    // DT/HT with optional speed value
+    // DT/HT 可带可选速度值。
     if token.starts_with("DT") || token.starts_with("HT") {
         let (kind, rest) = token.split_at(2);
         if rest.is_empty() || rest.chars().all(|c| c.is_ascii_digit() || c == '.') {
@@ -114,7 +125,7 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         }
     }
 
-    // <n>K
+    // <n>K。
     if let Some(num) = token.strip_suffix('K') {
         if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) {
             let keys: i32 = num
@@ -170,7 +181,7 @@ fn parse_da_token(tail: &str, s: &mut ModSettings) -> Result<()> {
         } else {
             break;
         };
-        // numeric part: -?[\d.]+
+        // 数字部分：-?[\d.]+。
         let num_start = pos + 2;
         let mut num_end = num_start;
         let b = tail.as_bytes();
@@ -205,43 +216,27 @@ fn parse_da_token(tail: &str, s: &mut ModSettings) -> Result<()> {
 }
 
 fn set_da_param(param: &str, val: f64, s: &mut ModSettings) -> Result<()> {
-    let check = |min: f64, max: f64, name: &str| -> Result<()> {
-        if val < min || val > max {
-            Err(PreviewError::new(format!(
-                "DA {name} must be in [{}, {}], got {}",
-                fmt_float(min),
-                fmt_float(max),
-                fmt_float(val)
-            )))
-        } else {
-            Ok(())
-        }
-    };
+    // 范围依赖最终目标模式，解析阶段只保存字段和值。
     match param {
-        "CS" => {
-            check(0.0, 11.0, "CS")?;
-            s.da_cs = Some(val);
-        }
-        "AR" => {
-            check(-10.0, 11.0, "AR")?;
-            s.da_ar = Some(val);
-        }
-        "OD" => {
-            check(0.0, 11.0, "OD")?;
-            s.da_od = Some(val);
-        }
-        "HP" => {
-            check(0.0, 11.0, "HP")?;
-            s.da_hp = Some(val);
-        }
+        "CS" => s.da_cs = Some(val),
+        "AR" => s.da_ar = Some(val),
+        "OD" => s.da_od = Some(val),
+        "HP" => s.da_hp = Some(val),
         _ => unreachable!(),
     }
     Ok(())
 }
 
 fn parse_float(raw: &str, token: &str) -> Result<f64> {
-    raw.parse::<f64>()
-        .map_err(|_| PreviewError::new(format!("invalid numeric value in mod token: '{token}'")))
+    let value = raw
+        .parse::<f64>()
+        .map_err(|_| PreviewError::new(format!("invalid numeric value in mod token: '{token}'")))?;
+    if !value.is_finite() {
+        return Err(PreviewError::new(format!(
+            "numeric value in mod token must be finite: '{token}'"
+        )));
+    }
+    Ok(value)
 }
 
 fn fmt_float(v: f64) -> String {
@@ -254,6 +249,10 @@ fn fmt_float(v: f64) -> String {
 
 pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str>) -> Vec<String> {
     let mut errors = Vec::new();
+
+    if let Some(mode) = mode {
+        errors.extend(validate_da_ranges(settings, mode));
+    }
 
     if settings.double_time && settings.half_time {
         errors.push("DT and HT cannot be used together".to_string());
@@ -296,6 +295,50 @@ pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str
     errors
 }
 
+/// 按 osu! 各规则集的 Extended Limits 校验 DA 数值。
+///
+/// DA 当前仍只在 Standard 渲染中生效；其余模式的 DA 会继续由支持矩阵拒绝。
+/// 这里保留各规则集的范围，使模式相关校验不会错误套用 Standard 的 AR/OD 边界。
+fn validate_da_ranges(settings: &ModSettings, mode: i32) -> Vec<String> {
+    let mut errors = Vec::new();
+    let checks = [
+        ("CS", settings.da_cs, da_range(mode, "CS")),
+        ("AR", settings.da_ar, da_range(mode, "AR")),
+        ("OD", settings.da_od, da_range(mode, "OD")),
+        ("HP", settings.da_hp, da_range(mode, "HP")),
+    ];
+    for (name, value, range) in checks {
+        let (Some(value), Some((min, max))) = (value, range) else {
+            continue;
+        };
+        if !(min..=max).contains(&value) {
+            errors.push(format!(
+                "DA {name} must be in [{}, {}], got {}",
+                fmt_float(min),
+                fmt_float(max),
+                fmt_float(value)
+            ));
+        }
+    }
+    errors
+}
+
+fn da_range(mode: i32, param: &str) -> Option<(f64, f64)> {
+    match (mode, param) {
+        // osu!standard：CS、OD、HP 扩展到 11，AR 扩展到 -10..11。
+        (0, "CS") | (0, "OD") | (0, "HP") => Some((0.0, 11.0)),
+        (0, "AR") => Some((-10.0, 11.0)),
+        // osu!taiko 的 DA 当前可对应 OD/HP；两者沿用通用 Extended Limits。
+        (1, "OD") | (1, "HP") => Some((0.0, 11.0)),
+        // osu!catch 的 CS/AR 不支持负值，其他当前字段沿用通用范围。
+        (2, "CS") | (2, "AR") | (2, "OD") | (2, "HP") => Some((0.0, 11.0)),
+        // osu!mania 的 OD 使用规则集专用 -15..15 扩展，HP 仍为 0..11。
+        (3, "OD") => Some((-15.0, 15.0)),
+        (3, "HP") => Some((0.0, 11.0)),
+        _ => None,
+    }
+}
+
 fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
     match (fmt, mode) {
         ("gif", 0) => &["EZ", "HR", "HD", "DA", "TC"],
@@ -312,7 +355,7 @@ fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
 
 fn validate_supported_mods(settings: &ModSettings, mode: i32, fmt: &str) -> Vec<String> {
     let fmt_key = fmt.trim().to_lowercase();
-    // mp4 uses the same mod rules as gif (animated output, DT/HT allowed).
+    // MP4 与 GIF 使用相同模组规则（动画输出，允许 DT/HT）。
     let fmt_key = if fmt_key == "mp4" {
         "gif".to_owned()
     } else {
@@ -432,4 +475,83 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         _ => {}
     }
     filtered
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_mods_as_individual_tokens() {
+        let tokens = vec!["hd".to_string(), "dt1.25".to_string()];
+        let settings = parse_mods(&tokens).unwrap();
+        assert_eq!(settings.tokens, vec!["HD", "DT1.25"]);
+        assert!((settings.speed_multiplier - 1.25).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn rejects_plus_joined_mod_values() {
+        let tokens = vec!["hd+hr".to_string()];
+        assert!(parse_mods(&tokens).is_err());
+    }
+
+    #[test]
+    fn rejects_empty_and_duplicate_mod_tokens() {
+        assert!(parse_mods(&[String::new()]).is_err());
+        assert!(parse_mods(&["HD".into(), "hd".into()]).is_err());
+    }
+
+    #[test]
+    fn standard_da_accepts_extended_limits() {
+        let settings = parse_mods(&["DAcs11ar-10od11hp11".into()]).unwrap();
+        assert!(validate_mods(&settings, Some(0), Some("gif")).is_empty());
+    }
+
+    #[test]
+    fn standard_da_rejects_values_outside_extended_limits() {
+        for token in ["DAAR-10.1", "DACS11.1", "DAOD-0.1", "DAHP11.1"] {
+            let settings = parse_mods(&[token.into()]).unwrap();
+            assert!(validate_mods(&settings, Some(0), Some("gif"))
+                .iter()
+                .any(|error| error.starts_with("DA ")));
+        }
+    }
+
+    #[test]
+    fn mania_da_uses_extended_overall_difficulty_limits() {
+        for value in ["-15", "15"] {
+            let settings = parse_mods(&[format!("DAOD{value}")]).unwrap();
+            assert!(validate_mods(&settings, Some(3), Some("gif"))
+                .iter()
+                .all(|error| !error.starts_with("DA OD must be")));
+        }
+
+        let settings = parse_mods(&["DAOD15.1".into()]).unwrap();
+        assert!(validate_mods(&settings, Some(3), Some("gif"))
+            .iter()
+            .any(|error| error.starts_with("DA OD must be")));
+    }
+
+    #[test]
+    fn catch_da_approach_rate_does_not_allow_negative_values() {
+        let settings = parse_mods(&["DAAR-1".into()]).unwrap();
+        assert!(validate_mods(&settings, Some(2), Some("gif"))
+            .iter()
+            .any(|error| error.starts_with("DA AR must be")));
+    }
+
+    #[test]
+    fn da_rejects_non_finite_values_during_parsing() {
+        assert!(parse_mods(&["DAARNaN".into()]).is_err());
+        assert!(parse_mods(&["DAARinf".into()]).is_err());
+    }
+
+    #[test]
+    fn da_remains_unsupported_outside_standard() {
+        let settings = parse_mods(&["DAOD15".into()]).unwrap();
+        let errors = validate_mods(&settings, Some(3), Some("gif"));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("DA is not supported for mania GIF output")));
+    }
 }

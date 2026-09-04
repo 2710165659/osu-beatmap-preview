@@ -5,15 +5,21 @@ edition = "2021"
 
 [build-dependencies]
 vergen = { version = "9", features = ["build"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
 
 [dependencies]
-ureq = { version = "2", features = ["proxy-from-env"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+ureq = "2"
 lexopt = "0.3"
 serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
 time = { version = "0.3", default-features = false, features = ["formatting", "local-offset", "macros"] }
 gif = "0.13"
 color_quant = "1.1"
 png = "0.17"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rayon = "1"
 font8x8 = "0.3"
 thiserror = "2"

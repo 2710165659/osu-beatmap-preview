@@ -1,11 +1,8 @@
 //! 全局配置：日志目录、文件路径、进程启动时间与开关。
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
-
-pub const PROGRESS_FILE: &str = "progress.log";
-pub const RENDER_FILE: &str = "render.log";
 
 #[derive(Clone)]
 pub struct LogConfig {
@@ -17,15 +14,19 @@ static CONFIG: OnceLock<Mutex<Option<LogConfig>>> = OnceLock::new();
 static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 
 /// 默认日志目录：`<临时目录>/osu-beatmap-preview/logs`。
+#[allow(dead_code)] // 运行时初始化由二进制目标负责。
 pub fn default_log_dir() -> PathBuf {
-    std::env::temp_dir()
-        .join("osu-beatmap-preview")
-        .join("logs")
+    crate::config::resolve_path(crate::config::current().paths.LOG_DIR.as_str())
 }
 
-/// 初始化日志（幂等）。`log_dir` 为空时依次回退到 `OSU_PREVIEW_LOG_DIR`
-/// 环境变量与默认目录。目录创建失败时禁用日志，不影响主流程。
-pub fn init(log_dir: Option<&Path>) {
+/// 初始化日志（幂等），目录来自运行时配置快照。
+#[allow(dead_code)]
+pub fn init() {
+    init_with_dir(default_log_dir());
+}
+
+#[allow(dead_code)]
+fn init_with_dir(dir: PathBuf) {
     let _ = PROCESS_START.get_or_init(Instant::now);
     {
         let mutex = CONFIG.get_or_init(|| Mutex::new(None));
@@ -33,13 +34,10 @@ pub fn init(log_dir: Option<&Path>) {
         if guard.is_some() {
             return;
         }
-        let dir = match log_dir {
-            Some(dir) => dir.to_path_buf(),
-            None => env_log_dir().unwrap_or_else(default_log_dir),
-        };
+        let runtime = crate::config::current();
         let cfg = LogConfig {
-            progress_path: dir.join(PROGRESS_FILE),
-            render_path: dir.join(RENDER_FILE),
+            progress_path: dir.join(&runtime.logging.config.PROGRESS_FILE),
+            render_path: dir.join(&runtime.logging.config.RENDER_FILE),
         };
         match std::fs::create_dir_all(&dir) {
             Ok(()) => *guard = Some(cfg),
@@ -52,10 +50,7 @@ pub fn init(log_dir: Option<&Path>) {
     crate::log::event::event("session-start", "info", None, &session_message());
 }
 
-fn env_log_dir() -> Option<PathBuf> {
-    std::env::var_os("OSU_PREVIEW_LOG_DIR").map(PathBuf::from)
-}
-
+#[allow(dead_code)]
 fn session_message() -> String {
     let args: Vec<String> = std::env::args().collect();
     format!(
@@ -74,11 +69,6 @@ pub(crate) fn enabled() -> Option<LogConfig> {
         .and_then(|guard| guard.clone())
 }
 
-/// 返回 (progress.log, render.log) 两个文件的路径。
-pub fn paths() -> Option<(PathBuf, PathBuf)> {
-    enabled().map(|cfg| (cfg.progress_path, cfg.render_path))
-}
-
 /// 进程启动至今的毫秒数（未初始化时返回 0）。
 pub(crate) fn process_elapsed_ms() -> f64 {
     PROCESS_START
@@ -92,3 +82,16 @@ pub(crate) fn reset_for_tests() {
     let mutex = CONFIG.get_or_init(|| Mutex::new(None));
     *mutex.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
+
+#[cfg(test)]
+pub(crate) fn init_for_tests(log_dir: &std::path::Path) {
+    init_with_dir(log_dir.to_path_buf());
+}
+
+#[cfg(test)]
+pub(crate) fn paths() -> Option<(PathBuf, PathBuf)> {
+    enabled().map(|cfg| (cfg.progress_path, cfg.render_path))
+}
+
+#[cfg(test)]
+pub(crate) use crate::config::logging::config::*;

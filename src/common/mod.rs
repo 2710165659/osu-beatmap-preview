@@ -1,4 +1,4 @@
-//! Modules shared across multiple game-mode renderers.
+//! 多个游戏模式渲染器共享的模块。
 
 pub mod conversion;
 pub mod legacy_random;

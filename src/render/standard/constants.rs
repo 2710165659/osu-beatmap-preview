@@ -1,70 +1,69 @@
-//! Constants for osu!standard renderer.
+//! osu!standard 渲染使用的编译期常量。
+/// 圆圈图层缓存 ID 基值。
+pub(crate) const ID_CIRCLE_PIECE: u64 = 100;
+/// 滑条球图层缓存 ID 基值。
+pub(crate) const ID_SLIDER_BALL: u64 = 102;
+/// 跟随圈图层缓存 ID 基值。
+pub(crate) const ID_FOLLOW: u64 = 103;
+/// 滑条 tick 精灵图层缓存 ID 基值。
+pub(crate) const ID_SLIDER_TICK: u64 = 104;
+/// 反向箭头图层缓存 ID 基值。
+pub(crate) const ID_ARROW_BASE: u64 = 4096;
+/// 反向边缘图层缓存 ID 基值。
+pub(crate) const ID_REVERSE_EDGE: u64 = 8192;
 
-use crate::render::canvas::Rgba;
-
-// ——— layout config ———
-pub(crate) const PNG_MS_PER_IMAGE: i64 = 400;
-pub(crate) const PNG_ROW_COUNT: usize = 5;
-pub(crate) const PNG_IMAGES_PER_ROW: usize = 8;
-
-pub(crate) const GIF_ROW_COUNT: usize = 2;
-pub(crate) const GIF_IMAGES_PER_ROW: usize = 2;
-pub(crate) const GIF_DURATION_MS: i64 = 5000;
-pub(crate) const GIF_GRID_GAP: i64 = 20;
-
-// 单帧画面高度沿用 384，宽度使左右留白约 60px（playfield 宽 409.6，两侧各约 60）。
-pub(crate) const IMAGE_WIDTH: i64 = 530;
-pub(crate) const IMAGE_HEIGHT: i64 = 384;
-pub(crate) const HORIZONTAL_PAGE_MARGIN: i64 = 20;
-pub(crate) const VERTICAL_PAGE_MARGIN: i64 = 20;
-pub(crate) const INTRA_ROW_IMAGE_GAP: i64 = 20;
-pub(crate) const INTER_ROW_GAP: i64 = 100;
-pub(crate) const CANVAS_BACKGROUND_COLOR: Rgba = [0, 0, 0, 255];
-pub(crate) const IMAGE_BACKGROUND_COLOR: Rgba = [0, 0, 0, 255];
-
-pub(crate) const TIME_LABEL_FONT_SIZE: u32 = 30;
-pub(crate) const TIME_LABEL_NOTE_FONT_SIZE: u32 = 22;
-pub(crate) const TIME_LABEL_HEIGHT: i64 = 76;
-pub(crate) const TIME_LABEL_TOP_GAP: i64 = 8;
-pub(crate) const TIME_LABEL_NOTE_TOP_GAP: i64 = 9;
-pub(crate) const TIME_LABEL_COLOR: Rgba = [232, 232, 232, 255];
-pub(crate) const PREVIEW_TIME_LABEL_COLOR: Rgba = [95, 221, 108, 255];
-
-// ——— osu! source constants ———
+/// osu!standard 游戏区域宽度。
 pub(crate) const PLAYFIELD_WIDTH: f64 = 512.0;
+/// osu!standard 游戏区域高度。
 pub(crate) const PLAYFIELD_HEIGHT: f64 = 384.0;
+/// 游戏区域在视口中的缩放比例。
 pub(crate) const PLAYFIELD_VIEWPORT_RATIO: f64 = 0.8;
-pub(crate) const PLAYFIELD_STORYBOARD_SHIFT: f64 = 8.0;
+/// 圆形判定物半径。
 pub(crate) const OBJECT_RADIUS: f64 = 64.0;
+/// 修正旧版游戏区域圆角误差的容差。
 pub(crate) const BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE: f64 = 1.00041;
+/// 击中后判定物淡出时长（毫秒）。
 pub(crate) const POST_HIT_FADE_MS: i64 = 120;
+/// 滑条淡出时长（毫秒）。
 pub(crate) const SLIDER_FADE_OUT_MS: i64 = 240;
+/// 转盘淡出时长（毫秒）。
 pub(crate) const SPINNER_FADE_OUT_MS: i64 = 240;
+/// Break 时段最短持续时间（毫秒）。
 pub(crate) const BREAK_MIN_DURATION_MS: i64 = 650;
-pub(crate) const BREAK_FADE_DURATION_MS: i64 = BREAK_MIN_DURATION_MS / 2;
+/// Break 覆盖层淡入淡出时长（毫秒）。
+pub(crate) const BREAK_FADE_DURATION_MS: i64 = 325;
+/// Break 进度条宽度占画布比例。
 pub(crate) const BREAK_OVERLAY_BAR_WIDTH_RATIO: f64 = 0.3;
+/// Break 进度条高度（像素）。
 pub(crate) const BREAK_OVERLAY_BAR_HEIGHT: f64 = 8.0;
+/// Break 计数文字字号。
 pub(crate) const BREAK_OVERLAY_COUNTER_FONT_SIZE: u32 = 33;
+/// Break 提示文字字号。
 pub(crate) const BREAK_OVERLAY_INFO_FONT_SIZE: u32 = 18;
+/// Break 提示文字顶部间距（毫秒）。
 pub(crate) const BREAK_OVERLAY_INFO_TOP_GAP: i64 = 14;
-pub(crate) const BREAK_OVERLAY_COLOR: Rgba = [238, 238, 238, 255];
-pub(crate) const BREAK_OVERLAY_INFO_COLOR: Rgba = [185, 185, 185, 255];
-pub(crate) const SLIDER_BODY_SUPERSAMPLE: i64 = 2;
+/// Break 进度条颜色。
+pub(crate) const BREAK_OVERLAY_COLOR: [u8; 4] = [238, 238, 238, 255];
+/// Break 提示文字颜色。
+pub(crate) const BREAK_OVERLAY_INFO_COLOR: [u8; 4] = [185, 185, 185, 255];
+/// 滑条头部蛇形展开效果开关。
 pub(crate) const SNAKING_IN_SLIDERS: bool = true;
+/// 滑条尾部蛇形收缩效果开关。
 pub(crate) const SNAKING_OUT_SLIDERS: bool = true;
-
-// ——— Argon skin constants (relative to a 128px reference object) ———
-pub(crate) const ARGON_BORDER_RATIO: f64 = 2.0 / 58.0;
-pub(crate) const ARGON_SLIDER_WIDTH_RATIO: f64 = 110.345 / 128.0;
+/// Argon 滑条边框宽度比例。
+pub(crate) const ARGON_BORDER_RATIO: f64 = 0.034482758620689655;
+/// Argon 滑条主体宽度比例。
+pub(crate) const ARGON_SLIDER_WIDTH_RATIO: f64 = 0.8620703125;
+/// Argon 滑条边框占比。
 pub(crate) const ARGON_SLIDER_BORDER_PORTION: f64 = 0.2;
+/// Argon 滑条主体透明度。
 pub(crate) const ARGON_SLIDER_BODY_ALPHA: f64 = 0.98;
+/// Argon 滑条 tick 的基准尺寸（相对于 128px 物件尺寸）。
+pub(crate) const ARGON_SLIDER_TICK_SIZE_RATIO: f64 = 12.0 / 128.0;
+/// Argon 滑条 tick 边框占自身半径的比例。
+pub(crate) const ARGON_SLIDER_TICK_BORDER_RATIO: f64 = 3.0 / 12.0;
+/// Argon 默认连击颜色。
 pub(crate) const ARGON_COMBO_COLORS: [[u8; 3]; 4] =
     [[255, 192, 0], [0, 202, 0], [18, 124, 255], [242, 24, 57]];
+/// Argon 转盘粉色。
 pub(crate) const ARGON_SPINNER_PINK: [u8; 3] = [252, 97, 143];
-
-// cache ids for procedural pieces
-pub(crate) const ID_CIRCLE_PIECE: u64 = 100;
-pub(crate) const ID_SLIDER_BALL: u64 = 102;
-pub(crate) const ID_FOLLOW: u64 = 103;
-pub(crate) const ID_ARROW_BASE: u64 = 4096;
-pub(crate) const ID_REVERSE_EDGE: u64 = 8192;

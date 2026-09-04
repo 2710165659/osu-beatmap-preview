@@ -3,10 +3,13 @@
 pub(crate) mod canvas;
 pub(crate) mod catch;
 pub(crate) mod composer;
+pub(crate) mod geometry;
 pub(crate) mod mania;
-pub(crate) mod skin;
 pub(crate) mod standard;
 pub(crate) mod taiko;
 pub(crate) mod text;
 pub(crate) mod timing;
 pub(crate) mod video;
+
+#[cfg(test)]
+mod conversion_tests;

@@ -1,8 +1,7 @@
-//! Classic osu!catch object drawing shared by PNG, GIF, and MP4 renderers.
+//! PNG、GIF 与 MP4 共用的经典 osu!catch 物件绘制。
 //!
-//! This intentionally matches nonebot-plugin-osubot's existing preview style:
-//! solid circular fruits and droplets with a white inner border, a red
-//! hyperdash ring, and hollow banana rings.
+//! 这里保持 nonebot-plugin-osubot 既有预览样式：水果与水滴使用带白色
+//! 内边框的实心圆，hyperdash 使用彩色外环，香蕉使用空心圆环。
 
 use crate::render::canvas::Img;
 
@@ -24,7 +23,7 @@ fn draw_classic_fruit(
 ) {
     let radius = diameter / 2.0;
     if hyper_dash {
-        let color = crate::render::skin::skin().hyper_dash;
+        let color = crate::config::current().skin.HYPER_DASH;
         image.stroke_circle_aa(cx, cy, radius * 1.6, radius * 0.6, rgba(color));
     }
     image.fill_circle_aa(cx, cy, radius, rgba(color));
@@ -51,7 +50,7 @@ pub(crate) fn draw_catch_object(
     }
 }
 
-/// Object diameter after difficulty, object-kind, and playfield scaling.
+/// 应用难度、物件种类及游戏区域缩放后的物件直径。
 pub(crate) fn object_diameter(object_scale: f64, playfield_scale: f64, scale_factor: f64) -> f64 {
     super::constants::OBJECT_RADIUS * 2.0 * object_scale * scale_factor * playfield_scale
 }

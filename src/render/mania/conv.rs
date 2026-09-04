@@ -1,7 +1,6 @@
-//! standard → mania conversion (mode 3).
-//! Ported 1:1 from the Python beatmap_preview mania converter, which itself
-//! ports osu!lazer's ManiaBeatmapConverter.
-//! RNG call order and float32 round-trip points must match Python exactly.
+//! standard → mania 转换（模式 3）。
+//! 从 Python beatmap_preview mania 转换器逐行移植，该实现又移植自 osu!lazer 的
+//! ManiaBeatmapConverter。RNG 调用顺序和 float32 往返点必须与 Python 完全一致。
 
 use crate::common::legacy_random::LegacyRandom;
 use crate::core::errors::{PreviewError, Result};
@@ -12,29 +11,25 @@ use crate::parser::round_half_even;
 use crate::common::conversion::{std_objects, TimingCursor};
 
 const SOURCE_MODE_KEY: &str = "PreviewSourceMode";
+const P_FORCE_NOT_STACK: u32 = 1;
+const P_KEEP_SINGLE: u32 = 2;
+const P_MIRROR: u32 = 4;
+const P_GATHERED: u32 = 8;
+const P_STAIR: u32 = 16;
+const P_REVERSE: u32 = 32;
+const P_CYCLE: u32 = 64;
+const P_LOW_PROBABILITY: u32 = 128;
+const P_FORCE_STACK: u32 = 256;
+const P_REVERSE_STAIR: u32 = 512;
+const HIT_WHISTLE: i32 = 2;
+const HIT_FINISH: i32 = 4;
+const HIT_CLAP: i32 = 8;
 
-// pattern type bit flags
-const P_FORCE_NOT_STACK: u32 = 1 << 0;
-const P_KEEP_SINGLE: u32 = 1 << 1;
-const P_MIRROR: u32 = 1 << 2;
-const P_GATHERED: u32 = 1 << 3;
-const P_STAIR: u32 = 1 << 4;
-const P_REVERSE: u32 = 1 << 5;
-const P_CYCLE: u32 = 1 << 6;
-const P_LOW_PROBABILITY: u32 = 1 << 7;
-const P_FORCE_STACK: u32 = 1 << 8;
-// extra bit for stair direction tracking (not part of pattern logic)
-const P_REVERSE_STAIR: u32 = 1 << 9;
-
-const HIT_WHISTLE: i32 = 1 << 1;
-const HIT_FINISH: i32 = 1 << 2;
-const HIT_CLAP: i32 = 1 << 3;
-
-// ── pattern ──
+// ── 模式 ──
 
 #[derive(Clone)]
 struct Pattern {
-    /// Bitmask of occupied columns (max 18 columns fits in u32).
+    /// 已占用列的位掩码（最多 18 列，可容纳于 u32）。
     column_mask: u32,
     objects: Vec<ManiaHitObject>,
 }
@@ -65,13 +60,13 @@ impl Pattern {
         self.column_mask.count_ones() as i32
     }
 
-    /// Only meaningful when column_count == 1 (matching Python's set iteration use).
+    /// 仅在 column_count == 1 时有意义（匹配 Python 的集合迭代用途）。
     fn any_column(&self) -> i32 {
         self.column_mask.trailing_zeros() as i32
     }
 }
 
-// ── conversion state ──
+// ── 转换状态 ──
 
 struct ConversionState<'a> {
     rng: LegacyRandom,
@@ -115,8 +110,14 @@ impl ConversionState<'_> {
         let span_count = i32::max(1, ho.slider_repeats) as i64;
         let beat_length = self.timing_cursor.beat_length;
         let slider_velocity = self.timing_cursor.slider_velocity;
-        let adjusted_beat_length =
-            beat_length * f64::max(10.0, f64::min(10000.0, 100.0 / slider_velocity)) / 100.0;
+        let raw_multiplier = 100.0 / slider_velocity;
+        // 原 min/max 链在 NaN 时回退到上界 10000.0。
+        let bpm_multiplier = if raw_multiplier.is_nan() {
+            10000.0
+        } else {
+            raw_multiplier.clamp(10.0, 10000.0)
+        };
+        let adjusted_beat_length = beat_length * bpm_multiplier / 100.0;
         let duration = (ho.start_time as f64
             + ho.slider_pixel_length * adjusted_beat_length * span_count as f64 * 0.01
                 / self.slider_multiplier)
@@ -193,7 +194,7 @@ impl ConversionState<'_> {
         }
     }
 
-    // Inverse cumulative probability: val >= 1-pN → N (highest match wins).
+    // 反向累积概率：val >= 1-pN → N（取最高匹配项）。
     fn get_random_note_count(&mut self, p2: f64, p3: f64, p4: f64, p5: f64) -> i32 {
         let val = self.rng.next_double();
         if p5 != 0.0 && val >= 1.0 - p5 {
@@ -212,7 +213,7 @@ impl ConversionState<'_> {
     }
 }
 
-// ── public API ──
+// ── 公共 API ──
 
 pub(crate) fn mania_convert(
     beatmap: &Beatmap,
@@ -272,6 +273,7 @@ pub(crate) fn mania_convert(
         timing_points: beatmap.timing_points.clone(),
         hit_objects: HitObjects::Mania(mania_objects),
         break_periods: beatmap.break_periods.clone(),
+        background_filename: beatmap.background_filename.clone(),
         combo_colors: beatmap.combo_colors.clone(),
         beat_divisor: beatmap.beat_divisor,
     })
@@ -362,14 +364,15 @@ fn mania_compute_conversion_difficulty(
 
     let dr = difficulty.get_f64_or("HPDrainRate", 5.0);
     let ar = difficulty.get_f64_or("ApproachRate", 5.0);
-    let clamped_ar = f64::max(4.0, f64::min(7.0, ar));
+    // 原 min/max 链在 NaN 时回退到上界 7.0。
+    let clamped_ar = if ar.is_nan() { 7.0 } else { ar.clamp(4.0, 7.0) };
     let obj_density = hit_objects.len() as f64 / drain_time;
 
     let cd = ((dr + clamped_ar) / 1.5 + obj_density * 9.0) / 38.0 * 5.0 / 1.15;
     f64::min(cd, 12.0)
 }
 
-// ── main conversion loop ──
+// ── 主转换循环 ──
 
 fn mania_convert_all(
     s: &mut ConversionState,
@@ -401,7 +404,7 @@ fn mania_convert_all(
     Ok(result)
 }
 
-// ── circle generator ──
+// ── 圆圈生成器 ──
 
 fn circle_resolve_convert_type(
     s: &ConversionState,
@@ -429,7 +432,7 @@ fn circle_resolve_convert_type(
     } else if pos_gap < 20.0 && density >= beat_len / 2.5 {
         ct |= P_REVERSE | P_LOW_PROBABILITY;
     } else if density < beat_len / 2.5 || s.timing_cursor.kiai {
-        // high density, no special flag
+        // 高密度，不设置特殊标志。
     } else {
         ct |= P_LOW_PROBABILITY;
     }
@@ -463,7 +466,7 @@ fn circle_generate(
         return Ok(s.prev_pattern.objects.clone());
     }
 
-    // Reverse
+    // 反向。
     if ct & P_REVERSE != 0 && prev.column_count() > 0 {
         for c in s.random_start..t_cols {
             if prev.has_column(c) {
@@ -474,7 +477,7 @@ fn circle_generate(
         return Ok(s.prev_pattern.objects.clone());
     }
 
-    // Cycle
+    // 循环。
     if ct & P_CYCLE != 0
         && prev.column_count() == 1
         && !(t_cols == 8 && prev.any_column() == 0)
@@ -486,7 +489,7 @@ fn circle_generate(
         return Ok(s.prev_pattern.objects.clone());
     }
 
-    // ForceStack
+    // 强制堆叠。
     if ct & P_FORCE_STACK != 0 && prev.column_count() > 0 {
         for c in s.random_start..t_cols {
             if prev.has_column(c) {
@@ -497,7 +500,7 @@ fn circle_generate(
         return Ok(s.prev_pattern.objects.clone());
     }
 
-    // Stair (from previous)
+    // 阶梯排列（相对前一个音符）。
     if prev.column_count() == 1 {
         let last_col = prev.any_column();
         if ct & P_STAIR != 0 {
@@ -526,21 +529,21 @@ fn circle_generate(
         }
     }
 
-    // KeepSingle
+    // 保持单列。
     if ct & P_KEEP_SINGLE != 0 {
         circle_gen_random_notes(s, &mut pattern, 1, ct, ho, &prev)?;
         s.prev_pattern = pattern;
         return Ok(s.prev_pattern.objects.clone());
     }
 
-    // Mirror
+    // 镜像。
     if ct & P_MIRROR != 0 {
         circle_gen_mirrored(s, &mut pattern, ct, ho, &prev)?;
         s.prev_pattern = pattern;
         return Ok(s.prev_pattern.objects.clone());
     }
 
-    // Random with conversion difficulty
+    // 根据转换难度随机选择。
     let cd = s.conv_diff;
     let lp = ct & P_LOW_PROBABILITY != 0;
     let (p2, p3): (f64, f64) = if cd > 6.5 {
@@ -635,7 +638,7 @@ fn circle_gen_mirrored(
         (0.0, 0.0)
     };
 
-    // cap mirrored probabilities per key count
+    // 按键数限制镜像概率。
     if t_cols == 2 {
         centre_p = 0.0;
         p2 = 0.0;
@@ -656,8 +659,9 @@ fn circle_gen_mirrored(
         p3 = 1.0 - f64::max((1.0 - p3) * 2.0, 0.85);
     }
 
-    p2 = f64::max(0.0, f64::min(1.0, p2));
-    p3 = f64::max(0.0, f64::min(1.0, p3));
+    // 原 min/max 链在 NaN 时回退到上界 1.0。
+    p2 = if p2.is_nan() { 1.0 } else { p2.clamp(0.0, 1.0) };
+    p3 = if p3.is_nan() { 1.0 } else { p3.clamp(0.0, 1.0) };
     let centre_val = s.rng.next_double();
     let note_count = s.get_random_note_count(p2, p3, 0.0, 0.0);
     let add_centre = t_cols % 2 == 1 && note_count != 3 && centre_val > 1.0 - centre_p;
@@ -730,7 +734,7 @@ fn circle_get_random_note_count(
     s.get_random_note_count(p2, p3, p4, p5)
 }
 
-// ── slider generator ──
+// ── 滑条生成器 ──
 
 struct SliderCtx {
     start_time: i64,
@@ -845,7 +849,7 @@ fn slider_gen_single_span(
         return slider_gen_notes_no_stack(s, ho, ctx, if seg < 80 { 1 } else { 2 });
     }
 
-    // graded by ConversionDifficulty
+    // 按 ConversionDifficulty 分级。
     let (p2, p3): (f64, f64) = if cd > 6.5 {
         if lp {
             (0.78, 0.3)
@@ -1010,7 +1014,7 @@ fn slider_gen_hold_and_normal(
     let mut pattern = Pattern::new();
     pattern.add(col, ctx.start_time, ctx.end_time); // hold
 
-    // accompanying note count
+    // 伴随音符数量。
     let mut nc = if cd > 6.5 {
         s.get_random_note_count(0.63, 0.0, 0.0, 0.0)
     } else if cd > 4.0 {
@@ -1094,7 +1098,7 @@ fn slider_cap_hold_counts(t_cols: i32, p2: f64, p3: f64, p4: f64) -> (f64, f64, 
     (p2, p3, p4)
 }
 
-// ── spinner generator ──
+// ── 转盘生成器 ──
 
 fn spinner_generate(
     s: &mut ConversionState,

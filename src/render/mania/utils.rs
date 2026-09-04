@@ -1,5 +1,4 @@
-//! Shared mania helpers: key-count resolution, mod applications, SV changes,
-//! lane palette, and timing utilities.
+//! mania 共享辅助函数：键数解析、模组应用、SV 变化、轨道配色和时间工具。
 
 use crate::core::errors::PreviewError;
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
@@ -10,30 +9,32 @@ use std::collections::BTreeMap;
 const MAX_KEY_COUNT: i32 = 18;
 
 pub(crate) fn lane_palette(key_count: i32) -> Vec<Rgba> {
-    const W: Rgba = [0xe9, 0xee, 0xf4, 255]; // #e9eef4
-    const B: Rgba = [0xbc, 0xdb, 0xf1, 255]; // #bcdbf1
-    const G: Rgba = [0xcc, 0xfc, 0xb2, 255]; // #ccfcb2
-    const Y: Rgba = [0xff, 0xe2, 0x74, 255]; // #ffe274
-    const R: Rgba = [0xff, 0x7a, 0x5c, 255]; // #ff7a5c
+    let (w, b, g, y, r) = (
+        crate::config::current().palette.mania_utils.MANIA_COLOR_W,
+        crate::config::current().palette.mania_utils.MANIA_COLOR_B,
+        crate::config::current().palette.mania_utils.MANIA_COLOR_G,
+        crate::config::current().palette.mania_utils.MANIA_COLOR_Y,
+        crate::config::current().palette.mania_utils.MANIA_COLOR_R,
+    );
     match key_count {
-        1 => vec![W],
-        2 => vec![W, W],
-        3 => vec![W, B, W],
-        4 => vec![W, B, B, W],
-        5 => vec![W, G, Y, G, W],
-        6 => vec![W, G, W, W, G, W],
-        7 => vec![W, G, W, Y, W, G, W],
-        8 => vec![B, W, G, W, W, G, W, B],
-        9 => vec![B, W, G, W, Y, W, G, W, B],
-        10 => vec![B, W, G, W, Y, Y, W, G, W, B],
-        11 => vec![B, W, G, W, Y, R, Y, W, G, W, B],
-        12 => vec![Y, B, W, G, W, Y, Y, W, G, W, B, Y],
-        13 => vec![Y, B, W, G, W, Y, R, Y, W, G, W, B, Y],
-        14 => vec![W, Y, B, W, G, W, Y, Y, W, G, W, B, Y, W],
-        15 => vec![W, Y, B, W, G, W, Y, R, Y, W, G, W, B, Y, W],
-        16 => vec![G, W, Y, B, W, G, W, Y, Y, W, G, W, B, Y, W, G],
-        17 => vec![G, W, Y, B, W, G, W, Y, R, Y, W, G, W, B, Y, W, G],
-        18 => vec![B, G, W, Y, B, W, G, W, Y, Y, W, G, W, B, Y, W, G, B],
+        1 => vec![w],
+        2 => vec![w, w],
+        3 => vec![w, b, w],
+        4 => vec![w, b, b, w],
+        5 => vec![w, g, y, g, w],
+        6 => vec![w, g, w, w, g, w],
+        7 => vec![w, g, w, y, w, g, w],
+        8 => vec![b, w, g, w, w, g, w, b],
+        9 => vec![b, w, g, w, y, w, g, w, b],
+        10 => vec![b, w, g, w, y, y, w, g, w, b],
+        11 => vec![b, w, g, w, y, r, y, w, g, w, b],
+        12 => vec![y, b, w, g, w, y, y, w, g, w, b, y],
+        13 => vec![y, b, w, g, w, y, r, y, w, g, w, b, y],
+        14 => vec![w, y, b, w, g, w, y, y, w, g, w, b, y, w],
+        15 => vec![w, y, b, w, g, w, y, r, y, w, g, w, b, y, w],
+        16 => vec![g, w, y, b, w, g, w, y, y, w, g, w, b, y, w, g],
+        17 => vec![g, w, y, b, w, g, w, y, r, y, w, g, w, b, y, w, g],
+        18 => vec![b, g, w, y, b, w, g, w, y, y, w, g, w, b, y, w, g, b],
         _ => unreachable!("key count clamped to [1, 18]"),
     }
 }
@@ -85,7 +86,7 @@ pub(crate) fn beat_length_at(time: i64, timing_points: &[TimingPoint]) -> f64 {
     beat_length
 }
 
-/// IN mod: convert gaps between adjacent same-lane objects into holds; last object dropped.
+/// IN 模组：将同轨相邻音符间隔转换为长按，并丢弃最后一个音符。
 pub(crate) fn apply_inverse_mod(
     hit_objects: &[ManiaHitObject],
     timing_points: &[TimingPoint],
@@ -121,7 +122,7 @@ pub(crate) fn apply_inverse_mod(
     result
 }
 
-/// HO mod: holds become taps at the head; plain notes preserved.
+/// HO 模组：长按变为头部单点，普通音符保持不变。
 pub(crate) fn apply_hold_off_mod(hit_objects: &[ManiaHitObject]) -> Vec<ManiaHitObject> {
     let mut result: Vec<ManiaHitObject> = hit_objects
         .iter()
@@ -144,7 +145,10 @@ pub(crate) fn build_sv_changes(
     let mut prev_sv: Option<f64> = None;
     for point in timing_points {
         if point.uninherited
-            || !(point.beat_length < 0.0)
+            || !matches!(
+                point.beat_length.partial_cmp(&0.0),
+                Some(std::cmp::Ordering::Less)
+            )
             || point.time < 0.0
             || point.time > chart_end_time as f64
         {

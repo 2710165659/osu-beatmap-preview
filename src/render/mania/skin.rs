@@ -1,12 +1,9 @@
 //! osu!mania 皮肤配置加载。
 //!
-//! 从统一的 `assets/skin.ini`（经 [`crate::render::skin`] 解析）中按键数选取
-//! 对应的 [Mania] 配置块，提取列宽 / 分隔线宽 / 判定线位置 / 列颜色。
+//! 配置来自 `default_config.yml` 生成的运行时快照；每个 `KEYS_N` 块都
+//! 显式保存列宽、列线宽、列颜色和判定线位置。
 
-use crate::parser::round_half_even;
 use crate::render::canvas::Rgba;
-
-use super::{GIF_HIT_TARGET_FROM_BOTTOM, LANE_BACKGROUND, LANE_WIDTH};
 
 /// 单个键数对应的 mania 皮肤配置。
 pub(crate) struct ManiaSkinConfig {
@@ -16,71 +13,111 @@ pub(crate) struct ManiaSkinConfig {
     pub(crate) column_widths: Vec<i64>,
     /// 列分隔线宽度（keys + 1 个：最左、列间、最右）。
     pub(crate) column_line_widths: Vec<i64>,
-    /// 每列背景色（skin.ini Colour1..N）。
+    /// 每列背景色。
     pub(crate) column_colours: Vec<Rgba>,
 }
 
 /// 按键数加载 mania 皮肤配置；没有匹配块时返回默认值。
 pub(crate) fn load_mania_skin_config(keys: i32) -> ManiaSkinConfig {
-    for block in &crate::render::skin::skin().mania_blocks {
-        let block_keys = block_get(block, "Keys").and_then(|v| v.trim().parse::<i32>().ok());
-        if block_keys == Some(keys) {
-            return parse_skin_block(block, keys);
-        }
+    macro_rules! block {
+        ($name:ident) => {
+            from_config(&crate::config::current().skin.MANIA.$name, keys as usize)
+        };
     }
-    default_skin_config(keys)
+
+    match keys {
+        1 => block!(KEYS_1),
+        2 => block!(KEYS_2),
+        3 => block!(KEYS_3),
+        4 => block!(KEYS_4),
+        5 => block!(KEYS_5),
+        6 => block!(KEYS_6),
+        7 => block!(KEYS_7),
+        8 => block!(KEYS_8),
+        9 => block!(KEYS_9),
+        10 => block!(KEYS_10),
+        11 => block!(KEYS_11),
+        12 => block!(KEYS_12),
+        13 => block!(KEYS_13),
+        14 => block!(KEYS_14),
+        15 => block!(KEYS_15),
+        16 => block!(KEYS_16),
+        17 => block!(KEYS_17),
+        18 => block!(KEYS_18),
+        _ => default_skin_config(keys),
+    }
 }
 
-/// 在键值块中查找指定键（取最后一次出现的值）。
-fn block_get<'a>(block: &'a [(String, String)], key: &str) -> Option<&'a str> {
-    block
-        .iter()
-        .rev()
-        .find(|(k, _)| k == key)
-        .map(|(_, v)| v.as_str())
-}
-
-fn parse_skin_block(block: &[(String, String)], keys: i32) -> ManiaSkinConfig {
-    let column_widths = parse_int_list(
-        block_get(block, "ColumnWidth").unwrap_or(""),
-        keys as usize,
-        LANE_WIDTH,
+fn from_config<T>(block: &T, keys: usize) -> ManiaSkinConfig
+where
+    T: ManiaSkinBlock,
+{
+    let keys = keys.max(1);
+    let column_widths = normalize_int_list(
+        block.column_widths(),
+        keys,
+        crate::config::current().layout.mania.png.LANE_WIDTH,
     );
-    let column_line_widths = parse_int_list(
-        block_get(block, "ColumnLineWidth").unwrap_or(""),
-        keys as usize + 1,
-        0,
+    let column_line_widths = normalize_int_list(block.column_line_widths(), keys + 1, 0);
+    let column_colours = normalize_colours(
+        block.column_colours(),
+        keys,
+        crate::config::current().layout.mania.png.LANE_BACKGROUND,
     );
-    let column_colours = (0..keys)
-        .map(|index| {
-            parse_colour(
-                block_get(block, &format!("Colour{}", index + 1)).unwrap_or(""),
-                LANE_BACKGROUND,
-            )
-        })
-        .collect();
-    let hit_position = parse_hit_position(block_get(block, "HitPosition"));
 
     ManiaSkinConfig {
-        hit_position,
+        hit_position: parse_hit_position(block.hit_position()),
         column_widths,
         column_line_widths,
         column_colours,
     }
 }
 
-/// 解析逗号分隔的整数列表；不足 count 个时用最后一个值补齐。
-fn parse_int_list(raw: &str, count: usize, default: i64) -> Vec<i64> {
-    let mut values: Vec<i64> = Vec::new();
-    for part in raw.split(',') {
-        let part = part.trim();
-        if part.is_empty() {
-            continue;
-        }
-        if let Ok(v) = part.parse::<f64>() {
-            values.push(round_half_even(v).max(0));
-        }
-    }
+/// 对生成的 `SkinMANIAKEYS_NConfig` 结构体提供统一视图。
+trait ManiaSkinBlock {
+    fn hit_position(&self) -> i64;
+    fn column_widths(&self) -> &[i64];
+    fn column_line_widths(&self) -> &[i64];
+    fn column_colours(&self) -> &[[u8; 4]];
+}
+
+macro_rules! impl_mania_skin_block {
+    ($($name:ident),+ $(,)?) => {
+        $(
+            impl ManiaSkinBlock for crate::config::$name {
+                fn hit_position(&self) -> i64 { self.HIT_POSITION }
+                fn column_widths(&self) -> &[i64] { &self.COLUMN_WIDTHS }
+                fn column_line_widths(&self) -> &[i64] { &self.COLUMN_LINE_WIDTHS }
+                fn column_colours(&self) -> &[[u8; 4]] { &self.COLUMN_COLORS }
+            }
+        )+
+    };
+}
+
+impl_mania_skin_block!(
+    SkinMANIAKEYS_1Config,
+    SkinMANIAKEYS_2Config,
+    SkinMANIAKEYS_3Config,
+    SkinMANIAKEYS_4Config,
+    SkinMANIAKEYS_5Config,
+    SkinMANIAKEYS_6Config,
+    SkinMANIAKEYS_7Config,
+    SkinMANIAKEYS_8Config,
+    SkinMANIAKEYS_9Config,
+    SkinMANIAKEYS_10Config,
+    SkinMANIAKEYS_11Config,
+    SkinMANIAKEYS_12Config,
+    SkinMANIAKEYS_13Config,
+    SkinMANIAKEYS_14Config,
+    SkinMANIAKEYS_15Config,
+    SkinMANIAKEYS_16Config,
+    SkinMANIAKEYS_17Config,
+    SkinMANIAKEYS_18Config,
+);
+
+/// 规范化强类型数组：非负、不足时重复最后一个、超出时截断。
+fn normalize_int_list(raw: &[i64], count: usize, default: i64) -> Vec<i64> {
+    let mut values: Vec<i64> = raw.iter().map(|value| (*value).max(0)).collect();
     if values.is_empty() {
         values.push(default);
     }
@@ -91,46 +128,71 @@ fn parse_int_list(raw: &str, count: usize, default: i64) -> Vec<i64> {
     values
 }
 
-/// 解析 "R,G,B[,A]" 颜色，格式非法时返回 fallback。
-fn parse_colour(raw: &str, fallback: Rgba) -> Rgba {
-    let mut values: Vec<u8> = Vec::new();
-    for part in raw.split(',') {
-        let part = part.trim();
-        if part.is_empty() {
-            continue;
-        }
-        match part.parse::<f64>() {
-            Ok(v) => values.push(round_half_even(v).clamp(0, 255) as u8),
-            Err(_) => return fallback,
-        }
+fn normalize_colours(raw: &[[u8; 4]], count: usize, fallback: Rgba) -> Vec<Rgba> {
+    let mut values: Vec<Rgba> = raw.to_vec();
+    if values.is_empty() {
+        values.push(fallback);
     }
-    if values.len() == 3 {
-        values.push(255);
+    while values.len() < count {
+        values.push(*values.last().unwrap());
     }
-    if values.len() != 4 {
-        return fallback;
-    }
-    [values[0], values[1], values[2], values[3]]
+    values.truncate(count);
+    values
 }
 
-/// osu! stable 的 HitPosition 基于 480 高坐标系；转换为 768 高 GIF
+/// osu! stable 的 HitPosition 基于 480 高坐标系；转换为 768 高 GIF/MP4
 /// 坐标系中距底部的距离。
-fn parse_hit_position(raw: Option<&str>) -> f64 {
-    let Some(raw) = raw else {
-        return GIF_HIT_TARGET_FROM_BOTTOM as f64;
-    };
-    match raw.trim().parse::<f64>() {
-        Ok(v) => (480.0 - v.clamp(240.0, 480.0)) * 1.6,
-        Err(_) => GIF_HIT_TARGET_FROM_BOTTOM as f64,
-    }
+fn parse_hit_position(raw: i64) -> f64 {
+    (480.0 - (raw as f64).clamp(240.0, 480.0)) * 1.6
 }
 
 /// 缺省配置：等宽列、无分隔线、默认判定线位置。
 fn default_skin_config(keys: i32) -> ManiaSkinConfig {
+    let keys = keys.max(0) as usize;
     ManiaSkinConfig {
-        hit_position: GIF_HIT_TARGET_FROM_BOTTOM as f64,
-        column_widths: vec![LANE_WIDTH; keys as usize],
-        column_line_widths: vec![0; keys as usize + 1],
-        column_colours: vec![LANE_BACKGROUND; keys as usize],
+        hit_position: crate::config::current()
+            .layout
+            .mania
+            .png
+            .HIT_TARGET_FROM_BOTTOM as f64,
+        column_widths: vec![crate::config::current().layout.mania.png.LANE_WIDTH; keys],
+        column_line_widths: vec![0; keys + 1],
+        column_colours: vec![crate::config::current().layout.mania.png.LANE_BACKGROUND; keys],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_mania_skin_config;
+
+    #[test]
+    fn all_standard_keycounts_use_explicit_skin_blocks() {
+        for keys in 1..=18 {
+            let config = load_mania_skin_config(keys);
+            assert_eq!(config.column_widths.len(), keys as usize);
+            assert_eq!(config.column_line_widths.len(), keys as usize + 1);
+            assert_eq!(config.column_colours.len(), keys as usize);
+        }
+    }
+
+    #[test]
+    fn odd_keycount_defaults_match_migrated_values() {
+        let config_3 = load_mania_skin_config(3);
+        assert_eq!(config_3.column_widths, vec![68, 68, 68]);
+        assert!((config_3.hit_position - 11.2).abs() < 1e-9);
+
+        let config_11 = load_mania_skin_config(11);
+        assert_eq!(config_11.column_widths, vec![53; 11]);
+        assert!((config_11.hit_position - 32.0).abs() < 1e-9);
+
+        let config_17 = load_mania_skin_config(17);
+        assert_eq!(config_17.column_widths, vec![48; 17]);
+    }
+
+    #[test]
+    fn unknown_keycount_uses_fallback_layout() {
+        let config = load_mania_skin_config(19);
+        assert_eq!(config.column_widths.len(), 19);
+        assert_eq!(config.column_line_widths, vec![0; 20]);
     }
 }

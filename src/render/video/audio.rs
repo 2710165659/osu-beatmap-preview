@@ -1,5 +1,7 @@
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
+use crate::core::timeout::RequestDeadline;
+use crate::render::canvas::Img;
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
 use std::fs::File;
 use std::io::{Read, Seek, Write};
@@ -12,10 +14,6 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-pub(crate) const AUDIO_SAMPLE_RATE: u32 = 48_000;
-pub(crate) const AUDIO_BITRATE: u32 = 96_000;
-const MAX_EXTRACTED_AUDIO_BYTES: u64 = 256 * 1024 * 1024;
-
 #[derive(Debug, Clone)]
 pub(crate) struct AudioSource {
     pub path: PathBuf,
@@ -23,7 +21,9 @@ pub(crate) struct AudioSource {
 }
 
 pub(crate) struct AudioSourceJob {
-    handle: std::thread::JoinHandle<Result<AudioSource>>,
+    handle: Option<std::thread::JoinHandle<Result<AudioSource>>>,
+    deadline: RequestDeadline,
+    background: Option<Img>,
 }
 
 impl AudioSourceJob {
@@ -32,6 +32,8 @@ impl AudioSourceJob {
         beatmap: Beatmap,
         cache_dir: PathBuf,
         no_cache: bool,
+        deadline: RequestDeadline,
+        mode: crate::render::geometry::GameMode,
     ) -> Result<Self> {
         let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
             PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
@@ -47,22 +49,50 @@ impl AudioSourceJob {
             &format!("set_id={set_id} audio={audio_filename}"),
         );
 
+        let osz_path = crate::pipeline::downloader::download_beatmapset_archive(
+            &request_bid,
+            set_id,
+            &cache_dir,
+            no_cache,
+            &deadline,
+        )?;
+        let background = if super::video_style(mode).enable_background_image {
+            load_background_image(beatmap.background_filename.as_deref(), &osz_path, &deadline)?
+        } else {
+            None
+        };
+        let worker_deadline = deadline.clone();
         let handle = std::thread::spawn(move || {
-            let osz_path = crate::pipeline::downloader::download_beatmapset_archive(
-                &request_bid,
-                set_id,
-                &cache_dir,
-                no_cache,
-            )?;
-            prepare_audio_source(&beatmap, &osz_path, &cache_dir, no_cache)
+            worker_deadline.check()?;
+            prepare_audio_source(&beatmap, &osz_path, &cache_dir, no_cache, &worker_deadline)
         });
-        Ok(Self { handle })
+        Ok(Self {
+            handle: Some(handle),
+            deadline,
+            background,
+        })
     }
 
-    pub(crate) fn wait(self) -> Result<AudioSource> {
+    pub(crate) fn take_background(&mut self) -> Option<Img> {
+        self.background.take()
+    }
+
+    pub(crate) fn wait(mut self) -> Result<AudioSource> {
         self.handle
+            .take()
+            .expect("audio source job waited more than once")
             .join()
             .map_err(|_| PreviewError::render("audio preparation worker panicked"))?
+    }
+}
+
+impl Drop for AudioSourceJob {
+    fn drop(&mut self) {
+        let Some(handle) = self.handle.take() else {
+            return;
+        };
+        self.deadline.cancel();
+        let _ = handle.join();
     }
 }
 
@@ -82,12 +112,16 @@ struct DecodedAudio {
     stereo_samples: Vec<i16>,
 }
 
+const MAX_BACKGROUND_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
+
 pub(crate) fn prepare_audio_source(
     beatmap: &Beatmap,
     osz_path: &Path,
     cache_dir: &Path,
     no_cache: bool,
+    deadline: &RequestDeadline,
 ) -> Result<AudioSource> {
+    deadline.check()?;
     let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
         PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
     })?;
@@ -126,7 +160,7 @@ pub(crate) fn prepare_audio_source(
 
     std::fs::create_dir_all(&set_cache)
         .map_err(|e| PreviewError::download(format!("failed to create audio cache dir: {e}")))?;
-    extract_audio_entry(osz_path, &normalized, &target_path)?;
+    extract_audio_entry(osz_path, &normalized, &target_path, deadline)?;
     crate::log::event(
         "audio-prepare",
         "done",
@@ -140,28 +174,130 @@ pub(crate) fn prepare_audio_source(
     })
 }
 
+/// 从 OSZ 中读取并解码谱面背景图；缺少背景图时回退到纯色背景。
+fn load_background_image(
+    filename: Option<&str>,
+    osz_path: &Path,
+    deadline: &RequestDeadline,
+) -> Result<Option<Img>> {
+    let Some(filename) = filename else {
+        crate::log::event(
+            "background-prepare",
+            "skip",
+            None,
+            "beatmap has no background event",
+        );
+        return Ok(None);
+    };
+    let file = File::open(osz_path)
+        .map_err(|e| PreviewError::download(format!("failed to open osz archive: {e}")))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| PreviewError::download(format!("invalid osz archive: {e}")))?;
+    let wanted = match normalize_archive_path(filename) {
+        Ok(path) => path,
+        Err(error) => {
+            crate::log::event("background-prepare", "skip", None, &error);
+            return Ok(None);
+        }
+    };
+    let index = (0..archive.len()).find(|&index| {
+        archive
+            .by_index(index)
+            .ok()
+            .and_then(|entry| normalize_archive_path(entry.name()).ok())
+            .is_some_and(|name| name.eq_ignore_ascii_case(&wanted))
+    });
+    let Some(index) = index else {
+        crate::log::event(
+            "background-prepare",
+            "skip",
+            None,
+            &format!("background file was not found in osz: {wanted}"),
+        );
+        return Ok(None);
+    };
+    let mut entry = archive
+        .by_index(index)
+        .map_err(|e| PreviewError::download(format!("failed to open background entry: {e}")))?;
+    if entry.is_dir() || entry.size() == 0 || entry.size() > MAX_BACKGROUND_IMAGE_BYTES {
+        crate::log::event(
+            "background-prepare",
+            "skip",
+            None,
+            "invalid background image size",
+        );
+        return Ok(None);
+    }
+    let mut bytes = Vec::with_capacity(entry.size() as usize);
+    entry
+        .by_ref()
+        .take(MAX_BACKGROUND_IMAGE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| PreviewError::download(format!("failed to extract background image: {e}")))?;
+    if bytes.len() as u64 > MAX_BACKGROUND_IMAGE_BYTES {
+        crate::log::event(
+            "background-prepare",
+            "skip",
+            None,
+            "background image is too large",
+        );
+        return Ok(None);
+    }
+    deadline.check()?;
+    let decoded = match image::load_from_memory(&bytes) {
+        Ok(image) => image.to_rgba8(),
+        Err(error) => {
+            crate::log::event(
+                "background-prepare",
+                "skip",
+                None,
+                &format!("failed to decode background image: {error}"),
+            );
+            return Ok(None);
+        }
+    };
+    let (w, h) = decoded.dimensions();
+    if w == 0 || h == 0 {
+        return Ok(None);
+    }
+    crate::log::event(
+        "background-prepare",
+        "done",
+        None,
+        &format!("loaded {wanted} ({w}x{h})"),
+    );
+    Ok(Some(Img {
+        w,
+        h,
+        data: decoded.into_raw(),
+    }))
+}
+
 pub(crate) fn encode_audio_segment(
     source: &AudioSource,
     chart_start_ms: i64,
     frame_count: usize,
     fps: u32,
     speed: f64,
+    deadline: &RequestDeadline,
 ) -> Result<EncodedAudio> {
+    deadline.check()?;
     if fps == 0 || !speed.is_finite() || speed <= 0.0 {
         return Err(PreviewError::render(
             "invalid video timing for audio encoding",
         ));
     }
-    let decoded = decode_audio(&source.path)?;
-    let target_samples =
-        ((frame_count as u64 * AUDIO_SAMPLE_RATE as u64) + fps as u64 - 1) / fps as u64;
+    let decoded = decode_audio(&source.path, deadline)?;
+    let target_samples = (frame_count as u64
+        * crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE as u64)
+        .div_ceil(fps as u64);
     if target_samples == 0 {
         return Err(PreviewError::render("audio segment is empty"));
     }
 
     let encoder = Encoder::new(EncoderParams {
-        bit_rate: BitRate::Cbr(AUDIO_BITRATE),
-        sample_rate: AUDIO_SAMPLE_RATE,
+        bit_rate: BitRate::Cbr(crate::config::current().audio.video_audio.AUDIO_BITRATE),
+        sample_rate: crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE,
         transport: Transport::Raw,
         channels: ChannelMode::Stereo,
         audio_object_type: AudioObjectType::Mpeg4LowComplexity,
@@ -173,16 +309,16 @@ pub(crate) fn encode_audio_segment(
     let samples_per_frame = info.frameLength.max(1) as usize;
     let target_frame_count = target_samples.div_ceil(samples_per_frame as u64) as usize;
     let max_output_bytes = (info.maxOutBufBytes.max(8192)) as usize;
-    let encoder_delay_samples = info.nDelay.max(0) as usize;
+    let encoder_delay_samples = info.nDelay as usize;
     let mut input = vec![0_i16; samples_per_frame * 2];
     let mut output = vec![0_u8; max_output_bytes];
     let mut frames = Vec::with_capacity(target_frame_count);
-    let mut input_frame_index = 0usize;
 
-    // FDK buffers encoder look-ahead internally, so a few zero-padded calls may
-    // be needed after the requested input span before every access unit appears.
+    // FDK 在内部缓冲编码器前瞻数据，因此请求输入区间结束后可能还需执行几次补零调用，
+    // 才能取出全部访问单元。
     let max_calls = target_frame_count + 16;
-    for _ in 0..max_calls {
+    for input_frame_index in 0..max_calls {
+        deadline.check()?;
         fill_audio_frame(
             &mut input,
             input_frame_index * samples_per_frame,
@@ -192,7 +328,6 @@ pub(crate) fn encode_audio_segment(
             speed,
             encoder_delay_samples,
         );
-        input_frame_index += 1;
         let encoded = encoder
             .encode(&input, &mut output)
             .map_err(|e| PreviewError::render(format!("AAC encoding failed: {e}")))?;
@@ -254,12 +389,12 @@ fn source_frame_position(
     speed: f64,
 ) -> f64 {
     let chart_time_ms = chart_start_ms as f64
-        + (output_index + encoder_delay_samples) as f64 * 1000.0 * speed / AUDIO_SAMPLE_RATE as f64;
+        + (output_index + encoder_delay_samples) as f64 * 1000.0 * speed
+            / crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE as f64;
     chart_time_ms * source_sample_rate as f64 / 1000.0
 }
 
-/// osu! uses AudioLeadIn to choose how early gameplay starts; it does not
-/// offset the audio file relative to beatmap time zero.
+/// osu! 使用 AudioLeadIn 决定游戏多早开始，它不会改变音频文件相对谱面零时刻的偏移。
 pub(crate) fn full_video_start_time(first_object_ms: i64, audio_lead_in_ms: i64) -> i64 {
     let default_start = first_object_ms - 2_000;
     if audio_lead_in_ms > 0 {
@@ -290,7 +425,7 @@ fn sample_stereo(decoded: &DecodedAudio, source_frame: f64) -> [i16; 2] {
     [interpolate(0), interpolate(1)]
 }
 
-fn decode_audio(path: &Path) -> Result<DecodedAudio> {
+fn decode_audio(path: &Path, deadline: &RequestDeadline) -> Result<DecodedAudio> {
     let file = File::open(path)
         .map_err(|e| PreviewError::render(format!("failed to open beatmap audio: {e}")))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
@@ -318,6 +453,7 @@ fn decode_audio(path: &Path) -> Result<DecodedAudio> {
     let mut stereo_samples = Vec::new();
 
     loop {
+        deadline.check()?;
         let packet = match format.next_packet() {
             Ok(packet) => packet,
             Err(SymphoniaError::IoError(error))
@@ -367,7 +503,8 @@ fn decode_audio(path: &Path) -> Result<DecodedAudio> {
         return Err(PreviewError::render("beatmap audio decoded to no samples"));
     }
     Ok(DecodedAudio {
-        sample_rate: sample_rate.unwrap_or(AUDIO_SAMPLE_RATE),
+        sample_rate: sample_rate
+            .unwrap_or(crate::config::current().audio.video_audio.AUDIO_SAMPLE_RATE),
         stereo_samples,
     })
 }
@@ -386,7 +523,13 @@ fn append_as_stereo(input: &[i16], channels: usize, output: &mut Vec<i16>) {
     }
 }
 
-fn extract_audio_entry(osz_path: &Path, wanted: &str, target_path: &Path) -> Result<()> {
+fn extract_audio_entry(
+    osz_path: &Path,
+    wanted: &str,
+    target_path: &Path,
+    deadline: &RequestDeadline,
+) -> Result<()> {
+    deadline.check()?;
     let file = File::open(osz_path)
         .map_err(|e| PreviewError::download(format!("failed to open osz archive: {e}")))?;
     let mut archive = zip::ZipArchive::new(file)
@@ -395,7 +538,14 @@ fn extract_audio_entry(osz_path: &Path, wanted: &str, target_path: &Path) -> Res
     let mut entry = archive
         .by_index(index)
         .map_err(|e| PreviewError::download(format!("failed to open audio entry: {e}")))?;
-    if entry.is_dir() || entry.size() == 0 || entry.size() > MAX_EXTRACTED_AUDIO_BYTES {
+    if entry.is_dir()
+        || entry.size() == 0
+        || entry.size()
+            > crate::config::current()
+                .audio
+                .video_audio
+                .MAX_EXTRACTED_AUDIO_BYTES
+    {
         return Err(PreviewError::download(format!(
             "invalid extracted audio size: {} bytes",
             entry.size()
@@ -406,14 +556,29 @@ fn extract_audio_entry(osz_path: &Path, wanted: &str, target_path: &Path) -> Res
     let mut output = File::create(&part_path)
         .map_err(|e| PreviewError::download(format!("failed to create audio cache file: {e}")))?;
     let copied = std::io::copy(
-        &mut entry.by_ref().take(MAX_EXTRACTED_AUDIO_BYTES + 1),
+        &mut entry.by_ref().take(
+            crate::config::current()
+                .audio
+                .video_audio
+                .MAX_EXTRACTED_AUDIO_BYTES
+                + 1,
+        ),
         &mut output,
     )
     .map_err(|e| PreviewError::download(format!("failed to extract beatmap audio: {e}")))?;
+    deadline.check().inspect_err(|_| {
+        let _ = std::fs::remove_file(&part_path);
+    })?;
     output
         .flush()
         .map_err(|e| PreviewError::download(format!("failed to flush audio cache: {e}")))?;
-    if copied == 0 || copied > MAX_EXTRACTED_AUDIO_BYTES {
+    if copied == 0
+        || copied
+            > crate::config::current()
+                .audio
+                .video_audio
+                .MAX_EXTRACTED_AUDIO_BYTES
+    {
         let _ = std::fs::remove_file(&part_path);
         return Err(PreviewError::download(
             "extracted audio is empty or too large",
@@ -450,21 +615,21 @@ fn find_audio_entry<R: Read + Seek>(
 fn normalize_archive_path(path: &str) -> std::result::Result<String, String> {
     let replaced = path.trim().replace('\\', "/");
     if replaced.starts_with('/') {
-        return Err("AudioFilename must be relative".to_string());
+        return Err("archive path must be relative".to_string());
     }
     let mut segments = Vec::new();
     for segment in replaced.split('/') {
         match segment {
             "" | "." => continue,
-            ".." => return Err("AudioFilename contains a parent-directory component".to_string()),
+            ".." => return Err("archive path contains a parent-directory component".to_string()),
             value if value.contains(':') => {
-                return Err("AudioFilename contains an absolute path prefix".to_string())
+                return Err("archive path contains an absolute path prefix".to_string())
             }
             value => segments.push(value),
         }
     }
     if segments.is_empty() {
-        return Err("AudioFilename is empty".to_string());
+        return Err("archive path is empty".to_string());
     }
     Ok(segments.join("/"))
 }
@@ -538,9 +703,61 @@ mod tests {
             writer.write_all(b"requested-audio").unwrap();
             writer.finish().unwrap();
         }
-        extract_audio_entry(&osz, "audio/song.mp3", &output).unwrap();
+        let deadline = RequestDeadline::new(
+            std::time::Instant::now(),
+            "mp4",
+            std::time::Duration::from_secs(300),
+        );
+        extract_audio_entry(&osz, "audio/song.mp3", &output, &deadline).unwrap();
         assert_eq!(std::fs::read(&output).unwrap(), b"requested-audio");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn loads_referenced_background_from_osz_case_insensitively() {
+        let _log_guard = crate::log::test_guard();
+        let unique = format!(
+            "osu-preview-background-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let dir = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&dir).unwrap();
+        let osz = dir.join("fixture.osz");
+        let mut png_bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_bytes, 2, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer
+                .write_image_data(&[255, 0, 0, 255, 0, 255, 0, 255])
+                .unwrap();
+        }
+        {
+            let file = File::create(&osz).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            writer
+                .start_file("Backgrounds/BG.PNG", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(&png_bytes).unwrap();
+            writer.finish().unwrap();
+        }
+        let deadline = RequestDeadline::new(
+            std::time::Instant::now(),
+            "mp4",
+            std::time::Duration::from_secs(300),
+        );
+        let background = load_background_image(Some(r"backgrounds\bg.png"), &osz, &deadline)
+            .unwrap()
+            .unwrap();
+        assert_eq!((background.w, background.h), (2, 1));
+        assert_eq!(background.get(0, 0), [255, 0, 0, 255]);
+        assert_eq!(background.get(1, 0), [0, 255, 0, 255]);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

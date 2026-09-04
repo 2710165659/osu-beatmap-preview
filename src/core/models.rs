@@ -7,6 +7,8 @@ pub struct TimingPoint {
     pub meter: i32,
     pub uninherited: bool,
     pub kiai_mode: bool,
+    /// effects 位 3：省略该红线区段的第一条小节线。
+    pub omit_first_bar_line: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -30,6 +32,7 @@ pub struct StandardHitObject {
     pub slider_repeats: i32,
     pub slider_pixel_length: f64,
     pub slider_edge_hitsounds: Vec<i32>,
+    pub stack_height: i32,
 }
 
 impl Default for StandardHitObject {
@@ -48,6 +51,7 @@ impl Default for StandardHitObject {
             slider_repeats: 1,
             slider_pixel_length: 0.0,
             slider_edge_hitsounds: Vec::new(),
+            stack_height: 0,
         }
     }
 }
@@ -91,7 +95,7 @@ pub enum HitObjects {
     Mania(Vec<ManiaHitObject>),
 }
 
-/// Map an expression across all four `HitObjects` variants.
+/// 对四种 `HitObjects` 变体统一应用表达式。
 macro_rules! for_each_hit_variant {
     ($self:expr, |$v:ident| $body:expr) => {
         match $self {
@@ -142,7 +146,7 @@ impl HitObjects {
     }
 }
 
-// Key/value sections preserve insertion order via Vec; lookup helper provided.
+// 键值区段使用 Vec 保留插入顺序，并提供查找辅助方法。
 #[derive(Debug, Clone, Default)]
 pub struct KvSection {
     pub entries: Vec<(String, String)>,
@@ -180,9 +184,11 @@ pub struct Beatmap {
     pub timing_points: Vec<TimingPoint>,
     pub hit_objects: HitObjects,
     pub break_periods: Vec<BreakPeriod>,
-    /// Combo colours from the beatmap's [Colours] section (Combo1..ComboN order).
+    /// `[Events]` 区段中的谱面背景文件名。
+    pub background_filename: Option<String>,
+    /// 谱面 [Colours] 区段中的连击颜色（按 Combo1..ComboN 顺序）。
     pub combo_colors: Vec<[u8; 3]>,
-    /// BeatDivisor from the [Editor] section, 0 if not set.
+    /// [Editor] 区段中的 BeatDivisor，未设置时为 0。
     pub beat_divisor: i32,
 }
 
@@ -221,6 +227,10 @@ impl Beatmap {
             .and_then(|value| value.trim().parse().ok())
             .unwrap_or(0)
     }
+
+    pub fn stack_leniency(&self) -> f64 {
+        self.general.get_f64_or("StackLeniency", 0.7)
+    }
 }
 
 #[cfg(test)]
@@ -250,6 +260,7 @@ mod tests {
             timing_points: Vec::new(),
             hit_objects: HitObjects::Standard(Vec::new()),
             break_periods: Vec::new(),
+            background_filename: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         }
@@ -266,5 +277,19 @@ mod tests {
         assert_eq!(defaults.beatmap_set_id(), None);
         assert_eq!(defaults.audio_filename(), None);
         assert_eq!(defaults.audio_lead_in_ms(), 0);
+    }
+
+    #[test]
+    fn stack_leniency_uses_general_value_or_game_default() {
+        let mut beatmap = beatmap_with_audio_fields(None, None, None);
+        assert_eq!(beatmap.stack_leniency(), 0.7);
+
+        beatmap.general.insert("StackLeniency", "0.2".to_string());
+        assert_eq!(beatmap.stack_leniency(), 0.2);
+
+        beatmap
+            .general
+            .insert("StackLeniency", "invalid".to_string());
+        assert_eq!(beatmap.stack_leniency(), 0.7);
     }
 }

@@ -1,16 +1,10 @@
+#![cfg(test)]
+
 //! 单元测试：时间戳、事件/汇总格式、转义、截断、禁用、上下文合并与并发追加。
 
-use super::config::{PROGRESS_FILE, RENDER_FILE};
+use super::config::{init_for_tests, paths, PROGRESS_FILE, RENDER_FILE};
 use super::*;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-
-/// 日志测试共享进程级全局配置，必须串行执行避免互相覆盖目录。
-static TEST_LOCK: Mutex<()> = Mutex::new(());
-
-fn test_guard() -> std::sync::MutexGuard<'static, ()> {
-    TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 fn unique_dir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -44,15 +38,17 @@ fn event_and_summary_write_parseable_lines() {
     let _guard = test_guard();
     let dir = unique_dir("basic");
     reset_for_tests();
-    init(Some(&dir));
+    init_for_tests(&dir);
     event("test", "info", Some("123"), "hello \"quoted\"");
 
-    let mut rec = SummaryRecord::default();
-    rec.status = "success".to_string();
-    rec.bid = "123".to_string();
-    rec.duration_ms = 42.5;
-    rec.title = Some("quote \" and \n newline".to_string());
-    rec.hit_object_count = Some(7);
+    let rec = SummaryRecord {
+        status: "success".to_string(),
+        bid: "123".to_string(),
+        duration_ms: 42.5,
+        title: Some("quote \" and \n newline".to_string()),
+        hit_object_count: Some(7),
+        ..SummaryRecord::default()
+    };
     write_summary(&rec);
 
     let progress = read(&dir.join(PROGRESS_FILE));
@@ -62,7 +58,7 @@ fn event_and_summary_write_parseable_lines() {
     assert!(lines[1].contains("bid=123"));
     assert!(lines[1].contains("msg=\"hello \\\"quoted\\\"\""));
     for line in &lines {
-        assert!(line.len() <= writer::MAX_LINE_BYTES);
+        assert!(line.len() <= super::constants::MAX_LINE_BYTES);
         assert!(!line.contains('\n'));
     }
 
@@ -85,13 +81,13 @@ fn long_message_is_truncated_to_line_limit() {
     let _guard = test_guard();
     let dir = unique_dir("truncate");
     reset_for_tests();
-    init(Some(&dir));
+    init_for_tests(&dir);
     let long = "x".repeat(20_000);
     event("test", "info", Some("1"), &long);
 
     let progress = read(&dir.join(PROGRESS_FILE));
     let line = progress.lines().next_back().unwrap();
-    assert!(line.len() <= writer::MAX_LINE_BYTES);
+    assert!(line.len() <= super::constants::MAX_LINE_BYTES);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -116,7 +112,7 @@ fn summary_merges_context_cache_stages_and_video_stats() {
     let _guard = test_guard();
     let dir = unique_dir("context");
     reset_for_tests();
-    init(Some(&dir));
+    init_for_tests(&dir);
     set_bid("777");
     record_cache(CacheKind::Osu, "downloaded");
     record_cache(CacheKind::Output, "hit");
@@ -160,7 +156,7 @@ fn concurrent_threads_write_complete_lines() {
     let _guard = test_guard();
     let dir = unique_dir("threads");
     reset_for_tests();
-    init(Some(&dir));
+    init_for_tests(&dir);
 
     let handles: Vec<_> = (0..8)
         .map(|thread| {

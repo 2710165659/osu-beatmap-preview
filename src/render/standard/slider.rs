@@ -1,4 +1,4 @@
-//! Slider rendering: path data, body, ball, reverse arrows for osu!standard.
+//! osu!standard 滑条渲染：路径数据、主体、滑条球和反向箭头。
 
 use crate::common::slider_path::{
     build_path, build_standard_slider_path, path_position_at, SliderPath,
@@ -9,18 +9,27 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::constants::*;
-use super::context::{color_id, py_round, to_frame_point, CachedLayer, RenderCache, RenderContext};
+use super::context::{
+    color_id, py_round, stack_offset, to_frame_point, CachedLayer, RenderCache, RenderContext,
+};
 
-// ——— data ———
+// ——— 数据 ———
 
 pub(crate) struct SliderRenderData {
     pub(crate) frame_path: SliderPath,
     pub(crate) head_center: (f64, f64),
     pub(crate) reverse_centers: Vec<(f64, f64)>,
     pub(crate) reverse_angles: Vec<f64>,
+    pub(crate) ticks: Vec<SliderTickRenderData>,
 }
 
-// ——— slider body ———
+pub(crate) struct SliderTickRenderData {
+    pub(crate) center: (f64, f64),
+    pub(crate) time: f64,
+    pub(crate) time_preempt: f64,
+}
+
+// ——— 滑条主体 ———
 
 pub(crate) fn draw_slider_body(
     frame: &mut Img,
@@ -33,7 +42,15 @@ pub(crate) fn draw_slider_body(
     if points.len() < 2 {
         return;
     }
-    let layer = render_slider_body_layer(points, width, color, alpha_to_byte(alpha), traceable);
+    let layer = render_slider_body_layer(
+        points,
+        width,
+        color,
+        alpha_to_byte(alpha),
+        traceable,
+        frame.w as i64,
+        frame.h as i64,
+    );
     frame.alpha_composite(&layer.image, layer.offset.0, layer.offset.1);
 }
 
@@ -48,23 +65,27 @@ pub(crate) fn draw_cached_slider_body(
     traceable: bool,
 ) {
     let cache_key = (index, traceable);
-    if !cache.slider_body_layers.contains_key(&cache_key) {
-        let layer = render_slider_body_layer(
-            &slider_data.frame_path.points,
-            context.slider_body_width,
-            color,
-            255,
-            traceable,
-        );
-        cache.slider_body_layers.insert(cache_key, layer);
-    }
+    cache
+        .slider_body_layers
+        .entry(cache_key)
+        .or_insert_with(|| {
+            render_slider_body_layer(
+                &slider_data.frame_path.points,
+                context.slider_body_width,
+                color,
+                255,
+                traceable,
+                context.frame_layout.frame_width,
+                context.frame_layout.frame_height,
+            )
+        });
 
     let alpha_key = alpha_to_byte(alpha);
     let (offset_x, offset_y) = {
         let layer = &cache.slider_body_layers[&cache_key];
         layer.offset
     };
-    if alpha_key >= 255 {
+    if alpha_key == 255 {
         let layer = &cache.slider_body_layers[&cache_key];
         frame.alpha_composite(&layer.image, offset_x, offset_y);
         return;
@@ -86,8 +107,14 @@ pub(crate) fn render_slider_body_layer(
     color: [u8; 3],
     alpha_byte: u8,
     traceable: bool,
+    frame_width: i64,
+    frame_height: i64,
 ) -> CachedLayer {
-    let scale = SLIDER_BODY_SUPERSAMPLE;
+    let scale = crate::config::current()
+        .layout
+        .standard
+        .png
+        .SLIDER_BODY_SUPERSAMPLE;
     let pad = (width + 4) as f64;
     let min_x = points.iter().map(|p| p.0).fold(f64::MAX, f64::min);
     let min_y = points.iter().map(|p| p.1).fold(f64::MAX, f64::min);
@@ -95,8 +122,8 @@ pub(crate) fn render_slider_body_layer(
     let max_y = points.iter().map(|p| p.1).fold(f64::MIN, f64::max);
     let left = ((min_x - pad).floor() as i64).max(0);
     let top = ((min_y - pad).floor() as i64).max(0);
-    let right = ((max_x + pad).ceil() as i64).min(IMAGE_WIDTH);
-    let bottom = ((max_y + pad).ceil() as i64).min(IMAGE_HEIGHT);
+    let right = ((max_x + pad).ceil() as i64).min(frame_width);
+    let bottom = ((max_y + pad).ceil() as i64).min(frame_height);
 
     let layer_w = ((right - left) * scale).max(1) as u32;
     let layer_h = ((bottom - top) * scale).max(1) as u32;
@@ -111,18 +138,23 @@ pub(crate) fn render_slider_body_layer(
         })
         .collect();
 
-    let inner_width = py_round(width as f64 * (1.0 - ARGON_SLIDER_BORDER_PORTION)).max(1);
-    let body_alpha = py_round(alpha_byte as f64 * ARGON_SLIDER_BODY_ALPHA).clamp(0, 255) as u8;
+    let inner_width = py_round(
+        width as f64 * (1.0 - crate::render::standard::constants::ARGON_SLIDER_BORDER_PORTION),
+    )
+    .max(1);
+    let body_alpha =
+        py_round(alpha_byte as f64 * crate::render::standard::constants::ARGON_SLIDER_BODY_ALPHA)
+            .clamp(0, 255) as u8;
     // 边框颜色：使用 combo 颜色（与 C# Argon 的 AccentColour 一致）
     // 轨道内部颜色：使用 Darken(4)（与 C# Argon 的 AccentColour.Darken(4) 一致）
-    // 注意：skin.ini 的 SliderBorder / SliderTrackOverride 会被忽略，以匹配 Argon 风格
+    // 注意：SliderBorder / SliderTrackOverride 不在当前 skin 配置中，以匹配 Argon 风格
     let border_color = color;
     let inner_color = darken(color, 4.0);
 
     if traceable {
-        // TC: AccentColour=transparent, BorderColour=accent
-        // Draw full body shape with border_color, then erase center with background color
-        // to create a hollow border-only look while preserving shape/size.
+        // TC：AccentColour=transparent，BorderColour=accent。
+        // 先用 border_color 绘制完整主体，再用背景色擦除中心，
+        // 保留形状和尺寸并得到仅边框的外观。
         layer.stroke_polyline(
             &scaled_points,
             (width * scale) as f64,
@@ -134,8 +166,12 @@ pub(crate) fn render_slider_body_layer(
             ],
             true,
         );
-        // Erase the center fill with background color (playfield is black)
-        let bg = IMAGE_BACKGROUND_COLOR;
+        // 用背景色擦除中心填充（游戏区域为黑色）。
+        let bg = crate::config::current()
+            .layout
+            .standard
+            .png
+            .IMAGE_BACKGROUND_COLOR;
         layer.stroke_polyline(
             &scaled_points,
             (inner_width * scale) as f64,
@@ -169,7 +205,7 @@ pub(crate) fn render_slider_body_layer(
     }
 }
 
-// ——— slider data ———
+// ——— 滑条数据 ———
 
 pub(crate) fn get_slider_render_data(
     cache: &mut RenderCache,
@@ -189,12 +225,29 @@ pub(crate) fn get_slider_render_data(
         slider_type,
         hit_object.slider_pixel_length,
     );
+    let offset = stack_offset(hit_object, &context.settings);
     let frame_points: Vec<(f64, f64)> = world_path
         .points
         .iter()
-        .map(|&(x, y)| to_frame_point(x, y, &context.frame_layout))
+        .map(|&(x, y)| to_frame_point(x + offset, y + offset, &context.frame_layout))
         .collect();
     let frame_path = build_path(&frame_points);
+
+    let ticks = generate_slider_ticks(
+        &frame_path,
+        world_path.total_length,
+        hit_object.start_time,
+        hit_object.end_time,
+        hit_object.slider_repeats,
+        context
+            .slider_timings
+            .get(index)
+            .copied()
+            .unwrap_or((500.0, 1.0)),
+        context.slider_tick_rate,
+        context.slider_multiplier,
+        context.settings.preempt_ms as f64,
+    );
 
     let mut reverse_centers: Vec<(f64, f64)> = Vec::new();
     let mut reverse_angles: Vec<f64> = Vec::new();
@@ -227,9 +280,138 @@ pub(crate) fn get_slider_render_data(
         head_center,
         reverse_centers,
         reverse_angles,
+        ticks,
     });
     cache.slider_data.insert(index, Arc::clone(&data));
     data
+}
+
+/// 按 osu! SliderEventGenerator 规则生成可视化 tick。
+#[allow(clippy::too_many_arguments)]
+fn generate_slider_ticks(
+    frame_path: &SliderPath,
+    world_length: f64,
+    start_time: i64,
+    end_time: i64,
+    repeats: i32,
+    timing: (f64, f64),
+    tick_rate: f64,
+    slider_multiplier: f64,
+    object_preempt: f64,
+) -> Vec<SliderTickRenderData> {
+    let span_count = repeats.max(1) as usize;
+    let (beat_length, slider_velocity) = timing;
+    if !world_length.is_finite()
+        || world_length <= 0.0
+        || !beat_length.is_finite()
+        || beat_length <= 0.0
+        || !slider_velocity.is_finite()
+        || slider_velocity <= 0.0
+        || !tick_rate.is_finite()
+        || tick_rate <= 0.0
+        || !slider_multiplier.is_finite()
+        || slider_multiplier <= 0.0
+    {
+        return Vec::new();
+    }
+
+    // osu! 对异常长路径限制 tick 生成长度，避免损坏谱面造成过大的事件数量。
+    let length = world_length.min(100_000.0);
+    let scoring_distance = 100.0 * slider_multiplier * slider_velocity;
+    let velocity = scoring_distance / beat_length;
+    let tick_distance = (scoring_distance / tick_rate).clamp(0.0, length);
+    let min_distance_from_end = velocity * 10.0;
+    if !velocity.is_finite() || !tick_distance.is_finite() || tick_distance <= 0.0 {
+        return Vec::new();
+    }
+
+    let span_duration = (end_time - start_time) as f64 / span_count as f64;
+    let mut ticks = Vec::new();
+    for span in 0..span_count {
+        let span_start = start_time as f64 + span as f64 * span_duration;
+        let reversed = span % 2 == 1;
+        let mut distance = tick_distance;
+        while distance < length && distance < length - min_distance_from_end {
+            let path_progress = distance / length;
+            let time_progress = if reversed {
+                1.0 - path_progress
+            } else {
+                path_progress
+            };
+            let time = span_start + time_progress * span_duration;
+            let time_preempt = if span > 0 {
+                (time - span_start) / 2.0 + 200.0
+            } else {
+                (time - span_start) / 2.0 + object_preempt * 0.66
+            };
+            ticks.push(SliderTickRenderData {
+                center: path_position_at(frame_path, path_progress),
+                time,
+                time_preempt: time_preempt.max(0.0),
+            });
+            distance += tick_distance;
+        }
+    }
+    ticks
+}
+
+pub(crate) fn draw_slider_ticks(
+    frame: &mut Img,
+    context: &RenderContext,
+    cache: &mut RenderCache,
+    slider_data: &SliderRenderData,
+    snapshot_time: i64,
+    color: [u8; 3],
+    parent_alpha: f64,
+) {
+    if parent_alpha <= 0.0 {
+        return;
+    }
+    let tick_size =
+        py_round(context.frame_circle_diameter as f64 * ARGON_SLIDER_TICK_SIZE_RATIO).max(1);
+    let sprite_key = (tick_size, color);
+    cached_slider_tick_sprite(cache, tick_size, color);
+
+    for tick in &slider_data.ticks {
+        let tick_alpha = super::alpha::slider_tick_alpha(
+            tick.time,
+            tick.time_preempt,
+            snapshot_time,
+            &context.settings,
+        ) * parent_alpha;
+        if tick_alpha <= 0.0 {
+            continue;
+        }
+        let sprite = &cache.slider_tick_sprites[&sprite_key];
+        let sprite_id = color_id(ID_SLIDER_TICK + tick_size as u64, color);
+        let image = with_alpha(&mut cache.resized_alpha, sprite, sprite_id, tick_alpha);
+        let x = py_round(tick.center.0 - image.w as f64 / 2.0);
+        let y = py_round(tick.center.1 - image.h as f64 / 2.0);
+        frame.alpha_composite(image, x, y);
+    }
+}
+
+fn cached_slider_tick_sprite(cache: &mut RenderCache, size: i64, color: [u8; 3]) -> &Img {
+    cache
+        .slider_tick_sprites
+        .entry((size, color))
+        .or_insert_with(|| build_slider_tick(size, color))
+}
+
+fn build_slider_tick(size: i64, color: [u8; 3]) -> Img {
+    let d = size.max(1);
+    let mut image = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
+    let center = d as f64 / 2.0;
+    let border = (d as f64 * ARGON_SLIDER_TICK_BORDER_RATIO).max(1.0);
+    draw_ring_aa(
+        &mut image,
+        center,
+        center,
+        d as f64 / 2.0,
+        border,
+        [color[0], color[1], color[2], 255],
+    );
+    image
 }
 
 pub(crate) fn is_full_slider_body(snaked_start: f64, snaked_end: f64) -> bool {
@@ -246,7 +428,7 @@ pub(crate) fn slider_snaked_range(
     let mut end = 1.0;
 
     if snapshot_time < hit_object.start_time {
-        if SNAKING_IN_SLIDERS {
+        if crate::render::standard::constants::SNAKING_IN_SLIDERS {
             let snake_start = hit_object.start_time - settings.preempt_ms;
             end = ((snapshot_time - snake_start) as f64 / (settings.preempt_ms as f64 / 3.0))
                 .clamp(0.0, 1.0);
@@ -261,7 +443,7 @@ pub(crate) fn slider_snaked_range(
     let span = ((completion * span_count as f64) as i64).min(span_count - 1);
     let span_progress = super::alpha::slider_path_progress(span_count, completion);
 
-    if span >= span_count - 1 && SNAKING_OUT_SLIDERS {
+    if span >= span_count - 1 && crate::render::standard::constants::SNAKING_OUT_SLIDERS {
         if span % 2 == 1 {
             end = span_progress;
         } else {
@@ -271,7 +453,7 @@ pub(crate) fn slider_snaked_range(
     (start, end)
 }
 
-// ——— slider ball ———
+// ——— 滑条球 ———
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_slider_ball(
@@ -345,7 +527,8 @@ fn build_slider_ball(diameter: i64, circle_diameter: i64, color: [u8; 3]) -> Img
     let d = diameter.max(1);
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
-    let border = 2.5 * circle_diameter as f64 * ARGON_BORDER_RATIO;
+    let border =
+        2.5 * circle_diameter as f64 * crate::render::standard::constants::ARGON_BORDER_RATIO;
     // C# Argon: fill = accentColour -> accentColour.Darken(0.5) 垂直渐变
     fill_circle_gradient_aa(&mut img, c, c, d as f64 / 2.0, color, darken(color, 0.5));
     draw_ring_aa(&mut img, c, c, d as f64 / 2.0, border, [255, 255, 255, 255]);
@@ -374,7 +557,7 @@ fn build_follow_circle(diameter: i64, circle_diameter: i64, color: [u8; 3]) -> I
     img
 }
 
-// ——— reverse arrows ———
+// ——— 反向箭头 ———
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_slider_reverse_arrows(
@@ -438,12 +621,10 @@ pub(crate) fn draw_slider_reverse_arrows(
 
         // 绘制 repeat-edge-piece（白色半圆 + 水平 alpha 渐变）
         let edge_key = (angle_key,); // 不依赖颜色，纯白色
-        if !cache.reverse_edges.contains_key(&edge_key) {
+        cache.reverse_edges.entry(edge_key).or_insert_with(|| {
             let edge_base = build_reverse_edge_piece(context.frame_circle_diameter);
-            cache
-                .reverse_edges
-                .insert(edge_key, edge_base.rotate_expand(angle_deg));
-        }
+            edge_base.rotate_expand(angle_deg)
+        });
         let edge_rotated = &cache.reverse_edges[&edge_key];
         let edge_id = color_id(ID_REVERSE_EDGE + (angle_key + 720) as u64, [255, 255, 255]);
         let edge = with_alpha(
@@ -458,12 +639,10 @@ pub(crate) fn draw_slider_reverse_arrows(
 
         // 绘制 << 箭头（覆盖在 edge piece 之上）
         let rotated_key = (angle_key, color);
-        if !cache.reverse_arrows.contains_key(&rotated_key) {
+        cache.reverse_arrows.entry(rotated_key).or_insert_with(|| {
             let base = build_reverse_arrow(context.frame_circle_diameter, color);
-            cache
-                .reverse_arrows
-                .insert(rotated_key, base.rotate_expand(angle_deg));
-        }
+            base.rotate_expand(angle_deg)
+        });
         let rotated = &cache.reverse_arrows[&rotated_key];
         let arrow_id = color_id(ID_ARROW_BASE + (angle_key + 720) as u64, color);
         let arrow = with_alpha(&mut cache.resized_alpha, rotated, arrow_id, effective_alpha);
@@ -559,7 +738,7 @@ fn build_reverse_edge_piece(diameter: i64) -> Img {
     img
 }
 
-// ——— helpers ———
+// ——— 辅助函数 ———
 
 /// 模拟 C# osu-framework 的 Color4.Darken(amount) 函数。
 /// 将 RGB 通道各减去 amount * 255（加法变暗）。
@@ -616,7 +795,7 @@ pub(crate) fn with_alpha<'a>(
     resized_with_alpha(cache, img, id, size, alpha)
 }
 
-// ——— AA drawing helpers ———
+// ——— 抗锯齿绘制辅助函数 ———
 
 pub(crate) fn fill_circle_gradient_aa(
     img: &mut Img,
@@ -633,8 +812,8 @@ pub(crate) fn fill_circle_gradient_aa(
     let yb = (cy + r + 1.0).ceil().min(img.h as f64 - 1.0) as i64;
     let xa = (cx - r - 1.0).floor().max(0.0) as i64;
     let xb = (cx + r + 1.0).ceil().min(img.w as f64 - 1.0) as i64;
-    // Step by 2 px — sample at half resolution, write 2×2 blocks.
-    // ~4× speed-up with negligible visual difference on AA circles.
+    // 每次步进 2 像素，在半分辨率采样并写入 2×2 区块。
+    // 在抗锯齿圆上视觉差异可忽略，速度约提升 4 倍。
     let mut y = ya;
     while y <= yb {
         let t = ((y as f64 + 0.5 - (cy - r)) / (2.0 * r)).clamp(0.0, 1.0);
@@ -672,4 +851,92 @@ pub(crate) fn draw_ring_aa(
     color: [u8; 4],
 ) {
     img.stroke_circle_aa(cx, cy, outer_r, thickness, color);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn path(length: f64) -> SliderPath {
+        build_path(&[(0.0, 0.0), (length, 0.0)])
+    }
+
+    #[test]
+    fn slider_ticks_follow_tick_distance_and_time() {
+        let ticks = generate_slider_ticks(
+            &path(100.0),
+            100.0,
+            0,
+            1000,
+            1,
+            (500.0, 1.0),
+            2.0,
+            1.4,
+            800.0,
+        );
+        assert_eq!(ticks.len(), 1);
+        assert!((ticks[0].center.0 - 70.0).abs() < 1e-9);
+        assert!((ticks[0].time - 700.0).abs() < 1e-9);
+        assert!((ticks[0].time_preempt - 878.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn repeated_slider_ticks_reverse_time_progress() {
+        let ticks = generate_slider_ticks(
+            &path(100.0),
+            100.0,
+            0,
+            1000,
+            2,
+            (500.0, 1.0),
+            2.0,
+            1.4,
+            800.0,
+        );
+        assert_eq!(ticks.len(), 2);
+        assert!((ticks[0].time - 350.0).abs() < 1e-9);
+        assert!((ticks[1].time - 650.0).abs() < 1e-9);
+        assert!((ticks[0].center.0 - ticks[1].center.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn slider_ticks_skip_points_near_span_end() {
+        let ticks = generate_slider_ticks(
+            &path(142.0),
+            142.0,
+            0,
+            1000,
+            1,
+            (500.0, 1.0),
+            2.0,
+            1.4,
+            800.0,
+        );
+        assert_eq!(ticks.len(), 1);
+    }
+
+    #[test]
+    fn invalid_tick_inputs_generate_no_ticks() {
+        assert!(generate_slider_ticks(
+            &path(100.0),
+            100.0,
+            0,
+            1000,
+            1,
+            (500.0, 1.0),
+            0.0,
+            1.4,
+            800.0,
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn slider_tick_sprite_cache_reuses_same_size_and_color() {
+        let mut cache = RenderCache::default();
+        let first = cached_slider_tick_sprite(&mut cache, 12, [255, 192, 0]) as *const Img;
+        let second = cached_slider_tick_sprite(&mut cache, 12, [255, 192, 0]) as *const Img;
+        assert_eq!(cache.slider_tick_sprites.len(), 1);
+        assert_eq!(first, second);
+    }
 }

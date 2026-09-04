@@ -1,12 +1,11 @@
-//! osu!mania GIF renderer: multi-segment or single-screen falling-note preview.
-//! Port of beatmap_preview/mania/gif_renderer.py.
+//! osu!mania GIF 渲染器：多段或单画面下落式音符预览。
+//! 移植自 beatmap_preview/mania/gif_renderer.py。
 
-use crate::common::time_selection::{
-    GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector, TimeAxis,
-};
+use crate::common::time_selection::{GifRenderOptions, PreviewTimeSelector, TimeAxis};
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::composer::save_animated_gif_streamed;
@@ -15,14 +14,7 @@ use std::path::Path;
 
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, format_sv_label,
-    is_native_mania, mania_objects, resolve_key_count, GIF_DEFAULT_HIT_POSITION, GIF_DURATION_MS,
-    GIF_FRAME_HEIGHT, GIF_GRID_GAP, GIF_JUDGEMENT_LINE, GIF_MAX_TIME_RANGE,
-    GIF_PREVIEW_TIME_LABEL_COLOR, GIF_SCROLL_SPEED, GIF_SEGMENT_COUNT, GIF_SEPARATOR_BACKGROUND,
-    GIF_SEPARATOR_WIDTH, GIF_STAGE_TOP_PADDING, GIF_TIME_LABEL_COLOR, GIF_TIME_LABEL_FONT_SIZE,
-    GIF_TIME_LABEL_HEIGHT, GIF_TIME_LABEL_NOTE_COLOR, GIF_TIME_LABEL_NOTE_FONT_SIZE,
-    GIF_TIME_LABEL_TOP_GAP, IMAGE_BACKGROUND, LANE_BACKGROUND, LANE_WIDTH, LEFT_PANEL_BACKGROUND,
-    LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, NOTE_SIDE_PADDING, PAGE_MARGIN_X, PAGE_MARGIN_Y,
-    SV_TEXT_COLOR, SV_TEXT_FONT_SIZE,
+    is_native_mania, mania_objects, resolve_key_count,
 };
 
 use super::skin::load_mania_skin_config;
@@ -40,9 +32,18 @@ pub(crate) struct GifLayout {
     pub(crate) column_left_offsets: Vec<i64>,
     pub(crate) column_widths: Vec<i64>,
     pub(crate) column_colours: Vec<Rgba>,
+    pub(crate) playfield_left: i64,
+    pub(crate) playfield_top: i64,
+    pub(crate) segment_stride: i64,
+    pub(crate) left_panel_width: i64,
+    pub(crate) note_side_padding: i64,
+    pub(crate) sv_info_margin_left: i64,
+    pub(crate) sv_label_inset: i64,
+    pub(crate) sv_font_size: u32,
+    pub(crate) sv_text_color: Rgba,
 }
 
-/// Maps beatmap time to a sequential scroll distance, handling BPM and SV changes.
+/// 将谱面时间映射为连续滚动距离，同时处理 BPM 和 SV 变化。
 pub(crate) struct ScrollMap {
     starts: Vec<f64>,
     positions: Vec<f64>,
@@ -64,9 +65,10 @@ pub(crate) fn render_mania_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
-    fps: u32,
+    fps: Option<u32>,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
-    let gif_fps = fps as f64;
+    deadline.check()?;
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
     let original_objects = mania_objects(beatmap);
@@ -82,16 +84,22 @@ pub(crate) fn render_mania_gif(
         return Err(PreviewError::render("mania beatmap has no hit objects"));
     }
 
-    // DT/HT only changes how fast chart time advances; the GIF still plays 10s/segment.
+    // DT/HT 只改变谱面时间推进速度；GIF 每段的播放时长由参数或配置决定。
     let speed_multiplier = mods.map_or(1.0, |m| m.speed_multiplier);
+    let fps = fps
+        .map(f64::from)
+        .unwrap_or(crate::config::current().layout.mania.gif.FPS as f64);
     let (segment_timings, segment_duration, frame_count, show_time_label, time_axis) = match options
     {
         GifRenderOptions::Segments {
             times_ms,
+            duration_seconds,
             time_axis,
         } => {
-            let gameplay_segment_duration =
-                round_half_even(GIF_DURATION_MS as f64 * speed_multiplier);
+            let segment_duration_ms = duration_seconds
+                .map(|seconds| seconds * 1000.0)
+                .unwrap_or(crate::config::current().layout.mania.gif.DURATION_MS as f64);
+            let gameplay_segment_duration = round_half_even(segment_duration_ms * speed_multiplier);
             let spans: Vec<(i64, i64)> = hit_objects
                 .iter()
                 .map(|ho| (ho.start_time, ho.end_time))
@@ -99,65 +107,50 @@ pub(crate) fn render_mania_gif(
             let segment_timings = PreviewTimeSelector::new(
                 beatmap,
                 spans,
-                GIF_SEGMENT_COUNT as usize,
+                crate::config::current().layout.mania.gif.IMAGES_PER_ROW as usize,
                 gameplay_segment_duration,
                 times_ms,
             )?
             .choose()?;
-            let frame_count = round_half_even(GIF_DURATION_MS as f64 * gif_fps / 1000.0).max(1);
+            let frame_count = round_half_even(segment_duration_ms * fps / 1000.0).max(1);
             (
                 segment_timings,
                 gameplay_segment_duration,
                 frame_count,
-                true,
+                crate::config::current().layout.mania.gif.SHOW_TIME_LABEL,
                 time_axis,
-            )
-        }
-        GifRenderOptions::Clip {
-            range,
-            show_time_label,
-        } => {
-            let segment_duration = range.end - range.start;
-            let frame_count = round_half_even(
-                segment_duration as f64 * gif_fps / (1000.0 * speed_multiplier),
-            )
-            .max(1);
-            (
-                vec![PreviewSegmentTiming {
-                    start_time: range.start,
-                    is_preview: range.is_preview,
-                    break_periods: range.break_periods,
-                }],
-                segment_duration,
-                frame_count,
-                show_time_label,
-                range.time_axis,
             )
         }
     };
 
     let skin_config = load_mania_skin_config(key_count);
-    let layout = build_gif_layout(&skin_config, segment_timings.len() as i64, show_time_label);
+    let layout = build_layout(
+        &skin_config,
+        segment_timings.len() as i64,
+        show_time_label,
+        crate::render::geometry::OutputFormat::Gif,
+    );
     let native_mania = is_native_mania(beatmap);
-    // CS is Constant Scroll: keep the 33-speed time window but skip SV multipliers.
+    // CS 是恒定滚动：保留 33 速时间窗口，但跳过 SV 倍率。
     let scroll_map = build_scroll_map(beatmap, &original_objects, cs_mode, native_mania);
-    // time_range is the chart time span visible from judgement line to top at 33 speed.
+    // time_range 是 33 速下从判定线到顶部可见的谱面时间跨度。
     let time_range = compute_time_range(speed_multiplier, skin_config.hit_position);
     let pixels_per_scroll_unit = layout.scroll_length as f64 / time_range;
-    let frame_duration_ms = round_half_even(1000.0 / gif_fps).max(1);
+    let frame_duration_ms = round_half_even(1000.0 / fps).max(1);
     let max_segment_end = segment_timings
         .iter()
         .map(|t| t.start_time + segment_duration)
         .max()
         .unwrap_or(0);
-    let sv_changes = if cs_mode || !native_mania {
-        Vec::new()
-    } else {
-        build_sv_changes(
-            &beatmap.timing_points,
-            max_segment_end + round_half_even(time_range),
-        )
-    };
+    let sv_changes =
+        if cs_mode || !native_mania || !crate::config::current().layout.mania.gif.SHOW_SV_LABEL {
+            Vec::new()
+        } else {
+            build_sv_changes(
+                &beatmap.timing_points,
+                max_segment_end + round_half_even(time_range),
+            )
+        };
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -165,9 +158,7 @@ pub(crate) fn render_mania_gif(
             (0..frame_count)
                 .map(|frame_index| {
                     timing.start_time
-                        + round_half_even(
-                            frame_index as f64 * 1000.0 * speed_multiplier / gif_fps,
-                        )
+                        + round_half_even(frame_index as f64 * 1000.0 * speed_multiplier / fps)
                 })
                 .collect()
         })
@@ -175,16 +166,13 @@ pub(crate) fn render_mania_gif(
 
     let hold_colors: Vec<Rgba> = palette.iter().map(|&c| darken(c, 0.5)).collect();
 
-    // Precompute each object's scroll-distance position (position_at(start_time))
-    // for sorted binary-search culling.  position_at is strictly monotonic in
-    // time (every scroll multiplier is > 0) and hit_objects is sorted by
-    // start_time, so `pos_start` is ascending.
+    // 预计算每个音符的滚动距离位置，供排序后的二分查找裁剪使用。
+    // position_at 随时间严格单调（所有滚动倍率都大于 0），hit_objects 又按
+    // start_time 排序，因此 `pos_start` 为升序。
     //
-    // Culling by scroll DISTANCE — not chart time — is required under variable
-    // SV: time↔position is non-linear, so during slow SV many chart-seconds
-    // fold into a few on-screen pixels.  A time-based window would drop notes
-    // that are visibly on screen.  Distance maps to y via the constant
-    // `pixels_per_scroll_unit`, so a distance window stays exact under any SV.
+    // 可变 SV 下必须按滚动距离而不是谱面时间裁剪：时间与位置并非线性关系，
+    // 慢 SV 会把很长的谱面时间压缩到少量屏幕像素，按时间窗口会误删可见音符。
+    // 距离通过常量 `pixels_per_scroll_unit` 映射到 y，因此任意 SV 下都保持精确。
     let pos_start: Vec<f64> = hit_objects
         .iter()
         .map(|ho| scroll_map.position_at(ho.start_time as f64))
@@ -193,23 +181,21 @@ pub(crate) fn render_mania_gif(
         .iter()
         .map(|ho| scroll_map.position_at(ho.end_time as f64))
         .collect();
-    // Widest LN body in scroll-distance space; subtracted from the lower bound
-    // so a hold note whose head is far in the past but whose body is still on
-    // screen is never skipped.  Taps contribute 0.
+    // 计算滚动距离空间中最宽的长按主体，并从下界减去该值，
+    // 防止头部已远离但主体仍在屏幕内的长按被跳过；单点贡献 0。
     let max_hold_position: f64 = pos_start
         .iter()
         .zip(&pos_end)
         .map(|(&start, &end)| (end - start).max(0.0))
         .fold(0.0_f64, f64::max);
 
-    // Pre-render static background (segment separators + column/lane backdrops +
-    // judgement lines) once and clone per frame, avoiding ~600 redraws of the
-    // same pixels across 150 frames.
+    // 静态背景（段分隔线、列/轨道背景、判定线）只预渲染一次并逐帧克隆，
+    // 避免 150 帧内重复绘制约 600 次相同像素。
     let static_bg = {
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
-            IMAGE_BACKGROUND,
+            crate::config::current().layout.mania.gif.IMAGE_BACKGROUND,
         );
         draw_segment_separators(&mut bg, &layout);
         for segment_index in 0..layout.segment_count {
@@ -218,40 +204,37 @@ pub(crate) fn render_mania_gif(
         bg
     };
 
-    // Pre-render each segment's time label (and "Preview Time" note) into a
-    // sprite once.  Label text is constant within a segment, so this avoids
-    // 150 × format! + text_size + draw_text calls per segment — each frame
-    // just alpha_composites the pre-built sprite.
-    let label_y = PAGE_MARGIN_Y + layout.playfield_height + GIF_TIME_LABEL_TOP_GAP;
+    // 每段的时间标签（及 "Preview Time" 提示）只预渲染一次为精灵图。
+    // 段内文字恒定，可避免每段 150 次 format!、text_size、draw_text 调用；
+    // 每帧只需合成预构建精灵图。
+    let label_y = layout.playfield_top
+        + layout.playfield_height
+        + crate::config::current().layout.mania.gif.TIME_LABEL_TOP_GAP;
     let pre_labels: Vec<PreLabel> = if show_time_label {
         segment_timings
             .iter()
             .enumerate()
             .map(|(si, st)| {
                 let seg_left = segment_left(si as i64, &layout);
-                build_pre_label(
-                    st,
-                    segment_duration,
-                    &layout,
-                    seg_left,
-                    label_y,
-                    time_axis,
-                    crate::render::timing::bpm_at(&beatmap.timing_points, st.start_time),
-                )
+                build_pre_label(st, segment_duration, &layout, seg_left, label_y, time_axis)
             })
             .collect()
     } else {
         Vec::new()
     };
 
-    // Pre-render SV label sprites: format_sv_label is expensive (String alloc)
-    // and the label text never changes, only its y position scrolls per frame.
+    // 预渲染 SV 标签精灵图：format_sv_label 涉及 String 分配且文字不变，
+    // 每帧只有 y 位置发生滚动。
     let sv_sprites: Vec<(f64, Img)> = sv_changes
         .iter()
         .map(|&(time, sv)| {
             (
                 scroll_map.position_at(time as f64),
-                render_text_sprite(&format_sv_label(sv), SV_TEXT_FONT_SIZE, SV_TEXT_COLOR),
+                render_text_sprite(
+                    &format_sv_label(sv),
+                    layout.sv_font_size,
+                    layout.sv_text_color,
+                ),
             )
         })
         .collect();
@@ -271,10 +254,9 @@ pub(crate) fn render_mania_gif(
                 &layout,
                 pixels_per_scroll_unit,
             );
-            // Binary-search the precomputed scroll-distance positions instead
-            // of scanning every object.  Culling by distance (not chart time)
-            // stays correct under variable SV; the inner y-cull in
-            // draw_gif_hit_object still runs for pixel-exact clipping.
+            // 二分查找预计算的滚动距离位置，避免扫描全部音符。
+            // 按距离而非谱面时间裁剪，在可变 SV 下仍然正确；
+            // draw_gif_hit_object 内仍执行 y 裁剪以保证像素级精确。
             let (lo_pos, hi_pos) = visible_pos_window(
                 snapshot_pos,
                 &layout,
@@ -300,7 +282,7 @@ pub(crate) fn render_mania_gif(
                 );
             }
             if show_time_label {
-                // Blit pre-rendered time label sprite (no format!/text_size per frame).
+                // 贴入预渲染时间标签精灵图，避免每帧调用 format!/text_size。
                 let pl = &pre_labels[segment_index];
                 canvas.alpha_composite(&pl.sprite, pl.x, pl.y);
                 if let Some(ref note) = pl.note {
@@ -316,36 +298,123 @@ pub(crate) fn render_mania_gif(
         render_frame,
         output_path,
         frame_duration_ms as u32,
+        deadline,
     )
 }
 
-fn build_gif_layout(
+pub(crate) fn build_layout(
     skin_config: &super::skin::ManiaSkinConfig,
     segment_count: i64,
     show_time_label: bool,
+    output_format: crate::render::geometry::OutputFormat,
 ) -> GifLayout {
-    let column_left_offsets =
-        build_column_left_offsets(&skin_config.column_widths, &skin_config.column_line_widths);
-    let lane_area_width: i64 = skin_config.column_widths.iter().sum::<i64>()
-        + skin_config.column_line_widths.iter().sum::<i64>();
-    let segment_width = LEFT_PANEL_WIDTH * 2 + lane_area_width;
-    let playfield_height = GIF_FRAME_HEIGHT;
-    let hit_position_y = round_half_even(playfield_height as f64 - skin_config.hit_position);
-    let scroll_length = (hit_position_y - GIF_STAGE_TOP_PADDING).max(1);
-    let average_column_width = skin_config.column_widths.iter().sum::<i64>() as f64
-        / skin_config.column_widths.len() as f64;
-    // PNG uses a 38px lane with 15px notes; scale the GIF note height with the skin
-    // column width so wide columns don't get squashed-looking notes.
-    let note_head_height =
-        round_half_even(NOTE_HEAD_HEIGHT as f64 * average_column_width / LANE_WIDTH as f64).max(1);
-    let image_width =
-        PAGE_MARGIN_X * 2 + segment_count * segment_width + (segment_count - 1) * GIF_GRID_GAP;
-    let label_height = if show_time_label {
-        GIF_TIME_LABEL_TOP_GAP + GIF_TIME_LABEL_HEIGHT
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Mania,
+        output_format,
+    );
+    let scale = 0.5 * render_scale;
+    let column_widths: Vec<i64> = skin_config
+        .column_widths
+        .iter()
+        .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(1))
+        .collect();
+    let column_line_widths: Vec<i64> = skin_config
+        .column_line_widths
+        .iter()
+        .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(0))
+        .collect();
+    let column_left_offsets = build_column_left_offsets(&column_widths, &column_line_widths);
+    let lane_area_width: i64 =
+        column_widths.iter().sum::<i64>() + column_line_widths.iter().sum::<i64>();
+    let left_panel_width = crate::render::geometry::scale_px(
+        crate::render::mania::constants::LEFT_PANEL_WIDTH as f64,
+        scale,
+    );
+    let note_side_padding = crate::render::geometry::scale_px(
+        crate::render::mania::constants::NOTE_SIDE_PADDING as f64,
+        scale,
+    );
+    let segment_width = left_panel_width * 2 + lane_area_width;
+    let playfield_height = crate::render::geometry::scale_px(
+        crate::render::geometry::MANIA_PLAYFIELD_HEIGHT,
+        crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Mania,
+            output_format,
+        ),
+    );
+    let hit_position_y =
+        round_half_even(playfield_height as f64 - skin_config.hit_position * scale);
+    let scroll_length = (hit_position_y
+        - crate::render::geometry::scale_px(
+            crate::render::mania::constants::STAGE_TOP_PADDING as f64,
+            scale,
+        ))
+    .max(1);
+    let average_column_width =
+        column_widths.iter().sum::<i64>() as f64 / column_widths.len() as f64;
+    // PNG 使用 38px 轨道和 15px 音符；GIF 音符高度随皮肤缩放。
+    // 随列宽缩放，避免宽列中的音符显得被压扁。
+    let note_head_height = round_half_even(
+        crate::render::mania::constants::NOTE_HEAD_HEIGHT as f64 * average_column_width
+            / crate::render::mania::constants::LANE_WIDTH as f64,
+    )
+    .max(1);
+    let (
+        image_width,
+        image_height,
+        playfield_left,
+        playfield_top,
+        segment_stride,
+        sv_info_margin_left,
+        sv_font_size,
+        sv_text_color,
+    ) = if output_format == crate::render::geometry::OutputFormat::Gif {
+        let config = &crate::config::current().layout.mania.gif;
+        let unit_width = config.INFO_MARGIN_LEFT + segment_width + config.INFO_MARGIN_RIGHT;
+        // 底部信息区只属于时间标签；关闭标签时不能留下空白。
+        let info_bottom = if show_time_label {
+            config.INFO_MARGIN_BOTTOM
+        } else {
+            0
+        };
+        let label_height = if show_time_label {
+            config.TIME_LABEL_TOP_GAP + info_bottom
+        } else {
+            0
+        };
+        (
+            config.PAGE_MARGIN_LEFT
+                + config.PAGE_MARGIN_RIGHT
+                + segment_count * unit_width
+                + (segment_count - 1) * config.GRID_GAP,
+            config.PAGE_MARGIN_TOP
+                + config.PAGE_MARGIN_BOTTOM
+                + config.INFO_MARGIN_TOP
+                + playfield_height
+                + label_height,
+            config.PAGE_MARGIN_LEFT + config.INFO_MARGIN_LEFT,
+            config.PAGE_MARGIN_TOP + config.INFO_MARGIN_TOP,
+            unit_width + config.GRID_GAP,
+            config.INFO_MARGIN_LEFT,
+            config.SV_TEXT_FONT_SIZE,
+            config.SV_TEXT_COLOR,
+        )
     } else {
-        0
+        // MP4 也保留与 GIF 相同的左右信息区，SV 标签才能位于轨道左侧，
+        // 且最右侧轨道不会覆盖右侧灰色边界。最终画布再由视频编码器补齐到 16:9。
+        let config = &crate::config::current().layout.mania.mp4;
+        let unit_width = config.INFO_MARGIN_LEFT + segment_width + config.INFO_MARGIN_RIGHT;
+        (
+            unit_width,
+            playfield_height,
+            config.INFO_MARGIN_LEFT,
+            0,
+            unit_width,
+            config.INFO_MARGIN_LEFT,
+            config.SV_TEXT_FONT_SIZE,
+            config.SV_TEXT_COLOR,
+        )
     };
-    let image_height = PAGE_MARGIN_Y * 2 + playfield_height + label_height;
     GifLayout {
         segment_count,
         segment_width,
@@ -357,8 +426,17 @@ fn build_gif_layout(
         scroll_length,
         note_head_height,
         column_left_offsets,
-        column_widths: skin_config.column_widths.clone(),
+        column_widths,
         column_colours: skin_config.column_colours.clone(),
+        playfield_left,
+        playfield_top,
+        segment_stride,
+        left_panel_width,
+        note_side_padding,
+        sv_info_margin_left,
+        sv_label_inset: crate::render::geometry::scale_px(3.0, render_scale),
+        sv_font_size,
+        sv_text_color,
     }
 }
 
@@ -366,7 +444,7 @@ pub(crate) fn build_column_left_offsets(
     column_widths: &[i64],
     column_line_widths: &[i64],
 ) -> Vec<i64> {
-    // ColumnLineWidth has keys + 1 entries: leftmost, between-columns, rightmost.
+    // ColumnLineWidth 包含 keys + 1 项：最左侧、列之间、最右侧。
     let mut offsets = Vec::with_capacity(column_widths.len());
     let mut cursor = column_line_widths.first().copied().unwrap_or(0);
     for (index, width) in column_widths.iter().enumerate() {
@@ -379,11 +457,16 @@ pub(crate) fn build_column_left_offsets(
     offsets
 }
 
-/// Mirrors DrawableManiaRuleset.updateTimeRange(): base 33-speed window adjusted by HitPosition.
+/// 对应 DrawableManiaRuleset.updateTimeRange()：根据 HitPosition 调整 33 速基础窗口。
 pub(crate) fn compute_time_range(speed_multiplier: f64, hit_position: f64) -> f64 {
-    let hit_position_scale = (GIF_FRAME_HEIGHT as f64 - hit_position)
-        / (GIF_FRAME_HEIGHT as f64 - GIF_DEFAULT_HIT_POSITION);
-    (GIF_MAX_TIME_RANGE / GIF_SCROLL_SPEED * hit_position_scale * speed_multiplier).max(1.0)
+    let hit_position_scale = (crate::render::mania::constants::FRAME_HEIGHT as f64 - hit_position)
+        / (crate::render::mania::constants::FRAME_HEIGHT as f64
+            - crate::render::mania::constants::DEFAULT_HIT_POSITION_FROM_BOTTOM);
+    (crate::render::mania::constants::BASE_TIME_RANGE_MS
+        / crate::config::current().layout.mania.gif.SCROLL_SPEED
+        * hit_position_scale
+        * speed_multiplier)
+        .max(1.0)
 }
 
 pub(crate) fn build_scroll_map(
@@ -412,7 +495,7 @@ pub(crate) fn build_scroll_map(
             current_beat_length = point.beat_length;
             current_scroll_speed = 1.0;
         } else if allow_sv && point.beat_length < 0.0 {
-            // Green-line beat_length is negative; osu! encodes SV as -100 / beat_length.
+            // 绿线 beat_length 为负；osu! 使用 -100 / beat_length 编码 SV。
             current_scroll_speed = -100.0 / point.beat_length;
         } else {
             continue;
@@ -497,30 +580,37 @@ fn most_common_beat_length(timing_points: &[TimingPoint], hit_objects: &[ManiaHi
 }
 
 pub(crate) fn segment_left(segment_index: i64, layout: &GifLayout) -> i64 {
-    PAGE_MARGIN_X + segment_index * (layout.segment_width + GIF_GRID_GAP)
+    layout.playfield_left + segment_index * layout.segment_stride
 }
 
 fn draw_segment_separators(canvas: &mut Img, layout: &GifLayout) {
-    let playfield_top = PAGE_MARGIN_Y;
+    let playfield_top = layout.playfield_top;
     let playfield_bottom = playfield_top + layout.playfield_height;
     for segment_index in 0..layout.segment_count - 1 {
         let left_segment_right = segment_left(segment_index, layout) + layout.segment_width;
-        let separator_left = left_segment_right + (GIF_GRID_GAP - GIF_SEPARATOR_WIDTH) / 2;
+        let separator_left = left_segment_right
+            + (crate::config::current().layout.mania.gif.GRID_GAP
+                - crate::config::current().layout.mania.gif.SEPARATOR_WIDTH)
+                / 2;
         canvas.set_rect(
             separator_left,
             playfield_top,
-            separator_left + GIF_SEPARATOR_WIDTH,
+            separator_left + crate::config::current().layout.mania.gif.SEPARATOR_WIDTH,
             playfield_bottom,
-            GIF_SEPARATOR_BACKGROUND,
+            crate::config::current()
+                .layout
+                .mania
+                .gif
+                .SEPARATOR_BACKGROUND,
         );
     }
 }
 
 pub(crate) fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &GifLayout) {
-    // GIF skips bar/beat/lane-separator lines; only grey side panels + judgement line.
-    let playfield_top = PAGE_MARGIN_Y;
+    // GIF 不绘制小节线、节拍线和轨道分隔线，只保留灰色侧板与判定线。
+    let playfield_top = layout.playfield_top;
     let playfield_bottom = playfield_top + layout.playfield_height;
-    let lane_area_left = seg_left + LEFT_PANEL_WIDTH;
+    let lane_area_left = seg_left + layout.left_panel_width;
     let lane_area_right = lane_area_left + layout.lane_area_width;
 
     canvas.set_rect(
@@ -528,21 +618,29 @@ pub(crate) fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &
         playfield_top,
         seg_left + layout.segment_width,
         playfield_bottom,
-        LANE_BACKGROUND,
+        crate::config::current().layout.mania.gif.LANE_BACKGROUND,
     );
     canvas.set_rect(
         seg_left,
         playfield_top,
         lane_area_left,
         playfield_bottom,
-        LEFT_PANEL_BACKGROUND,
+        crate::config::current()
+            .layout
+            .mania
+            .gif
+            .LEFT_PANEL_BACKGROUND,
     );
     canvas.set_rect(
         lane_area_right,
         playfield_top,
         seg_left + layout.segment_width,
         playfield_bottom,
-        LEFT_PANEL_BACKGROUND,
+        crate::config::current()
+            .layout
+            .mania
+            .gif
+            .LEFT_PANEL_BACKGROUND,
     );
 
     for (lane_index, &lane_width) in layout.column_widths.iter().enumerate() {
@@ -563,7 +661,11 @@ pub(crate) fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &
         (seg_left + layout.segment_width) as f64,
         judgement_y as f64,
         2.0,
-        GIF_JUDGEMENT_LINE,
+        crate::config::current()
+            .layout
+            .mania
+            .gif
+            .JUDGEMENT_LINE_COLOR,
     );
 }
 
@@ -576,7 +678,7 @@ pub(crate) fn draw_gif_sv_indicators(
     layout: &GifLayout,
     pixels_per_scroll_unit: f64,
 ) {
-    // SV text sits near the left grey panel; only marks the change point, no line.
+    // SV 文字位于左侧灰色面板附近，只标记变化点，不绘制线条。
     debug_assert_eq!(sv_changes.len(), sv_positions.len());
     let (lo_pos, hi_pos) = visible_pos_window(snapshot_pos, layout, pixels_per_scroll_unit, 0.0);
     let start = sv_positions.partition_point(|&pos| pos < lo_pos);
@@ -587,14 +689,21 @@ pub(crate) fn draw_gif_sv_indicators(
         }
         let (_, sv) = sv_changes[index];
         let y = y_at_position(position, snapshot_pos, layout, pixels_per_scroll_unit);
-        if y < PAGE_MARGIN_Y || y > PAGE_MARGIN_Y + layout.playfield_height {
+        if y < layout.playfield_top || y > layout.playfield_top + layout.playfield_height {
             continue;
         }
         let label = format_sv_label(sv);
-        let (label_w, label_h) = text_size(&label, SV_TEXT_FONT_SIZE);
-        let x = (seg_left + LEFT_PANEL_WIDTH - label_w as i64 - 3).max(0);
+        let (_, label_h) = text_size(&label, layout.sv_font_size);
+        let x = (seg_left - layout.sv_info_margin_left + layout.sv_label_inset).max(0);
         let label_y = (y as f64 - label_h as f64 / 2.0).floor() as i64;
-        draw_text(canvas, x, label_y, &label, SV_TEXT_FONT_SIZE, SV_TEXT_COLOR);
+        draw_text(
+            canvas,
+            x,
+            label_y,
+            &label,
+            layout.sv_font_size,
+            layout.sv_text_color,
+        );
     }
 }
 
@@ -613,7 +722,7 @@ pub(crate) fn draw_gif_hit_object(
 ) {
     let y_start = y_at_position(start_pos, snapshot_pos, layout, pixels_per_scroll_unit);
     let y_end = y_at_position(end_pos, snapshot_pos, layout, pixels_per_scroll_unit);
-    let playfield_top = PAGE_MARGIN_Y;
+    let playfield_top = layout.playfield_top;
     let playfield_bottom = playfield_top + layout.playfield_height;
     if y_start.max(y_end) < playfield_top - layout.note_head_height
         || y_start.min(y_end) > playfield_bottom + layout.note_head_height
@@ -623,11 +732,13 @@ pub(crate) fn draw_gif_hit_object(
 
     let lane = (hit_object.lane.max(0) as usize).min(layout.column_widths.len() - 1);
     let lane_color = palette[lane.min(palette.len() - 1)];
-    // LN body keeps the PNG look (darkened lane color), not skin.ini ColourHold.
+    // 长按主体保持 PNG 外观（变暗的轨道颜色），不受轨道配置影响。
     let hold_color = hold_colors[lane.min(hold_colors.len() - 1)];
-    let lane_left =
-        seg_left + LEFT_PANEL_WIDTH + layout.column_left_offsets[lane] + NOTE_SIDE_PADDING;
-    let lane_right = lane_left + layout.column_widths[lane] - NOTE_SIDE_PADDING * 2;
+    let lane_left = seg_left
+        + layout.left_panel_width
+        + layout.column_left_offsets[lane]
+        + layout.note_side_padding;
+    let lane_right = lane_left + layout.column_widths[lane] - layout.note_side_padding * 2;
 
     if hit_object.is_long_note {
         let body_top = playfield_top.max(y_end.min(y_start - layout.note_head_height));
@@ -644,22 +755,8 @@ pub(crate) fn draw_gif_hit_object(
     }
 }
 
-/// In falling-note mode, future objects sit above the judgement line, past ones below.
-#[cfg(test)]
-fn y_at_time(
-    time: f64,
-    snapshot_time: i64,
-    layout: &GifLayout,
-    scroll_map: &ScrollMap,
-    pixels_per_scroll_unit: f64,
-) -> i64 {
-    let distance = scroll_map.position_at(time) - scroll_map.position_at(snapshot_time as f64);
-    PAGE_MARGIN_Y + layout.hit_position_y - round_half_even(distance * pixels_per_scroll_unit)
-}
-
-/// Same as `y_at_time` but takes a pre-computed `snapshot_pos` to avoid the
-/// `position_at(snapshot_time)` binary search on every call.  For a frame with
-/// thousands of objects this eliminates thousands of redundant searches.
+/// 与 `y_at_time` 相同，但接收预计算的 `snapshot_pos`，避免每次调用都对
+/// `position_at(snapshot_time)` 二分查找。一帧包含数千音符时可消除数千次重复查找。
 #[inline]
 fn y_at_position(
     object_pos: f64,
@@ -668,28 +765,23 @@ fn y_at_position(
     pixels_per_scroll_unit: f64,
 ) -> i64 {
     let distance = object_pos - snapshot_pos;
-    PAGE_MARGIN_Y + layout.hit_position_y - round_half_even(distance * pixels_per_scroll_unit)
+    layout.playfield_top + layout.hit_position_y
+        - round_half_even(distance * pixels_per_scroll_unit)
 }
 
-/// Scroll-distance window `[lo, hi]` outside which no hit object can be
-/// visible, used to binary-search the precomputed `pos_start` array instead
-/// of scanning every object per frame.
+/// 滚动距离窗口 `[lo, hi]`，窗口外不可能有可见音符。
+/// 用它二分查找预计算的 `pos_start` 数组，避免每帧扫描全部音符。
 ///
-/// The window is in scroll-DISTANCE units (position_at), not chart time,
-/// because variable SV makes time↔position non-linear: during slow SV many
-/// chart-seconds fold into a few on-screen pixels, so a time-based window
-/// would drop notes that are visibly on screen.  Distance maps to screen y
-/// via the constant `pixels_per_scroll_unit`, so this window stays exact
-/// under any SV.  `lo`/`hi` span the playfield plus a `note_head_height`
-/// margin so heads/bodies don't pop at the edges.
+/// 窗口单位是滚动距离（position_at），不是谱面时间。可变 SV 使时间与位置非线性：
+/// 慢 SV 会把很长的谱面时间压缩到少量屏幕像素，基于时间的窗口会丢弃屏幕内音符。
+/// 距离通过 `pixels_per_scroll_unit` 映射到屏幕 y，因此任意 SV 下都保持精确。
+/// `lo`/`hi` 覆盖游戏区域并额外留出 `note_head_height`，避免头部/主体在边缘突现。
 ///
-/// `max_hold_position` (widest LN body in distance space) is subtracted from
-/// the lower bound so long-note bodies are never clipped: a LN whose
-/// `end_time` is still on screen may have `start_time` far earlier in
-/// distance.  Since `pos_start >= pos_end - max_hold_position` and
-/// `pos_end >= snapshot_pos - past_dist`, `pos_start >= lo` holds and
-/// partition_point keeps the note.  The inner y-cull in `draw_gif_hit_object`
-/// still runs for pixel-exact clipping.
+/// 从下界减去 `max_hold_position`（距离空间中最宽的长按主体），防止长按被截断：
+/// `end_time` 仍在屏幕内的长按，其 `start_time` 在距离上可能早得多。
+/// 由于 `pos_start >= pos_end - max_hold_position` 且
+/// `pos_end >= snapshot_pos - past_dist`，可得 `pos_start >= lo`，
+/// partition_point 会保留该音符。`draw_gif_hit_object` 内部仍执行 y 裁剪以保证像素精度。
 #[inline]
 pub(crate) fn visible_pos_window(
     snapshot_pos: f64,
@@ -697,12 +789,12 @@ pub(crate) fn visible_pos_window(
     pixels_per_scroll_unit: f64,
     max_hold_position: f64,
 ) -> (f64, f64) {
-    // Furthest visible future note head sits at y = playfield_top - note_head_height,
-    // i.e. distance = (hit_position_y + note_head_height) above the judgement line.
+    // 最远可见的未来音符头位于 y = playfield_top - note_head_height。
+    // 即判定线上方距离为 hit_position_y + note_head_height。
     let future_dist =
         (layout.hit_position_y + layout.note_head_height) as f64 / pixels_per_scroll_unit;
-    // Furthest visible past note sits at y = playfield_bottom + note_head_height,
-    // i.e. distance = -(playfield_height - hit_position_y + note_head_height).
+    // 最远可见的过去音符位于 y = playfield_bottom + note_head_height，
+    // 即 distance = -(playfield_height - hit_position_y + note_head_height)。
     let past_dist = (layout.playfield_height - layout.hit_position_y + layout.note_head_height)
         as f64
         / pixels_per_scroll_unit;
@@ -712,7 +804,7 @@ pub(crate) fn visible_pos_window(
     )
 }
 
-/// Pre-rendered time label sprite + blit position, built once per segment.
+/// 预渲染的时间标签精灵图及贴图位置，每段只构建一次。
 struct PreLabel {
     sprite: Img,
     x: i64,
@@ -727,7 +819,6 @@ fn build_pre_label(
     seg_left: i64,
     y: i64,
     time_axis: TimeAxis,
-    bpm: Option<f64>,
 ) -> PreLabel {
     let label = format!(
         "{} - {}",
@@ -737,31 +828,77 @@ fn build_pre_label(
         )
     );
     let color = if timing.is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+        crate::config::current()
+            .layout
+            .mania
+            .gif
+            .PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_COLOR
+        crate::config::current().layout.mania.gif.TIME_LABEL_COLOR
     };
-    let note_color = if bpm.is_some() {
-        crate::render::timing::BPM_LABEL_COLOR
-    } else if timing.is_preview {
-        GIF_PREVIEW_TIME_LABEL_COLOR
+    let note_color = if timing.is_preview {
+        crate::config::current()
+            .layout
+            .mania
+            .gif
+            .PREVIEW_TIME_LABEL_COLOR
     } else {
-        GIF_TIME_LABEL_NOTE_COLOR
+        crate::config::current()
+            .layout
+            .mania
+            .gif
+            .TIME_LABEL_NOTE_COLOR
     };
-    let (label_w, label_h) = text_size(&label, GIF_TIME_LABEL_FONT_SIZE);
-    let sprite = render_text_sprite(&label, GIF_TIME_LABEL_FONT_SIZE, color);
+    let (label_w, label_h) = text_size(
+        &label,
+        crate::config::current()
+            .layout
+            .mania
+            .gif
+            .TIME_LABEL_FONT_SIZE,
+    );
+    let sprite = render_text_sprite(
+        &label,
+        crate::config::current()
+            .layout
+            .mania
+            .gif
+            .TIME_LABEL_FONT_SIZE,
+        color,
+    );
     let x = seg_left + (layout.segment_width - label_w as i64).div_euclid(2);
 
-    let note = if timing.is_preview || bpm.is_some() {
-        let bpm_label = bpm.map(crate::render::timing::format_bpm);
-        let note_text = bpm_label.unwrap_or_else(|| "Preview Time".to_owned());
-        let (note_w, _) = text_size(&note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE);
-        let note_sprite = render_text_sprite(&note_text, GIF_TIME_LABEL_NOTE_FONT_SIZE, note_color);
+    let note = if timing.is_preview {
+        let note_text = "Preview Time";
+        let (note_w, _) = text_size(
+            note_text,
+            crate::config::current()
+                .layout
+                .mania
+                .gif
+                .TIME_LABEL_NOTE_FONT_SIZE,
+        );
+        let note_sprite = render_text_sprite(
+            note_text,
+            crate::config::current()
+                .layout
+                .mania
+                .gif
+                .TIME_LABEL_NOTE_FONT_SIZE,
+            note_color,
+        );
         let note_x = seg_left + (layout.segment_width - note_w as i64).div_euclid(2);
         Some(Box::new(PreLabel {
             sprite: note_sprite,
             x: note_x,
-            y: y + label_h as i64 + 4,
+            y: y + label_h as i64
+                + crate::render::geometry::scale_px(
+                    4.0,
+                    crate::render::geometry::output_scale(
+                        crate::render::geometry::GameMode::Mania,
+                        crate::render::geometry::OutputFormat::Gif,
+                    ),
+                ),
             note: None,
         }))
     } else {
@@ -771,9 +908,8 @@ fn build_pre_label(
     PreLabel { sprite, x, y, note }
 }
 
-/// SV indicator drawing using pre-rendered label sprites.
-/// `sv_sprites` is `(scroll_position, sprite)` pairs built once; only the y
-/// position is computed per frame.
+/// 使用预渲染标签精灵图绘制 SV 指示器。
+/// `sv_sprites` 是一次构建的 `(scroll_position, sprite)` 对，每帧只计算 y 位置。
 fn draw_gif_sv_indicators_fast(
     canvas: &mut Img,
     sv_sprites: &[(f64, Img)],
@@ -782,9 +918,8 @@ fn draw_gif_sv_indicators_fast(
     layout: &GifLayout,
     pixels_per_scroll_unit: f64,
 ) {
-    // SV positions are monotonic because timing points are sorted and every
-    // valid SV multiplier is positive. Include both boundaries to preserve
-    // the old pixel-space visibility behavior at the playfield edges.
+    // timing points 已排序且所有有效 SV 倍率为正，因此 SV 位置单调。
+    // 两侧边界都纳入，以保持旧版在游戏区域边缘的像素可见性行为。
     let (lo_pos, hi_pos) = visible_pos_window(snapshot_pos, layout, pixels_per_scroll_unit, 0.0);
     let start = sv_sprites.partition_point(|(pos, _)| *pos < lo_pos);
     for &(position, ref sprite) in &sv_sprites[start..] {
@@ -792,11 +927,11 @@ fn draw_gif_sv_indicators_fast(
             break;
         }
         let y = y_at_position(position, snapshot_pos, layout, pixels_per_scroll_unit);
-        if y < PAGE_MARGIN_Y || y > PAGE_MARGIN_Y + layout.playfield_height {
+        if y < layout.playfield_top || y > layout.playfield_top + layout.playfield_height {
             continue;
         }
         let label_h = sprite.h as i64;
-        let x = (seg_left + LEFT_PANEL_WIDTH - sprite.w as i64 - 3).max(0);
+        let x = (seg_left - layout.sv_info_margin_left + layout.sv_label_inset).max(0);
         let label_y = (y as f64 - label_h as f64 / 2.0).floor() as i64;
         canvas.alpha_composite(sprite, x, label_y);
     }
@@ -805,6 +940,19 @@ fn draw_gif_sv_indicators_fast(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 下落音符模式下，未来音符位于判定线以上，过去音符位于判定线以下。
+    fn y_at_time(
+        time: f64,
+        snapshot_time: i64,
+        layout: &GifLayout,
+        scroll_map: &ScrollMap,
+        pixels_per_scroll_unit: f64,
+    ) -> i64 {
+        let distance = scroll_map.position_at(time) - scroll_map.position_at(snapshot_time as f64);
+        layout.playfield_top + layout.hit_position_y
+            - round_half_even(distance * pixels_per_scroll_unit)
+    }
 
     fn test_layout() -> GifLayout {
         GifLayout {
@@ -820,6 +968,15 @@ mod tests {
             column_left_offsets: vec![0],
             column_widths: vec![80],
             column_colours: vec![[0, 0, 0, 255]],
+            playfield_left: 0,
+            playfield_top: 20,
+            segment_stride: 100,
+            left_panel_width: 12,
+            note_side_padding: 2,
+            sv_info_margin_left: 40,
+            sv_label_inset: 3,
+            sv_font_size: 8,
+            sv_text_color: [95, 221, 108, 255],
         }
     }
 
@@ -882,7 +1039,8 @@ mod tests {
                         &scroll_map,
                         pixels_per_scroll_unit,
                     );
-                    (y >= PAGE_MARGIN_Y && y <= PAGE_MARGIN_Y + layout.playfield_height)
+                    (y >= layout.playfield_top
+                        && y <= layout.playfield_top + layout.playfield_height)
                         .then_some(index)
                 })
                 .collect();
@@ -899,7 +1057,7 @@ mod tests {
                         &layout,
                         pixels_per_scroll_unit,
                     );
-                    y >= PAGE_MARGIN_Y && y <= PAGE_MARGIN_Y + layout.playfield_height
+                    y >= layout.playfield_top && y <= layout.playfield_top + layout.playfield_height
                 })
                 .collect();
 

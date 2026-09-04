@@ -1,19 +1,21 @@
-//! Hit object rendering: hit circles, sliders, spinners, approach circles.
+//! 音符对象渲染：打击圈、滑条、转盘和接近圈。
 
 use crate::core::models::{BreakPeriod, StandardHitObject};
 use crate::render::canvas::Img;
 
 use super::alpha::*;
 use super::constants::*;
-use super::context::{color_id, py_round, to_frame_point, RenderCache, RenderContext};
+use super::context::{
+    color_id, py_round, stacked_position, to_frame_point, RenderCache, RenderContext,
+};
 use super::draw_centered_text;
 use super::slider::{
     darken, draw_cached_slider_body, draw_ring_aa, draw_slider_ball, draw_slider_body,
-    draw_slider_reverse_arrows, fill_circle_gradient_aa, get_slider_render_data,
+    draw_slider_reverse_arrows, draw_slider_ticks, fill_circle_gradient_aa, get_slider_render_data,
     is_full_slider_body, resized_with_alpha, slider_snaked_range, with_alpha,
 };
 
-// ——— frame rendering ———
+// ——— 帧渲染 ———
 
 pub(crate) fn render_frame(
     context: &RenderContext,
@@ -21,12 +23,38 @@ pub(crate) fn render_frame(
     snapshot_time: i64,
     break_periods: &[BreakPeriod],
     visible_indexes: &[usize],
+    background: Option<&Img>,
 ) -> Img {
-    let mut frame = Img::new(
-        IMAGE_WIDTH as u32,
-        IMAGE_HEIGHT as u32,
-        IMAGE_BACKGROUND_COLOR,
-    );
+    let mut frame = background.cloned().unwrap_or_else(|| {
+        let color = match context.output_format {
+            crate::render::geometry::OutputFormat::Png => {
+                crate::config::current()
+                    .layout
+                    .standard
+                    .png
+                    .IMAGE_BACKGROUND_COLOR
+            }
+            crate::render::geometry::OutputFormat::Gif => {
+                crate::config::current()
+                    .layout
+                    .standard
+                    .gif
+                    .IMAGE_BACKGROUND_COLOR
+            }
+            crate::render::geometry::OutputFormat::Mp4 => {
+                crate::config::current()
+                    .layout
+                    .standard
+                    .mp4
+                    .IMAGE_BACKGROUND_COLOR
+            }
+        };
+        Img::new(
+            context.frame_layout.frame_width as u32,
+            context.frame_layout.frame_height as u32,
+            color,
+        )
+    });
 
     for &index in visible_indexes {
         let hit_object = &context.hit_objects[index];
@@ -46,7 +74,7 @@ pub(crate) fn render_frame(
                 &mut frame,
                 context,
                 cache,
-                hit_object,
+                index,
                 context.combo_info[index].color,
                 snapshot_time,
             );
@@ -54,13 +82,13 @@ pub(crate) fn render_frame(
     }
 
     if let Some(current_break) = current_break_period(break_periods, snapshot_time) {
-        draw_break_overlay(&mut frame, current_break, snapshot_time, context.time_axis);
+        draw_break_overlay(&mut frame, current_break, snapshot_time, context);
     }
 
     frame
 }
 
-// ——— hit circle ———
+// ——— 打击圈 ———
 
 fn draw_hit_circle(
     frame: &mut Img,
@@ -78,14 +106,11 @@ fn draw_hit_circle(
         &context.settings,
     );
     if context.settings.traceable {
-        // TC: only approach circle is visible, skip the circle piece
+        // TC：只显示接近圈，跳过打击圈主体。
         return;
     }
-    let center = to_frame_point(
-        hit_object.x as f64,
-        hit_object.y as f64,
-        &context.frame_layout,
-    );
+    let position = stacked_position(hit_object, &context.settings);
+    let center = to_frame_point(position.0, position.1, &context.frame_layout);
     draw_circle_piece(
         frame,
         context,
@@ -97,7 +122,7 @@ fn draw_hit_circle(
     );
 }
 
-// ——— slider ———
+// ——— 滑条 ———
 
 fn draw_slider(
     frame: &mut Img,
@@ -145,6 +170,16 @@ fn draw_slider(
         );
     }
 
+    draw_slider_ticks(
+        frame,
+        context,
+        cache,
+        &slider_data,
+        snapshot_time,
+        combo.color,
+        overlay_alpha,
+    );
+
     draw_slider_reverse_arrows(
         frame,
         context,
@@ -187,7 +222,7 @@ fn draw_slider(
     }
 }
 
-// ——— spinner ———
+// ——— 转盘 ———
 
 fn draw_spinner(
     frame: &mut Img,
@@ -201,8 +236,8 @@ fn draw_spinner(
         return;
     }
     let center = to_frame_point(
-        PLAYFIELD_WIDTH / 2.0,
-        PLAYFIELD_HEIGHT / 2.0,
+        crate::render::standard::constants::PLAYFIELD_WIDTH / 2.0,
+        crate::render::standard::constants::PLAYFIELD_HEIGHT / 2.0,
         &context.frame_layout,
     );
     let scale = context.spinner_size as f64 / 256.0;
@@ -213,7 +248,7 @@ fn draw_spinner(
         / (hit_object.end_time - hit_object.start_time).max(1) as f64)
         .clamp(0.0, 1.0);
     let disc_r = base_r * (0.8 + 0.6 * progress);
-    let pink = ARGON_SPINNER_PINK;
+    let pink = crate::render::standard::constants::ARGON_SPINNER_PINK;
     frame.fill_circle_aa(
         center.0,
         center.1,
@@ -239,16 +274,17 @@ fn draw_spinner(
     );
 }
 
-// ——— approach circle ———
+// ——— 接近圈 ———
 
 fn draw_approach_circle(
     frame: &mut Img,
     context: &RenderContext,
     _cache: &mut RenderCache,
-    hit_object: &StandardHitObject,
+    index: usize,
     color: [u8; 3],
     snapshot_time: i64,
 ) {
+    let hit_object = &context.hit_objects[index];
     if context.settings.hidden {
         return;
     }
@@ -264,11 +300,8 @@ fn draw_approach_circle(
     }
     let approach_scale = 4.0 - 3.0 * progress;
     let d = context.frame_circle_diameter as f64 * approach_scale;
-    let center = to_frame_point(
-        hit_object.x as f64,
-        hit_object.y as f64,
-        &context.frame_layout,
-    );
+    let position = stacked_position(hit_object, &context.settings);
+    let center = to_frame_point(position.0, position.1, &context.frame_layout);
     let thickness = (d * 0.03).max(1.0);
     draw_ring_aa(
         frame,
@@ -285,7 +318,7 @@ fn draw_approach_circle(
     );
 }
 
-// ——— circle piece (hitcircle + overlay + number) ———
+// ——— 打击圈主体（打击圈 + 覆盖层 + 数字） ———
 
 fn draw_circle_piece(
     frame: &mut Img,
@@ -322,8 +355,8 @@ fn build_circle_piece(diameter: i64, color: [u8; 3]) -> Img {
     let d = diameter.max(1);
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
-    let border = d as f64 * ARGON_BORDER_RATIO;
-    // C# Argon: outerFill = accentColour.Darken(4)
+    let border = d as f64 * crate::render::standard::constants::ARGON_BORDER_RATIO;
+    // C# Argon：outerFill = accentColour.Darken(4)。
     let dark = darken(color, 4.0);
 
     // 1. outerFill: 深色填充圆
@@ -401,12 +434,9 @@ fn draw_number(
     }
 }
 
-// ——— break overlay ———
+// ——— Break 覆盖层 ———
 
-fn current_break_period<'a>(
-    break_periods: &'a [BreakPeriod],
-    snapshot_time: i64,
-) -> Option<&'a BreakPeriod> {
+fn current_break_period(break_periods: &[BreakPeriod], snapshot_time: i64) -> Option<&BreakPeriod> {
     break_periods
         .iter()
         .find(|p| break_overlay_alpha(p, snapshot_time) > 0.0)
@@ -416,7 +446,7 @@ fn draw_break_overlay(
     frame: &mut Img,
     break_period: &BreakPeriod,
     snapshot_time: i64,
-    time_axis: crate::common::time_selection::TimeAxis,
+    context: &RenderContext,
 ) {
     let alpha = break_overlay_alpha(break_period, snapshot_time);
     if alpha <= 0.0 {
@@ -424,10 +454,14 @@ fn draw_break_overlay(
     }
 
     let mut layer = Img::new(frame.w, frame.h, [0, 0, 0, 0]);
-    let center_x = IMAGE_WIDTH as f64 / 2.0;
-    let center_y = IMAGE_HEIGHT as f64 / 2.0;
+    let center_x = context.frame_layout.frame_width as f64 / 2.0;
+    let center_y = context.frame_layout.frame_height as f64 / 2.0;
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Standard,
+        context.output_format,
+    );
 
-    draw_break_arrows(&mut layer, alpha);
+    draw_break_arrows(&mut layer, alpha, render_scale);
     draw_break_remaining_bar(
         &mut layer,
         break_period,
@@ -435,47 +469,67 @@ fn draw_break_overlay(
         center_x,
         center_y,
         alpha,
+        render_scale,
     );
 
     let remaining_seconds = ((break_period.end_time - snapshot_time + 999).div_euclid(1000)).max(0);
     let counter_label = remaining_seconds.to_string();
-    let (_, counter_h) =
-        crate::render::text::text_size(&counter_label, BREAK_OVERLAY_COUNTER_FONT_SIZE);
+    let (_, counter_h) = crate::render::text::text_size(
+        &counter_label,
+        crate::render::text::scaled_bitmap_font_height(
+            crate::render::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
+            render_scale,
+        ),
+    );
     let counter_y = py_round(center_y - 15.0) - counter_h as i64;
     let counter_color = [
-        BREAK_OVERLAY_COLOR[0],
-        BREAK_OVERLAY_COLOR[1],
-        BREAK_OVERLAY_COLOR[2],
-        py_round(BREAK_OVERLAY_COLOR[3] as f64 * alpha).clamp(0, 255) as u8,
+        crate::render::standard::constants::BREAK_OVERLAY_COLOR[0],
+        crate::render::standard::constants::BREAK_OVERLAY_COLOR[1],
+        crate::render::standard::constants::BREAK_OVERLAY_COLOR[2],
+        py_round(crate::render::standard::constants::BREAK_OVERLAY_COLOR[3] as f64 * alpha)
+            .clamp(0, 255) as u8,
     ];
     draw_centered_text(
         &mut layer,
         &counter_label,
         0,
         counter_y,
-        BREAK_OVERLAY_COUNTER_FONT_SIZE,
+        crate::render::text::scaled_bitmap_font_height(
+            crate::render::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
+            render_scale,
+        ),
         counter_color,
+        context.frame_layout.frame_width,
     );
 
     let break_label = format!(
         "Break {} - {}",
-        crate::render::text::format_mmssmmm(time_axis.to_display(break_period.start_time)),
-        crate::render::text::format_mmssmmm(time_axis.to_display(break_period.end_time))
+        crate::render::text::format_mmssmmm(context.time_axis.to_display(break_period.start_time)),
+        crate::render::text::format_mmssmmm(context.time_axis.to_display(break_period.end_time))
     );
-    let info_y = py_round(center_y) + BREAK_OVERLAY_INFO_TOP_GAP;
+    let info_y = py_round(center_y)
+        + crate::render::geometry::scale_px(
+            crate::render::standard::constants::BREAK_OVERLAY_INFO_TOP_GAP as f64,
+            render_scale,
+        );
     let info_color = [
-        BREAK_OVERLAY_INFO_COLOR[0],
-        BREAK_OVERLAY_INFO_COLOR[1],
-        BREAK_OVERLAY_INFO_COLOR[2],
-        py_round(BREAK_OVERLAY_INFO_COLOR[3] as f64 * alpha).clamp(0, 255) as u8,
+        crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[0],
+        crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[1],
+        crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[2],
+        py_round(crate::render::standard::constants::BREAK_OVERLAY_INFO_COLOR[3] as f64 * alpha)
+            .clamp(0, 255) as u8,
     ];
     draw_centered_text(
         &mut layer,
         &break_label,
         0,
         info_y,
-        BREAK_OVERLAY_INFO_FONT_SIZE,
+        crate::render::text::scaled_bitmap_font_height(
+            crate::render::standard::constants::BREAK_OVERLAY_INFO_FONT_SIZE,
+            render_scale,
+        ),
         info_color,
+        context.frame_layout.frame_width,
     );
 
     frame.alpha_composite(&layer, 0, 0);
@@ -488,9 +542,12 @@ fn draw_break_remaining_bar(
     center_x: f64,
     center_y: f64,
     alpha: f64,
+    render_scale: f64,
 ) {
-    let track_width = py_round(IMAGE_WIDTH as f64 * BREAK_OVERLAY_BAR_WIDTH_RATIO) as f64;
-    let track_height = BREAK_OVERLAY_BAR_HEIGHT;
+    let track_width = py_round(
+        layer.w as f64 * crate::render::standard::constants::BREAK_OVERLAY_BAR_WIDTH_RATIO,
+    ) as f64;
+    let track_height = crate::render::standard::constants::BREAK_OVERLAY_BAR_HEIGHT * render_scale;
     let track_left = center_x - track_width / 2.0;
     let track_top = center_y - track_height / 2.0;
     layer.fill_rounded_rect(
@@ -515,14 +572,30 @@ fn draw_break_remaining_bar(
     );
 }
 
-fn draw_break_arrows(layer: &mut Img, alpha: f64) {
+fn draw_break_arrows(layer: &mut Img, alpha: f64, render_scale: f64) {
     let color = [238, 238, 238, py_round(80.0 * alpha).clamp(0, 255) as u8];
     let glow_color = [238, 238, 238, py_round(35.0 * alpha).clamp(0, 255) as u8];
-    let center_y = IMAGE_HEIGHT as f64 / 2.0;
+    let center_y = layer.h as f64 / 2.0;
     for (offset, direction) in [(-0.22, 1.0), (0.22, -1.0)] {
-        let center_x = IMAGE_WIDTH as f64 / 2.0 + IMAGE_WIDTH as f64 * offset;
-        draw_chevron(layer, center_x, center_y, 32.0, direction, glow_color, 9.0);
-        draw_chevron(layer, center_x, center_y, 20.0, direction, color, 4.0);
+        let center_x = layer.w as f64 / 2.0 + layer.w as f64 * offset;
+        draw_chevron(
+            layer,
+            center_x,
+            center_y,
+            32.0 * render_scale,
+            direction,
+            glow_color,
+            9.0 * render_scale,
+        );
+        draw_chevron(
+            layer,
+            center_x,
+            center_y,
+            20.0 * render_scale,
+            direction,
+            color,
+            4.0 * render_scale,
+        );
     }
 }
 
@@ -543,27 +616,38 @@ fn draw_chevron(
 }
 
 fn break_overlay_alpha(break_period: &BreakPeriod, snapshot_time: i64) -> f64 {
-    if break_period.end_time - break_period.start_time < BREAK_MIN_DURATION_MS {
+    if break_period.end_time - break_period.start_time
+        < crate::render::standard::constants::BREAK_MIN_DURATION_MS
+    {
         return 0.0;
     }
     if snapshot_time < break_period.start_time || snapshot_time > break_period.end_time {
         return 0.0;
     }
-    if snapshot_time < break_period.start_time + BREAK_FADE_DURATION_MS {
-        return (snapshot_time - break_period.start_time) as f64 / BREAK_FADE_DURATION_MS as f64;
+    if snapshot_time
+        < break_period.start_time + crate::render::standard::constants::BREAK_FADE_DURATION_MS
+    {
+        return (snapshot_time - break_period.start_time) as f64
+            / crate::render::standard::constants::BREAK_FADE_DURATION_MS as f64;
     }
-    if snapshot_time > break_period.end_time - BREAK_FADE_DURATION_MS {
-        return (break_period.end_time - snapshot_time) as f64 / BREAK_FADE_DURATION_MS as f64;
+    if snapshot_time
+        > break_period.end_time - crate::render::standard::constants::BREAK_FADE_DURATION_MS
+    {
+        return (break_period.end_time - snapshot_time) as f64
+            / crate::render::standard::constants::BREAK_FADE_DURATION_MS as f64;
     }
     1.0
 }
 
 fn break_remaining_bar_ratio(break_period: &BreakPeriod, snapshot_time: i64) -> f64 {
-    let effective_duration =
-        break_period.end_time - BREAK_FADE_DURATION_MS - break_period.start_time;
+    let effective_duration = break_period.end_time
+        - crate::render::standard::constants::BREAK_FADE_DURATION_MS
+        - break_period.start_time;
     if effective_duration <= 0 {
         return 0.0;
     }
-    let remaining = break_period.end_time - BREAK_FADE_DURATION_MS - snapshot_time;
+    let remaining = break_period.end_time
+        - crate::render::standard::constants::BREAK_FADE_DURATION_MS
+        - snapshot_time;
     (remaining as f64 / effective_duration as f64).clamp(0.0, 1.0)
 }

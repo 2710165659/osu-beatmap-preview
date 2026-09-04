@@ -1,16 +1,15 @@
-//! osu!mania MP4 renderer: full-chart continuous playback (no 4-segment
-//! preview). Reuses the GIF per-object drawing routines on a single-column
-//! layout; the bottom segment label is dropped (the global top-right label is
-//! drawn by `video::save_mp4_streamed`).
+//! osu!mania MP4 渲染器：完整谱面连续播放（无四段预览）。
+//! 在单列布局中复用 GIF 的逐音符绘制逻辑；省略底部段落标签，
+//! 全局右上角标签由 `video::save_mp4_streamed` 绘制。
 //!
-//! Time range: first note − 2s → last note + 2s, `[t1, t2]` when
-//! `--time=t1+t2` is given, or a preview-time 30s clip when `--preview-30s`
-//! is given. 15 fps, letterboxed to 16:9.
+//! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
+use crate::core::validate::TimePoint;
 use crate::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::video::audio::AudioSourceJob;
@@ -18,26 +17,28 @@ use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::path::Path;
 
 use super::gif::{
-    build_column_left_offsets, build_scroll_map, compute_time_range, draw_gif_hit_object,
+    build_layout, build_scroll_map, compute_time_range, draw_gif_hit_object,
     draw_gif_sv_indicators, draw_segment_background, segment_left, visible_pos_window, GifLayout,
 };
 use super::skin::load_mania_skin_config;
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
-    mania_objects, resolve_key_count, GIF_FRAME_HEIGHT, GIF_STAGE_TOP_PADDING,
-    IMAGE_BACKGROUND, LANE_WIDTH, LEFT_PANEL_WIDTH, NOTE_HEAD_HEIGHT, PAGE_MARGIN_X, PAGE_MARGIN_Y,
+    mania_objects, resolve_key_count,
 };
 
 pub(crate) fn render_mania_video(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
-    times_ms: Option<Vec<i64>>,
-    preview_30s: bool,
+    start_time: Option<TimePoint>,
+    duration_time: Option<f64>,
     output_path: &Path,
+    background: Option<Img>,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
-    fps: u32,
+    fps: Option<u32>,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
     let original_objects = mania_objects(beatmap);
@@ -64,16 +65,10 @@ pub(crate) fn render_mania_video(
         .map(|h| h.end_time)
         .max()
         .unwrap_or(0);
-    let range = resolve_video_time_range(
-        beatmap,
-        first,
-        last,
-        times_ms.as_deref(),
-        preview_30s,
-        speed,
-    )?;
+    let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
+    let fps = fps.unwrap_or(crate::config::current().layout.mania.mp4.FPS as u32);
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let skin_config = load_mania_skin_config(key_count);
@@ -82,20 +77,21 @@ pub(crate) fn render_mania_video(
     let scroll_map = build_scroll_map(beatmap, &original_objects, cs_mode, native_mania);
     let time_range = compute_time_range(speed, skin_config.hit_position);
     let pixels_per_scroll_unit = layout.scroll_length as f64 / time_range;
-    let sv_changes = if cs_mode || !native_mania {
-        Vec::new()
-    } else {
-        build_sv_changes(&beatmap.timing_points, end + round_half_even(time_range))
-    };
+    let sv_changes =
+        if cs_mode || !native_mania || !crate::config::current().layout.mania.mp4.SHOW_SV_LABEL {
+            Vec::new()
+        } else {
+            build_sv_changes(&beatmap.timing_points, end + round_half_even(time_range))
+        };
     let sv_positions: Vec<f64> = sv_changes
         .iter()
         .map(|&(time, _)| scroll_map.position_at(time as f64))
         .collect();
     let hold_colors: Vec<Rgba> = palette.iter().map(|&c| darken(c, 0.5)).collect();
 
-    // Precompute scroll-distance positions for sorted binary-search culling.
-    // Culling by distance (not chart time) stays correct under variable SV
-    // (time↔position is non-linear); see `visible_pos_window`.
+    // 预计算滚动距离位置，供排序后的二分查找裁剪使用。
+    // 按距离而不是谱面时间裁剪，在可变 SV 下仍然正确（时间与位置不是线性关系）；
+    // 详见 `visible_pos_window`。
     let pos_start: Vec<f64> = hit_objects
         .iter()
         .map(|ho| scroll_map.position_at(ho.start_time as f64))
@@ -110,13 +106,17 @@ pub(crate) fn render_mania_video(
         .map(|(&start, &end)| (end - start).max(0.0))
         .fold(0.0_f64, f64::max);
 
-    // Single-segment static background: one column backdrop + judgement line,
-    // no inter-segment separators.
+    // 单段静态背景：一列背景和判定线，不绘制段间分隔线。
     let static_bg = {
+        // 背景图在最终视频画布上统一处理；这里仅绘制 Mania 轨道和侧板。
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
-            IMAGE_BACKGROUND,
+            if background.is_some() {
+                [0, 0, 0, 0]
+            } else {
+                crate::config::current().layout.mania.mp4.IMAGE_BACKGROUND
+            },
         );
         draw_segment_background(&mut bg, segment_left(0, &layout), &layout);
         bg
@@ -137,8 +137,8 @@ pub(crate) fn render_mania_video(
             &layout,
             pixels_per_scroll_unit,
         );
-        // Binary-search the precomputed scroll-distance positions.  Culling by
-        // distance (not chart time) stays correct under variable SV.
+        // 对预计算的滚动距离位置执行二分查找。按距离而不是谱面时间裁剪，
+        // 在可变 SV 下仍然正确。
         let (lo_pos, hi_pos) = visible_pos_window(
             snapshot_pos,
             &layout,
@@ -175,39 +175,19 @@ pub(crate) fn render_mania_video(
         output_path,
         fps,
         audio_job,
+        background,
         time_axis,
+        deadline,
+        crate::render::geometry::GameMode::Mania,
     )
 }
 
-/// Single-segment layout for MP4: one column width, no inter-segment gap, no
-/// bottom label area (the global top-right label is drawn by the encoder).
+/// MP4 的单段布局：单列宽度、无段间间隔、无底部标签区域（全局右上角标签由编码器绘制）。
 fn build_video_layout(skin_config: &super::skin::ManiaSkinConfig) -> GifLayout {
-    let column_left_offsets =
-        build_column_left_offsets(&skin_config.column_widths, &skin_config.column_line_widths);
-    let lane_area_width: i64 = skin_config.column_widths.iter().sum::<i64>()
-        + skin_config.column_line_widths.iter().sum::<i64>();
-    let segment_width = LEFT_PANEL_WIDTH * 2 + lane_area_width;
-    let playfield_height = GIF_FRAME_HEIGHT;
-    let hit_position_y = round_half_even(playfield_height as f64 - skin_config.hit_position);
-    let scroll_length = (hit_position_y - GIF_STAGE_TOP_PADDING).max(1);
-    let average_column_width = skin_config.column_widths.iter().sum::<i64>() as f64
-        / skin_config.column_widths.len() as f64;
-    let note_head_height =
-        round_half_even(NOTE_HEAD_HEIGHT as f64 * average_column_width / LANE_WIDTH as f64).max(1);
-    let image_width = PAGE_MARGIN_X * 2 + segment_width;
-    let image_height = PAGE_MARGIN_Y * 2 + playfield_height;
-    GifLayout {
-        segment_count: 1,
-        segment_width,
-        playfield_height,
-        lane_area_width,
-        image_width,
-        image_height,
-        hit_position_y,
-        scroll_length,
-        note_head_height,
-        column_left_offsets,
-        column_widths: skin_config.column_widths.clone(),
-        column_colours: skin_config.column_colours.clone(),
-    }
+    build_layout(
+        skin_config,
+        1,
+        false,
+        crate::render::geometry::OutputFormat::Mp4,
+    )
 }

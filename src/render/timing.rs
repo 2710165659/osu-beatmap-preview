@@ -1,11 +1,8 @@
-//! Shared timing-label helpers used by all mode renderers.
+//! 各模式共用的节奏标签辅助函数。
 
 use crate::core::models::TimingPoint;
 
-pub(crate) const BPM_LABEL_COLOR: [u8; 4] = [255, 82, 82, 255];
-
-/// Return the active uninherited BPM at `time`, carrying the first red line
-/// backwards through leading silence just like osu! does.
+/// 返回指定时间生效的非继承 BPM；首条红线之前的静音段沿用首条红线 BPM。
 pub(crate) fn bpm_at(timing_points: &[TimingPoint], time: i64) -> Option<f64> {
     let mut first = None;
     let mut active = None;
@@ -44,6 +41,7 @@ mod tests {
             meter: 4,
             uninherited: true,
             kiai_mode: false,
+            omit_first_bar_line: false,
         }
     }
 

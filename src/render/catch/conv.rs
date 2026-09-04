@@ -1,4 +1,4 @@
-//! standard → catch conversion (mode 2).
+//! standard → catch 转换（模式 2）。
 
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, CatchHitObject, HitObjects};
@@ -29,8 +29,8 @@ pub(crate) fn catch_convert(
         ));
     }
 
-    // CatchBeatmapConverter top-level mapping:
-    // circle -> Fruit, slider -> JuiceStream, spinner -> BananaShower.
+    // CatchBeatmapConverter 顶层映射：
+    // circle -> Fruit，slider -> JuiceStream，spinner -> BananaShower。
     let mut catch_objects: Vec<CatchHitObject> = objects
         .iter()
         .map(|ho| CatchHitObject {
@@ -59,6 +59,7 @@ pub(crate) fn catch_convert(
         timing_points: beatmap.timing_points.clone(),
         hit_objects: HitObjects::Catch(catch_objects),
         break_periods: beatmap.break_periods.clone(),
+        background_filename: beatmap.background_filename.clone(),
         beat_divisor: 0,
         combo_colors: beatmap.combo_colors.clone(),
     })

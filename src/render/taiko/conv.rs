@@ -1,21 +1,19 @@
-//! standard → taiko conversion (mode 1).
-//! RNG call order and float32 round-trip points must match Python exactly.
+//! standard → taiko 转换（模式 1）。
+//! RNG 调用顺序和 float32 往返点必须与 Python 完全一致。
 
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, HitObjects, StandardHitObject, TaikoHitObject, TimingPoint};
 use crate::core::mods::ModSettings;
 
+use super::constants::*;
 use crate::common::conversion::{almost_equals, std_objects, TimingCursor};
 
-// C# constant is 1.4f; keep it as a float32 value.
+// C# 常量为 1.4f，此处保持 float32 数值。
 const VELOCITY_MULTIPLIER: f64 = 1.4f32 as f64;
 const OSU_BASE_SCORING_DISTANCE: f64 = 100.0;
 
-const DRUMROLL_FLAG: i32 = 2;
-const SWELL_FLAG: i32 = 8;
-
-/// Pre-computed per-slider values shared between duration and hit-conversion
-/// checks, avoiding the duplicate computation that lazer does for stable compat.
+/// 每条滑条预计算的值，在时长与音符转换检查间共享，
+/// 避免 lazer 为兼容 stable 而进行的重复计算。
 struct SliderConversionValues {
     taiko_duration: i64,
     tick_spacing: f64,
@@ -66,6 +64,7 @@ pub(crate) fn taiko_convert(
         timing_points: taiko_convert_timing_points(beatmap, objects),
         hit_objects: HitObjects::Taiko(taiko_objects),
         break_periods: beatmap.break_periods.clone(),
+        background_filename: beatmap.background_filename.clone(),
         combo_colors: beatmap.combo_colors.clone(),
         beat_divisor: beatmap.beat_divisor,
     })
@@ -214,6 +213,7 @@ fn taiko_convert_timing_points(
                     meter: point.meter,
                     uninherited: false,
                     kiai_mode: point.kiai_mode,
+                    omit_first_bar_line: point.omit_first_bar_line,
                 }
             }
         })
@@ -240,6 +240,7 @@ fn taiko_convert_timing_points(
             meter: cursor.meter,
             uninherited: false,
             kiai_mode: cursor.kiai,
+            omit_first_bar_line: false,
         });
         last_scroll_speed = next_scroll_speed;
     }
@@ -251,23 +252,30 @@ fn taiko_convert_timing_points(
 
 fn precision_adjusted_beat_length(timing_beat_length: f64, slider_velocity: f64) -> f64 {
     let slider_velocity_as_beat_length = -100.0 / slider_velocity;
-    let bpm_multiplier = f64::max(
-        10.0,
-        f64::min(10000.0, (-slider_velocity_as_beat_length) as f32 as f64),
-    ) / 100.0;
+    let raw_multiplier = (-slider_velocity_as_beat_length) as f32 as f64;
+    // 原 min/max 链在 NaN 时回退到上界 10000.0。
+    let bpm_multiplier = if raw_multiplier.is_nan() {
+        10000.0
+    } else {
+        raw_multiplier.clamp(10.0, 10000.0)
+    } / 100.0;
     timing_beat_length * bpm_multiplier
 }
 
 fn taiko_slider_multiplier(beatmap: &Beatmap) -> f64 {
-    f64::max(
-        0.4,
-        f64::min(3.6, beatmap.difficulty.get_f64_or("SliderMultiplier", 1.4)),
-    )
+    let multiplier = beatmap.difficulty.get_f64_or("SliderMultiplier", 1.4);
+    if multiplier.is_nan() {
+        3.6
+    } else {
+        multiplier.clamp(0.4, 3.6)
+    }
 }
 
 fn taiko_slider_tick_rate(beatmap: &Beatmap) -> f64 {
-    f64::max(
-        0.5,
-        f64::min(8.0, beatmap.difficulty.get_f64_or("SliderTickRate", 1.0)),
-    )
+    let tick_rate = beatmap.difficulty.get_f64_or("SliderTickRate", 1.0);
+    if tick_rate.is_nan() {
+        8.0
+    } else {
+        tick_rate.clamp(0.5, 8.0)
+    }
 }

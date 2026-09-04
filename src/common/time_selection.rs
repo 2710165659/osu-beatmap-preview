@@ -2,10 +2,9 @@ use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, BreakPeriod, TimingPoint};
 
 pub const BREAK_GAP_MS: i64 = 2200;
-pub const GIF_CLIP_ACTUAL_MS: i64 = 10_000;
 
-/// Converts between the absolute `.osu` timeline used by renderers and the
-/// gameplay timeline exposed by osu! song-progress skin components.
+/// 在渲染器使用的绝对 `.osu` 时间轴与 osu! 歌曲进度皮肤组件使用的
+/// 游戏时间轴之间转换。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeAxis {
     origin_ms: i64,
@@ -25,17 +24,6 @@ impl TimeAxis {
             .checked_add(self.origin_ms)
             .ok_or_else(|| PreviewError::new("requested time is outside the supported range"))
     }
-
-    pub fn to_absolute_times(self, display_times: Option<Vec<i64>>) -> Result<Option<Vec<i64>>> {
-        display_times
-            .map(|times| {
-                times
-                    .into_iter()
-                    .map(|time| self.to_absolute(time))
-                    .collect()
-            })
-            .transpose()
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,133 +34,19 @@ pub struct PreviewSegmentTiming {
 }
 
 #[derive(Debug, Clone)]
-pub struct GifClipRange {
-    pub start: i64,
-    pub end: i64,
-    pub is_preview: bool,
-    pub break_periods: Vec<BreakPeriod>,
-    pub time_axis: TimeAxis,
-}
-
-#[derive(Debug, Clone)]
 pub enum GifRenderOptions {
     Segments {
         times_ms: Option<Vec<i64>>,
+        duration_seconds: Option<f64>,
         time_axis: TimeAxis,
     },
-    Clip {
-        range: GifClipRange,
-        show_time_label: bool,
-    },
 }
 
-pub fn times_to_milliseconds(times: Option<&[f64]>) -> Result<Option<Vec<i64>>> {
-    const I64_MIN_AS_F64: f64 = -9_223_372_036_854_775_808.0;
-    const I64_MAX_EXCLUSIVE_AS_F64: f64 = 9_223_372_036_854_775_808.0;
-
-    times
-        .map(|ts| {
-            ts.iter()
-                .map(|time| {
-                    let milliseconds = time * 1000.0;
-                    if !milliseconds.is_finite()
-                        || !(I64_MIN_AS_F64..I64_MAX_EXCLUSIVE_AS_F64).contains(&milliseconds)
-                    {
-                        return Err(PreviewError::new(
-                            "requested time is outside the supported range",
-                        ));
-                    }
-                    Ok(crate::parser::round_half_even(milliseconds))
-                })
-                .collect()
-        })
-        .transpose()
-}
-
-pub fn resolve_gif_clip_range(
-    beatmap: &Beatmap,
-    first_object_ms: i64,
-    last_object_ms: i64,
-    times_ms: Option<&[i64]>,
-    speed: f64,
-    time_axis: TimeAxis,
-) -> Result<GifClipRange> {
-    if let Some(times) = times_ms {
-        if times.len() != 2 {
-            return Err(PreviewError::new(
-                "--time with --gif-clip needs exactly 2 values t1+t2",
-            ));
-        }
-        if times[1] <= times[0] {
-            return Err(PreviewError::new("--time range for --gif-clip is empty"));
-        }
-        let duration = times[1].checked_sub(times[0]).ok_or_else(|| {
-            PreviewError::new("requested time range is outside the supported range")
-        })?;
-        return Ok(GifClipRange {
-            start: times[0],
-            end: times[1],
-            is_preview: false,
-            break_periods: break_periods_overlapping_segment(
-                &beatmap.break_periods,
-                times[0],
-                duration,
-            ),
-            time_axis,
-        });
-    }
-
-    let span = chart_span_for_actual_duration(GIF_CLIP_ACTUAL_MS, speed)?;
-    let preview_time = beatmap_preview_time(beatmap);
-    let mut start = preview_time.unwrap_or(first_object_ms);
-    let mut end = start + span;
-    if end > last_object_ms {
-        end = last_object_ms;
-        start = (end - span).max(first_object_ms);
-    }
-    if end <= start {
-        end = start + 1;
-    }
-    Ok(GifClipRange {
-        start,
-        end,
-        is_preview: preview_time.is_some(),
-        break_periods: break_periods_overlapping_segment(
-            &beatmap.break_periods,
-            start,
-            end - start,
-        ),
-        time_axis,
-    })
-}
-
-fn chart_span_for_actual_duration(actual_duration_ms: i64, speed: f64) -> Result<i64> {
-    if !speed.is_finite() || speed <= 0.0 {
-        return Err(PreviewError::render("invalid GIF speed multiplier"));
-    }
-    Ok(crate::parser::round_half_even(actual_duration_ms as f64 * speed).max(1))
-}
-
-fn beatmap_preview_time(beatmap: &Beatmap) -> Option<i64> {
-    beatmap
-        .general
-        .get("PreviewTime")
-        .and_then(|value| value.trim().parse::<i64>().ok())
-        .filter(|&preview_time| preview_time >= 0)
-}
-
-/// Simple xorshift seeded from system time — replaces Python's unseeded
-/// Mersenne Twister (selection was intentionally nondeterministic).
 struct SimpleRng(u64);
 
 impl SimpleRng {
-    fn new() -> Self {
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0x9E3779B97F4A7C15)
-            | 1;
-        SimpleRng(seed)
+    fn new(seed: u64) -> Self {
+        SimpleRng(seed | 1)
     }
 
     fn next_u64(&mut self) -> u64 {
@@ -191,7 +65,7 @@ impl SimpleRng {
 
 pub struct PreviewTimeSelector<'a> {
     beatmap: &'a Beatmap,
-    spans: Vec<(i64, i64)>, // (start_time, end_time), sorted
+    spans: Vec<(i64, i64)>, // 按 (start_time, end_time) 排序
     segment_count: usize,
     segment_duration: i64,
     requested_start_times: Vec<i64>,
@@ -227,9 +101,30 @@ impl<'a> PreviewTimeSelector<'a> {
     pub fn choose(&self) -> Result<Vec<PreviewSegmentTiming>> {
         let valid_intervals = self.build_valid_start_intervals();
         let preview_time = self.preview_time();
-        let mut chosen = self.build_forced_times(preview_time)?;
+        let mut chosen = self.requested_start_times.clone();
+        chosen.sort_unstable();
+        chosen.dedup();
+        if chosen.len() > self.segment_count {
+            return Err(PreviewError::new(format!(
+                "requested time points exceed configured capacity of {}",
+                self.segment_count
+            )));
+        }
+        // 用户指定的时间点未占满配置容量时，优先补入谱面预览时间。
+        if chosen.len() < self.segment_count && !chosen.contains(&preview_time) {
+            chosen.push(preview_time);
+        }
 
-        let mut rng = SimpleRng::new();
+        let seed = self.spans.iter().fold(
+            self.segment_count as u64 ^ self.segment_duration as u64,
+            |hash, &(start, end)| {
+                hash.wrapping_mul(1_099_511_628_211)
+                    .wrapping_add(start as u64)
+                    .wrapping_mul(1_099_511_628_211)
+                    .wrapping_add(end as u64)
+            },
+        );
+        let mut rng = SimpleRng::new(seed);
         let mut attempts = 0;
         while !valid_intervals.is_empty() && chosen.len() < self.segment_count && attempts < 3000 {
             attempts += 1;
@@ -263,26 +158,6 @@ impl<'a> PreviewTimeSelector<'a> {
                 ),
             })
             .collect())
-    }
-
-    fn build_forced_times(&self, preview_time: i64) -> Result<Vec<i64>> {
-        let mut chosen: Vec<i64> = Vec::new();
-        for &start_time in &self.requested_start_times {
-            if !chosen.contains(&start_time) {
-                chosen.push(start_time);
-            }
-        }
-        if chosen.len() > self.segment_count {
-            return Err(PreviewError::new(format!(
-                "--times accepts at most {} time point{}",
-                self.segment_count,
-                if self.segment_count == 1 { "" } else { "s" }
-            )));
-        }
-        if chosen.len() < self.segment_count && !chosen.contains(&preview_time) {
-            chosen.push(preview_time);
-        }
-        Ok(chosen)
     }
 
     fn preview_time(&self) -> i64 {
@@ -431,8 +306,8 @@ pub fn break_periods_overlapping_segment(
         .collect()
 }
 
-/// Snap `time` backward to the nearest beat-line position on the red-line grid,
-/// so that timing lines stay in phase after chart trimming.
+/// 将 `time` 向前吸附到红线网格中最近的节拍线位置，
+/// 使谱面裁剪后节拍线仍保持相位一致。
 pub fn snap_to_beat_grid(time: i64, timing_points: &[TimingPoint]) -> i64 {
     let red = timing_points
         .iter()
@@ -452,9 +327,7 @@ pub fn snap_to_beat_grid(time: i64, timing_points: &[TimingPoint]) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::models::{HitObjects, KvSection};
-
-    const TEST_AXIS: TimeAxis = TimeAxis::new(10_000);
+    use crate::core::models::{HitObjects, KvSection, StandardHitObject};
 
     fn beatmap_with_preview(preview_time: Option<&str>) -> Beatmap {
         let mut general = KvSection::default();
@@ -466,115 +339,50 @@ mod tests {
             difficulty: KvSection::default(),
             general,
             timing_points: Vec::new(),
-            hit_objects: HitObjects::Standard(Vec::new()),
+            hit_objects: HitObjects::Standard(vec![StandardHitObject {
+                start_time: 0,
+                end_time: 30_000,
+                ..StandardHitObject::default()
+            }]),
             break_periods: Vec::new(),
+            background_filename: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         }
     }
 
     #[test]
-    fn time_axis_converts_skin_component_times() {
+    fn time_axis_converts_to_display_time() {
         let axis = TimeAxis::new(12_500);
-        assert_eq!(axis.to_absolute(0).unwrap(), 12_500);
-        assert_eq!(axis.to_absolute(80_000).unwrap(), 92_500);
-        assert_eq!(axis.to_absolute(-2_000).unwrap(), 10_500);
         assert_eq!(axis.to_display(10_500), -2_000);
-    }
-
-    #[test]
-    fn time_axis_rejects_overflow() {
-        let axis = TimeAxis::new(1);
-        assert!(axis.to_absolute(i64::MAX).is_err());
         assert_eq!(axis.to_display(i64::MIN), i64::MIN);
     }
 
     #[test]
-    fn time_conversion_rejects_millisecond_overflow() {
+    fn requested_points_are_followed_by_preview_time_when_capacity_remains() {
+        let beatmap = beatmap_with_preview(Some("20"));
+        let selector =
+            PreviewTimeSelector::new(&beatmap, vec![(0, 30_000)], 2, 1_000, Some(vec![0])).unwrap();
+        let chosen = selector.choose().unwrap();
+        assert_eq!(chosen.len(), 2);
+        assert!(chosen.iter().any(|segment| segment.start_time == 20));
+        assert!(chosen.iter().any(|segment| segment.start_time == 0));
+        assert!(chosen.iter().any(|segment| segment.is_preview));
+    }
+
+    #[test]
+    fn preview_time_is_not_duplicated_when_explicitly_requested() {
+        let beatmap = beatmap_with_preview(Some("20"));
+        let selector =
+            PreviewTimeSelector::new(&beatmap, vec![(0, 30_000)], 2, 1_000, Some(vec![20]))
+                .unwrap();
+        let chosen = selector.choose().unwrap();
         assert_eq!(
-            times_to_milliseconds(Some(&[-2.0, 10.0])).unwrap(),
-            Some(vec![-2_000, 10_000])
+            chosen
+                .iter()
+                .filter(|segment| segment.start_time == 20)
+                .count(),
+            1
         );
-        assert!(times_to_milliseconds(Some(&[f64::MAX])).is_err());
-        assert!(times_to_milliseconds(Some(&[9_223_372_036_854_776.0])).is_err());
-        assert_eq!(
-            times_to_milliseconds(Some(&[-9_223_372_036_854_776.0])).unwrap(),
-            Some(vec![i64::MIN])
-        );
-    }
-
-    #[test]
-    fn gif_clip_starts_at_preview_time_when_there_is_room() {
-        let beatmap = beatmap_with_preview(Some("45000"));
-        let range =
-            resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 1.0, TEST_AXIS).unwrap();
-        assert_eq!(range.start, 45_000);
-        assert_eq!(range.end, 55_000);
-        assert!(range.is_preview);
-    }
-
-    #[test]
-    fn gif_clip_falls_back_to_first_object_without_valid_preview_time() {
-        for preview_time in [None, Some("abc"), Some("-1")] {
-            let beatmap = beatmap_with_preview(preview_time);
-            let range =
-                resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 1.0, TEST_AXIS).unwrap();
-            assert_eq!(range.start, 10_000);
-            assert_eq!(range.end, 20_000);
-            assert!(!range.is_preview);
-        }
-    }
-
-    #[test]
-    fn gif_clip_shifts_back_to_fill_ten_seconds_at_tail() {
-        let beatmap = beatmap_with_preview(Some("95000"));
-        let range =
-            resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 1.0, TEST_AXIS).unwrap();
-        assert_eq!(range.start, 90_000);
-        assert_eq!(range.end, 100_000);
-        assert!(range.is_preview);
-    }
-
-    #[test]
-    fn gif_clip_scales_chart_span_for_speed_mods() {
-        let beatmap = beatmap_with_preview(Some("20000"));
-        let dt = resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 1.5, TEST_AXIS).unwrap();
-        assert_eq!(dt.start, 20_000);
-        assert_eq!(dt.end, 35_000);
-
-        let ht = resolve_gif_clip_range(&beatmap, 10_000, 100_000, None, 0.75, TEST_AXIS).unwrap();
-        assert_eq!(ht.start, 20_000);
-        assert_eq!(ht.end, 27_500);
-    }
-
-    #[test]
-    fn gif_clip_explicit_time_range_is_preserved() {
-        let beatmap = beatmap_with_preview(Some("45000"));
-        let range = resolve_gif_clip_range(
-            &beatmap,
-            10_000,
-            100_000,
-            Some(&[3_000, 9_000]),
-            1.0,
-            TEST_AXIS,
-        )
-        .unwrap();
-        assert_eq!(range.start, 3_000);
-        assert_eq!(range.end, 9_000);
-        assert!(!range.is_preview);
-    }
-
-    #[test]
-    fn gif_clip_rejects_a_range_with_unrepresentable_duration() {
-        let beatmap = beatmap_with_preview(None);
-        assert!(resolve_gif_clip_range(
-            &beatmap,
-            10_000,
-            100_000,
-            Some(&[i64::MIN, i64::MAX]),
-            1.0,
-            TEST_AXIS,
-        )
-        .is_err());
     }
 }

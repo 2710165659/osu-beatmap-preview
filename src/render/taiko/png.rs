@@ -7,6 +7,7 @@ use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::{Beatmap, TaikoHitObject};
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
 use crate::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::composer;
@@ -57,22 +58,29 @@ pub(crate) fn render_taiko_grid(
     beatmap: &Beatmap,
     output_path: &Path,
     mods: Option<&ModSettings>,
-    gap: Option<f64>,
     time_axis: TimeAxis,
+    deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
+    deadline.check()?;
     let mut hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
         return Err(PreviewError::render("taiko beatmap has no hit objects"));
     }
 
     let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap();
-    if chart_end_time >= MAX_SUPPORTED_DURATION_MS {
+    if chart_end_time
+        >= crate::config::current()
+            .layout
+            .taiko
+            .png
+            .MAX_SUPPORTED_DURATION_MS
+    {
         return Err(PreviewError::render(
             "songs longer than 10 minutes are not supported",
         ));
     }
 
-    // Always trim leading silence, starting directly from the first note.
+    // 始终裁剪开头的静音，直接从第一个音符开始。
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let chart_start_time =
         crate::common::time_selection::snap_to_beat_grid(first_note_time, &beatmap.timing_points);
@@ -102,22 +110,19 @@ pub(crate) fn render_taiko_grid(
         &spacing_timing_points,
         effective_chart_end_time,
         slider_multiplier,
-        gap.unwrap_or(SPACING_BPM),
+        crate::config::current().layout.taiko.png.SPACING_PER_BPM,
     );
     let redline_sections = build_redline_sections(&timing_points, effective_chart_end_time);
     let kiai_sections = build_kiai_sections(&timing_points, effective_chart_end_time);
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
-    let mut timing_lines = build_timing_lines(
+    let timing_lines = build_timing_lines(
         &redline_sections,
         &mapper,
-        MIN_BEAT_LINE_SPACING,
+        crate::render::taiko::constants::MIN_BEAT_LINE_SPACING,
         &kiai_sections,
         first_note_time,
         time_axis.to_display(chart_start_time),
     );
-    if let Some(first_visible) = timing_lines.iter_mut().find(|line| line.show_label) {
-        first_visible.bpm = crate::render::timing::bpm_at(&timing_points, first_visible.time);
-    }
     let layout = build_png_layout(
         effective_chart_end_time,
         mapper.end_position(),
@@ -126,31 +131,54 @@ pub(crate) fn render_taiko_grid(
         chart_start_time,
     );
     let sv_changes = build_sv_changes(&timing_points, effective_chart_end_time, &mapper);
+    deadline.check()?;
 
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
-        IMAGE_BACKGROUND,
+        crate::config::current().layout.taiko.png.IMAGE_BACKGROUND,
     );
 
-    // Pre-render track background strip — identical for every row.
+    // 预渲染轨道背景条，每一行都相同。
     let track_bg = {
-        let mut bg = Img::new(layout.content_width as u32, ROW_HEIGHT as u32, [0, 0, 0, 0]);
-        draw_track_background(&mut bg, 0, 0, layout.content_width, ROW_HEIGHT);
+        let mut bg = Img::new(
+            layout.content_width as u32,
+            crate::config::current().layout.taiko.png.ROW_HEIGHT as u32,
+            [0, 0, 0, 0],
+        );
+        draw_track_background(
+            &mut bg,
+            0,
+            0,
+            layout.content_width,
+            crate::config::current().layout.taiko.png.ROW_HEIGHT,
+        );
         bg
     };
 
     for row_index in 0..layout.row_count {
+        deadline.check()?;
         let row_top = png_row_top(row_index);
-        image.alpha_composite(&track_bg, PAGE_MARGIN_X, row_top);
+        image.alpha_composite(
+            &track_bg,
+            crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT,
+            row_top,
+        );
     }
 
     let mut last_label_time: Option<i64> = None;
     for timing_line in timing_lines.iter().rev() {
+        deadline.check()?;
         let mut tl = timing_line.clone();
-        if tl.show_label && tl.bpm.is_none() {
+        if tl.show_label {
             if let Some(prev) = last_label_time {
-                if (tl.time - prev).abs() < TIME_LABEL_MIN_INTERVAL_MS {
+                if (tl.time - prev).abs()
+                    < crate::config::current()
+                        .layout
+                        .taiko
+                        .png
+                        .TIME_LABEL_MIN_INTERVAL_MS
+                {
                     tl.show_label = false;
                 }
             }
@@ -163,11 +191,14 @@ pub(crate) fn render_taiko_grid(
 
     draw_sv_indicators(&mut image, &sv_changes, &layout);
 
-    for hit_object in hit_objects.iter().rev() {
+    for (index, hit_object) in hit_objects.iter().rev().enumerate() {
+        if index % 1024 == 0 {
+            deadline.check()?;
+        }
         draw_hit_object(&mut image, hit_object, &mapper, &layout, &mut cache);
     }
 
-    composer::save_png(&image, output_path)?;
+    composer::save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
 }
 
@@ -211,7 +242,7 @@ fn build_png_layout(
     chart_start_time: i64,
 ) -> RenderLayout {
     let base_row_width = resolve_base_row_width(beatmap_duration);
-    let bpm_width_multiplier = if SPACING_BPM > 0.0 {
+    let bpm_width_multiplier = if crate::config::current().layout.taiko.png.SPACING_PER_BPM > 0.0 {
         1.0
     } else {
         resolve_row_width_bpm_multiplier(redline_sections)
@@ -241,12 +272,28 @@ fn build_png_layout(
     }
     let used_row_width = (used_row_width.ceil() as i64).clamp(1, max_row_width);
 
-    let content_width = ROW_INNER_PADDING_X * 2 + used_row_width;
-    let image_width = PAGE_MARGIN_X * 2 + content_width;
-    let image_height =
-        PAGE_MARGIN_Y * 2 + FIRST_ROW_SV_TOP_MARGIN + row_count * ROW_HEIGHT + row_count * ROW_GAP;
-    let normal_note_diameter = pyround(ROW_HEIGHT as f64 * NORMAL_NOTE_SIZE_RATIO);
-    let big_note_diameter = pyround(normal_note_diameter as f64 * BIG_NOTE_SCALE);
+    let content_width = crate::config::current()
+        .layout
+        .taiko
+        .png
+        .ROW_INNER_PADDING_X
+        * 2
+        + used_row_width;
+    let image_width = crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT
+        + crate::config::current().layout.taiko.png.PAGE_MARGIN_RIGHT
+        + content_width;
+    let config = &crate::config::current().layout.taiko.png;
+    let image_height = config.PAGE_MARGIN_TOP
+        + config.PAGE_MARGIN_BOTTOM
+        + config.INFO_MARGIN_TOP
+        + row_count * (config.ROW_HEIGHT + config.INFO_MARGIN_BOTTOM)
+        + (row_count - 1).max(0) * config.ROW_GAP;
+    let normal_note_diameter = pyround(
+        crate::config::current().layout.taiko.png.ROW_HEIGHT as f64
+            * crate::render::taiko::constants::NORMAL_NOTE_SIZE_RATIO,
+    );
+    let big_note_diameter =
+        pyround(normal_note_diameter as f64 * crate::render::taiko::constants::BIG_NOTE_SCALE);
     RenderLayout {
         row_count,
         max_row_width,
@@ -262,43 +309,87 @@ fn build_png_layout(
 
 fn resolve_base_row_width(beatmap_duration: i64) -> i64 {
     if beatmap_duration < 60_000 {
-        return BASE_ROW_WIDTH_0_TO_1_MIN;
+        return crate::config::current()
+            .layout
+            .taiko
+            .png
+            .BASE_ROW_WIDTH_0_TO_1_MINUTES;
     }
     if beatmap_duration < 2 * 60_000 {
-        return BASE_ROW_WIDTH_1_TO_2_MIN;
+        return crate::config::current()
+            .layout
+            .taiko
+            .png
+            .BASE_ROW_WIDTH_1_TO_2_MINUTES;
     }
     if beatmap_duration < 3 * 60_000 {
-        return BASE_ROW_WIDTH_2_TO_3_MIN;
+        return crate::config::current()
+            .layout
+            .taiko
+            .png
+            .BASE_ROW_WIDTH_2_TO_3_MINUTES;
     }
     if beatmap_duration < 4 * 60_000 {
-        return BASE_ROW_WIDTH_3_TO_4_MIN;
+        return crate::config::current()
+            .layout
+            .taiko
+            .png
+            .BASE_ROW_WIDTH_3_TO_4_MINUTES;
     }
     if beatmap_duration < 5 * 60_000 {
-        return BASE_ROW_WIDTH_4_TO_5_MIN;
+        return crate::config::current()
+            .layout
+            .taiko
+            .png
+            .BASE_ROW_WIDTH_4_TO_5_MINUTES;
     }
     if beatmap_duration < 6 * 60_000 {
-        return BASE_ROW_WIDTH_5_TO_6_MIN;
+        return crate::config::current()
+            .layout
+            .taiko
+            .png
+            .BASE_ROW_WIDTH_5_TO_6_MINUTES;
     }
-    BASE_ROW_WIDTH_6_TO_10_MIN
+    crate::config::current()
+        .layout
+        .taiko
+        .png
+        .BASE_ROW_WIDTH_6_TO_10_MINUTES
 }
 
 fn resolve_row_width_bpm_multiplier(redline_sections: &[RedlineSection]) -> f64 {
     let main_bpm = resolve_main_bpm(redline_sections);
     if main_bpm < 180.0 {
-        return ROW_WIDTH_BPM_0_TO_180;
+        return crate::config::current()
+            .layout
+            .taiko
+            .png
+            .ROW_WIDTH_MULTIPLIER_BPM_0_TO_180;
     }
     if main_bpm < 240.0 {
-        return ROW_WIDTH_BPM_180_TO_240;
+        return crate::config::current()
+            .layout
+            .taiko
+            .png
+            .ROW_WIDTH_MULTIPLIER_BPM_180_TO_240;
     }
     if main_bpm < 300.0 {
-        return ROW_WIDTH_BPM_240_TO_300;
+        return crate::config::current()
+            .layout
+            .taiko
+            .png
+            .ROW_WIDTH_MULTIPLIER_BPM_240_TO_300;
     }
-    ROW_WIDTH_BPM_300_PLUS
+    crate::config::current()
+        .layout
+        .taiko
+        .png
+        .ROW_WIDTH_MULTIPLIER_BPM_300_PLUS
 }
 
 fn resolve_main_bpm(redline_sections: &[RedlineSection]) -> f64 {
-    // Weight each rounded BPM by section duration; pick the dominant one
-    // (first-inserted wins ties, like Python's max over insertion order).
+    // 按区段时长对四舍五入后的 BPM 加权，选择占比最大的值。
+    // 相同权重时取先插入的值，匹配 Python 按插入顺序执行 max 的行为。
     let mut order: Vec<i64> = Vec::new();
     let mut weighted: HashMap<i64, i64> = HashMap::new();
     for section in redline_sections {
@@ -324,23 +415,26 @@ fn resolve_main_bpm(redline_sections: &[RedlineSection]) -> f64 {
     best_bpm as f64
 }
 
-// ─── row helpers ───
+// ─── 行辅助函数 ───
 
 fn png_row_top(row_index: i64) -> i64 {
-    let base = PAGE_MARGIN_Y + row_index * (ROW_HEIGHT + ROW_GAP);
-    if row_index == 0 {
-        base + FIRST_ROW_SV_TOP_MARGIN
-    } else {
-        base
-    }
+    let config = &crate::config::current().layout.taiko.png;
+    config.PAGE_MARGIN_TOP
+        + config.INFO_MARGIN_TOP
+        + row_index * (config.ROW_HEIGHT + config.INFO_MARGIN_BOTTOM + config.ROW_GAP)
 }
 
 fn png_row_center_y(row_index: i64) -> i64 {
-    png_row_top(row_index) + ROW_HEIGHT / 2
+    png_row_top(row_index) + crate::config::current().layout.taiko.png.ROW_HEIGHT / 2
 }
 
 fn png_row_chart_left(_layout: &RenderLayout, _row_index: i64) -> i64 {
-    PAGE_MARGIN_X + ROW_INNER_PADDING_X
+    crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT
+        + crate::config::current()
+            .layout
+            .taiko
+            .png
+            .ROW_INNER_PADDING_X
 }
 
 // ─── 行背景（已预渲染为 track_bg，逐行 alpha_composite） ───
@@ -360,12 +454,24 @@ fn draw_timing_line(
     }
     let line_x = pyround(png_row_chart_left(layout, row_index) as f64 + local_position);
     let line_y0 = png_row_top(row_index);
-    let line_y1 = line_y0 + ROW_HEIGHT;
+    let line_y1 = line_y0 + crate::config::current().layout.taiko.png.ROW_HEIGHT;
 
     if timing_line.is_measure {
-        image.fill_rect(line_x, line_y0, line_x + 1, line_y1, MEASURE_LINE_COLOR);
+        image.fill_rect(
+            line_x,
+            line_y0,
+            line_x + 1,
+            line_y1,
+            crate::config::current().layout.taiko.png.MEASURE_LINE_COLOR,
+        );
     } else {
-        image.set_rect(line_x, line_y0, line_x, line_y1, BEAT_LINE_COLOR);
+        image.set_rect(
+            line_x,
+            line_y0,
+            line_x,
+            line_y1,
+            crate::config::current().layout.taiko.png.BEAT_LINE_COLOR,
+        );
     }
 
     if timing_line.show_label {
@@ -390,56 +496,118 @@ fn draw_time_label(
         None
     };
     let label_color = if timing_line.is_kiai {
-        ACCENT_LABEL_COLOR
+        crate::config::current().layout.taiko.png.ACCENT_LABEL_COLOR
     } else {
-        RULER_TEXT_COLOR
+        crate::config::current().layout.taiko.png.RULER_TEXT_COLOR
     };
-    let (label_width, label_height) = text_size(&label, TIME_LABEL_FONT_SIZE);
+    let (label_width, label_height) = text_size(
+        &label,
+        crate::config::current()
+            .layout
+            .taiko
+            .png
+            .TIME_LABEL_FONT_SIZE,
+    );
     let label_x = pyround(line_x as f64 - label_width as f64 / 2.0)
-        .min(PAGE_MARGIN_X + layout.content_width - label_width as i64 - LABEL_RIGHT_PADDING)
-        .max(PAGE_MARGIN_X);
-    let label_y = row_top + ROW_HEIGHT + TIME_LABEL_TOP_GAP;
+        .min(
+            crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT + layout.content_width
+                - label_width as i64
+                - crate::config::current()
+                    .layout
+                    .taiko
+                    .png
+                    .LABEL_RIGHT_PADDING,
+        )
+        .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT);
+    let label_y = row_top
+        + crate::config::current().layout.taiko.png.ROW_HEIGHT
+        + crate::config::current().layout.taiko.png.TIME_LABEL_TOP_GAP;
 
     draw_text(
         image,
         label_x,
         label_y,
         &label,
-        TIME_LABEL_FONT_SIZE,
+        crate::config::current()
+            .layout
+            .taiko
+            .png
+            .TIME_LABEL_FONT_SIZE,
         label_color,
     );
 
     let mut next_y = label_y + label_height as i64;
     if let Some(note) = note {
-        let (note_width, note_height) = text_size(note, TIME_LABEL_NOTE_FONT_SIZE);
+        let (note_width, note_height) = text_size(
+            note,
+            crate::config::current()
+                .layout
+                .taiko
+                .png
+                .TIME_LABEL_NOTE_FONT_SIZE,
+        );
         let note_x = pyround(line_x as f64 - note_width as f64 / 2.0)
-            .min(PAGE_MARGIN_X + layout.content_width - note_width as i64 - LABEL_RIGHT_PADDING)
-            .max(PAGE_MARGIN_X);
-        let note_y = label_y + label_height as i64 + TIME_LABEL_NOTE_TOP_GAP;
+            .min(
+                crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT + layout.content_width
+                    - note_width as i64
+                    - crate::config::current()
+                        .layout
+                        .taiko
+                        .png
+                        .LABEL_RIGHT_PADDING,
+            )
+            .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT);
+        let note_y = next_y
+            + crate::config::current()
+                .layout
+                .taiko
+                .png
+                .TIME_LABEL_NOTE_TOP_GAP;
         draw_text(
             image,
             note_x,
             note_y,
             note,
-            TIME_LABEL_NOTE_FONT_SIZE,
-            ACCENT_LABEL_COLOR,
+            crate::config::current()
+                .layout
+                .taiko
+                .png
+                .TIME_LABEL_NOTE_FONT_SIZE,
+            crate::config::current().layout.taiko.png.ACCENT_LABEL_COLOR,
         );
         next_y = note_y + note_height as i64;
     }
 
     if let Some(bpm) = timing_line.bpm {
-        let bpm_label = crate::render::timing::format_bpm(bpm);
-        let (bpm_width, _) = text_size(&bpm_label, BPM_FONT_SIZE);
+        let bpm_label = format!("{bpm:.0}BPM");
+        let (bpm_width, _) = text_size(
+            &bpm_label,
+            crate::config::current().layout.taiko.png.BPM_FONT_SIZE,
+        );
         let bpm_x = pyround(line_x as f64 - bpm_width as f64 / 2.0)
-            .min(PAGE_MARGIN_X + layout.content_width - bpm_width as i64 - LABEL_RIGHT_PADDING)
-            .max(PAGE_MARGIN_X);
+            .min(
+                crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT + layout.content_width
+                    - bpm_width as i64
+                    - crate::config::current()
+                        .layout
+                        .taiko
+                        .png
+                        .LABEL_RIGHT_PADDING,
+            )
+            .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_LEFT);
+        let bpm_y = next_y + crate::config::current().layout.taiko.png.BPM_TOP_GAP;
+        let bpm_color = if timing_line.is_kiai {
+            crate::config::current().layout.taiko.png.ACCENT_LABEL_COLOR
+        } else {
+            crate::config::current().layout.taiko.png.RULER_TEXT_COLOR
+        };
         draw_text(
             image,
             bpm_x,
-            next_y + BPM_TOP_GAP,
+            bpm_y,
             &bpm_label,
-            BPM_FONT_SIZE,
-            crate::render::timing::BPM_LABEL_COLOR,
+            crate::config::current().layout.taiko.png.BPM_FONT_SIZE,
+            bpm_color,
         );
     }
 }
@@ -453,17 +621,22 @@ fn draw_sv_indicators(image: &mut Img, sv_changes: &[SvChange], layout: &RenderL
         let row_top = png_row_top(row_index);
 
         let label = format_sv_label(sv_change.sv);
-        let (label_width, label_height) = text_size(&label, SV_TEXT_FONT_SIZE);
+        let (label_width, label_height) = text_size(
+            &label,
+            crate::config::current().layout.taiko.png.SV_TEXT_FONT_SIZE,
+        );
 
         let label_x = pyround(x as f64 - label_width as f64 / 2.0);
-        let label_y = (row_top - SV_TOP_GAP - label_height as i64).max(PAGE_MARGIN_Y);
+        let label_y =
+            (row_top - crate::config::current().layout.taiko.png.SV_TOP_GAP - label_height as i64)
+                .max(crate::config::current().layout.taiko.png.PAGE_MARGIN_TOP);
         draw_text(
             image,
             label_x,
             label_y,
             &label,
-            SV_TEXT_FONT_SIZE,
-            SV_TEXT_COLOR,
+            crate::config::current().layout.taiko.png.SV_TEXT_FONT_SIZE,
+            crate::config::current().layout.taiko.png.SV_TEXT_COLOR,
         );
     }
 }
@@ -477,7 +650,7 @@ fn format_sv_label(sv: f64) -> String {
     }
 }
 
-// ─── hit object drawing ───
+// ─── 音符绘制 ───
 
 fn draw_hit_object(
     image: &mut Img,
@@ -494,7 +667,7 @@ fn draw_hit_object(
             layout,
             cache,
             true,
-            SWELL_COLOR,
+            crate::render::taiko::constants::SWELL_COLOR,
             true,
         );
         return;
@@ -508,7 +681,7 @@ fn draw_hit_object(
             layout,
             cache,
             is_big_roll,
-            ROLL_COLOR,
+            crate::render::taiko::constants::ROLL_COLOR,
             false,
         );
         return;
@@ -535,9 +708,9 @@ fn draw_circle_object(
         layout.normal_note_diameter
     };
     let color = if is_rim {
-        RIM_NOTE_COLOR
+        crate::render::taiko::constants::RIM_NOTE_COLOR
     } else {
-        CENTRE_NOTE_COLOR
+        crate::render::taiko::constants::CENTRE_NOTE_COLOR
     };
 
     draw_note_disc(image, cache, color, diameter, center_x, center_y, false);
@@ -566,9 +739,9 @@ fn draw_span_object(
         layout.normal_note_diameter
     };
     let body_ratio = if is_swell {
-        SWELL_BODY_HEIGHT_RATIO
+        crate::render::taiko::constants::SWELL_BODY_HEIGHT_RATIO
     } else {
-        SPAN_BODY_HEIGHT_RATIO
+        crate::render::taiko::constants::SPAN_BODY_HEIGHT_RATIO
     };
     let body_height = pyround(head_diameter as f64 * body_ratio);
 

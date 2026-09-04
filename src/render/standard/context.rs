@@ -1,4 +1,4 @@
-//! Render context, difficulty, skin, combo info, row timing, visible indexes.
+//! 渲染上下文、难度、皮肤、连击信息、行时间和可见索引。
 
 use crate::common::time_selection::{PreviewTimeSelector, TimeAxis};
 use crate::core::errors::{PreviewError, Result};
@@ -9,10 +9,9 @@ use crate::render::canvas::Img;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::constants::*;
 use super::slider::SliderRenderData;
 
-// ——— helpers ———
+// ——— 辅助函数 ———
 
 #[inline]
 pub(crate) fn py_round(v: f64) -> i64 {
@@ -24,13 +23,15 @@ pub(crate) fn color_id(base: u64, color: [u8; 3]) -> u64 {
     base | (color[0] as u64) << 32 | (color[1] as u64) << 40 | (color[2] as u64) << 48
 }
 
-// ——— data structs ———
+// ——— 数据结构 ———
 
 #[derive(Clone, Copy)]
 pub(crate) struct FrameLayout {
     pub(crate) playfield_left: f64,
     pub(crate) playfield_top: f64,
     pub(crate) scale: f64,
+    pub(crate) frame_width: i64,
+    pub(crate) frame_height: i64,
 }
 
 #[derive(Clone, Copy)]
@@ -42,6 +43,7 @@ pub(crate) struct ComboInfo {
 #[derive(Clone, Copy)]
 pub(crate) struct RenderSettings {
     pub(crate) circle_diameter: i64,
+    pub(crate) object_scale: f64,
     pub(crate) preempt_ms: i64,
     pub(crate) fade_in_ms: f64,
     pub(crate) hidden: bool,
@@ -62,15 +64,16 @@ pub(crate) struct RenderCache {
     pub(crate) slider_body_alpha_layers: HashMap<(usize, u8), Img>,
     pub(crate) reverse_arrows: HashMap<(i64, [u8; 3]), Img>,
     pub(crate) reverse_edges: HashMap<(i64,), Img>,
+    pub(crate) slider_tick_sprites: HashMap<(i64, [u8; 3]), Img>,
 }
 
 /// std 渲染使用的皮肤参数。
 pub(crate) struct Skin {
     /// 0-9 数字位图（程序化生成，已裁剪到字形边界）。
     pub(crate) digit_crops: Vec<&'static Img>,
-    /// combo 数字重叠量（来自 skin.ini [Fonts] HitCircleOverlap）。
+    /// combo 数字重叠量（来自 skin 配置 HIT_CIRCLE_OVERLAP）。
     pub(crate) hitcircle_overlap: i64,
-    /// combo 颜色（谱面 [Colours] 优先，否则用 skin.ini 的配色）。
+    /// combo 颜色（谱面 [Colours] 优先，否则用 skin 配置的配色）。
     pub(crate) combo_colors: Vec<[u8; 3]>,
 }
 
@@ -85,7 +88,12 @@ pub(crate) struct RenderContext {
     pub(crate) spinner_size: i64,
     pub(crate) slider_follow_size: i64,
     pub(crate) slider_ball_size: i64,
+    pub(crate) slider_tick_rate: f64,
+    pub(crate) slider_multiplier: f64,
+    /// 每个音符开始时生效的 (beat_length, slider_velocity) 缓存。
+    pub(crate) slider_timings: Vec<(f64, f64)>,
     pub(crate) time_axis: TimeAxis,
+    pub(crate) output_format: crate::render::geometry::OutputFormat,
 }
 
 pub(crate) struct RowTiming {
@@ -94,7 +102,7 @@ pub(crate) struct RowTiming {
     pub(crate) break_periods: Vec<BreakPeriod>,
 }
 
-// ——— object helpers ———
+// ——— 音符对象辅助函数 ———
 
 pub(crate) fn standard_objects(beatmap: &Beatmap) -> Result<Vec<StandardHitObject>> {
     match &beatmap.hit_objects {
@@ -117,28 +125,37 @@ pub(crate) fn apply_standard_object_mods(
     hit_objects
         .into_iter()
         .map(|mut ho| {
-            ho.y = PLAYFIELD_HEIGHT as i32 - ho.y;
+            ho.y = crate::render::standard::constants::PLAYFIELD_HEIGHT as i32 - ho.y;
             ho.slider_points = ho
                 .slider_points
                 .iter()
-                .map(|&(x, y)| (x, PLAYFIELD_HEIGHT as i32 - y))
+                .map(|&(x, y)| {
+                    (
+                        x,
+                        crate::render::standard::constants::PLAYFIELD_HEIGHT as i32 - y,
+                    )
+                })
                 .collect();
             ho
         })
         .collect()
 }
 
-// ——— difficulty ———
+// ——— 难度 ———
 
 struct EffectiveDifficulty {
-    circle_size: f64,
-    approach_rate: f64,
+    circle_size: f32,
+    approach_rate: f32,
 }
 
 fn effective_difficulty(beatmap: &Beatmap, mods: Option<&ModSettings>) -> EffectiveDifficulty {
-    let od = beatmap.difficulty.get_f64_or("OverallDifficulty", 5.0);
-    let mut cs = beatmap.difficulty.get_f64_or("CircleSize", 5.0);
-    let mut ar = beatmap.difficulty.get_f64("ApproachRate").unwrap_or(od);
+    let od = beatmap.difficulty.get_f64_or("OverallDifficulty", 5.0) as f32;
+    let mut cs = beatmap.difficulty.get_f64_or("CircleSize", 5.0) as f32;
+    let mut ar = beatmap
+        .difficulty
+        .get_f64("ApproachRate")
+        .map(|value| value as f32)
+        .unwrap_or(od);
 
     if let Some(m) = mods {
         if m.easy {
@@ -151,10 +168,10 @@ fn effective_difficulty(beatmap: &Beatmap, mods: Option<&ModSettings>) -> Effect
         }
         if m.has_da() {
             if let Some(v) = m.da_cs {
-                cs = v;
+                cs = v as f32;
             }
             if let Some(v) = m.da_ar {
-                ar = v;
+                ar = v as f32;
             }
         }
     }
@@ -169,11 +186,13 @@ pub(crate) fn build_render_settings(
     mods: Option<&ModSettings>,
 ) -> RenderSettings {
     let difficulty = effective_difficulty(beatmap, mods);
-    let scale = (1.0 - 0.7 * ((difficulty.circle_size - 5.0) / 5.0)) / 2.0
-        * BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE;
-    let circle_radius = OBJECT_RADIUS * scale;
+    let difficulty_range = (difficulty.circle_size as f64 - 5.0) / 5.0;
+    let scale = ((1.0 - 0.7_f32 as f64 * difficulty_range) as f32 / 2.0
+        * crate::render::standard::constants::BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE as f32)
+        as f64;
+    let circle_radius = crate::render::standard::constants::OBJECT_RADIUS * scale;
     let circle_diameter = py_round(circle_radius * 2.0).max(1);
-    let preempt_ms = difficulty_range_int(difficulty.approach_rate, 1800, 1200, 450);
+    let preempt_ms = super::stacking::calculate_preempt(difficulty.approach_rate);
     let hidden = mods.map(|m| m.hidden).unwrap_or(false);
     let traceable = mods.map(|m| m.traceable).unwrap_or(false);
     let fade_in_ms = if hidden {
@@ -183,20 +202,11 @@ pub(crate) fn build_render_settings(
     };
     RenderSettings {
         circle_diameter,
+        object_scale: scale,
         preempt_ms,
         fade_in_ms,
         hidden,
         traceable,
-    }
-}
-
-fn difficulty_range_int(difficulty: f64, minimum: i64, middle: i64, maximum: i64) -> i64 {
-    if difficulty > 5.0 {
-        (middle as f64 + (maximum - middle) as f64 * ((difficulty - 5.0) / 5.0)) as i64
-    } else if difficulty < 5.0 {
-        (middle as f64 + (middle - minimum) as f64 * ((difficulty - 5.0) / 5.0)) as i64
-    } else {
-        middle
     }
 }
 
@@ -207,15 +217,21 @@ fn difficulty_range_int(difficulty: f64, minimum: i64, middle: i64, maximum: i64
 /// 得到 819.2×614.4，即 512×384 的 1.6 倍，居中放置并整体下移 8×scale
 /// （与 storyboard 对齐的历史偏移）。本帧 683×384 恰为游戏空间的一半，
 /// 因此缩放为 0.8，上下左右留白与游戏内完全等比。
-pub(crate) fn build_frame_layout() -> FrameLayout {
-    let scale = PLAYFIELD_VIEWPORT_RATIO;
-    let playfield_width = PLAYFIELD_WIDTH * scale;
-    let playfield_height = PLAYFIELD_HEIGHT * scale;
+pub(crate) fn build_frame_layout(
+    output_format: crate::render::geometry::OutputFormat,
+) -> FrameLayout {
+    let geometry = crate::render::geometry::standard_geometry(output_format);
+    let scale = crate::render::standard::constants::PLAYFIELD_VIEWPORT_RATIO
+        * crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Standard,
+            output_format,
+        );
     FrameLayout {
-        playfield_left: (IMAGE_WIDTH as f64 - playfield_width) / 2.0,
-        playfield_top: (IMAGE_HEIGHT as f64 - playfield_height) / 2.0
-            + PLAYFIELD_STORYBOARD_SHIFT * scale,
+        playfield_left: geometry.playfield.x as f64,
+        playfield_top: geometry.playfield.y as f64,
         scale,
+        frame_width: geometry.content.width,
+        frame_height: geometry.content.height,
     }
 }
 
@@ -250,37 +266,58 @@ pub(crate) fn build_combo_info(
     combo_info
 }
 
-/// 加载 std 皮肤：数字位图程序化生成，颜色与重叠量来自统一 skin.ini。
+/// 加载 std 皮肤：数字位图程序化生成，颜色与重叠量来自统一 skin 配置。
 pub(crate) fn load_skin(beatmap: &Beatmap) -> Skin {
-    let skin_config = crate::render::skin::skin();
+    let skin_config = &crate::config::current().skin;
     let digit_crops = (0..10).map(super::digits::digit_image).collect();
-    // 谱面自带 [Colours] 时优先使用；否则用 skin.ini 配色；都没有则回退 Argon 默认
+    // 谱面自带 [Colours] 时优先使用；否则用 skin 配色；都没有则回退 Argon 默认
     let combo_colors = if !beatmap.combo_colors.is_empty() {
         beatmap.combo_colors.clone()
-    } else if !skin_config.combo_colors.is_empty() {
-        skin_config.combo_colors.clone()
+    } else if !skin_config.COMBO_COLORS.is_empty() {
+        skin_config.COMBO_COLORS.clone()
     } else {
-        ARGON_COMBO_COLORS.to_vec()
+        crate::render::standard::constants::ARGON_COMBO_COLORS.to_vec()
     };
     Skin {
         digit_crops,
-        hitcircle_overlap: skin_config.hitcircle_overlap,
+        hitcircle_overlap: skin_config.HIT_CIRCLE_OVERLAP,
         combo_colors,
     }
 }
 
 pub(crate) fn build_render_context(
     beatmap: &Beatmap,
-    hit_objects: Vec<StandardHitObject>,
+    mut hit_objects: Vec<StandardHitObject>,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
+    output_format: crate::render::geometry::OutputFormat,
 ) -> RenderContext {
     let skin = load_skin(beatmap);
     let settings = build_render_settings(beatmap, mods);
-    let frame_layout = build_frame_layout();
+    super::stacking::apply_stacking(
+        &mut hit_objects,
+        beatmap.format_version(),
+        settings.preempt_ms as f32 * beatmap.stack_leniency() as f32,
+    );
+    let frame_layout = build_frame_layout(output_format);
     let combo_info = build_combo_info(&hit_objects, &skin.combo_colors);
     let frame_circle_diameter =
         py_round(settings.circle_diameter as f64 * frame_layout.scale).max(1);
+    let slider_tick_rate = beatmap.difficulty.get_f64("SliderTickRate").unwrap_or(1.0);
+    let slider_multiplier = beatmap
+        .difficulty
+        .get_f64("SliderMultiplier")
+        .unwrap_or(1.4);
+    let slider_timings = hit_objects
+        .iter()
+        .map(|hit_object| {
+            if beatmap.timing_points.is_empty() {
+                (500.0, 1.0)
+            } else {
+                crate::parser::resolve_slider_timing(hit_object.start_time, &beatmap.timing_points)
+            }
+        })
+        .collect();
     RenderContext {
         hit_objects,
         combo_info,
@@ -289,22 +326,35 @@ pub(crate) fn build_render_context(
         frame_layout,
         frame_circle_diameter,
         slider_body_width: py_round(
-            settings.circle_diameter as f64 * ARGON_SLIDER_WIDTH_RATIO * frame_layout.scale,
+            settings.circle_diameter as f64
+                * crate::render::standard::constants::ARGON_SLIDER_WIDTH_RATIO
+                * frame_layout.scale,
         )
         .max(1),
-        spinner_size: py_round(PLAYFIELD_WIDTH.min(PLAYFIELD_HEIGHT) * 0.95 * frame_layout.scale)
-            .max(1),
+        spinner_size: py_round(
+            crate::render::standard::constants::PLAYFIELD_WIDTH
+                .min(crate::render::standard::constants::PLAYFIELD_HEIGHT)
+                * 0.95
+                * frame_layout.scale,
+        )
+        .max(1),
         slider_follow_size: py_round(settings.circle_diameter as f64 * 2.4 * frame_layout.scale)
             .max(1),
         slider_ball_size: py_round(
-            settings.circle_diameter as f64 * ARGON_SLIDER_WIDTH_RATIO * frame_layout.scale,
+            settings.circle_diameter as f64
+                * crate::render::standard::constants::ARGON_SLIDER_WIDTH_RATIO
+                * frame_layout.scale,
         )
         .max(1),
+        slider_tick_rate,
+        slider_multiplier,
+        slider_timings,
         time_axis,
+        output_format,
     }
 }
 
-// ——— row timing ———
+// ——— 行时间 ———
 
 pub(crate) fn choose_row_start_times(
     beatmap: &Beatmap,
@@ -337,40 +387,74 @@ pub(crate) fn choose_row_start_times(
         .collect())
 }
 
-// ——— canvas sizes ———
+// ——— 画布尺寸 ———
 
 pub(crate) fn png_canvas_size() -> (i64, i64) {
-    let width = HORIZONTAL_PAGE_MARGIN * 2
-        + PNG_IMAGES_PER_ROW as i64 * IMAGE_WIDTH
-        + (PNG_IMAGES_PER_ROW as i64 - 1) * INTRA_ROW_IMAGE_GAP;
-    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
-    let height = VERTICAL_PAGE_MARGIN * 2
-        + PNG_ROW_COUNT as i64 * row_height
-        + (PNG_ROW_COUNT as i64 - 1) * INTER_ROW_GAP;
+    let config = &crate::config::current().layout.standard.png;
+    let geometry =
+        crate::render::geometry::standard_geometry(crate::render::geometry::OutputFormat::Png);
+    let unit_width = geometry.content.width + config.INFO_MARGIN_LEFT + config.INFO_MARGIN_RIGHT;
+    let unit_height = geometry.content.height + config.INFO_MARGIN_TOP + config.INFO_MARGIN_BOTTOM;
+    let width = config.PAGE_MARGIN_LEFT
+        + config.PAGE_MARGIN_RIGHT
+        + config.IMAGES_PER_ROW as i64 * unit_width
+        + (crate::config::current().layout.standard.png.IMAGES_PER_ROW as i64 - 1)
+            * config.COLUMN_GAP;
+    let height = config.PAGE_MARGIN_TOP
+        + config.PAGE_MARGIN_BOTTOM
+        + config.ROW_COUNT as i64 * unit_height
+        + (crate::config::current().layout.standard.png.ROW_COUNT as i64 - 1) * config.ROW_GAP;
     (width, height)
 }
 
 pub(crate) fn gif_canvas_size() -> (i64, i64) {
-    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
-    let width = HORIZONTAL_PAGE_MARGIN * 2
-        + GIF_IMAGES_PER_ROW as i64 * IMAGE_WIDTH
-        + (GIF_IMAGES_PER_ROW as i64 - 1) * GIF_GRID_GAP;
-    let height = VERTICAL_PAGE_MARGIN * 2
-        + GIF_ROW_COUNT as i64 * row_height
-        + (GIF_ROW_COUNT as i64 - 1) * GIF_GRID_GAP;
+    let config = &crate::config::current().layout.standard.gif;
+    let geometry =
+        crate::render::geometry::standard_geometry(crate::render::geometry::OutputFormat::Gif);
+    let unit_width = geometry.content.width + config.INFO_MARGIN_LEFT + config.INFO_MARGIN_RIGHT;
+    // 时间标签关闭时，底部信息区和对应的单元步进都必须消失，保持旧行为。
+    let info_bottom = if config.SHOW_TIME_LABEL {
+        config.INFO_MARGIN_BOTTOM
+    } else {
+        0
+    };
+    let unit_height = geometry.content.height + config.INFO_MARGIN_TOP + info_bottom;
+    let width = config.PAGE_MARGIN_LEFT
+        + config.PAGE_MARGIN_RIGHT
+        + config.IMAGES_PER_ROW as i64 * unit_width
+        + (config.IMAGES_PER_ROW as i64 - 1) * config.GRID_GAP;
+    let height = config.PAGE_MARGIN_TOP
+        + config.PAGE_MARGIN_BOTTOM
+        + config.ROW_COUNT as i64 * unit_height
+        + (config.ROW_COUNT as i64 - 1) * config.GRID_GAP;
     (width, height)
 }
 
 pub(crate) fn gif_frame_origin(segment_index: usize) -> (i64, i64) {
-    let row_index = (segment_index / GIF_IMAGES_PER_ROW) as i64;
-    let image_index = (segment_index % GIF_IMAGES_PER_ROW) as i64;
-    let row_height = IMAGE_HEIGHT + TIME_LABEL_TOP_GAP + TIME_LABEL_HEIGHT;
-    let x = HORIZONTAL_PAGE_MARGIN + image_index * (IMAGE_WIDTH + GIF_GRID_GAP);
-    let y = VERTICAL_PAGE_MARGIN + row_index * (row_height + GIF_GRID_GAP);
+    let config = &crate::config::current().layout.standard.gif;
+    let geometry =
+        crate::render::geometry::standard_geometry(crate::render::geometry::OutputFormat::Gif);
+    let row_index =
+        (segment_index / crate::config::current().layout.standard.gif.IMAGES_PER_ROW) as i64;
+    let image_index =
+        (segment_index % crate::config::current().layout.standard.gif.IMAGES_PER_ROW) as i64;
+    let unit_width = geometry.content.width + config.INFO_MARGIN_LEFT + config.INFO_MARGIN_RIGHT;
+    let info_bottom = if config.SHOW_TIME_LABEL {
+        config.INFO_MARGIN_BOTTOM
+    } else {
+        0
+    };
+    let unit_height = geometry.content.height + config.INFO_MARGIN_TOP + info_bottom;
+    let x = config.PAGE_MARGIN_LEFT
+        + config.INFO_MARGIN_LEFT
+        + image_index * (unit_width + config.GRID_GAP);
+    let y = config.PAGE_MARGIN_TOP
+        + config.INFO_MARGIN_TOP
+        + row_index * (unit_height + config.GRID_GAP);
     (x, y)
 }
 
-// ——— visible indexes ———
+// ——— 可见索引 ———
 
 pub(crate) fn build_visible_indexes_by_snapshot(
     hit_objects: &[StandardHitObject],
@@ -416,19 +500,116 @@ pub(crate) fn build_visible_indexes_by_snapshot(
 
 pub(crate) fn visible_end_time(hit_object: &StandardHitObject) -> i64 {
     if hit_object.hit_type & 2 != 0 {
-        return hit_object.end_time + SLIDER_FADE_OUT_MS;
+        return hit_object.end_time + crate::render::standard::constants::SLIDER_FADE_OUT_MS;
     }
     if hit_object.hit_type & 8 != 0 {
-        return hit_object.end_time + SPINNER_FADE_OUT_MS;
+        return hit_object.end_time + crate::render::standard::constants::SPINNER_FADE_OUT_MS;
     }
-    hit_object.start_time + POST_HIT_FADE_MS
+    hit_object.start_time + crate::render::standard::constants::POST_HIT_FADE_MS
 }
 
-// ——— coordinate transform ———
+// ——— 坐标变换 ———
 
 pub(crate) fn to_frame_point(x: f64, y: f64, frame_layout: &FrameLayout) -> (f64, f64) {
     (
         frame_layout.playfield_left + x * frame_layout.scale,
         frame_layout.playfield_top + y * frame_layout.scale,
     )
+}
+
+pub(crate) fn stack_offset(hit_object: &StandardHitObject, settings: &RenderSettings) -> f64 {
+    (hit_object.stack_height as f32 * settings.object_scale as f32 * -6.4) as f64
+}
+
+pub(crate) fn stacked_position(
+    hit_object: &StandardHitObject,
+    settings: &RenderSettings,
+) -> (f64, f64) {
+    let offset = stack_offset(hit_object, settings);
+    (hit_object.x as f64 + offset, hit_object.y as f64 + offset)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn beatmap_with_difficulty(circle_size: &str, approach_rate: &str) -> Beatmap {
+        let mut difficulty = crate::core::models::KvSection::default();
+        difficulty.insert("CircleSize", circle_size.to_string());
+        difficulty.insert("ApproachRate", approach_rate.to_string());
+        Beatmap {
+            metadata: Default::default(),
+            difficulty,
+            general: Default::default(),
+            timing_points: Vec::new(),
+            hit_objects: HitObjects::Standard(Vec::new()),
+            break_periods: Vec::new(),
+            background_filename: None,
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
+
+    fn circle(x: i32, y: i32, start_time: i64) -> StandardHitObject {
+        StandardHitObject {
+            x,
+            y,
+            start_time,
+            end_time: start_time,
+            hit_type: 1,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn hard_rock_flips_objects_before_stacking_and_offsetting() {
+        let mods = ModSettings {
+            hard_rock: true,
+            ..ModSettings::new()
+        };
+        let mut objects = apply_standard_object_mods(
+            vec![circle(100, 100, 1000), circle(100, 100, 1050)],
+            Some(&mods),
+        );
+        super::super::stacking::apply_stacking(&mut objects, 14, 100.0);
+
+        assert_eq!(objects[0].y, 284);
+        assert_eq!(objects[0].stack_height, 1);
+        let settings = RenderSettings {
+            circle_diameter: 128,
+            object_scale: 0.5,
+            preempt_ms: 1200,
+            fade_in_ms: 400.0,
+            hidden: false,
+            traceable: false,
+        };
+        let (x, y) = stacked_position(&objects[0], &settings);
+        assert!((x - 96.8).abs() < 0.0001);
+        assert!((y - 280.8).abs() < 0.0001);
+    }
+
+    #[test]
+    fn render_settings_use_game_precision_for_difficulty_values() {
+        let beatmap = beatmap_with_difficulty("4", "9.3");
+        let settings = build_render_settings(&beatmap, None);
+
+        assert_eq!(settings.preempt_ms, 554);
+        let expected_scale = ((1.0 - 0.7_f32 as f64 * ((4.0_f32 as f64 - 5.0) / 5.0)) as f32 / 2.0
+            * crate::render::standard::constants::BROKEN_GAMEFIELD_ROUNDING_ALLOWANCE as f32)
+            as f64;
+        assert_eq!(settings.object_scale, expected_scale);
+    }
+
+    #[test]
+    fn difficulty_adjust_negative_ar_extends_preempt_time() {
+        let beatmap = beatmap_with_difficulty("4", "5");
+        let mods = ModSettings {
+            da_ar: Some(-10.0),
+            ..ModSettings::new()
+        };
+        let settings = build_render_settings(&beatmap, Some(&mods));
+
+        // osu! 的 AR 曲线在 AR<0 时继续线性外推；AR=-10 对应 3000ms。
+        assert_eq!(settings.preempt_ms, 3000);
+    }
 }

@@ -1,8 +1,9 @@
-//! osu!taiko renderers: multi-row PNG scroll chart and 4-row animated GIF
-//! (lazer Overlapping scroll algorithm). Port of beatmap_preview/taiko/*.
+//! osu!taiko 渲染器：多行 PNG 滚动谱面和四行 GIF 动画
+//!（lazer Overlapping scroll 算法）。移植自 beatmap_preview/taiko/*。
 //!
-//! Re-exports from submodules: [constants], [timing], [notes], [png], [gif].
+//! 子模块包括动画时序、常量、时间映射、程序化素材及各输出格式渲染器。
 
+mod animation;
 mod constants;
 pub(crate) mod conv;
 mod gif;

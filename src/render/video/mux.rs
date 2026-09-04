@@ -1,15 +1,13 @@
-//! Shared H.264 NAL-unit parsing + MP4 muxing helpers.
+//! 共享的 H.264 NAL 单元解析与 MP4 封装辅助函数。
 //!
-//! All encoder backends (NVENC, AMF, openh264) emit Annex-B bytestreams
-//! (start-code-prefixed NAL units). This module splits them into SPS / PPS /
-//! slice and length-prefixes the slices for the `mp4` crate's `Mp4Sample`,
-//! matching the format the muxer expects.
+//! 所有编码后端（NVENC、AMF、openh264）都输出 Annex-B 字节流
+//!（以起始码标记的 NAL 单元）。本模块将其拆分为 SPS / PPS / slice，
+//! 并为 slice 添加长度前缀，以匹配 `mp4` crate 的 `Mp4Sample` 格式。
 
 use crate::core::errors::{PreviewError, Result};
 use std::path::Path;
 
-/// NAL unit type is the lower 5 bits of the first byte (start code already
-/// stripped by `nal_units`).
+/// NAL 单元类型是首字节的低 5 位（起始码已由 `nal_units` 移除）。
 #[inline]
 pub(crate) fn nal_type(nal: &[u8]) -> u8 {
     if nal.is_empty() {
@@ -19,8 +17,8 @@ pub(crate) fn nal_type(nal: &[u8]) -> u8 {
     }
 }
 
-/// Strip the Annex-B start-code prefix (`00 00 00 01` or `00 00 01`) that
-/// hardware/software encoders prepend to every NAL.
+/// 移除硬件/软件编码器为每个 NAL 添加的 Annex-B 起始码前缀
+///（`00 00 00 01` 或 `00 00 01`）。
 #[allow(dead_code)]
 pub(crate) fn nal_payload(nal: &[u8]) -> &[u8] {
     if nal.len() >= 4 && nal[0..4] == [0, 0, 0, 1] {
@@ -32,16 +30,15 @@ pub(crate) fn nal_payload(nal: &[u8]) -> &[u8] {
     }
 }
 
-/// Split an Annex-B bytestream into individual NAL unit payloads (start codes
-/// stripped). Handles both 4-byte (`00 00 00 01`) and 3-byte (`00 00 01`)
-/// start codes, which is necessary because different encoders emit different
-/// variants.
+/// 将 Annex-B 字节流拆分为独立的 NAL 单元负载（移除起始码）。
+/// 同时处理 4 字节（`00 00 00 01`）和 3 字节（`00 00 01`）起始码，
+/// 因为不同编码器可能输出不同变体。
 pub(crate) fn split_nals(annexb: &[u8]) -> Vec<&[u8]> {
     let mut nals = Vec::new();
     let mut i = 0;
     let len = annexb.len();
     while i + 3 <= len {
-        // detect start code
+        // 检测起始码。
         let sc_len = if i + 4 <= len && annexb[i..i + 4] == [0, 0, 0, 1] {
             4
         } else if annexb[i..i + 3] == [0, 0, 1] {
@@ -51,26 +48,23 @@ pub(crate) fn split_nals(annexb: &[u8]) -> Vec<&[u8]> {
             continue;
         };
         let payload_start = i + sc_len;
-        // scan for the next start code
+        // 扫描下一个起始码。
         let mut j = payload_start + 1;
         while j + 2 < len {
             if (j + 4 <= len && annexb[j..j + 4] == [0, 0, 0, 1]) || annexb[j..j + 3] == [0, 0, 1] {
-                // guard against 00 00 00 01 where the leading 00 is trailing
-                // zero-byte of the previous NAL — handle by checking we're at a
-                // real boundary (the 3-byte check already covers the 4-byte case
-                // because it only looks at [0,0,1]).
+                // 防止将 00 00 00 01 中属于前一个 NAL 的尾部 0 当成起始码，
+                // 通过检查真实边界处理（3 字节检查已覆盖 4 字节情况）。
                 break;
             }
             j += 1;
         }
         let end = if j + 2 < len { j } else { len };
-        // strip trailing zero bytes that are part of RBSP stopping/carry-over
+        // 移除属于 RBSP 停止/填充的尾部零字节。
         let mut nal_end = end;
         while nal_end > payload_start && annexb[nal_end - 1] == 0 {
-            // only strip trailing zeros that precede a start code boundary;
-            // a single trailing 0x00 may be legitimate RBSP, but multiple
-            // trailing 00 00 before a start code are padding. Keep it simple:
-            // only strip if there are >=2 trailing zeros AND we hit a boundary.
+            // 只移除起始码边界前的尾部零：单个 0x00 可能是合法 RBSP，
+            // 而起始码前连续两个 0 通常是填充。仅在满足尾部至少两个零
+            // 且确实遇到边界时执行移除。
             if nal_end - payload_start >= 2 && annexb[nal_end - 2] == 0 && end < len {
                 nal_end -= 1;
             } else {
@@ -83,14 +77,12 @@ pub(crate) fn split_nals(annexb: &[u8]) -> Vec<&[u8]> {
     nals
 }
 
-/// Extract SPS (type 7), PPS (type 8), and length-prefixed slice NALs from an
-/// Annex-B encoded bitstream.
+/// 从 Annex-B 编码字节流中提取 SPS（类型 7）、PPS（类型 8）和带长度前缀的 slice NAL。
 ///
-/// NAL types 6 (SEI), 9 (AUD), and 12 (filler data) are silently dropped —
-/// they are not needed for MP4 muxing and some hardware encoders emit them
-/// by default. Slice NALs (types 1–5) are concatenated with big-endian
-/// 4-byte length prefixes, matching the `mp4` crate's AVC sample format. The
-/// final return value reports whether the access unit contains an IDR slice.
+/// NAL 类型 6（SEI）、9（AUD）和 12（填充数据）会被静默丢弃，
+/// 因为 MP4 封装不需要它们，且部分硬件编码器默认会输出。slice NAL（类型 1–5）
+/// 使用大端 4 字节长度前缀拼接，以匹配 `mp4` crate 的 AVC sample 格式。
+/// 最后一个返回值表示该访问单元是否包含 IDR slice。
 pub(crate) fn extract_nals_from_annexb(
     annexb: &[u8],
 ) -> (Option<Vec<u8>>, Option<Vec<u8>>, Vec<u8>, bool) {
@@ -102,7 +94,7 @@ pub(crate) fn extract_nals_from_annexb(
         match nal_type(nal) {
             7 => sps = Some(nal.to_vec()),
             8 => pps = Some(nal.to_vec()),
-            // drop SEI(6), AUD(9), filler(12) — not needed for mp4
+            // 丢弃 SEI(6)、AUD(9)、填充(12)，MP4 封装不需要这些数据。
             6 | 9 | 12 => {}
             _ => {
                 is_keyframe |= nal_type(nal) == 5;
@@ -122,10 +114,8 @@ struct Mp4BoxInfo {
     typ: [u8; 4],
 }
 
-/// Move the final MP4 `moov` box in front of `mdat`, making the file playable
-/// before the whole file is downloaded/read. The chunk offsets inside `moov`
-/// are increased by the moved box size so they still point at the same media
-/// bytes after `mdat` shifts forward.
+/// 将 MP4 末尾的 `moov` box 移到 `mdat` 前，使文件无需完整下载即可播放。
+/// `moov` 内的块偏移量会增加被移动 box 的大小，确保 `mdat` 前移后仍指向相同媒体数据。
 pub(crate) fn make_mp4_faststart(path: &Path) -> Result<()> {
     let data = std::fs::read(path).map_err(|e| {
         PreviewError::render(format!("failed to read mp4 for faststart rewrite: {e}"))
@@ -238,7 +228,7 @@ fn patch_stco(data: &mut [u8], typ_pos: usize, delta: u64) -> Result<Option<usiz
     let count = u32::from_be_bytes(data[count_pos..count_pos + 4].try_into().unwrap()) as usize;
     if entries_pos
         .checked_add(count.saturating_mul(4))
-        .map_or(true, |end| end > info.end)
+        .is_none_or(|end| end > info.end)
     {
         return Ok(None);
     }
@@ -270,7 +260,7 @@ fn patch_co64(data: &mut [u8], typ_pos: usize, delta: u64) -> Result<Option<usiz
     let count = u32::from_be_bytes(data[count_pos..count_pos + 4].try_into().unwrap()) as usize;
     if entries_pos
         .checked_add(count.saturating_mul(8))
-        .map_or(true, |end| end > info.end)
+        .is_none_or(|end| end > info.end)
     {
         return Ok(None);
     }
@@ -301,7 +291,7 @@ mod tests {
 
     #[test]
     fn split_nals_handles_4byte_startcodes() {
-        // two NALs: SPS (type 7) + slice (type 5)
+        // 两个 NAL：SPS（类型 7）+ slice（类型 5）。
         let annexb: &[u8] = &[
             0, 0, 0, 1, 0x67, 0x42, 0x00, 0x1e, // SPS
             0, 0, 0, 1, 0x65, 0x88, 0x84, 0x00, // IDR slice
@@ -326,7 +316,7 @@ mod tests {
 
     #[test]
     fn extract_drops_sei_aud_filler() {
-        // SPS + SEI + AUD + slice
+        // SPS + SEI + AUD + slice。
         let annexb: &[u8] = &[
             0, 0, 0, 1, 0x67, 0x01, // SPS (type 7)
             0, 0, 0, 1, 0x06, 0x02, // SEI (type 6)
@@ -337,7 +327,7 @@ mod tests {
         assert_eq!(sps, Some(vec![0x67, 0x01]));
         assert_eq!(pps, None);
         assert!(is_keyframe);
-        // slice should be length-prefixed: 4-byte BE len + 2-byte payload
+        // slice 应带长度前缀：4 字节大端长度 + 2 字节负载。
         assert_eq!(slice, vec![0, 0, 0, 2, 0x65, 0xAA]);
     }
 

@@ -1,13 +1,21 @@
-//! Consolidated parameter validation.
+//! 集中的参数校验。
 //!
-//! Split into two phases:
-//! 1. CLI-phase: value-format checks that run during argument parsing.
-//! 2. Context-phase: checks that need the beatmap mode and resolved format.
+//! 校验分为两个阶段：
+//! 1. CLI 阶段：参数解析时执行的值格式校验。
+//! 2. 上下文阶段：需要谱面模式和最终输出格式的校验。
 
 use crate::core::errors::{PreviewError, Result};
 use crate::core::mods::{mods_for_mode, validate_mods, ModSettings};
 
-/// Validate `--convert` value.
+/// 校验 Beatmap ID。
+pub fn validate_bid(v: &str) -> Result<()> {
+    if v.is_empty() || !v.chars().all(|c| c.is_ascii_digit()) {
+        return Err(PreviewError::new("bid must be numeric"));
+    }
+    Ok(())
+}
+
+/// 校验 `--convert` 参数值。
 pub fn validate_convert_value(v: &str) -> Result<()> {
     match v {
         "mania" | "ctb" | "taiko" | "standard" | "std" => Ok(()),
@@ -17,7 +25,7 @@ pub fn validate_convert_value(v: &str) -> Result<()> {
     }
 }
 
-/// Validate `--fmt` value.
+/// 校验 `--fmt` 参数值。
 pub fn validate_fmt_value(v: &str) -> Result<()> {
     match v {
         "png" | "gif" | "mp4" => Ok(()),
@@ -27,126 +35,128 @@ pub fn validate_fmt_value(v: &str) -> Result<()> {
     }
 }
 
-/// Validate `--gap` raw value (range check).
-pub fn validate_gap_value(v: f64) -> Result<()> {
-    if v <= 0.0 || v >= 500.0 {
+/// 将 CLI 数值参数解析为有限正数。
+// 库和二进制目标分别编译本模块；该函数由二进制入口使用，库目标中会被视为未使用。
+#[allow(dead_code)]
+pub fn parse_positive_finite(name: &str, raw: &str) -> Result<f64> {
+    let value = raw
+        .parse::<f64>()
+        .map_err(|_| PreviewError::new(format!("{name} must be a number, got '{raw}'")))?;
+    validate_positive_finite(name, value)?;
+    Ok(value)
+}
+
+/// 校验已经解析的 CLI 有限正数。
+pub fn validate_positive_finite(name: &str, value: f64) -> Result<()> {
+    if !value.is_finite() || value <= 0.0 {
         return Err(PreviewError::new(format!(
-            "--gap must be between 0 and 500, got {v}"
+            "{name} must be a positive finite number"
         )));
     }
     Ok(())
 }
 
-/// Parse `--time` string: `T1+T2+...` seconds → `Vec<f64>` seconds.
-pub fn parse_times(raw: &str) -> Result<Vec<f64>> {
-    let parts: Vec<&str> = raw
-        .split('+')
-        .map(|p| p.trim())
-        .filter(|p| !p.is_empty())
-        .collect();
-    if parts.len() > 4 {
-        return Err(PreviewError::new("--time accepts at most 4 time points"));
-    }
-    if parts.is_empty() {
-        return Err(PreviewError::new("--time requires at least one time point"));
-    }
-    let mut result = Vec::with_capacity(parts.len());
-    for p in parts {
-        let val: f64 = p
-            .parse()
-            .map_err(|_| PreviewError::new(format!("invalid time value: '{p}'")))?;
-        if !val.is_finite() {
-            return Err(PreviewError::new(format!("time must be finite, got {val}")));
-        }
-        result.push(val);
-    }
-    Ok(result)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TimePoint {
+    Seconds(f64),
+    Preview,
 }
 
-/// Context for mode-aware validation.
+pub fn parse_time_point(raw: &str) -> Result<TimePoint> {
+    if raw.eq_ignore_ascii_case("preview") {
+        return Ok(TimePoint::Preview);
+    }
+    let value: f64 = raw
+        .parse()
+        .map_err(|_| PreviewError::new(format!("invalid time point: '{raw}'")))?;
+    if !value.is_finite() {
+        return Err(PreviewError::new("time point must be finite"));
+    }
+    let milliseconds = value * 1000.0;
+    if !(-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(&milliseconds) {
+        return Err(PreviewError::new(
+            "time point is outside the supported range",
+        ));
+    }
+    Ok(TimePoint::Seconds(value))
+}
+
+/// 统一校验 CLI 参数的值格式，并解析模组列表。
+///
+/// 这里不处理需要谱面模式和输出格式的规则；这些规则由
+/// [`validate_with_context`] 在谱面解析完成后继续校验。
+pub fn validate_cli_options(
+    bid: &str,
+    convert: Option<&str>,
+    fmt: Option<&str>,
+    mod_tokens: &[String],
+    duration_time: Option<f64>,
+    scale: Option<f64>,
+) -> Result<Option<ModSettings>> {
+    validate_bid(bid)?;
+    if let Some(value) = convert {
+        validate_convert_value(value)?;
+    }
+    if let Some(value) = fmt {
+        validate_fmt_value(value)?;
+    }
+    if let Some(duration) = duration_time {
+        validate_positive_finite("duration time", duration)?;
+    }
+    if let Some(value) = scale {
+        validate_positive_finite("scale", value)?;
+    }
+    let mods = if mod_tokens.is_empty() {
+        None
+    } else {
+        Some(crate::core::mods::parse_mods(mod_tokens)?)
+    };
+    Ok(mods)
+}
+
+/// 与模式相关的校验上下文。
 pub struct ValidateContext<'a> {
     pub bid: &'a str,
     pub fmt: &'a str,
     pub target_mode: i32,
 }
 
-/// Validate parameters that depend on the resolved target mode and format.
+/// 校验依赖目标模式和输出格式的参数。
 ///
-/// Returns validated mod settings (mode-adjusted), or `None`.
+/// 返回经过模式调整的模组设置，未指定模组时返回 `None`。
 pub fn validate_with_context(
     ctx: &ValidateContext,
-    times: Option<&[f64]>,
-    gif_clip: bool,
-    gif_clip_label: bool,
-    preview_30s: bool,
-    gap: Option<f64>,
+    time_points: &[TimePoint],
+    duration_time: Option<f64>,
     mods: Option<ModSettings>,
 ) -> Result<Option<ModSettings>> {
-    // --- bid ---
-    if ctx.bid.is_empty() || !ctx.bid.chars().all(|c| c.is_ascii_digit()) {
-        return Err(PreviewError::new("bid must be numeric"));
+    // --- 谱面 ID ---
+    validate_bid(ctx.bid)?;
+
+    if duration_time.is_some() && !matches!(ctx.fmt, "gif" | "mp4") {
+        return Err(PreviewError::new(
+            "--duration-time is only valid for GIF or MP4 output",
+        ));
+    }
+    if ctx.fmt == "mp4" && time_points.len() > 1 {
+        return Err(PreviewError::new(
+            "mp4 accepts at most one --time-points value",
+        ));
+    }
+    if !time_points.is_empty()
+        && ctx.fmt != "gif"
+        && !(ctx.fmt == "png" && ctx.target_mode == 0)
+        && ctx.fmt != "mp4"
+    {
+        return Err(PreviewError::new(
+            "--time-points is only valid for GIF, Standard PNG, or MP4 output",
+        ));
+    }
+    if let Some(duration) = duration_time {
+        validate_positive_finite("duration time", duration)?;
     }
 
-    // --- --times / --gif-clip / --preview-30s rules ---
-    // mp4: 0 values (full chart ±2s) or exactly 2 (explicit [t1, t2]); else reject.
-    // gif: any (≤4 by parse_times) time points, or exactly 2 with --gif-clip.
-    // standard png: time points allowed; other png modes: reject.
-    let gif_clip_mode = gif_clip || gif_clip_label;
-    if gif_clip && gif_clip_label {
-        return Err(PreviewError::new(
-            "--gif-clip and --gif-clip-label cannot be used together",
-        ));
-    }
-    if gif_clip_mode && ctx.fmt != "gif" {
-        return Err(PreviewError::new(
-            "--gif-clip and --gif-clip-label are only valid for GIF output",
-        ));
-    }
-    if preview_30s && ctx.fmt != "mp4" {
-        return Err(PreviewError::new(
-            "--preview-30s is only valid for mp4 output",
-        ));
-    }
-    if preview_30s && times.is_some() {
-        return Err(PreviewError::new(
-            "--preview-30s cannot be used together with --time",
-        ));
-    }
-    if ctx.fmt == "mp4" {
-        if let Some(ts) = times {
-            if ts.len() != 2 {
-                return Err(PreviewError::new(
-                    "--time for mp4 needs exactly 2 values t1+t2 (or omit for the full chart)",
-                ));
-            }
-        }
-    } else if gif_clip_mode {
-        if let Some(ts) = times {
-            if ts.len() != 2 {
-                return Err(PreviewError::new(
-                    "--time with GIF clip output needs exactly 2 values t1+t2",
-                ));
-            }
-            if ts[1] <= ts[0] {
-                return Err(PreviewError::new(
-                    "--time range for GIF clip output is empty",
-                ));
-            }
-        }
-    } else if times.is_some() && ctx.fmt != "gif" && !(ctx.fmt == "png" && ctx.target_mode == 0) {
-        return Err(PreviewError::new(
-            "--times is only valid for GIF, standard PNG, or mp4 output",
-        ));
-    }
-
-    // --- --gap only for taiko PNG ---
-    if gap.is_some() && !(ctx.fmt == "png" && ctx.target_mode == 1) {
-        return Err(PreviewError::new(
-            "--gap is only valid for taiko PNG output",
-        ));
-    }
-
-    // --- mods ---
+    // --- 模组 ---
     let mods = match mods {
         Some(m) if m.has_any_mod() => {
             let mode_errors = validate_mods(&m, Some(ctx.target_mode), Some(ctx.fmt));
@@ -177,97 +187,58 @@ mod tests {
     }
 
     #[test]
-    fn parse_times_accepts_negative_skin_times() {
-        assert_eq!(parse_times("-2").unwrap(), vec![-2.0]);
-        assert_eq!(parse_times("-2+10").unwrap(), vec![-2.0, 10.0]);
-        assert_eq!(parse_times("-0.5+1.25").unwrap(), vec![-0.5, 1.25]);
+    fn parses_preview_and_numeric_video_start() {
+        assert_eq!(parse_time_point("preview").unwrap(), TimePoint::Preview);
+        assert_eq!(parse_time_point("-2.5").unwrap(), TimePoint::Seconds(-2.5));
+        assert!(parse_time_point("NaN").is_err());
     }
 
     #[test]
-    fn parse_times_rejects_empty_and_non_finite_values() {
-        assert!(parse_times("").is_err());
-        assert!(parse_times("NaN").is_err());
-        assert!(parse_times("inf").is_err());
+    fn duration_time_is_available_to_gif_and_mp4() {
+        validate_with_context(&ctx("mp4", 0), &[TimePoint::Preview], Some(30.0), None).unwrap();
+        validate_with_context(&ctx("gif", 0), &[], Some(30.0), None).unwrap();
+        assert!(validate_with_context(&ctx("png", 0), &[], Some(30.0), None).is_err());
+        assert!(validate_with_context(&ctx("mp4", 0), &[], Some(0.0), None).is_err());
     }
 
     #[test]
-    fn preview_30s_is_valid_for_mp4_without_time() {
-        validate_with_context(&ctx("mp4", 0), None, false, false, true, None, None).unwrap();
-    }
+    fn da_range_is_checked_after_target_mode_is_known() {
+        let mania_da = crate::core::mods::parse_mods(&["DAOD-15".into()]).unwrap();
+        validate_with_context(&ctx("gif", 3), &[], None, Some(mania_da)).unwrap_err();
 
-    #[test]
-    fn preview_30s_is_rejected_for_non_mp4_formats() {
-        let err = validate_with_context(&ctx("gif", 0), None, false, false, true, None, None)
+        let standard_da = crate::core::mods::parse_mods(&["DAAR-10".into()]).unwrap();
+        validate_with_context(&ctx("gif", 0), &[], None, Some(standard_da)).unwrap();
+
+        let invalid_standard_da = crate::core::mods::parse_mods(&["DAAR-10.1".into()]).unwrap();
+        let error = validate_with_context(&ctx("gif", 0), &[], None, Some(invalid_standard_da))
             .unwrap_err();
-        assert!(err.to_string().contains("mp4"));
-
-        let err = validate_with_context(&ctx("png", 0), None, false, false, true, None, None)
-            .unwrap_err();
-        assert!(err.to_string().contains("mp4"));
+        assert!(error.to_string().contains("DA AR must be in [-10.0, 11.0]"));
     }
 
     #[test]
-    fn preview_30s_is_rejected_with_time() {
-        let times = [10.0, 40.0];
-        let err =
-            validate_with_context(&ctx("mp4", 0), Some(&times), false, false, true, None, None)
-                .unwrap_err();
-        assert!(err.to_string().contains("--preview-30s"));
-    }
-
-    #[test]
-    fn gif_clip_requires_gif_output() {
-        let err = validate_with_context(&ctx("png", 0), None, true, false, false, None, None)
-            .unwrap_err();
-        assert!(err.to_string().contains("--gif-clip"));
-
-        validate_with_context(&ctx("gif", 0), None, true, false, false, None, None).unwrap();
-    }
-
-    #[test]
-    fn gif_clip_time_requires_two_ascending_values() {
-        validate_with_context(
-            &ctx("gif", 0),
-            Some(&[10.0, 20.0]),
-            true,
-            false,
-            false,
-            None,
-            None,
+    fn cli_options_use_one_value_validation_entry_point() {
+        let tokens = ["hd".to_string(), "dt1.25".to_string()];
+        let mods = validate_cli_options(
+            "123",
+            Some("std"),
+            Some("gif"),
+            &tokens,
+            Some(2.0),
+            Some(1.5),
         )
+        .unwrap()
         .unwrap();
-
-        let err = validate_with_context(
-            &ctx("gif", 0),
-            Some(&[10.0]),
-            true,
-            false,
-            false,
-            None,
-            None,
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("exactly 2"));
-
-        let err = validate_with_context(
-            &ctx("gif", 0),
-            Some(&[20.0, 10.0]),
-            true,
-            false,
-            false,
-            None,
-            None,
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("empty"));
+        assert!(mods.hidden && mods.double_time);
     }
 
     #[test]
-    fn gif_clip_and_label_are_conflicting_clip_modes() {
-        validate_with_context(&ctx("gif", 0), None, false, true, false, None, None).unwrap();
-
-        let err =
-            validate_with_context(&ctx("gif", 0), None, true, true, false, None, None).unwrap_err();
-        assert!(err.to_string().contains("cannot be used together"));
+    fn cli_options_reject_invalid_scalar_and_token_values() {
+        let empty = ["  ".to_string()];
+        assert!(validate_cli_options("", None, None, &[], None, None).is_err());
+        assert!(validate_cli_options("1", Some("osu"), None, &[], None, None).is_err());
+        assert!(validate_cli_options("1", None, Some("webm"), &[], None, None).is_err());
+        assert!(validate_cli_options("1", None, None, &empty, None, None).is_err());
+        assert!(validate_cli_options("1", None, None, &[], Some(0.0), None).is_err());
+        assert!(validate_cli_options("1", None, None, &[], None, Some(f64::NAN)).is_err());
     }
 }

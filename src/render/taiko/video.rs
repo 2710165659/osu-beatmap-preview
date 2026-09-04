@@ -1,25 +1,25 @@
-//! osu!taiko MP4 renderer: full-chart continuous playback (no 4-row segment
-//! preview). Reuses the GIF row background + hit-object drawing on a one-row
-//! layout; the per-segment bottom label is dropped (the global top-right label
-//! is drawn by `video::save_mp4_streamed`).
+//! osu!taiko MP4 渲染器：完整谱面连续播放（无四行分段预览）。
+//! 复用 GIF 的行背景和音符绘制，并使用单行布局；省略每段底部标签，
+//! 全局右上角标签由 `video::save_mp4_streamed` 绘制。
 //!
-//! Time range: first note − 2s → last note + 2s, `[t1, t2]` when
-//! `--time=t1+t2` is given, or a preview-time 30s clip when `--preview-30s`
-//! is given. 15 fps, letterboxed to 16:9.
+//! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
 use crate::common::time_selection::TimeAxis;
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::Beatmap;
 use crate::core::mods::ModSettings;
+use crate::core::timeout::RequestDeadline;
+use crate::core::validate::TimePoint;
 use crate::render::canvas::Img;
 use crate::render::video::audio::AudioSourceJob;
 use crate::render::video::{resolve_video_time_range, save_mp4_streamed};
 use std::cell::RefCell;
 use std::path::Path;
 
-use super::constants::*;
 use super::gif::{
-    build_gif_layout, compute_time_range, draw_hit_objects, draw_row_background, pyround, GifLayout,
+    build_gif_layout_with_segments_and_format, build_multiplier_points, compute_time_range,
+    draw_hit_objects, draw_row_background, prepare_hit_objects, prepare_measure_lines, pyround,
+    GifLayout, MultiplierLookup,
 };
 use super::notes::RenderCache;
 use super::timing::*;
@@ -27,13 +27,16 @@ use super::timing::*;
 pub(crate) fn render_taiko_video(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
-    times_ms: Option<Vec<i64>>,
-    preview_30s: bool,
+    start_time: Option<TimePoint>,
+    duration_time: Option<f64>,
     output_path: &Path,
+    background: Option<Img>,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
-    fps: u32,
+    fps: Option<u32>,
+    deadline: &RequestDeadline,
 ) -> Result<()> {
+    deadline.check()?;
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
     if hit_objects.is_empty() {
         return Err(PreviewError::render("taiko beatmap has no hit objects"));
@@ -42,36 +45,50 @@ pub(crate) fn render_taiko_video(
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let first = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let last = hit_objects.iter().map(|h| h.end_time).max().unwrap_or(0);
-    let range = resolve_video_time_range(
-        beatmap,
-        first,
-        last,
-        times_ms.as_deref(),
-        preview_30s,
-        speed,
-    )?;
+    let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
+    let fps = fps.unwrap_or(crate::config::current().layout.taiko.mp4.FPS as u32);
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;
     let timing_points = effective_timing_points(beatmap, mods);
-    let scroll_mapper = build_scroll_mapper(&timing_points, last, slider_multiplier, 0.0);
+    let multiplier_lookup = MultiplierLookup {
+        points: build_multiplier_points(&timing_points, slider_multiplier),
+    };
+    let slider_tick_rate = beatmap.difficulty.get_f64_or("SliderTickRate", 1.0);
+    let prepared_hit_objects = prepare_hit_objects(
+        &hit_objects,
+        &multiplier_lookup,
+        &timing_points,
+        slider_tick_rate,
+    );
+    let prepared_measure_lines = prepare_measure_lines(
+        &hit_objects,
+        &timing_points,
+        &multiplier_lookup,
+        crate::config::current().layout.taiko.mp4.SHOW_MEASURE_LINES,
+    );
     let time_range = compute_time_range() / speed;
     let layout = build_video_layout(time_range);
 
     let static_bg = {
+        // 背景图在最终视频画布上统一处理；这里仅绘制 Taiko 自身的轨道面板。
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
-            IMAGE_BACKGROUND,
+            if background.is_some() {
+                [0, 0, 0, 0]
+            } else {
+                crate::config::current().layout.taiko.mp4.IMAGE_BACKGROUND
+            },
         );
         draw_row_background(&mut bg, &layout, 0);
         bg
     };
 
-    // Per-thread render cache avoids serialising parallel draw_hit_objects
-    // calls behind a single Mutex (video has far more frames than GIF).
+    // 每线程独立渲染缓存，避免并行 draw_hit_objects 调用在同一 Mutex 后串行化；
+    // 视频帧数远多于 GIF。
     thread_local! {
         static TAIKO_VIDEO_CACHE: RefCell<RenderCache> = RefCell::new(RenderCache::default());
     }
@@ -82,8 +99,8 @@ pub(crate) fn render_taiko_video(
         TAIKO_VIDEO_CACHE.with(|cache| {
             draw_hit_objects(
                 &mut canvas,
-                &hit_objects,
-                &scroll_mapper,
+                &prepared_hit_objects,
+                &prepared_measure_lines,
                 &layout,
                 0,
                 snapshot_time,
@@ -102,14 +119,19 @@ pub(crate) fn render_taiko_video(
         output_path,
         fps,
         audio_job,
+        background,
         time_axis,
+        deadline,
+        crate::render::geometry::GameMode::Taiko,
     )
 }
 
-/// Single-row layout for MP4: same width as the GIF, height trimmed to one row
-/// (no 4-row stack, no inter-row gap, no bottom label strip).
+/// MP4 的单行布局：宽度与 GIF 相同，高度裁剪为一行
+///（无四行堆叠、无行间距、无底部标签条）。
 fn build_video_layout(time_range: f64) -> GifLayout {
-    let mut layout = build_gif_layout(time_range);
-    layout.image_height = PAGE_MARGIN_Y * 2 + GIF_ROW_HEIGHT;
-    layout
+    build_gif_layout_with_segments_and_format(
+        time_range,
+        1,
+        crate::render::geometry::OutputFormat::Mp4,
+    )
 }

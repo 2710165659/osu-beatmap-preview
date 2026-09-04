@@ -1,6 +1,6 @@
-//! Slider path approximation shared by standard and catch.
-//! Standard applies RDP simplification + truncate/extend fit;
-//! catch keeps full point sets + lazer calculateLength-style fit.
+//! standard 与 catch 共用的滑条路径近似算法。
+//! standard 使用 RDP 简化并截断/延伸拟合；catch 保留完整点集，
+//! 使用 lazer calculateLength 风格的拟合。
 
 pub const BEZIER_TOLERANCE: f64 = 0.25;
 pub const CATMULL_DETAIL: usize = 50;
@@ -58,7 +58,7 @@ pub fn path_position_at_distance(path: &SliderPath, target: f64) -> P {
     if target >= path.total_length {
         return *path.points.last().unwrap();
     }
-    // bisect_right equivalent
+    // 等价于 bisect_right。
     let index = path.cumulative_lengths.partition_point(|&v| v <= target);
     let previous_index = index.saturating_sub(1);
     let next_index = index.min(path.points.len() - 1);
@@ -99,7 +99,7 @@ pub fn slice_path(path: &SliderPath, start_progress: f64, end_progress: f64) -> 
     dedupe_points(&sliced)
 }
 
-/// Build the raw curve (before length fitting) for the given slider type.
+/// 根据滑条类型构建原始曲线（长度拟合前）。
 fn approximate_curve(slider_type: &str, points: &[P], perfect_lazer_semantics: bool) -> Vec<P> {
     match slider_type {
         "L" => points.to_vec(),
@@ -109,7 +109,7 @@ fn approximate_curve(slider_type: &str, points: &[P], perfect_lazer_semantics: b
     }
 }
 
-/// Standard-mode slider path: simplify (RDP) + truncate/extend fit.
+/// standard 模式滑条路径：RDP 简化后进行截断/延伸拟合。
 pub fn build_standard_slider_path(
     x: i32,
     y: i32,
@@ -125,7 +125,7 @@ pub fn build_standard_slider_path(
     build_path(&simplify_path(&fitted, 1.0))
 }
 
-/// Catch-mode slider path: NO simplification, lazer calculateLength fit.
+/// catch 模式滑条路径：不做简化，使用 lazer calculateLength 拟合。
 pub fn build_catch_slider_path(
     x: i32,
     y: i32,
@@ -151,15 +151,14 @@ pub fn simplify_path(points: &[P], tolerance: f64) -> Vec<P> {
     let line_len_sq = dx * dx + dy * dy;
     let mut max_dist_sq = 0.0;
     let mut max_idx = 0usize;
-    for i in 1..points.len() - 1 {
+    for (i, point) in points.iter().enumerate().take(points.len() - 1).skip(1) {
         let dist_sq = if line_len_sq < 0.0001 {
-            (points[i].0 - sx).powi(2) + (points[i].1 - sy).powi(2)
+            (point.0 - sx).powi(2) + (point.1 - sy).powi(2)
         } else {
-            let t =
-                (((points[i].0 - sx) * dx + (points[i].1 - sy) * dy) / line_len_sq).clamp(0.0, 1.0);
+            let t = (((point.0 - sx) * dx + (point.1 - sy) * dy) / line_len_sq).clamp(0.0, 1.0);
             let px = sx + t * dx;
             let py = sy + t * dy;
-            (points[i].0 - px).powi(2) + (points[i].1 - py).powi(2)
+            (point.0 - px).powi(2) + (point.1 - py).powi(2)
         };
         if dist_sq > max_dist_sq {
             max_dist_sq = dist_sq;
@@ -176,7 +175,7 @@ pub fn simplify_path(points: &[P], tolerance: f64) -> Vec<P> {
     left
 }
 
-// ——— Bezier ———
+// ——— 贝塞尔曲线 ———
 
 fn approximate_bezier_segments(points: &[P]) -> Vec<P> {
     let mut path: Vec<P> = Vec::new();
@@ -263,7 +262,7 @@ fn bezier_approximate(points: &[P]) -> Vec<P> {
     output
 }
 
-// ——— Perfect circle ———
+// ——— 完美圆 ———
 
 fn approximate_perfect_curve(points: &[P], lazer_semantics: bool) -> Vec<P> {
     if points.len() != 3 || are_collinear(points[0], points[1], points[2]) {
@@ -289,7 +288,7 @@ fn approximate_perfect_curve(points: &[P], lazer_semantics: bool) -> Vec<P> {
     }
 
     if lazer_semantics {
-        // n = point count; divide by (n - 1)
+        // n 为点数，除以 n - 1。
         let point_count = n;
         (0..point_count)
             .map(|index| {
@@ -301,7 +300,7 @@ fn approximate_perfect_curve(points: &[P], lazer_semantics: bool) -> Vec<P> {
             })
             .collect()
     } else {
-        // n = segment count; produce n+1 points dividing by n
+        // n 为线段数，按 n 等分生成 n+1 个点。
         let steps = n;
         (0..=steps)
             .map(|index| {
@@ -355,7 +354,7 @@ fn are_collinear(first: P, second: P, third: P) -> bool {
         < 0.001
 }
 
-// ——— Catmull ———
+// ——— Catmull-Rom 曲线 ———
 
 fn approximate_catmull(points: &[P]) -> Vec<P> {
     if points.len() < 2 {
@@ -402,7 +401,7 @@ fn catmull_at(p0: P, p1: P, p2: P, p3: P, t: f64) -> P {
 }
 
 fn catmull_optimise(path: &[P], knots: &[P]) -> Vec<P> {
-    let is_knot = |p: P| knots.iter().any(|&k| k == p);
+    let is_knot = |p: P| knots.contains(&p);
     let mut result = vec![path[0]];
     for i in 1..path.len() {
         let prev = *result.last().unwrap();
@@ -414,9 +413,9 @@ fn catmull_optimise(path: &[P], knots: &[P]) -> Vec<P> {
     result
 }
 
-// ——— Length fitting ———
+// ——— 长度拟合 ———
 
-/// Standard variant: truncate at expected length or extend final point outward.
+/// standard 变体：按期望长度截断，或向外延伸最后一个点。
 fn fit_path_truncate_extend(path: &[P], expected_length: f64) -> Vec<P> {
     if path.len() < 2 || expected_length <= 0.0 {
         return path.to_vec();
@@ -478,7 +477,7 @@ fn fit_path_truncate_extend(path: &[P], expected_length: f64) -> Vec<P> {
     fitted
 }
 
-/// Catch variant: lazer SliderPath.calculateLength semantics.
+/// catch 变体：遵循 lazer SliderPath.calculateLength 语义。
 fn fit_path_lazer(path: &[P], expected_length: f64) -> Vec<P> {
     if path.len() < 2 || expected_length <= 0.0 {
         return path.to_vec();

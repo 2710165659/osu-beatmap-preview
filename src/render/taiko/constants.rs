@@ -1,99 +1,72 @@
-//! Constants for osu!taiko renderers.
+//! osu!taiko 游戏规则与渲染使用的编译期常量。
 
-use crate::render::canvas::Rgba;
-
-// ─── config.py constants ───
-
-pub(crate) const MAX_SUPPORTED_DURATION_MS: i64 = 10 * 60 * 1000;
-
-pub(crate) const BASE_ROW_WIDTH_0_TO_1_MIN: i64 = 2600;
-pub(crate) const BASE_ROW_WIDTH_1_TO_2_MIN: i64 = 3200;
-pub(crate) const BASE_ROW_WIDTH_2_TO_3_MIN: i64 = 3800;
-pub(crate) const BASE_ROW_WIDTH_3_TO_4_MIN: i64 = 4400;
-pub(crate) const BASE_ROW_WIDTH_4_TO_5_MIN: i64 = 5000;
-pub(crate) const BASE_ROW_WIDTH_5_TO_6_MIN: i64 = 5600;
-pub(crate) const BASE_ROW_WIDTH_6_TO_10_MIN: i64 = 6400;
-
-pub(crate) const ROW_WIDTH_BPM_0_TO_180: f64 = 1.0;
-pub(crate) const ROW_WIDTH_BPM_180_TO_240: f64 = 1.15;
-pub(crate) const ROW_WIDTH_BPM_240_TO_300: f64 = 1.3;
-pub(crate) const ROW_WIDTH_BPM_300_PLUS: f64 = 1.45;
-
-pub(crate) const ROW_GAP: i64 = 80;
-pub(crate) const ROW_HEIGHT: i64 = 80;
-pub(crate) const SPACING_BPM: f64 = 0.0;
-
-pub(crate) const PIXELS_PER_SCROLL_MULTIPLIER_MS: f64 = 0.07;
-pub(crate) const SCROLL_LENGTH_RATIO: f64 = 1.6;
+/// 谱面未提供 BPM 时使用的默认拍长（毫秒）。
 pub(crate) const DEFAULT_BEAT_LENGTH: f64 = 500.0;
+/// 谱面未提供拍号时使用的默认分母。
 pub(crate) const DEFAULT_METER: i32 = 4;
-
-pub(crate) const PAGE_MARGIN_X: i64 = 8;
-pub(crate) const PAGE_MARGIN_Y: i64 = 8;
-/// 第一行上方为 SV 指示标预留的额外空间。
-pub(crate) const FIRST_ROW_SV_TOP_MARGIN: i64 = 24;
-pub(crate) const ROW_INNER_PADDING_X: i64 = 33;
-pub(crate) const LABEL_RIGHT_PADDING: i64 = 1;
-pub(crate) const MIN_BEAT_LINE_SPACING: f64 = 200.0;
-pub(crate) const TIME_LABEL_FONT_SIZE: u32 = 24;
-pub(crate) const TIME_LABEL_NOTE_FONT_SIZE: u32 = 17;
-pub(crate) const BPM_FONT_SIZE: u32 = 22;
-pub(crate) const TIME_LABEL_TOP_GAP: i64 = 0;
-pub(crate) const TIME_LABEL_NOTE_TOP_GAP: i64 = 5;
-pub(crate) const BPM_TOP_GAP: i64 = 4;
-pub(crate) const TIME_LABEL_MIN_INTERVAL_MS: i64 = 2000;
-pub(crate) const SV_TEXT_COLOR: Rgba = [255, 217, 102, 255];
-pub(crate) const SV_TEXT_FONT_SIZE: u32 = 15;
-pub(crate) const SV_TOP_GAP: i64 = 0;
-
-pub(crate) const IMAGE_BACKGROUND: Rgba = [0, 0, 0, 255];
-pub(crate) const CENTRE_NOTE_COLOR: [u8; 3] = [235, 69, 44];
-pub(crate) const RIM_NOTE_COLOR: [u8; 3] = [67, 142, 172];
-pub(crate) const ROLL_COLOR: [u8; 3] = [232, 198, 61];
-pub(crate) const SWELL_COLOR: [u8; 3] = [82, 204, 180];
-pub(crate) const BEAT_LINE_COLOR: Rgba = [83, 83, 83, 255];
-pub(crate) const RULER_TEXT_COLOR: Rgba = [232, 232, 232, 255];
-pub(crate) const ACCENT_LABEL_COLOR: Rgba = [95, 221, 108, 255];
-
-pub(crate) const NORMAL_NOTE_SIZE_RATIO: f64 = 0.475;
-pub(crate) const BIG_NOTE_SCALE: f64 = 1.0 / 0.65;
-pub(crate) const SPAN_BODY_HEIGHT_RATIO: f64 = 0.72;
-pub(crate) const SWELL_BODY_HEIGHT_RATIO: f64 = 0.8;
-
-// 程序化 classic-2013 note 风格（无中心符号）
-pub(crate) const NOTE_RING_COLOR: Rgba = [245, 242, 235, 255];
-pub(crate) const NOTE_EDGE_COLOR: Rgba = [0, 0, 0, 60];
-pub(crate) const NOTE_RING_THICKNESS_RATIO: f64 = 0.055;
-pub(crate) const MEASURE_LINE_COLOR: Rgba = [255, 255, 255, 170];
-
-// 程序化行背景颜色（替代原 taiko-bar-left/right 图片）
-/// note 滚动轨道底色（原图采样为 60,60,60 半透明，叠在黑底上）
-pub(crate) const TRACK_BACKGROUND_COLOR: Rgba = [55, 55, 55, 255];
-/// 轨道上下边缘高光
-pub(crate) const TRACK_EDGE_COLOR: Rgba = [80, 80, 80, 255];
-/// 鼓面板红色饰条（取自 classic 皮肤主色）
-pub(crate) const TRACK_ACCENT_COLOR: Rgba = [254, 59, 1, 255];
-
-// GIF config
-pub(crate) const GIF_SEGMENT_COUNT: usize = 4;
-pub(crate) const GIF_DURATION_MS: f64 = 5000.0;
-pub(crate) const GIF_ROW_HEIGHT: i64 = 80;
-pub(crate) const GIF_ROW_GAP: i64 = 60;
-pub(crate) const GIF_TIME_LABEL_FONT_SIZE: u32 = 20;
-pub(crate) const GIF_TIME_LABEL_NOTE_FONT_SIZE: u32 = 14;
-pub(crate) const GIF_TIME_LABEL_COLOR: Rgba = [232, 232, 232, 255];
-pub(crate) const GIF_TIME_LABEL_NOTE_COLOR: Rgba = [170, 170, 170, 255];
-pub(crate) const GIF_PREVIEW_TIME_LABEL_COLOR: Rgba = [95, 221, 108, 255];
-pub(crate) const GIF_JUDGEMENT_LINE_COLOR: Rgba = [255, 255, 255, 255];
-pub(crate) const GIF_TAIKO_BASE_HEIGHT: f64 = 200.0;
-pub(crate) const GIF_REFERENCE_SCROLL_LENGTH: f64 = 1109.3333333333333;
-pub(crate) const GIF_REFERENCE_JUDGEMENT_X: f64 = 76.0;
-pub(crate) const GIF_STABLE_GAMEFIELD_HEIGHT: f64 = 480.0;
-pub(crate) const GIF_STABLE_HIT_LOCATION: f64 = 160.0;
-pub(crate) const GIF_VELOCITY_MULTIPLIER: f64 = 1.4;
-pub(crate) const GIF_ASPECT: f64 = 16.0 / 9.0;
-
-pub(crate) const HIT_SOUNDS_RIM: i32 = 2 | 8;
+/// 鼓边音符 hitsound 标志。
+pub(crate) const HIT_SOUNDS_RIM: i32 = 10;
+/// 强打音符 hitsound 标志。
 pub(crate) const HIT_SOUNDS_STRONG: i32 = 4;
+/// 连打音符类型标志。
 pub(crate) const DRUMROLL_FLAG: i32 = 2;
+/// 大连打音符类型标志。
 pub(crate) const SWELL_FLAG: i32 = 8;
+/// 速度倍率计算使用的基准拍长（毫秒）。
+pub(crate) const MULTIPLIER_BASE_BEAT_LENGTH: f64 = 1000.0;
+
+/// 普通音符直径占行高的比例。
+pub(crate) const NORMAL_NOTE_SIZE_RATIO: f64 = 0.475;
+/// 大连音符相对普通音符的缩放比例。
+pub(crate) const BIG_NOTE_SCALE: f64 = 1.5384615384615383;
+/// 连打主体高度占行高的比例。
+pub(crate) const SPAN_BODY_HEIGHT_RATIO: f64 = 0.72;
+/// 大连打主体高度占行高的比例。
+pub(crate) const SWELL_BODY_HEIGHT_RATIO: f64 = 0.8;
+/// Taiko 行内容左右内边距基准（GIF/MP4）。
+pub(crate) const ROW_INNER_PADDING_X: i64 = 33;
+
+/// 鼓面面板宽度占比。
+pub(crate) const DRUM_PANEL_WIDTH_RATIO: f64 = 0.905;
+/// 中心音符颜色。
+pub(crate) const CENTRE_NOTE_COLOR: [u8; 3] = [235, 69, 44];
+/// 鼓边音符颜色。
+pub(crate) const RIM_NOTE_COLOR: [u8; 3] = [67, 142, 172];
+/// 连打音符颜色。
+pub(crate) const ROLL_COLOR: [u8; 3] = [232, 198, 61];
+/// 大连打音符颜色。
+pub(crate) const SWELL_COLOR: [u8; 3] = [82, 204, 180];
+/// 音符环颜色。
+pub(crate) const NOTE_RING_COLOR: [u8; 4] = [245, 242, 235, 255];
+/// 音符边缘颜色。
+pub(crate) const NOTE_EDGE_COLOR: [u8; 4] = [0, 0, 0, 60];
+/// 音符环厚度占音符直径比例。
+pub(crate) const NOTE_RING_THICKNESS_RATIO: f64 = 0.055;
+/// 连打点白色菱形的外接尺寸相对普通 Taiko 音符直径。
+pub(crate) const DRUM_ROLL_TICK_DIAMETER_RATIO: f64 = 8.0 / 95.0;
+/// 连打点主体颜色。
+pub(crate) const DRUM_ROLL_TICK_COLOR: [u8; 4] = [255, 255, 255, 255];
+/// classic-2013 小节线占轨道高度的比例。
+pub(crate) const MEASURE_LINE_HEIGHT_RATIO: f64 = 0.88;
+/// osu! 的小节线跟踪器宽度。
+pub(crate) const MEASURE_LINE_WIDTH: i64 = 1;
+/// 动画小节线颜色，独立于 PNG 图表的配色配置。
+pub(crate) const ANIMATION_MEASURE_LINE_COLOR: [u8; 4] = [255, 255, 255, 170];
+/// PNG 时间轴每毫秒滚动像素数。
+pub(crate) const BASE_PIXELS_PER_SCROLL_MS: f64 = 0.07;
+/// 时间轴滚动长度比例。
+pub(crate) const SCROLL_LENGTH_RATIO: f64 = 1.6;
+/// 相邻节拍线的最小间距。
+pub(crate) const MIN_BEAT_LINE_SPACING: f64 = 200.0;
+/// GIF 基准游戏区域高度。
+pub(crate) const TAIKO_BASE_HEIGHT: f64 = 200.0;
+/// 参考判定位置横坐标。
+pub(crate) const REFERENCE_JUDGEMENT_X: f64 = 76.0;
+/// stable 游戏区域高度。
+pub(crate) const STABLE_GAMEFIELD_HEIGHT: f64 = 480.0;
+/// stable 判定位置。
+pub(crate) const STABLE_HIT_LOCATION: f64 = 160.0;
+/// 速度换算倍数。
+pub(crate) const VELOCITY_MULTIPLIER: f64 = 1.4;
+/// Taiko GIF/MP4 游戏视口纵横比。
+pub(crate) const ASPECT_RATIO: f64 = 1.7777777777777777;

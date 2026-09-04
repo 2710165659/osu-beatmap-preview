@@ -1,26 +1,26 @@
-//! .osu beatmap file parser.
+//! .osu 谱面文件解析器。
 //!
-//! Sub-modules:
-//! - `sections`: section splitting, key-value parsing, combo colours
-//! - `timing`: timing points and break periods
-//! - `hit_objects`: mode-specific hit-object parsing, slider timing, rounding
+//! 子模块：
+//! - `sections`：区段拆分、键值解析、连击颜色
+//! - `timing`：timing points 与 break 时段
+//! - `hit_objects`：按模式解析音符、滑条时长与舍入
 
 mod hit_objects;
 mod sections;
 mod timing;
 
-pub use hit_objects::round_half_even;
+pub use hit_objects::{resolve_slider_timing, round_half_even};
 pub use sections::{
     default_metadata, parse_combo_colors, parse_format_version, parse_key_value, split_sections,
 };
-pub use timing::{parse_break_periods, parse_timing_points};
+pub use timing::{parse_background_filename, parse_break_periods, parse_timing_points};
 
 use crate::core::errors::{PreviewError, Result};
 use crate::core::models::*;
 use std::path::Path;
 use std::time::Instant;
 
-/// Parse a .osu file from disk.
+/// 从磁盘解析 .osu 文件。
 pub fn parse_beatmap(path: &Path) -> Result<Beatmap> {
     let started = Instant::now();
     let bytes = std::fs::read(path)
@@ -62,6 +62,7 @@ fn parse_beatmap_str(content: &str) -> Option<Beatmap> {
     general.insert("FormatVersion", parse_format_version(content).to_string());
     let timing_points = parse_timing_points(sections.get("TimingPoints")?)?;
     let break_periods = parse_break_periods(sections.get("Events"));
+    let background_filename = parse_background_filename(sections.get("Events"));
     let mode: i32 = general.get("Mode").unwrap_or("0").parse().ok()?;
 
     let combo_colors = parse_combo_colors(sections.get("Colours"));
@@ -103,7 +104,13 @@ fn parse_beatmap_str(content: &str) -> Option<Beatmap> {
         timing_points,
         hit_objects,
         break_periods,
+        background_filename,
         combo_colors,
         beat_divisor,
     })
+}
+
+#[cfg(test)]
+pub(crate) fn parse_beatmap_str_for_tests(content: &str) -> Option<Beatmap> {
+    parse_beatmap_str(content)
 }
