@@ -513,6 +513,8 @@ fn highlight_recommended_banana_route(
                 else {
                     continue;
                 };
+                // 状态记录的是接盘中心而不是香蕉中心；只要香蕉落在盘宽内就能接取，
+                // 因此可以贴左/右边缘接住并从该实际位置继续规划下一步。
                 let caught = (banana.x - to_x).abs() <= half_catch_width;
                 if caught {
                     candidate = candidate.after_catch(to_x, banana.x, half_catch_width);
@@ -1086,6 +1088,17 @@ mod tests {
 
         assert_eq!(bananas[0].color, RECOMMENDED_BANANA_COLOR);
         assert_eq!(bananas[1].color, RECOMMENDED_DASH_BANANA_COLOR);
+    }
+
+    #[test]
+    fn recommended_banana_route_uses_catcher_edges_without_moving() {
+        // 两颗香蕉中心相距 80px，但 CS5 接取区间有重叠，可以让接盘停在约 140px。
+        let mut bananas = vec![banana(100.0, 0), banana(180.0, 20)];
+
+        highlight_recommended_banana_route(&mut bananas, 5.0, Some(anchor(100.0, 0)), None);
+
+        assert_eq!(bananas[0].color, RECOMMENDED_BANANA_COLOR);
+        assert_eq!(bananas[1].color, RECOMMENDED_BANANA_COLOR);
     }
 
     #[test]
