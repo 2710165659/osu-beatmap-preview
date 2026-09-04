@@ -207,6 +207,7 @@ layout:
   catch:
     png:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
+      SHOW_BANANA_ROUTE: true # 是否计算并绘制香蕉雨推荐路线
       MAX_SUPPORTED_DURATION_MS: 600000 # 支持的谱面最大时长
       MAX_AREA_HEIGHT_0_TO_1_MINUTES: 3000 # 0～1 分钟谱面的单列最大高度
       MAX_AREA_HEIGHT_1_TO_2_MINUTES: 4125 # 1～2 分钟谱面的单列最大高度

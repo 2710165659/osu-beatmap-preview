@@ -314,7 +314,13 @@ pub(crate) fn render_catch_grid(
     };
 
     let difficulty = effective_difficulty(beatmap, mods);
-    let mut render_objects = build_catch_render_objects(beatmap, hit_objects, mods, &difficulty)?;
+    let mut render_objects = build_catch_render_objects(
+        beatmap,
+        hit_objects,
+        mods,
+        &difficulty,
+        crate::config::current().layout.catch.png.SHOW_BANANA_ROUTE,
+    )?;
     deadline.check()?;
     let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap().max(1);
 
@@ -399,7 +405,9 @@ pub(crate) fn render_catch_grid(
     }
 
     // 路线和引导线放在物件下层，避免遮住水果图形。
-    draw_banana_routes(&mut image, &render_objects, &layout);
+    if crate::config::current().layout.catch.png.SHOW_BANANA_ROUTE {
+        draw_banana_routes(&mut image, &render_objects, &layout);
+    }
     draw_edge_guides(&mut image, &render_objects, &layout);
 
     // 后发生的对象先画（早出现的盖在上层），同时刻按 类型 排序

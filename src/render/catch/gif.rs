@@ -171,7 +171,8 @@ fn render_catch_segment_gif(
     };
 
     let difficulty = effective_difficulty(beatmap, mods);
-    let mut render_objects = build_catch_render_objects(beatmap, hit_objects, mods, &difficulty)?;
+    let mut render_objects =
+        build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let segment_duration_ms = duration_seconds

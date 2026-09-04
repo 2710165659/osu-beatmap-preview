@@ -7,6 +7,7 @@ mod drawing;
 mod gif;
 pub(crate) mod objects;
 mod png;
+mod route;
 mod video;
 
 pub(crate) use gif::render_catch_gif;

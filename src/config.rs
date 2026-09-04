@@ -625,6 +625,18 @@ mod tests {
     }
 
     #[test]
+    fn catch_png_banana_route_switch_defaults_on_and_accepts_override() {
+        let defaults = load_snapshot(None).unwrap();
+        assert!(defaults.layout.catch.png.SHOW_BANANA_ROUTE);
+
+        let config = load_snapshot(Some(
+            r#"{"layout":{"catch":{"png":{"SHOW_BANANA_ROUTE":false}}}}"#,
+        ))
+        .unwrap();
+        assert!(!config.layout.catch.png.SHOW_BANANA_ROUTE);
+    }
+
+    #[test]
     fn render_timeout_overlays_accept_positive_integer_seconds() {
         let config = load_snapshot(Some(
             r#"{"timeouts":{"render":{"PNG_TIMEOUT":"10","GIF_TIMEOUT":20,"MP4_TIMEOUT":30}}}"#,

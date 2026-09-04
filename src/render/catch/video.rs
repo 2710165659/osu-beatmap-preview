@@ -37,7 +37,8 @@ pub(crate) fn render_catch_video(
         _ => return Err(PreviewError::render("catch beatmap has no hit objects")),
     };
     let difficulty = effective_difficulty(beatmap, mods);
-    let mut render_objects = build_catch_render_objects(beatmap, hit_objects, mods, &difficulty)?;
+    let mut render_objects =
+        build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
 
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let first = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
