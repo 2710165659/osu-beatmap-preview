@@ -33,7 +33,7 @@ pub(crate) const RECOMMENDED_DASH_BANANA_COLOR: [u8; 3] = [255, 128, 128];
 /// PNG 香蕉雨接盘中心路线的颜色。
 pub(crate) const BANANA_ROUTE_LINE_COLOR: [u8; 4] = [74, 198, 214, 255];
 /// 接盘中心路线宽度，单位为 stable 游戏区域坐标。
-pub(crate) const BANANA_ROUTE_LINE_WIDTH: f64 = 2.0;
+pub(crate) const BANANA_ROUTE_LINE_WIDTH: f64 = 4.0;
 /// 香蕉雨随机数种子。
 pub(crate) const RNG_SEED: i64 = 1337;
 /// stable 模式香蕉颜色。
