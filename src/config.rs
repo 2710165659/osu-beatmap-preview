@@ -140,19 +140,23 @@ fn apply_layout_scales(config: &mut Value, scale_override: Option<f64>) -> Resul
                 section.insert("SCALE".to_string(), Value::Number(number));
             }
             for (name, value) in section.iter_mut() {
-                if name == "SCALE" || !is_pixel_layout_field(name) {
-                    continue;
-                }
                 let Some(number) = value.as_f64() else {
                     continue;
                 };
-                // 位图字体以 8px 字形为基础。先换算旧实现实际绘制的基础高度，
-                // 再应用输出倍率，既保持 1x 外观，又允许 0.5x、1.5x 等倍率精确缩放。
-                let scaled = if name.ends_with("FONT_SIZE") {
-                    let glyph_scale = (number.max(8.0) / 8.0).floor().max(1.0);
-                    (glyph_scale * 8.0 * scale).max(1.0)
-                } else {
-                    number * scale
+                let Some(kind) = layout_number_kind(name) else {
+                    return Err(format!(
+                        "configuration field 'layout.{mode}.{format}.{name}' has no scaling classification"
+                    ));
+                };
+                let scaled = match kind {
+                    LayoutNumberKind::Invariant => continue,
+                    LayoutNumberKind::Pixel => number * scale,
+                    LayoutNumberKind::BitmapFont => {
+                        // 位图字体以 8px 字形为基础。先换算旧实现实际绘制的基础高度，
+                        // 再应用输出倍率，既保持 1x 外观，又允许小数倍率精确缩放。
+                        let glyph_scale = (number.max(8.0) / 8.0).floor().max(1.0);
+                        (glyph_scale * 8.0 * scale).max(1.0)
+                    }
                 };
                 if value.as_i64().is_some() || value.as_u64().is_some() {
                     let rounded = crate::parser::round_half_even(scaled);
@@ -170,38 +174,95 @@ fn apply_layout_scales(config: &mut Value, scale_override: Option<f64>) -> Resul
     Ok(())
 }
 
-fn is_pixel_layout_field(name: &str) -> bool {
-    // 仅换算实际绘制长度。MAX_* 是内存/时长保护阈值，*_MS、FPS 和计数项
-    // 是时间或数量语义，不能因为输出像素倍率而改变。
-    if name.starts_with("MAX_")
-        || (name.ends_with("_MS") && name != "PIXELS_PER_MS")
-        || name == "FPS"
-        || name.ends_with("_COUNT")
-        || name.starts_with("IMAGES_PER_ROW")
-        || name.starts_with("ROW_COUNT")
-        || name == "DURATION_MS"
-        || name == "SCROLL_SPEED"
-        || name == "SLIDER_BODY_SUPERSAMPLE"
-    {
-        return false;
-    }
-    name.contains("WIDTH")
-        || name.contains("HEIGHT")
-        || name.contains("MARGIN")
-        || name.contains("GAP")
-        || name.contains("PADDING")
-        || name.ends_with("_PAD")
-        || name.ends_with("FONT_SIZE")
-        || name == "PIXELS_PER_MS"
-        || name == "SPACING_PER_BPM"
-        || name.ends_with("FROM_BOTTOM")
-        || name == "ROW_HEIGHT"
-        || name == "ROW_INNER_PADDING_X"
-        || name == "LEFT_PANEL_WIDTH"
-        || name == "LANE_WIDTH"
-        || name == "NOTE_HEAD_HEIGHT"
-        || name == "NOTE_SIDE_PADDING"
-        || name == "SEPARATOR_WIDTH"
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LayoutNumberKind {
+    Invariant,
+    Pixel,
+    BitmapFont,
+}
+
+/// 所有布局数字都必须显式归类，避免字段名同时表达像素上限和资源上限时误判。
+fn layout_number_kind(name: &str) -> Option<LayoutNumberKind> {
+    use LayoutNumberKind::{BitmapFont, Invariant, Pixel};
+
+    let kind = match name {
+        "TIME_LABEL_FONT_SIZE"
+        | "TIME_LABEL_NOTE_FONT_SIZE"
+        | "LABEL_FONT_SIZE"
+        | "BPM_FONT_SIZE"
+        | "SV_TEXT_FONT_SIZE"
+        | "EDGE_COMBO_LABEL_FONT_SIZE" => BitmapFont,
+
+        "PAGE_MARGIN_TOP"
+        | "PAGE_MARGIN_RIGHT"
+        | "PAGE_MARGIN_BOTTOM"
+        | "PAGE_MARGIN_LEFT"
+        | "INFO_MARGIN_TOP"
+        | "INFO_MARGIN_RIGHT"
+        | "INFO_MARGIN_BOTTOM"
+        | "INFO_MARGIN_LEFT"
+        | "COLUMN_GAP"
+        | "ROW_GAP"
+        | "GRID_GAP"
+        | "TIME_LABEL_TOP_GAP"
+        | "TIME_LABEL_NOTE_TOP_GAP"
+        | "LABEL_PAD"
+        | "BASE_ROW_WIDTH_0_TO_1_MINUTES"
+        | "BASE_ROW_WIDTH_1_TO_2_MINUTES"
+        | "BASE_ROW_WIDTH_2_TO_3_MINUTES"
+        | "BASE_ROW_WIDTH_3_TO_4_MINUTES"
+        | "BASE_ROW_WIDTH_4_TO_5_MINUTES"
+        | "BASE_ROW_WIDTH_5_TO_6_MINUTES"
+        | "BASE_ROW_WIDTH_6_TO_10_MINUTES"
+        | "ROW_HEIGHT"
+        | "ROW_INNER_PADDING_X"
+        | "LABEL_RIGHT_PADDING"
+        | "BPM_TOP_GAP"
+        | "SV_TOP_GAP"
+        | "MAX_AREA_HEIGHT_0_TO_1_MINUTES"
+        | "MAX_AREA_HEIGHT_1_TO_2_MINUTES"
+        | "MAX_AREA_HEIGHT_2_TO_3_MINUTES"
+        | "MAX_AREA_HEIGHT_3_TO_4_MINUTES"
+        | "MAX_AREA_HEIGHT_4_TO_5_MINUTES"
+        | "MAX_AREA_HEIGHT_5_TO_6_MINUTES"
+        | "MAX_TOTAL_CHART_HEIGHT"
+        | "LEFT_PANEL_WIDTH"
+        | "COLUMN_WIDTH"
+        | "BPM_LABEL_GAP"
+        | "EDGE_GUIDE_WIDTH"
+        | "EDGE_COMBO_LABEL_GAP"
+        | "EDGE_COMBO_LABEL_PADDING"
+        | "EDGE_COMBO_LABEL_SHADOW_GAP"
+        | "PIXELS_PER_MS"
+        | "LANE_WIDTH"
+        | "NOTE_HEAD_HEIGHT"
+        | "HIT_TARGET_FROM_BOTTOM"
+        | "NOTE_SIDE_PADDING"
+        | "LANE_GAP"
+        | "SEPARATOR_WIDTH" => Pixel,
+
+        "SCALE"
+        | "MS_PER_IMAGE"
+        | "ROW_COUNT"
+        | "IMAGES_PER_ROW"
+        | "SLIDER_BODY_SUPERSAMPLE"
+        | "DURATION_MS"
+        | "FPS"
+        | "BACKGROUND_DIM"
+        | "MAX_SUPPORTED_DURATION_MS"
+        | "ROW_WIDTH_MULTIPLIER_BPM_0_TO_180"
+        | "ROW_WIDTH_MULTIPLIER_BPM_180_TO_240"
+        | "ROW_WIDTH_MULTIPLIER_BPM_240_TO_300"
+        | "ROW_WIDTH_MULTIPLIER_BPM_300_PLUS"
+        | "SPACING_PER_BPM"
+        | "TIME_LABEL_MIN_INTERVAL_MS"
+        | "RNG_SEED"
+        | "FIXED_COLUMN_COUNT_6_TO_10_MINUTES"
+        | "BOTTOM_PADDING_MS"
+        | "SCROLL_SPEED" => Invariant,
+        _ => return None,
+    };
+    Some(kind)
 }
 
 fn validate_video_background(config: &Value) -> Result<(), String> {
@@ -919,7 +980,11 @@ layout:
         assert_eq!(configured.layout.catch.mp4.LABEL_PAD, 24);
         assert_eq!(configured.layout.mania.png.PIXELS_PER_MS, 0.8);
         assert_eq!(configured.layout.mania.png.SV_TEXT_FONT_SIZE, 16);
-        // 时长、帧率和内存保护阈值不是像素量，不随 SCALE 改变。
+        assert_eq!(
+            configured.layout.mania.png.MAX_AREA_HEIGHT_0_TO_1_MINUTES,
+            6000
+        );
+        // 时长、帧率和数量不是像素量，不随 SCALE 改变。
         assert_eq!(configured.layout.standard.png.MS_PER_IMAGE, 400);
         assert_eq!(configured.layout.taiko.gif.FPS, 15.0);
         assert_eq!(configured.layout.catch.png.MAX_TOTAL_CHART_HEIGHT, 180000);
@@ -1003,6 +1068,160 @@ layout:
         assert_eq!(configured.layout.standard.png.PAGE_MARGIN_TOP, 10);
         assert_eq!(configured.layout.standard.png.TIME_LABEL_FONT_SIZE, 12);
         assert_eq!(configured.layout.standard.png.MS_PER_IMAGE, 400);
+    }
+
+    #[test]
+    fn png_layout_limits_and_taiko_spacing_have_explicit_scale_semantics() {
+        let configured = load_snapshot(Some(
+            r#"{
+                "layout": {
+                    "taiko": {"png": {"SCALE": 2.0, "SPACING_PER_BPM": 180.0}},
+                    "catch": {"png": {"SCALE": 2.0}},
+                    "mania": {"png": {"SCALE": 2.0}}
+                }
+            }"#,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            configured.layout.taiko.png.BASE_ROW_WIDTH_0_TO_1_MINUTES,
+            5200
+        );
+        assert_eq!(
+            configured
+                .layout
+                .taiko
+                .png
+                .ROW_WIDTH_MULTIPLIER_BPM_180_TO_240,
+            1.15
+        );
+        assert_eq!(configured.layout.taiko.png.SPACING_PER_BPM, 180.0);
+        assert_eq!(
+            configured.layout.catch.png.MAX_AREA_HEIGHT_0_TO_1_MINUTES,
+            6000
+        );
+        assert_eq!(configured.layout.catch.png.MAX_TOTAL_CHART_HEIGHT, 360000);
+        assert_eq!(
+            configured.layout.mania.png.MAX_AREA_HEIGHT_0_TO_1_MINUTES,
+            6000
+        );
+        assert_eq!(
+            configured
+                .layout
+                .mania
+                .png
+                .FIXED_COLUMN_COUNT_6_TO_10_MINUTES,
+            30
+        );
+    }
+
+    #[test]
+    fn all_png_layout_limit_tiers_scale_at_supported_fractional_factors() {
+        let taiko_base = [2600, 3200, 3800, 4400, 5000, 5600, 6400];
+        let catch_base = [3000, 4125, 5250, 6375, 7500, 8625];
+        let mania_base = [3000, 5000, 7000, 8500, 10000, 11500];
+
+        for scale in [0.5, 1.0, 1.5, 2.0] {
+            let source = format!(
+                r#"{{"layout":{{"taiko":{{"png":{{"SCALE":{scale}}}}},"catch":{{"png":{{"SCALE":{scale}}}}},"mania":{{"png":{{"SCALE":{scale}}}}}}}}}"#
+            );
+            let configured = load_snapshot(Some(&source)).unwrap();
+            let taiko_actual = [
+                configured.layout.taiko.png.BASE_ROW_WIDTH_0_TO_1_MINUTES,
+                configured.layout.taiko.png.BASE_ROW_WIDTH_1_TO_2_MINUTES,
+                configured.layout.taiko.png.BASE_ROW_WIDTH_2_TO_3_MINUTES,
+                configured.layout.taiko.png.BASE_ROW_WIDTH_3_TO_4_MINUTES,
+                configured.layout.taiko.png.BASE_ROW_WIDTH_4_TO_5_MINUTES,
+                configured.layout.taiko.png.BASE_ROW_WIDTH_5_TO_6_MINUTES,
+                configured.layout.taiko.png.BASE_ROW_WIDTH_6_TO_10_MINUTES,
+            ];
+            let catch_actual = [
+                configured.layout.catch.png.MAX_AREA_HEIGHT_0_TO_1_MINUTES,
+                configured.layout.catch.png.MAX_AREA_HEIGHT_1_TO_2_MINUTES,
+                configured.layout.catch.png.MAX_AREA_HEIGHT_2_TO_3_MINUTES,
+                configured.layout.catch.png.MAX_AREA_HEIGHT_3_TO_4_MINUTES,
+                configured.layout.catch.png.MAX_AREA_HEIGHT_4_TO_5_MINUTES,
+                configured.layout.catch.png.MAX_AREA_HEIGHT_5_TO_6_MINUTES,
+            ];
+            let mania_actual = [
+                configured.layout.mania.png.MAX_AREA_HEIGHT_0_TO_1_MINUTES,
+                configured.layout.mania.png.MAX_AREA_HEIGHT_1_TO_2_MINUTES,
+                configured.layout.mania.png.MAX_AREA_HEIGHT_2_TO_3_MINUTES,
+                configured.layout.mania.png.MAX_AREA_HEIGHT_3_TO_4_MINUTES,
+                configured.layout.mania.png.MAX_AREA_HEIGHT_4_TO_5_MINUTES,
+                configured.layout.mania.png.MAX_AREA_HEIGHT_5_TO_6_MINUTES,
+            ];
+            let scaled = |value: i64| crate::parser::round_half_even(value as f64 * scale);
+
+            assert_eq!(taiko_actual, taiko_base.map(scaled));
+            assert_eq!(catch_actual, catch_base.map(scaled));
+            assert_eq!(mania_actual, mania_base.map(scaled));
+            assert_eq!(
+                configured.layout.catch.png.MAX_TOTAL_CHART_HEIGHT,
+                scaled(180000)
+            );
+            assert_eq!(
+                configured
+                    .layout
+                    .taiko
+                    .png
+                    .ROW_WIDTH_MULTIPLIER_BPM_0_TO_180,
+                1.0
+            );
+            assert_eq!(
+                configured
+                    .layout
+                    .taiko
+                    .png
+                    .ROW_WIDTH_MULTIPLIER_BPM_180_TO_240,
+                1.15
+            );
+            assert_eq!(
+                configured
+                    .layout
+                    .taiko
+                    .png
+                    .ROW_WIDTH_MULTIPLIER_BPM_240_TO_300,
+                1.3
+            );
+            assert_eq!(
+                configured
+                    .layout
+                    .taiko
+                    .png
+                    .ROW_WIDTH_MULTIPLIER_BPM_300_PLUS,
+                1.45
+            );
+            assert_eq!(configured.layout.taiko.png.SPACING_PER_BPM, 0.0);
+            assert_eq!(
+                configured
+                    .layout
+                    .mania
+                    .png
+                    .FIXED_COLUMN_COUNT_6_TO_10_MINUTES,
+                30
+            );
+            assert_eq!(configured.layout.mania.png.BOTTOM_PADDING_MS, 2000);
+        }
+    }
+
+    #[test]
+    fn every_numeric_layout_default_has_a_scale_classification() {
+        let defaults = parse_document(super::default_config_yaml(), "embedded defaults").unwrap();
+        for mode in ["standard", "taiko", "catch", "mania"] {
+            for format in ["png", "gif", "mp4"] {
+                let pointer = format!("/layout/{mode}/{format}");
+                let section = defaults.pointer(&pointer).unwrap().as_object().unwrap();
+                for (name, value) in section {
+                    if value.is_number() {
+                        assert!(
+                            super::layout_number_kind(name).is_some(),
+                            "{pointer}/{name} 缺少缩放语义分类"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

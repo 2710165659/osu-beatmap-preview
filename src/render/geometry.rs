@@ -61,6 +61,11 @@ pub(crate) fn scale_px(value: f64, scale: f64) -> i64 {
     round_half_even(value * scale)
 }
 
+/// 缩放可见线宽；低倍率下仍至少保留一个物理像素。
+pub(crate) fn scale_stroke_px(value: f64, scale: f64) -> i64 {
+    scale_px(value, scale).max(1)
+}
+
 pub(crate) fn standard_geometry(format: OutputFormat) -> PlayfieldGeometry {
     let scale = output_scale(GameMode::Standard, format);
     let content_width = scale_px(530.0, scale);
@@ -139,7 +144,7 @@ pub(crate) fn video_canvas_16_9(content_width: u32, content_height: u32) -> (u32
 
 #[cfg(test)]
 mod tests {
-    use super::{scale_px, video_canvas_16_9};
+    use super::{scale_px, scale_stroke_px, video_canvas_16_9};
 
     #[test]
     fn base_playfield_lengths_use_half_even_rounding() {
@@ -159,5 +164,13 @@ mod tests {
             assert_eq!(out_height % 2, 0);
             assert!((out_width as i64 * 9 - out_height as i64 * 16).abs() <= 24);
         }
+    }
+
+    #[test]
+    fn visible_strokes_keep_at_least_one_physical_pixel() {
+        assert_eq!(scale_stroke_px(1.0, 0.01), 1);
+        assert_eq!(scale_stroke_px(1.0, 0.5), 1);
+        assert_eq!(scale_stroke_px(1.0, 1.5), 2);
+        assert_eq!(scale_stroke_px(2.0, 2.0), 4);
     }
 }

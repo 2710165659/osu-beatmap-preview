@@ -52,6 +52,8 @@ pub(crate) const MEASURE_LINE_HEIGHT_RATIO: f64 = 0.88;
 pub(crate) const MEASURE_LINE_WIDTH: i64 = 1;
 /// 动画小节线颜色，独立于 PNG 图表的配色配置。
 pub(crate) const ANIMATION_MEASURE_LINE_COLOR: [u8; 4] = [255, 255, 255, 170];
+/// MP4 未提供独立字段时使用的判定线颜色。
+pub(crate) const MP4_JUDGEMENT_LINE_COLOR: [u8; 4] = [255, 255, 255, 255];
 /// PNG 时间轴每毫秒滚动像素数。
 pub(crate) const BASE_PIXELS_PER_SCROLL_MS: f64 = 0.07;
 /// 时间轴滚动长度比例。

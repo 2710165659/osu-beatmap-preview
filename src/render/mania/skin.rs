@@ -18,10 +18,18 @@ pub(crate) struct ManiaSkinConfig {
 }
 
 /// 按键数加载 mania 皮肤配置；没有匹配块时返回默认值。
-pub(crate) fn load_mania_skin_config(keys: i32) -> ManiaSkinConfig {
+pub(crate) fn load_mania_skin_config(
+    keys: i32,
+    output_format: crate::render::geometry::OutputFormat,
+) -> ManiaSkinConfig {
+    let fallback = fallback_for_format(output_format);
     macro_rules! block {
         ($name:ident) => {
-            from_config(&crate::config::current().skin.MANIA.$name, keys as usize)
+            from_config(
+                &crate::config::current().skin.MANIA.$name,
+                keys as usize,
+                fallback,
+            )
         };
     }
 
@@ -44,26 +52,46 @@ pub(crate) fn load_mania_skin_config(keys: i32) -> ManiaSkinConfig {
         16 => block!(KEYS_16),
         17 => block!(KEYS_17),
         18 => block!(KEYS_18),
-        _ => default_skin_config(keys),
+        _ => default_skin_config(keys, fallback),
     }
 }
 
-fn from_config<T>(block: &T, keys: usize) -> ManiaSkinConfig
+#[derive(Clone, Copy)]
+struct SkinFallback {
+    hit_position: f64,
+    lane_width: i64,
+    lane_background: Rgba,
+}
+
+fn fallback_for_format(output_format: crate::render::geometry::OutputFormat) -> SkinFallback {
+    match output_format {
+        crate::render::geometry::OutputFormat::Png => SkinFallback {
+            hit_position: crate::config::current()
+                .layout
+                .mania
+                .png
+                .HIT_TARGET_FROM_BOTTOM as f64,
+            lane_width: crate::config::current().layout.mania.png.LANE_WIDTH,
+            lane_background: crate::config::current().layout.mania.png.LANE_BACKGROUND,
+        },
+        crate::render::geometry::OutputFormat::Gif | crate::render::geometry::OutputFormat::Mp4 => {
+            SkinFallback {
+                hit_position: crate::render::mania::constants::DEFAULT_HIT_TARGET_FROM_BOTTOM,
+                lane_width: crate::render::mania::constants::LANE_WIDTH,
+                lane_background: crate::render::mania::constants::DEFAULT_LANE_BACKGROUND,
+            }
+        }
+    }
+}
+
+fn from_config<T>(block: &T, keys: usize, fallback: SkinFallback) -> ManiaSkinConfig
 where
     T: ManiaSkinBlock,
 {
     let keys = keys.max(1);
-    let column_widths = normalize_int_list(
-        block.column_widths(),
-        keys,
-        crate::config::current().layout.mania.png.LANE_WIDTH,
-    );
+    let column_widths = normalize_int_list(block.column_widths(), keys, fallback.lane_width);
     let column_line_widths = normalize_int_list(block.column_line_widths(), keys + 1, 0);
-    let column_colours = normalize_colours(
-        block.column_colours(),
-        keys,
-        crate::config::current().layout.mania.png.LANE_BACKGROUND,
-    );
+    let column_colours = normalize_colours(block.column_colours(), keys, fallback.lane_background);
 
     ManiaSkinConfig {
         hit_position: parse_hit_position(block.hit_position()),
@@ -147,17 +175,13 @@ fn parse_hit_position(raw: i64) -> f64 {
 }
 
 /// 缺省配置：等宽列、无分隔线、默认判定线位置。
-fn default_skin_config(keys: i32) -> ManiaSkinConfig {
+fn default_skin_config(keys: i32, fallback: SkinFallback) -> ManiaSkinConfig {
     let keys = keys.max(0) as usize;
     ManiaSkinConfig {
-        hit_position: crate::config::current()
-            .layout
-            .mania
-            .png
-            .HIT_TARGET_FROM_BOTTOM as f64,
-        column_widths: vec![crate::config::current().layout.mania.png.LANE_WIDTH; keys],
+        hit_position: fallback.hit_position,
+        column_widths: vec![fallback.lane_width; keys],
         column_line_widths: vec![0; keys + 1],
-        column_colours: vec![crate::config::current().layout.mania.png.LANE_BACKGROUND; keys],
+        column_colours: vec![fallback.lane_background; keys],
     }
 }
 
@@ -165,10 +189,14 @@ fn default_skin_config(keys: i32) -> ManiaSkinConfig {
 mod tests {
     use super::load_mania_skin_config;
 
+    fn load(keys: i32) -> super::ManiaSkinConfig {
+        load_mania_skin_config(keys, crate::render::geometry::OutputFormat::Png)
+    }
+
     #[test]
     fn all_standard_keycounts_use_explicit_skin_blocks() {
         for keys in 1..=18 {
-            let config = load_mania_skin_config(keys);
+            let config = load(keys);
             assert_eq!(config.column_widths.len(), keys as usize);
             assert_eq!(config.column_line_widths.len(), keys as usize + 1);
             assert_eq!(config.column_colours.len(), keys as usize);
@@ -177,21 +205,21 @@ mod tests {
 
     #[test]
     fn odd_keycount_defaults_match_migrated_values() {
-        let config_3 = load_mania_skin_config(3);
+        let config_3 = load(3);
         assert_eq!(config_3.column_widths, vec![68, 68, 68]);
         assert!((config_3.hit_position - 11.2).abs() < 1e-9);
 
-        let config_11 = load_mania_skin_config(11);
+        let config_11 = load(11);
         assert_eq!(config_11.column_widths, vec![53; 11]);
         assert!((config_11.hit_position - 32.0).abs() < 1e-9);
 
-        let config_17 = load_mania_skin_config(17);
+        let config_17 = load(17);
         assert_eq!(config_17.column_widths, vec![48; 17]);
     }
 
     #[test]
     fn unknown_keycount_uses_fallback_layout() {
-        let config = load_mania_skin_config(19);
+        let config = load(19);
         assert_eq!(config.column_widths.len(), 19);
         assert_eq!(config.column_line_widths, vec![0; 20]);
     }

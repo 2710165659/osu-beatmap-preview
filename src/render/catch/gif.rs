@@ -30,9 +30,11 @@ pub(crate) struct GifLayout {
     playfield_top: f64,
     object_scale: f64,
     pixels_per_ms: f64,
+    render_scale: f64,
     pub(crate) frame_width: i64,
     pub(crate) frame_height: i64,
     playfield_background: [u8; 4],
+    judgement_line_color: [u8; 4],
 }
 
 pub(crate) fn build_gif_layout(
@@ -41,11 +43,11 @@ pub(crate) fn build_gif_layout(
     output_format: crate::render::geometry::OutputFormat,
 ) -> GifLayout {
     let geometry = crate::render::geometry::catch_geometry(output_format);
-    let playfield_scale = crate::render::catch::constants::PLAYFIELD_SCALE
-        * crate::render::geometry::output_scale(
-            crate::render::geometry::GameMode::Catch,
-            output_format,
-        );
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Catch,
+        output_format,
+    );
+    let playfield_scale = crate::render::catch::constants::PLAYFIELD_SCALE * render_scale;
     let playfield_left = geometry.playfield.x as f64;
     let playfield_top = geometry.playfield.y as f64;
     let object_scale = super::objects::circle_scale(circle_size);
@@ -57,24 +59,33 @@ pub(crate) fn build_gif_layout(
         * playfield_scale;
     let pixels_per_ms = visible_fall_height / time_range;
 
-    let config = &crate::config::current().layout.catch.gif;
-    let unit_width = geometry.content.width + config.INFO_MARGIN_LEFT + config.INFO_MARGIN_RIGHT;
-    // 关闭时间标签时不保留其专用信息区，避免生成额外空白。
-    let info_bottom =
-        if output_format == crate::render::geometry::OutputFormat::Gif && config.SHOW_TIME_LABEL {
-            config.INFO_MARGIN_BOTTOM
-        } else {
-            0
-        };
-    let unit_height = geometry.content.height + config.INFO_MARGIN_TOP + info_bottom;
-    let canvas_width = config.PAGE_MARGIN_LEFT
-        + config.PAGE_MARGIN_RIGHT
-        + config.IMAGES_PER_ROW * unit_width
-        + (config.IMAGES_PER_ROW - 1) * config.GRID_GAP;
-    let canvas_height = config.PAGE_MARGIN_TOP
-        + config.PAGE_MARGIN_BOTTOM
-        + config.ROW_COUNT * unit_height
-        + (config.ROW_COUNT - 1) * config.GRID_GAP;
+    let (canvas_width, canvas_height) = match output_format {
+        crate::render::geometry::OutputFormat::Gif => {
+            let config = &crate::config::current().layout.catch.gif;
+            let unit_width =
+                geometry.content.width + config.INFO_MARGIN_LEFT + config.INFO_MARGIN_RIGHT;
+            let info_bottom = if config.SHOW_TIME_LABEL {
+                config.INFO_MARGIN_BOTTOM
+            } else {
+                0
+            };
+            let unit_height = geometry.content.height + config.INFO_MARGIN_TOP + info_bottom;
+            (
+                config.PAGE_MARGIN_LEFT
+                    + config.PAGE_MARGIN_RIGHT
+                    + config.IMAGES_PER_ROW * unit_width
+                    + (config.IMAGES_PER_ROW - 1) * config.GRID_GAP,
+                config.PAGE_MARGIN_TOP
+                    + config.PAGE_MARGIN_BOTTOM
+                    + config.ROW_COUNT * unit_height
+                    + (config.ROW_COUNT - 1) * config.GRID_GAP,
+            )
+        }
+        crate::render::geometry::OutputFormat::Mp4 => {
+            (geometry.content.width, geometry.content.height)
+        }
+        crate::render::geometry::OutputFormat::Png => unreachable!("PNG 不使用动画布局"),
+    };
 
     GifLayout {
         canvas_width,
@@ -84,6 +95,7 @@ pub(crate) fn build_gif_layout(
         playfield_top,
         object_scale,
         pixels_per_ms,
+        render_scale,
         frame_width: geometry.content.width,
         frame_height: geometry.content.height,
         playfield_background: match output_format {
@@ -102,6 +114,7 @@ pub(crate) fn build_gif_layout(
                     .PLAYFIELD_BACKGROUND
             }
         },
+        judgement_line_color: crate::render::catch::constants::ANIMATION_JUDGEMENT_LINE_COLOR,
     }
 }
 
@@ -282,10 +295,10 @@ pub(crate) fn render_gif_frame(
         playfield_left + crate::render::catch::constants::PLAYFIELD_WIDTH * layout.playfield_scale;
     // playfield 区域底色
     if background.is_none() {
-        frame.set_rect(
+        frame.set_rect_size(
             rhe(playfield_left),
             0,
-            rhe(playfield_right),
+            rhe(playfield_right) - rhe(playfield_left),
             layout.frame_height,
             layout.playfield_background,
         );
@@ -295,12 +308,13 @@ pub(crate) fn render_gif_frame(
     let judgement_y = layout.playfield_top
         + crate::render::catch::constants::STABLE_CATCHER_Y * layout.playfield_scale;
     let judgement_y_px = rhe(judgement_y);
-    frame.set_rect(
+    let line_height = crate::render::geometry::scale_stroke_px(2.0, layout.render_scale);
+    frame.set_rect_size(
         rhe(playfield_left),
         judgement_y_px,
-        rhe(playfield_right),
-        judgement_y_px + 1,
-        [238, 238, 238, 200],
+        rhe(playfield_right) - rhe(playfield_left),
+        line_height,
+        layout.judgement_line_color,
     );
 
     // 可见时间窗：对象在 [snapshot, snapshot + 下落时间窗 + 余量] 内才可能出现在帧中

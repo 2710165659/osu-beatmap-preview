@@ -211,7 +211,36 @@ fn column_left(column_index: i64) -> i64 {
 }
 
 fn playfield_left(column_index: i64) -> i64 {
-    column_left(column_index) + crate::config::current().layout.catch.png.LEFT_PANEL_WIDTH + 23
+    column_left(column_index)
+        + crate::config::current().layout.catch.png.LEFT_PANEL_WIDTH
+        + playfield_side_padding()
+}
+
+fn playfield_side_padding() -> i64 {
+    let config = &crate::config::current().layout.catch.png;
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Catch,
+        crate::render::geometry::OutputFormat::Png,
+    );
+    let playfield_width = crate::render::geometry::scale_px(
+        crate::render::catch::constants::PLAYFIELD_DISPLAY_WIDTH as f64,
+        render_scale,
+    );
+    playfield_side_padding_for(
+        config.COLUMN_WIDTH,
+        config.LEFT_PANEL_WIDTH,
+        playfield_width,
+    )
+}
+
+fn playfield_side_padding_for(
+    column_width: i64,
+    left_panel_width: i64,
+    playfield_width: i64,
+) -> i64 {
+    (column_width - left_panel_width - playfield_width)
+        .div_euclid(2)
+        .max(0)
 }
 
 // ─── 节拍线 ───
@@ -427,54 +456,59 @@ pub(crate) fn render_catch_grid(
     Ok(output_path.to_path_buf())
 }
 
-/// 画单列背景：左侧灰条 + playfield 底色 + 左右边界线（与 playfield 区域留 23px）。
+/// 画单列背景：左右留白从列宽推导，保证自定义倍率和列宽使用同一几何关系。
 fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: i64) {
     let column_left = column_left(column_index);
     let chart_top = crate::config::current().layout.catch.png.PAGE_MARGIN_TOP
         + crate::config::current().layout.catch.png.INFO_MARGIN_TOP;
-    let chart_bottom = chart_top + layout.total_column_height;
-    // 左侧灰条在最左边
-    let panel_right = column_left + crate::config::current().layout.catch.png.LEFT_PANEL_WIDTH;
-    // playfield 在灰条右侧 23px 处开始
-    let visible_left = panel_right + 23;
+    let panel_width = crate::config::current().layout.catch.png.LEFT_PANEL_WIDTH;
+    let side_padding = playfield_side_padding();
+    let visible_left = column_left + panel_width + side_padding;
     let visible_right = visible_left + layout.visible_playfield_width;
-    let border_left = visible_left - 23;
-    let border_right = visible_right + 23;
+    let border_width = crate::render::geometry::scale_stroke_px(
+        1.0,
+        crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Catch,
+            crate::render::geometry::OutputFormat::Png,
+        ),
+    );
+    let border_left = visible_left - side_padding;
+    let border_right = visible_right + side_padding - border_width;
 
-    image.set_rect(
+    image.set_rect_size(
         column_left,
         chart_top,
-        panel_right,
-        chart_bottom,
+        panel_width,
+        layout.total_column_height,
         crate::config::current()
             .layout
             .catch
             .png
             .LEFT_PANEL_BACKGROUND,
     );
-    image.set_rect(
+    image.set_rect_size(
         visible_left,
         chart_top,
-        visible_right,
-        chart_bottom,
+        layout.visible_playfield_width,
+        layout.total_column_height,
         crate::config::current()
             .layout
             .catch
             .png
             .PLAYFIELD_BACKGROUND,
     );
-    image.set_rect(
+    image.set_rect_size(
         border_left,
         chart_top,
-        border_left,
-        chart_bottom,
+        border_width,
+        layout.total_column_height,
         crate::config::current().layout.catch.png.PLAYFIELD_BORDER,
     );
-    image.set_rect(
+    image.set_rect_size(
         border_right,
         chart_top,
-        border_right,
-        chart_bottom,
+        border_width,
+        layout.total_column_height,
         crate::config::current().layout.catch.png.PLAYFIELD_BORDER,
     );
 }
@@ -505,23 +539,22 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
             + layout.total_column_height,
     );
 
-    if timing_line.is_measure {
-        image.set_rect(
-            left,
-            y,
-            right,
-            y + 1,
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Catch,
+        crate::render::geometry::OutputFormat::Png,
+    );
+    let (thickness, color) = if timing_line.is_measure {
+        (
+            crate::render::geometry::scale_stroke_px(2.0, render_scale),
             crate::config::current().layout.catch.png.MEASURE_LINE_COLOR,
-        );
+        )
     } else {
-        image.set_rect(
-            left,
-            y,
-            right,
-            y,
+        (
+            crate::render::geometry::scale_stroke_px(1.0, render_scale),
             crate::config::current().layout.catch.png.BEAT_LINE_COLOR,
-        );
-    }
+        )
+    };
+    image.set_rect_size(left, y, right - left, thickness, color);
 }
 
 fn draw_timing_label_png(
@@ -808,8 +841,6 @@ fn draw_edge_combo_labels(image: &mut Img, render_objects: &[RenderObject], layo
         let prefer_left = next.x >= current.x;
         let label_x = if prefer_left && left_x >= min_x {
             left_x
-        } else if !prefer_left && right_x <= max_x {
-            right_x
         } else if right_x <= max_x {
             right_x
         } else {
@@ -822,11 +853,11 @@ fn draw_edge_combo_labels(image: &mut Img, render_objects: &[RenderObject], layo
             .min(chart_bottom - label_height as i64);
 
         // 深色底板可避免边界迫使标签与白色引导线同侧时难以辨认。
-        image.fill_rect(
+        image.fill_rect_size(
             label_x - config.EDGE_COMBO_LABEL_PADDING,
             label_y - config.EDGE_COMBO_LABEL_PADDING,
-            label_x + label_width as i64 - 1 + config.EDGE_COMBO_LABEL_PADDING,
-            label_y + label_height as i64 - 1 + config.EDGE_COMBO_LABEL_PADDING,
+            label_width as i64 + config.EDGE_COMBO_LABEL_PADDING * 2,
+            label_height as i64 + config.EDGE_COMBO_LABEL_PADDING * 2,
             config.EDGE_COMBO_LABEL_BACKGROUND,
         );
         draw_text(
@@ -971,6 +1002,43 @@ mod tests {
         assert_eq!(height, 5_000);
         assert_eq!(height % 1_000, 0);
     }
+
+    #[test]
+    fn derived_playfield_padding_scales_with_the_column() {
+        for scale in [0.5, 1.0, 1.5, 2.0] {
+            let column_width = crate::render::geometry::scale_px(315.0, scale);
+            let panel_width = crate::render::geometry::scale_px(9.0, scale);
+            let playfield_width = crate::render::geometry::scale_px(260.0, scale);
+            let padding = playfield_side_padding_for(column_width, panel_width, playfield_width);
+
+            assert!((padding as f64 / scale - 23.0).abs() <= 1.0);
+        }
+    }
+
+    #[test]
+    fn aligned_column_count_is_stable_across_output_scales() {
+        let timing_lines: Vec<TimingLine> = (0..10)
+            .map(|index| TimingLine {
+                time: index * 2_000,
+                is_measure: true,
+                show_label: true,
+                bpm: None,
+            })
+            .collect();
+
+        for scale in [0.5, 1.0, 1.5, 2.0] {
+            let pixels_per_ms = 0.5 * scale;
+            let max_area_height = crate::render::geometry::scale_px(5_500.0, scale);
+            let aligned =
+                predominant_measure_aligned_height(&timing_lines, pixels_per_ms, max_area_height)
+                    .unwrap();
+            let total_height = crate::render::geometry::scale_px(9_000.0, scale);
+
+            assert_eq!(ceil_div(total_height, aligned), 2);
+            assert!((aligned as f64 / scale - 5_000.0).abs() <= 1.0);
+        }
+    }
+
     #[test]
     fn edge_combo_numbers_ignore_tiny_droplets_and_bananas() {
         let mut first = edge_fruit(20.0, 10);

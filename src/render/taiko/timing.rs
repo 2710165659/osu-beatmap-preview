@@ -95,20 +95,28 @@ pub(crate) fn build_scroll_mapper(
     chart_end_time: i64,
     slider_multiplier: f64,
     spacing_bpm: f64,
+    position_scale: f64,
 ) -> ScrollPositionMapper {
     ScrollPositionMapper::new(build_scroll_segments(
         timing_points,
         chart_end_time,
         slider_multiplier,
         spacing_bpm,
+        position_scale,
     ))
 }
 
-fn pixels_per_ms(slider_multiplier: f64, scroll_speed: f64, display_beat_length: f64) -> f64 {
+fn pixels_per_ms(
+    slider_multiplier: f64,
+    scroll_speed: f64,
+    display_beat_length: f64,
+    position_scale: f64,
+) -> f64 {
     crate::render::taiko::constants::BASE_PIXELS_PER_SCROLL_MS
         * crate::render::taiko::constants::SCROLL_LENGTH_RATIO
         * slider_multiplier
         * scroll_speed
+        * position_scale
         * 1000.0
         / display_beat_length
 }
@@ -141,6 +149,7 @@ fn build_scroll_segments(
     chart_end_time: i64,
     slider_multiplier: f64,
     spacing_bpm: f64,
+    position_scale: f64,
 ) -> Vec<ScrollSegment> {
     let mut beat_length = DEFAULT_BEAT_LENGTH;
     let mut meter = DEFAULT_METER;
@@ -172,7 +181,12 @@ fn build_scroll_segments(
         }
 
         if point_time > segment_start {
-            let ppm = pixels_per_ms(slider_multiplier, scroll_speed, display_beat_length);
+            let ppm = pixels_per_ms(
+                slider_multiplier,
+                scroll_speed,
+                display_beat_length,
+                position_scale,
+            );
             segments.push(ScrollSegment {
                 start_time: segment_start,
                 end_time: point_time,
@@ -194,7 +208,12 @@ fn build_scroll_segments(
         segment_start = point_time;
     }
 
-    let ppm = pixels_per_ms(slider_multiplier, scroll_speed, display_beat_length);
+    let ppm = pixels_per_ms(
+        slider_multiplier,
+        scroll_speed,
+        display_beat_length,
+        position_scale,
+    );
     segments.push(ScrollSegment {
         start_time: segment_start,
         end_time: chart_end_time,
@@ -661,4 +680,54 @@ pub(crate) fn taiko_hit_objects(beatmap: &Beatmap) -> Vec<TaikoHitObject> {
         .as_taiko()
         .map(|v| v.to_vec())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn redline(time: f64, beat_length: f64) -> TimingPoint {
+        TimingPoint {
+            time,
+            beat_length,
+            meter: 4,
+            uninherited: true,
+            kiai_mode: false,
+            omit_first_bar_line: false,
+        }
+    }
+
+    #[test]
+    fn png_scroll_positions_and_beat_line_selection_scale_together() {
+        let timing_points = vec![redline(0.0, 500.0), redline(4_000.0, 250.0)];
+        let sections = build_redline_sections(&timing_points, 8_000);
+
+        for spacing_bpm in [0.0, 180.0] {
+            let base_mapper = build_scroll_mapper(&timing_points, 8_000, 1.4, spacing_bpm, 1.0);
+            let base_lines =
+                build_timing_lines(&sections, &base_mapper, MIN_BEAT_LINE_SPACING, &[], 0, 0);
+            let base_times: Vec<i64> = base_lines.iter().map(|line| line.time).collect();
+
+            for scale in [0.5, 1.0, 1.5, 2.0] {
+                let mapper = build_scroll_mapper(&timing_points, 8_000, 1.4, spacing_bpm, scale);
+                let lines = build_timing_lines(
+                    &sections,
+                    &mapper,
+                    MIN_BEAT_LINE_SPACING * scale,
+                    &[],
+                    0,
+                    0,
+                );
+
+                assert_eq!(
+                    lines.iter().map(|line| line.time).collect::<Vec<_>>(),
+                    base_times
+                );
+                for time in [0.0, 250.0, 2_000.0, 4_000.0, 7_750.0, 8_000.0] {
+                    let normalized = mapper.position_at(time) / scale;
+                    assert!((normalized - base_mapper.position_at(time)).abs() < 1e-9);
+                }
+            }
+        }
+    }
 }

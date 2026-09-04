@@ -71,11 +71,15 @@ pub(crate) fn render_mania_video(
     let fps = fps.unwrap_or(crate::config::current().layout.mania.mp4.FPS as u32);
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
-    let skin_config = load_mania_skin_config(key_count);
+    let skin_config = load_mania_skin_config(key_count, crate::render::geometry::OutputFormat::Mp4);
     let layout = build_video_layout(&skin_config);
     let native_mania = is_native_mania(beatmap);
     let scroll_map = build_scroll_map(beatmap, &original_objects, cs_mode, native_mania);
-    let time_range = compute_time_range(speed, skin_config.hit_position);
+    let time_range = compute_time_range(
+        speed,
+        skin_config.hit_position,
+        crate::render::mania::constants::DEFAULT_SCROLL_SPEED,
+    );
     let pixels_per_scroll_unit = layout.scroll_length as f64 / time_range;
     let sv_changes =
         if cs_mode || !native_mania || !crate::config::current().layout.mania.mp4.SHOW_SV_LABEL {

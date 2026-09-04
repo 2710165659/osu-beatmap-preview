@@ -481,7 +481,9 @@ fn draw_break_overlay(
             render_scale,
         ),
     );
-    let counter_y = py_round(center_y - 15.0) - counter_h as i64;
+    let counter_y =
+        py_round(center_y - crate::render::geometry::scale_px(15.0, render_scale) as f64)
+            - counter_h as i64;
     let counter_color = [
         crate::render::standard::constants::BREAK_OVERLAY_COLOR[0],
         crate::render::standard::constants::BREAK_OVERLAY_COLOR[1],

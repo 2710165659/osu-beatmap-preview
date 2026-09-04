@@ -237,6 +237,20 @@ impl Img {
         }
     }
 
+    /// 按左上角和尺寸填充半开矩形，宽高为非正数时不绘制。
+    pub fn fill_rect_size(&mut self, x: i64, y: i64, width: i64, height: i64, color: Rgba) {
+        if width <= 0 || height <= 0 {
+            return;
+        }
+        self.fill_rect(
+            x,
+            y,
+            x.saturating_add(width - 1),
+            y.saturating_add(height - 1),
+            color,
+        );
+    }
+
     /// 覆盖矩形像素（不混合），类似 RGBA 上的 ImageDraw。
     pub fn set_rect(&mut self, x0: i64, y0: i64, x1: i64, y1: i64, color: Rgba) {
         let xa = x0.max(0) as u32;
@@ -244,6 +258,20 @@ impl Img {
         let xb = (x1 + 1).clamp(0, self.w as i64) as u32;
         let yb = (y1 + 1).clamp(0, self.h as i64) as u32;
         self.set_rect_unchecked(xa, ya, xb, yb, color);
+    }
+
+    /// 按左上角和尺寸覆盖半开矩形，避免调用方重复处理闭区间末端。
+    pub fn set_rect_size(&mut self, x: i64, y: i64, width: i64, height: i64, color: Rgba) {
+        if width <= 0 || height <= 0 {
+            return;
+        }
+        self.set_rect(
+            x,
+            y,
+            x.saturating_add(width - 1),
+            y.saturating_add(height - 1),
+            color,
+        );
     }
 
     /// 与 `set_rect` 类似，但调用方保证 `xa < xb`、`ya < yb`，且所有坐标位于
@@ -641,4 +669,45 @@ fn resample_axis(src: &Img, new_size: u32, horizontal: bool) -> Img {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Img;
+
+    #[test]
+    fn size_rectangles_draw_exact_half_open_dimensions() {
+        let background = [0, 0, 0, 0];
+        let fill = [10, 20, 30, 128];
+        let set = [40, 50, 60, 255];
+        let mut image = Img::new(10, 10, background);
+
+        image.fill_rect_size(2, 3, 4, 2, fill);
+        image.set_rect_size(1, 7, 3, 2, set);
+
+        let filled = (0..image.h)
+            .flat_map(|y| (0..image.w).map(move |x| (x, y)))
+            .filter(|&(x, y)| image.get(x, y) == fill)
+            .count();
+        let overwritten = (0..image.h)
+            .flat_map(|y| (0..image.w).map(move |x| (x, y)))
+            .filter(|&(x, y)| image.get(x, y) == set)
+            .count();
+
+        assert_eq!(filled, 8);
+        assert_eq!(overwritten, 6);
+        assert_eq!(image.get(6, 4), background);
+        assert_eq!(image.get(4, 8), background);
+    }
+
+    #[test]
+    fn size_rectangles_ignore_non_positive_dimensions() {
+        let background = [1, 2, 3, 255];
+        let mut image = Img::new(4, 4, background);
+
+        image.fill_rect_size(0, 0, 0, 3, [255, 0, 0, 255]);
+        image.set_rect_size(0, 0, 3, -1, [255, 0, 0, 255]);
+
+        assert!(image.data.chunks_exact(4).all(|pixel| pixel == background));
+    }
 }

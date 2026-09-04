@@ -182,45 +182,34 @@ fn build_png_layout(
     chart_end_time: i64,
     chart_start_time: i64,
 ) -> Result<RenderLayout> {
-    let skin_config = super::skin::load_mania_skin_config(key_count);
-    let scale = 0.5
-        * crate::render::geometry::output_scale(
-            crate::render::geometry::GameMode::Mania,
-            crate::render::geometry::OutputFormat::Png,
-        );
-    let lane_widths: Vec<i64> = skin_config
-        .column_widths
-        .iter()
-        .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(1))
-        .collect();
-    let lane_left_offsets = super::gif::build_column_left_offsets(
-        &lane_widths,
-        &skin_config
-            .column_line_widths
-            .iter()
-            .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(0))
-            .collect::<Vec<_>>(),
+    let skin_config =
+        super::skin::load_mania_skin_config(key_count, crate::render::geometry::OutputFormat::Png);
+    let output_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Mania,
+        crate::render::geometry::OutputFormat::Png,
     );
-    let total_chart_height = ((chart_end_time as f64
-        * crate::config::current().layout.mania.png.PIXELS_PER_MS)
-        .ceil() as i64)
-        .max(1);
+    let (lane_widths, lane_left_offsets, skin_lane_area_width) = super::gif::build_scaled_columns(
+        &skin_config.column_widths,
+        &skin_config.column_line_widths,
+        output_scale,
+    );
+    let logical_pixels_per_ms =
+        crate::config::current().layout.mania.png.PIXELS_PER_MS / output_scale;
+    let logical_chart_height = (chart_end_time as f64 * logical_pixels_per_ms).ceil() as i64;
+    let total_chart_height =
+        crate::render::geometry::scale_px(logical_chart_height as f64, output_scale).max(1);
     let column_count = calculate_column_count(beatmap_duration, total_chart_height)?;
     let time_per_column = ceil_div(chart_end_time, column_count);
-    let column_height = (time_per_column as f64
-        * crate::config::current().layout.mania.png.PIXELS_PER_MS)
-        .ceil() as i64;
+    let logical_column_height = (time_per_column as f64 * logical_pixels_per_ms).ceil() as i64;
+    let column_height =
+        crate::render::geometry::scale_px(logical_column_height as f64, output_scale).max(1);
     let top_buffer = crate::render::geometry::scale_px(
-        crate::render::mania::constants::TOP_BUFFER as f64,
-        scale,
+        crate::render::geometry::scale_px(crate::render::mania::constants::TOP_BUFFER as f64, 0.5)
+            as f64,
+        output_scale,
     );
     let total_column_height = top_buffer + column_height;
-    let lane_area_width = lane_widths.iter().sum::<i64>()
-        + skin_config
-            .column_line_widths
-            .iter()
-            .map(|&width| crate::render::geometry::scale_px(width as f64, scale).max(0))
-            .sum::<i64>()
+    let lane_area_width = skin_lane_area_width
         + (key_count as i64 - 1) * crate::config::current().layout.mania.png.LANE_GAP;
     let column_width = crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH + lane_area_width;
     let image_width = crate::config::current().layout.mania.png.PAGE_MARGIN_LEFT
@@ -344,11 +333,11 @@ fn draw_column_background(
     let chart_top = png_chart_top();
     let lane_area_left = column_left + crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH;
 
-    image.set_rect(
+    image.set_rect_size(
         column_left,
         chart_top,
-        lane_area_left,
-        chart_top + layout.total_column_height,
+        crate::config::current().layout.mania.png.LEFT_PANEL_WIDTH,
+        layout.total_column_height,
         crate::config::current()
             .layout
             .mania
@@ -361,19 +350,26 @@ fn draw_column_background(
             + layout.lane_left_offsets[lane_index as usize]
             + lane_index * crate::config::current().layout.mania.png.LANE_GAP;
         let lane_right = lane_left + layout.lane_widths[lane_index as usize];
-        image.set_rect(
+        image.set_rect_size(
             lane_left,
             chart_top,
-            lane_right,
-            chart_top + layout.total_column_height,
+            lane_right - lane_left,
+            layout.total_column_height,
             crate::config::current().layout.mania.png.LANE_BACKGROUND,
         );
         if lane_index > 0 {
-            image.set_rect(
+            let separator_width = crate::render::geometry::scale_stroke_px(
+                1.0,
+                crate::render::geometry::output_scale(
+                    crate::render::geometry::GameMode::Mania,
+                    crate::render::geometry::OutputFormat::Png,
+                ),
+            );
+            image.set_rect_size(
                 lane_left,
                 chart_top,
-                lane_left,
-                chart_top + layout.total_column_height,
+                separator_width,
+                layout.total_column_height,
                 crate::config::current().layout.mania.png.LANE_SEPARATOR,
             );
         }
@@ -397,11 +393,18 @@ fn draw_timing_line(
             local_time as f64 * crate::config::current().layout.mania.png.PIXELS_PER_MS,
         );
 
-    image.set_rect(
+    let line_height = crate::render::geometry::scale_stroke_px(
+        1.0,
+        crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Mania,
+            crate::render::geometry::OutputFormat::Png,
+        ),
+    );
+    image.set_rect_size(
         lane_area_left,
         y,
-        lane_area_left + layout.lane_area_width - 1,
-        y,
+        layout.lane_area_width,
+        line_height,
         timing_line.color,
     );
 
@@ -529,14 +532,26 @@ fn draw_png_hit_object(
             );
             let body_bottom = chart_bottom.min(y_start);
             if body_top < body_bottom {
-                image.set_rect(lane_left, body_top, lane_right, body_bottom, hold_color);
+                image.set_rect_size(
+                    lane_left,
+                    body_top,
+                    lane_right - lane_left,
+                    body_bottom - body_top,
+                    hold_color,
+                );
             }
             if column_index == start_column {
                 let head_top = chart_top
                     .max(y_start - crate::config::current().layout.mania.png.NOTE_HEAD_HEIGHT);
                 let head_bottom = chart_bottom.min(y_start);
                 if head_top < head_bottom {
-                    image.set_rect(lane_left, head_top, lane_right, head_bottom, lane_color);
+                    image.set_rect_size(
+                        lane_left,
+                        head_top,
+                        lane_right - lane_left,
+                        head_bottom - head_top,
+                        lane_color,
+                    );
                 }
             }
         } else {
@@ -544,7 +559,13 @@ fn draw_png_hit_object(
                 chart_top.max(y_start - crate::config::current().layout.mania.png.NOTE_HEAD_HEIGHT);
             let head_bottom = chart_bottom.min(y_start);
             if head_top < head_bottom {
-                image.set_rect(lane_left, head_top, lane_right, head_bottom, lane_color);
+                image.set_rect_size(
+                    lane_left,
+                    head_top,
+                    lane_right - lane_left,
+                    head_bottom - head_top,
+                    lane_color,
+                );
             }
         }
     }
@@ -679,7 +700,14 @@ fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &RenderLayo
         crate::config::current().layout.mania.png.SV_TEXT_FONT_SIZE,
     );
     let text_mid_y = label_height as f64 / 2.0;
-    let label_x = (column_left - 1 - label_width as i64).max(0);
+    let label_gap = crate::render::geometry::scale_px(
+        1.0,
+        crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Mania,
+            crate::render::geometry::OutputFormat::Png,
+        ),
+    );
+    let label_x = (column_left - label_gap - label_width as i64).max(0);
     let label_y = (chart_top as f64).max(y as f64 - text_mid_y).floor() as i64;
     draw_text(
         image,

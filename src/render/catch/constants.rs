@@ -34,6 +34,8 @@ pub(crate) const RECOMMENDED_DASH_BANANA_COLOR: [u8; 3] = [255, 128, 128];
 pub(crate) const BANANA_ROUTE_LINE_COLOR: [u8; 4] = [74, 198, 214, 255];
 /// 接盘中心路线宽度，单位为 stable 游戏区域坐标。
 pub(crate) const BANANA_ROUTE_LINE_WIDTH: f64 = 4.0;
+/// GIF/MP4 判定线颜色。
+pub(crate) const ANIMATION_JUDGEMENT_LINE_COLOR: [u8; 4] = [238, 238, 238, 200];
 /// 香蕉雨随机数种子。
 pub(crate) const RNG_SEED: i64 = 1337;
 /// stable 模式香蕉颜色。

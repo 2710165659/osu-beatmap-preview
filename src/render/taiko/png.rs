@@ -106,11 +106,16 @@ pub(crate) fn render_taiko_grid(
     }
     // 静态图的 note 间距只跟随红线 BPM（绿线 SV 不影响排版）
     let spacing_timing_points = spacing_timing_points_for_png(&timing_points);
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Taiko,
+        crate::render::geometry::OutputFormat::Png,
+    );
     let mapper = build_scroll_mapper(
         &spacing_timing_points,
         effective_chart_end_time,
         slider_multiplier,
         crate::config::current().layout.taiko.png.SPACING_PER_BPM,
+        render_scale,
     );
     let redline_sections = build_redline_sections(&timing_points, effective_chart_end_time);
     let kiai_sections = build_kiai_sections(&timing_points, effective_chart_end_time);
@@ -118,7 +123,7 @@ pub(crate) fn render_taiko_grid(
     let timing_lines = build_timing_lines(
         &redline_sections,
         &mapper,
-        crate::render::taiko::constants::MIN_BEAT_LINE_SPACING,
+        crate::render::taiko::constants::MIN_BEAT_LINE_SPACING * render_scale,
         &kiai_sections,
         first_note_time,
         time_axis.to_display(chart_start_time),
@@ -152,6 +157,13 @@ pub(crate) fn render_taiko_grid(
             0,
             layout.content_width,
             crate::config::current().layout.taiko.png.ROW_HEIGHT,
+            crate::config::current()
+                .layout
+                .taiko
+                .png
+                .TRACK_BACKGROUND_COLOR,
+            crate::config::current().layout.taiko.png.TRACK_EDGE_COLOR,
+            crate::render::geometry::scale_stroke_px(1.0, render_scale),
         );
         bg
     };
@@ -456,23 +468,22 @@ fn draw_timing_line(
     let line_y0 = png_row_top(row_index);
     let line_y1 = line_y0 + crate::config::current().layout.taiko.png.ROW_HEIGHT;
 
-    if timing_line.is_measure {
-        image.fill_rect(
-            line_x,
-            line_y0,
-            line_x + 1,
-            line_y1,
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Taiko,
+        crate::render::geometry::OutputFormat::Png,
+    );
+    let (width, color) = if timing_line.is_measure {
+        (
+            crate::render::geometry::scale_stroke_px(2.0, render_scale),
             crate::config::current().layout.taiko.png.MEASURE_LINE_COLOR,
-        );
+        )
     } else {
-        image.set_rect(
-            line_x,
-            line_y0,
-            line_x,
-            line_y1,
+        (
+            crate::render::geometry::scale_stroke_px(1.0, render_scale),
             crate::config::current().layout.taiko.png.BEAT_LINE_COLOR,
-        );
-    }
+        )
+    };
+    image.fill_rect_size(line_x, line_y0, width, line_y1 - line_y0, color);
 
     if timing_line.show_label {
         draw_time_label(image, timing_line, line_x, line_y0, layout, time_axis);
@@ -713,7 +724,22 @@ fn draw_circle_object(
         crate::render::taiko::constants::CENTRE_NOTE_COLOR
     };
 
-    draw_note_disc(image, cache, color, diameter, center_x, center_y, false);
+    draw_note_disc(
+        image,
+        cache,
+        color,
+        diameter,
+        center_x,
+        center_y,
+        crate::render::geometry::scale_stroke_px(
+            1.0,
+            crate::render::geometry::output_scale(
+                crate::render::geometry::GameMode::Taiko,
+                crate::render::geometry::OutputFormat::Png,
+            ),
+        ),
+        false,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -778,6 +804,13 @@ fn draw_span_object(
         head_diameter,
         head_center_x,
         png_row_center_y(row_start),
+        crate::render::geometry::scale_stroke_px(
+            1.0,
+            crate::render::geometry::output_scale(
+                crate::render::geometry::GameMode::Taiko,
+                crate::render::geometry::OutputFormat::Png,
+            ),
+        ),
         draw_swell_marker,
     );
     draw_span_tail(
@@ -802,11 +835,11 @@ fn draw_roll_body(
         return;
     }
     let y0 = pyround(center_y as f64 - height as f64 / 2.0);
-    image.fill_rect(
+    image.fill_rect_size(
         start_x,
         y0,
-        end_x - 1,
-        y0 + height - 1,
+        end_x - start_x,
+        height,
         [color[0], color[1], color[2], 255],
     );
 }
@@ -822,4 +855,41 @@ fn draw_span_tail(
     let y = pyround(center_y as f64 - height as f64 / 2.0);
     let tail = cached_roll_tail(cache, color, height);
     image.alpha_composite(tail, join_x, y);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_row_start_positions;
+
+    #[test]
+    fn row_break_measure_anchors_are_scale_invariant_for_all_bpm_tiers() {
+        let logical_measures = [0.0, 600.0, 1_200.0, 1_800.0, 2_400.0, 3_000.0, 3_600.0];
+        let logical_chart_width = 3_900.0;
+
+        for multiplier in [1.0, 1.15, 1.3, 1.45] {
+            let logical_row_width = 1_300.0 * multiplier;
+            let baseline = compute_row_start_positions(
+                &logical_measures,
+                logical_chart_width,
+                crate::parser::round_half_even(logical_row_width),
+            );
+
+            for scale in [0.5, 1.0, 1.5, 2.0] {
+                let measures: Vec<f64> = logical_measures
+                    .iter()
+                    .map(|position| position * scale)
+                    .collect();
+                let starts = compute_row_start_positions(
+                    &measures,
+                    logical_chart_width * scale,
+                    crate::parser::round_half_even(logical_row_width * scale),
+                );
+
+                assert_eq!(starts.len(), baseline.len());
+                for (actual, expected) in starts.iter().zip(&baseline) {
+                    assert!((actual / scale - expected).abs() <= 1.0);
+                }
+            }
+        }
+    }
 }

@@ -85,6 +85,11 @@ pub(crate) struct GifLayout {
     playfield_left: i64,
     first_row_top: i64,
     row_stride: i64,
+    render_scale: f64,
+    track_background_color: [u8; 4],
+    track_edge_color: [u8; 4],
+    track_accent_color: [u8; 4],
+    judgement_line_color: [u8; 4],
 }
 
 // ─── 公共 API ───
@@ -437,6 +442,28 @@ pub(crate) fn build_gif_layout_with_segments_and_format(
         pyround(row_height as f64 * crate::render::taiko::constants::NORMAL_NOTE_SIZE_RATIO);
     let big_note_diameter =
         pyround(normal_note_diameter as f64 * crate::render::taiko::constants::BIG_NOTE_SCALE);
+    let (track_background_color, track_edge_color, track_accent_color, judgement_line_color) =
+        match output_format {
+            crate::render::geometry::OutputFormat::Gif => {
+                let config = &crate::config::current().layout.taiko.gif;
+                (
+                    config.TRACK_BACKGROUND_COLOR,
+                    config.TRACK_EDGE_COLOR,
+                    config.TRACK_ACCENT_COLOR,
+                    config.JUDGEMENT_LINE_COLOR,
+                )
+            }
+            crate::render::geometry::OutputFormat::Mp4 => {
+                let config = &crate::config::current().layout.taiko.mp4;
+                (
+                    config.TRACK_BACKGROUND_COLOR,
+                    config.TRACK_EDGE_COLOR,
+                    config.TRACK_ACCENT_COLOR,
+                    crate::render::taiko::constants::MP4_JUDGEMENT_LINE_COLOR,
+                )
+            }
+            crate::render::geometry::OutputFormat::Png => unreachable!("PNG 不使用动画布局"),
+        };
 
     GifLayout {
         segment_width,
@@ -451,6 +478,11 @@ pub(crate) fn build_gif_layout_with_segments_and_format(
         playfield_left,
         first_row_top,
         row_stride,
+        render_scale,
+        track_background_color,
+        track_edge_color,
+        track_accent_color,
+        judgement_line_color,
     }
 }
 
@@ -471,16 +503,13 @@ fn judgement_line_x(layout: &GifLayout) -> i64 {
 fn draw_judgement_line(image: &mut Img, layout: &GifLayout, row_index: i64) {
     let line_x = judgement_line_x(layout);
     let row_top = gif_row_top(row_index, layout);
-    image.set_rect(
-        line_x - 1,
+    let width = crate::render::geometry::scale_stroke_px(3.0, layout.render_scale);
+    image.set_rect_size(
+        line_x - width / 2,
         row_top,
-        line_x + 1,
-        row_top + layout.row_height,
-        crate::config::current()
-            .layout
-            .taiko
-            .gif
-            .JUDGEMENT_LINE_COLOR,
+        width,
+        layout.row_height,
+        layout.judgement_line_color,
     );
 }
 
@@ -494,6 +523,8 @@ pub(crate) fn draw_row_background(image: &mut Img, layout: &GifLayout, row_index
         row_top,
         layout.left_panel_width,
         layout.row_height,
+        layout.track_accent_color,
+        layout.render_scale,
     );
     draw_track_background(
         image,
@@ -501,6 +532,9 @@ pub(crate) fn draw_row_background(image: &mut Img, layout: &GifLayout, row_index
         row_top,
         layout.right_panel_width,
         layout.row_height,
+        layout.track_background_color,
+        layout.track_edge_color,
+        crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
     );
 
     draw_judgement_line(image, layout, row_index);
@@ -557,18 +591,22 @@ fn draw_measure_lines(
             continue;
         }
         let center_x = object_x(line.time, snapshot_time as f64, line.multiplier, layout);
-        let left = center_x - MEASURE_LINE_WIDTH / 2;
-        let right = left + MEASURE_LINE_WIDTH - 1;
-        if right < left_bound || left > right_bound {
+        let width = crate::render::geometry::scale_stroke_px(
+            MEASURE_LINE_WIDTH as f64,
+            layout.render_scale,
+        );
+        let left = center_x - width / 2;
+        let right = left + width;
+        if right <= left_bound || left >= right_bound {
             continue;
         }
         let mut color = base_color;
         color[3] = pyround(color[3] as f64 * alpha).clamp(0, 255) as u8;
-        image.fill_rect(
+        image.fill_rect_size(
             left.max(left_bound),
             top,
-            right.min(right_bound),
-            top + height - 1,
+            right.min(right_bound) - left.max(left_bound),
+            height,
             color,
         );
     }
@@ -685,7 +723,16 @@ fn draw_circle_object(
         crate::render::taiko::constants::CENTRE_NOTE_COLOR
     };
 
-    draw_note_disc(image, cache, color, diameter, center_x, center_y, false);
+    draw_note_disc(
+        image,
+        cache,
+        color,
+        diameter,
+        center_x,
+        center_y,
+        crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
+        false,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -770,6 +817,7 @@ fn draw_span_object(
         center_y,
         head_diameter,
         cache,
+        crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
         draw_swell_marker,
         clip_left,
         clip_right,
@@ -828,11 +876,11 @@ fn draw_roll_body(
         return;
     }
     let y0 = pyround(center_y as f64 - height as f64 / 2.0);
-    image.fill_rect(
+    image.fill_rect_size(
         visible_left,
         y0,
-        visible_right - 1,
-        y0 + height - 1,
+        visible_right - visible_left,
+        height,
         [color[0], color[1], color[2], 255],
     );
 }
@@ -845,13 +893,14 @@ fn draw_span_head(
     center_y: i64,
     diameter: i64,
     cache: &mut RenderCache,
+    edge_width: i64,
     draw_swell_marker: bool,
     clip_left: i64,
     clip_right: i64,
 ) {
     let sprite_x = pyround(center_x as f64 - diameter as f64 / 2.0);
     let sprite_y = pyround(center_y as f64 - diameter as f64 / 2.0);
-    let disc = cached_note_disc(cache, color, diameter, draw_swell_marker);
+    let disc = cached_note_disc(cache, color, diameter, edge_width, draw_swell_marker);
     paste_clipped(image, disc, sprite_x, sprite_y, clip_left, clip_right);
 }
 
@@ -993,6 +1042,11 @@ mod tests {
             playfield_left: 0,
             first_row_top: 0,
             row_stride: 80,
+            render_scale: 1.0,
+            track_background_color: [0, 0, 0, 255],
+            track_edge_color: [255, 255, 255, 255],
+            track_accent_color: [255, 0, 0, 255],
+            judgement_line_color: [255, 255, 255, 255],
         };
         let hit_object = PreparedTaikoHitObject {
             hit_object: TaikoHitObject {
@@ -1051,6 +1105,11 @@ mod tests {
             playfield_left: 0,
             first_row_top: 0,
             row_stride: 80,
+            render_scale: 1.0,
+            track_background_color: [0, 0, 0, 255],
+            track_edge_color: [255, 255, 255, 255],
+            track_accent_color: [255, 0, 0, 255],
+            judgement_line_color: [255, 255, 255, 255],
         };
         let hit_object = PreparedTaikoHitObject {
             hit_object: TaikoHitObject {
