@@ -248,4 +248,5 @@ fn fixture_path(filename: &str) -> PathBuf {
 fn read_fixture(path: &Path) -> String {
     std::fs::read_to_string(path)
         .unwrap_or_else(|error| panic!("failed to read fixture {}: {error}", path.display()))
+        .replace("\r\n", "\n")
 }

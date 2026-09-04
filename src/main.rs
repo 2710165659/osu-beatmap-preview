@@ -20,6 +20,7 @@ struct Args {
     time_points: Vec<core::validate::TimePoint>,
     duration_time: Option<f64>,
     no_cache: bool,
+    fps: Option<u32>,
     no_log: bool,
     config: Option<String>,
     scale: Option<f64>,
@@ -29,7 +30,7 @@ fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] \
          [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] \
-         [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]\n\
+         [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]\n\
          osu-beatmap-preview --version\n\
          --mod and --time-points may be repeated to provide lists"
     );
@@ -45,6 +46,7 @@ fn parse_args() -> Args {
     let mut time_points = Vec::new();
     let mut duration_time = None;
     let mut no_cache: bool = false;
+    let mut fps: Option<u32> = None;
     let mut no_log: bool = false;
     let mut config: Option<String> = None;
     let mut scale: Option<f64> = None;
@@ -89,6 +91,14 @@ fn parse_args() -> Args {
             }
             Long("no-cache") => {
                 no_cache = true;
+            }
+            Long("fps") => {
+                let value = take_value(&mut parser, "--fps");
+                let parsed = value.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("error: --fps must be an integer from 1 to 60, got '{value}'");
+                    print_usage_and_exit(2);
+                });
+                fps = Some(parsed);
             }
             Long("no-log") => {
                 no_log = true;
@@ -161,6 +171,7 @@ fn parse_args() -> Args {
         time_points,
         duration_time,
         no_cache,
+        fps,
         no_log,
         config,
         scale,
@@ -187,6 +198,7 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         args.time_points.clone(),
         args.duration_time,
         args.no_cache,
+        args.fps,
     )
 }
 

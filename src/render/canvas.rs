@@ -333,6 +333,46 @@ impl Img {
         }
     }
 
+    /// Anti-aliased circular ring, blended over the current image.
+    pub fn stroke_circle_aa(
+        &mut self,
+        cx: f64,
+        cy: f64,
+        outer_r: f64,
+        thickness: f64,
+        color: Rgba,
+    ) {
+        if outer_r <= 0.0 || thickness <= 0.0 || color[3] == 0 {
+            return;
+        }
+        let inner_r = (outer_r - thickness).max(0.0);
+        let ya = (cy - outer_r - 1.0).floor().max(0.0) as i64;
+        let yb = (cy + outer_r + 1.0).ceil().min(self.h as f64 - 1.0) as i64;
+        let xa = (cx - outer_r - 1.0).floor().max(0.0) as i64;
+        let xb = (cx + outer_r + 1.0).ceil().min(self.w as f64 - 1.0) as i64;
+        for y in ya..=yb {
+            for x in xa..=xb {
+                let dx = x as f64 + 0.5 - cx;
+                let dy = y as f64 + 0.5 - cy;
+                let dist = (dx * dx + dy * dy).sqrt();
+                let coverage =
+                    (outer_r - dist + 0.5).clamp(0.0, 1.0) * (dist - inner_r + 0.5).clamp(0.0, 1.0);
+                if coverage > 0.0 {
+                    self.blend_px(
+                        x,
+                        y,
+                        [
+                            color[0],
+                            color[1],
+                            color[2],
+                            (color[3] as f64 * coverage) as u8,
+                        ],
+                    );
+                }
+            }
+        }
+    }
+
     #[inline]
     fn put_unchecked(&mut self, x: i64, y: i64, c: Rgba) {
         if x >= 0 && y >= 0 && (x as u32) < self.w && (y as u32) < self.h {

@@ -65,6 +65,7 @@ pub(crate) fn render_mania_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     deadline.check()?;
@@ -85,6 +86,9 @@ pub(crate) fn render_mania_gif(
 
     // DT/HT 只改变谱面时间推进速度；GIF 每段的播放时长由参数或配置决定。
     let speed_multiplier = mods.map_or(1.0, |m| m.speed_multiplier);
+    let fps = fps
+        .map(f64::from)
+        .unwrap_or(crate::config::current().layout.mania.gif.FPS as f64);
     let (segment_timings, segment_duration, frame_count, show_time_label, time_axis) = match options
     {
         GifRenderOptions::Segments {
@@ -108,10 +112,7 @@ pub(crate) fn render_mania_gif(
                 times_ms,
             )?
             .choose()?;
-            let frame_count = round_half_even(
-                segment_duration_ms * crate::config::current().layout.mania.gif.FPS as f64 / 1000.0,
-            )
-            .max(1);
+            let frame_count = round_half_even(segment_duration_ms * fps / 1000.0).max(1);
             (
                 segment_timings,
                 gameplay_segment_duration,
@@ -135,8 +136,7 @@ pub(crate) fn render_mania_gif(
     // time_range 是 33 速下从判定线到顶部可见的谱面时间跨度。
     let time_range = compute_time_range(speed_multiplier, skin_config.hit_position);
     let pixels_per_scroll_unit = layout.scroll_length as f64 / time_range;
-    let frame_duration_ms =
-        round_half_even(1000.0 / crate::config::current().layout.mania.gif.FPS as f64).max(1);
+    let frame_duration_ms = round_half_even(1000.0 / fps).max(1);
     let max_segment_end = segment_timings
         .iter()
         .map(|t| t.start_time + segment_duration)
@@ -158,10 +158,7 @@ pub(crate) fn render_mania_gif(
             (0..frame_count)
                 .map(|frame_index| {
                     timing.start_time
-                        + round_half_even(
-                            frame_index as f64 * 1000.0 * speed_multiplier
-                                / crate::config::current().layout.mania.gif.FPS as f64,
-                        )
+                        + round_half_even(frame_index as f64 * 1000.0 * speed_multiplier / fps)
                 })
                 .collect()
         })

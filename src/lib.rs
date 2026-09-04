@@ -18,6 +18,8 @@ pub struct PreviewOptions {
     pub time_points: Vec<TimePoint>,
     pub duration_time: Option<f64>,
     pub no_cache: bool,
+    /// GIF/MP4 输出帧率；`None` 使用对应模式配置中的帧率。
+    pub fps: Option<u32>,
     pub config: Option<String>,
     pub scale: Option<f64>,
 }
@@ -32,6 +34,7 @@ impl PreviewOptions {
             time_points: Vec::new(),
             duration_time: None,
             no_cache: false,
+            fps: None,
             config: None,
             scale: None,
         }
@@ -61,5 +64,6 @@ pub fn generate_preview(options: PreviewOptions) -> Result<serde_json::Value, Pr
         options.time_points,
         options.duration_time,
         options.no_cache,
+        options.fps,
     )
 }

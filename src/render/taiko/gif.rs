@@ -94,6 +94,7 @@ pub(crate) fn render_taiko_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     deadline.check()?;
@@ -109,6 +110,7 @@ pub(crate) fn render_taiko_gif(
             duration_seconds,
             time_axis,
             output_path,
+            fps,
             deadline,
         ),
     }
@@ -121,6 +123,7 @@ fn render_taiko_segment_gif(
     duration_seconds: Option<f64>,
     time_axis: crate::common::time_selection::TimeAxis,
     output_path: &Path,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
@@ -133,6 +136,9 @@ fn render_taiko_segment_gif(
         .map(|seconds| seconds * 1000.0)
         .unwrap_or(crate::config::current().layout.taiko.gif.DURATION_MS);
     let gameplay_segment_duration = pyround(segment_duration_ms * speed_multiplier);
+    let fps = fps
+        .map(f64::from)
+        .unwrap_or(crate::config::current().layout.taiko.gif.FPS);
 
     let spans: Vec<(i64, i64)> = hit_objects
         .iter()
@@ -169,12 +175,8 @@ fn render_taiko_segment_gif(
     let time_range = compute_time_range() / speed_multiplier;
 
     let layout = build_gif_layout(time_range);
-    let frame_count = pyround(
-        segment_duration_ms * crate::config::current().layout.taiko.gif.FPS / 1000.0,
-    )
-    .max(1) as usize;
-    let frame_duration_ms =
-        pyround(1000.0 / crate::config::current().layout.taiko.gif.FPS).max(1) as u32;
+    let frame_count = pyround(segment_duration_ms * fps / 1000.0).max(1) as usize;
+    let frame_duration_ms = pyround(1000.0 / fps).max(1) as u32;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -182,10 +184,7 @@ fn render_taiko_segment_gif(
             (0..frame_count)
                 .map(|frame_index| {
                     timing.start_time
-                        + pyround(
-                            frame_index as f64 * 1000.0 * speed_multiplier
-                                / crate::config::current().layout.taiko.gif.FPS,
-                        )
+                        + pyround(frame_index as f64 * 1000.0 * speed_multiplier / fps)
                 })
                 .collect()
         })

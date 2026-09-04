@@ -32,6 +32,7 @@ pub(crate) fn render_standard_video(
     background: Option<Img>,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     deadline.check()?;
@@ -50,7 +51,7 @@ pub(crate) fn render_standard_video(
         crate::render::geometry::OutputFormat::Mp4,
     );
     let total_ms = end - start;
-    let fps = crate::config::current().layout.standard.mp4.FPS as u32;
+    let fps = fps.unwrap_or(crate::config::current().layout.standard.mp4.FPS as u32);
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
     // 视频背景在最终 16:9 画布上统一处理；playfield 只提供透明对象层，
     // 避免同一张图在 playfield 和画布中被分别缩放、裁剪。

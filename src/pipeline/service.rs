@@ -20,6 +20,7 @@ pub fn generate_preview(
     time_points: Vec<TimePoint>,
     duration_time: Option<f64>,
     no_cache: bool,
+    fps: Option<u32>,
 ) -> Result<Value> {
     let started = Instant::now();
     log::set_bid(bid);
@@ -42,6 +43,7 @@ pub fn generate_preview(
         time_points,
         duration_time,
         no_cache,
+        fps,
         started,
         deadline,
         &mut rec,
@@ -75,11 +77,19 @@ fn generate_preview_inner(
     time_points: Vec<TimePoint>,
     duration_time: Option<f64>,
     no_cache: bool,
+    fps: Option<u32>,
     request_started: Instant,
     mut deadline: RequestDeadline,
     rec: &mut SummaryRecord,
 ) -> Result<Value> {
     deadline.check()?;
+    if let Some(fps) = fps {
+        if !(1..=60).contains(&fps) {
+            return Err(PreviewError::new(format!(
+                "--fps must be between 1 and 60, got {fps}"
+            )));
+        }
+    }
     let runtime_config = crate::config::current();
     let cache_root = crate::config::resolve_path(runtime_config.paths.CACHE_DIR.as_str());
     let output_root = crate::config::output_directory().map_err(PreviewError::new)?;
@@ -173,6 +183,10 @@ fn generate_preview_inner(
                 parts.push(cache::format_duration_suffix(duration));
             }
         }
+    }
+    // 显式帧率进入缓存键，避免复用由其他帧率生成的 GIF/MP4。
+    if let Some(fps) = fps {
+        parts.push(format!("fps{fps}"));
     }
     let output_scale = crate::render::geometry::output_scale(
         match target_mode {
@@ -278,6 +292,7 @@ fn generate_preview_inner(
         duration_time,
         audio_job,
         bid,
+        fps,
         &deadline,
     )?;
     deadline.check()?;
@@ -389,6 +404,7 @@ trait ModeRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf>;
 
@@ -413,6 +429,7 @@ trait ModeRenderer {
         background: Option<Img>,
         audio_job: AudioSourceJob,
         _time_axis: TimeAxis,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf>;
 
@@ -450,6 +467,7 @@ impl ModeRenderer for StandardRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
         crate::render::standard::render_standard_gif(
@@ -457,6 +475,7 @@ impl ModeRenderer for StandardRenderer {
             mods,
             options,
             output_path,
+            fps,
             deadline,
         )?;
         Ok(output_path.to_path_buf())
@@ -488,6 +507,7 @@ impl ModeRenderer for StandardRenderer {
         background: Option<Img>,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
         crate::render::standard::render_standard_video(
@@ -499,6 +519,7 @@ impl ModeRenderer for StandardRenderer {
             background,
             audio_job,
             time_axis,
+            fps,
             deadline,
         )?;
         Ok(output_path.to_path_buf())
@@ -523,9 +544,10 @@ impl ModeRenderer for TaikoRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::taiko::render_taiko_gif(beatmap, mods, options, output_path, deadline)?;
+        crate::render::taiko::render_taiko_gif(beatmap, mods, options, output_path, fps, deadline)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -551,6 +573,7 @@ impl ModeRenderer for TaikoRenderer {
         background: Option<Img>,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
         crate::render::taiko::render_taiko_video(
@@ -562,6 +585,7 @@ impl ModeRenderer for TaikoRenderer {
             background,
             audio_job,
             time_axis,
+            fps,
             deadline,
         )?;
         Ok(output_path.to_path_buf())
@@ -586,9 +610,10 @@ impl ModeRenderer for CatchRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::catch::render_catch_gif(beatmap, mods, options, output_path, deadline)?;
+        crate::render::catch::render_catch_gif(beatmap, mods, options, output_path, fps, deadline)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -614,6 +639,7 @@ impl ModeRenderer for CatchRenderer {
         background: Option<Img>,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
         crate::render::catch::render_catch_video(
@@ -625,6 +651,7 @@ impl ModeRenderer for CatchRenderer {
             background,
             audio_job,
             time_axis,
+            fps,
             deadline,
         )?;
         Ok(output_path.to_path_buf())
@@ -649,9 +676,10 @@ impl ModeRenderer for ManiaRenderer {
         options: GifRenderOptions,
         _time_axis: TimeAxis,
         output_path: &Path,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
-        crate::render::mania::render_mania_gif(beatmap, mods, options, output_path, deadline)?;
+        crate::render::mania::render_mania_gif(beatmap, mods, options, output_path, fps, deadline)?;
         Ok(output_path.to_path_buf())
     }
 
@@ -677,6 +705,7 @@ impl ModeRenderer for ManiaRenderer {
         background: Option<Img>,
         audio_job: AudioSourceJob,
         time_axis: TimeAxis,
+        fps: Option<u32>,
         deadline: &RequestDeadline,
     ) -> Result<PathBuf> {
         crate::render::mania::render_mania_video(
@@ -688,6 +717,7 @@ impl ModeRenderer for ManiaRenderer {
             background,
             audio_job,
             time_axis,
+            fps,
             deadline,
         )?;
         Ok(output_path.to_path_buf())
@@ -782,6 +812,7 @@ fn render_preview_for_mode(
     duration_time: Option<f64>,
     audio_job: Option<AudioSourceJob>,
     bid: &str,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
     deadline.check()?;
@@ -827,6 +858,7 @@ fn render_preview_for_mode(
             gif_options,
             time_axis,
             output_path,
+            fps,
             deadline,
         )
     } else if fmt == "mp4" {
@@ -842,6 +874,7 @@ fn render_preview_for_mode(
             background,
             audio_job,
             time_axis,
+            fps,
             deadline,
         )
     } else {

@@ -133,6 +133,7 @@ pub(crate) fn render_catch_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     deadline.check()?;
@@ -148,6 +149,7 @@ pub(crate) fn render_catch_gif(
             duration_seconds,
             time_axis,
             output_path,
+            fps,
             deadline,
         ),
     }
@@ -160,6 +162,7 @@ fn render_catch_segment_gif(
     duration_seconds: Option<f64>,
     time_axis: TimeAxis,
     output_path: &Path,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     let hit_objects = match beatmap.hit_objects.as_catch() {
@@ -175,6 +178,9 @@ fn render_catch_segment_gif(
         .map(|seconds| seconds * 1000.0)
         .unwrap_or(crate::config::current().layout.catch.gif.DURATION_MS);
     let gameplay_segment_duration = rhe(segment_duration_ms * speed_multiplier);
+    let fps = fps
+        .map(f64::from)
+        .unwrap_or(crate::config::current().layout.catch.gif.FPS);
     let spans: Vec<(i64, i64)> = hit_objects
         .iter()
         .map(|h| (h.start_time, h.end_time))
@@ -194,20 +200,15 @@ fn render_catch_segment_gif(
         difficulty.ar,
         crate::render::geometry::OutputFormat::Gif,
     );
-    let frame_count =
-        rhe(segment_duration_ms * crate::config::current().layout.catch.gif.FPS / 1000.0).max(1)
-            as usize;
-    let frame_duration_ms =
-        rhe(1000.0 / crate::config::current().layout.catch.gif.FPS).max(1) as u32;
+    let frame_count = rhe(segment_duration_ms * fps / 1000.0).max(1) as usize;
+    let frame_duration_ms = rhe(1000.0 / fps).max(1) as u32;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
         .map(|timing| {
             (0..frame_count)
                 .map(|frame_index| {
-                    timing.start_time
-                        + rhe(frame_index as f64 * 1000.0 * speed_multiplier
-                            / crate::config::current().layout.catch.gif.FPS)
+                    timing.start_time + rhe(frame_index as f64 * 1000.0 * speed_multiplier / fps)
                 })
                 .collect()
         })

@@ -20,6 +20,7 @@ pub(crate) fn render_standard_gif(
     mods: Option<&ModSettings>,
     options: GifRenderOptions,
     output_path: &Path,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     deadline.check()?;
@@ -35,6 +36,7 @@ pub(crate) fn render_standard_gif(
             duration_seconds,
             time_axis,
             output_path,
+            fps,
             deadline,
         ),
     }
@@ -47,6 +49,7 @@ fn render_standard_segment_gif(
     duration_seconds: Option<f64>,
     time_axis: TimeAxis,
     output_path: &Path,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     let hit_objects = standard_objects(beatmap)?;
@@ -63,6 +66,9 @@ fn render_standard_segment_gif(
         .map(|seconds| seconds * 1000.0)
         .unwrap_or(crate::config::current().layout.standard.gif.DURATION_MS as f64);
     let gameplay_segment_duration = py_round(segment_duration_ms * speed_multiplier);
+    let fps = fps
+        .map(f64::from)
+        .unwrap_or(crate::config::current().layout.standard.gif.FPS as f64);
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
@@ -74,24 +80,14 @@ fn render_standard_segment_gif(
     )?;
 
     let (canvas_w, canvas_h) = gif_canvas_size();
-    let frame_count =
-        ((segment_duration_ms * crate::config::current().layout.standard.gif.FPS as f64 / 1000.0)
-            .round() as usize)
-            .max(1);
-    let frame_duration_ms =
-        ((1000.0 / crate::config::current().layout.standard.gif.FPS as f64).round() as u32).max(1);
+    let frame_count = ((segment_duration_ms * fps / 1000.0).round() as usize).max(1);
+    let frame_duration_ms = ((1000.0 / fps).round() as u32).max(1);
 
     let segment_snapshot_times: Vec<Vec<i64>> = row_timings
         .iter()
         .map(|rt| {
             (0..frame_count)
-                .map(|fi| {
-                    rt.start_time
-                        + py_round(
-                            fi as f64 * 1000.0 * speed_multiplier
-                                / crate::config::current().layout.standard.gif.FPS as f64,
-                        )
-                })
+                .map(|fi| rt.start_time + py_round(fi as f64 * 1000.0 * speed_multiplier / fps))
                 .collect()
         })
         .collect();

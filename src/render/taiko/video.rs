@@ -33,6 +33,7 @@ pub(crate) fn render_taiko_video(
     background: Option<Img>,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
+    fps: Option<u32>,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     deadline.check()?;
@@ -47,7 +48,7 @@ pub(crate) fn render_taiko_video(
     let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = crate::config::current().layout.taiko.mp4.FPS as u32;
+    let fps = fps.unwrap_or(crate::config::current().layout.taiko.mp4.FPS as u32);
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;

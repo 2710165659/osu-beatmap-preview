@@ -20,6 +20,20 @@ pub(crate) const TINY_DROPLET_SCALE: f64 = 0.4;
 pub(crate) const BANANA_SCALE: f64 = 0.6;
 /// 接水果器基础尺寸。
 pub(crate) const CATCHER_BASE_SIZE: f64 = 106.75;
+/// stable 判定使用的接取范围倍率。
+pub(crate) const ALLOWED_CATCH_RANGE: f64 = 0.8;
+/// 接手普通移动的逻辑速度。
+pub(crate) const BASE_WALK_SPEED: f64 = 0.5;
+/// 接手冲刺移动的逻辑速度。
+pub(crate) const BASE_DASH_SPEED: f64 = 1.0;
+/// 香蕉雨推荐普通路线的颜色。
+pub(crate) const RECOMMENDED_BANANA_COLOR: [u8; 3] = [255, 255, 255];
+/// 香蕉雨推荐冲刺路线的颜色。
+pub(crate) const RECOMMENDED_DASH_BANANA_COLOR: [u8; 3] = [255, 128, 128];
+/// PNG 香蕉雨接盘中心路线的颜色。
+pub(crate) const BANANA_ROUTE_LINE_COLOR: [u8; 4] = [74, 198, 214, 255];
+/// 接盘中心路线宽度，单位为 stable 游戏区域坐标。
+pub(crate) const BANANA_ROUTE_LINE_WIDTH: f64 = 4.0;
 /// 香蕉雨随机数种子。
 pub(crate) const RNG_SEED: i64 = 1337;
 /// stable 模式香蕉颜色。
