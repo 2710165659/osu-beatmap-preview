@@ -411,6 +411,9 @@ pub(crate) fn render_catch_grid(
         draw_catch_object_png(&mut image, catch_object, &layout);
     }
 
+    // combo 标签放在引导线和物件上层，确保密集段落中仍然清晰可读。
+    draw_edge_combo_labels(&mut image, &render_objects, &layout);
+
     save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
 }
@@ -702,6 +705,91 @@ fn draw_edge_guides(image: &mut Img, render_objects: &[RenderObject], layout: &R
     }
 }
 
+/// 返回接到每个 edge 物件时的全连击数；小水滴和香蕉不增加 Catch combo。
+fn edge_combo_numbers(render_objects: &[RenderObject]) -> Vec<(usize, usize)> {
+    let mut combo = 0;
+
+    render_objects
+        .iter()
+        .enumerate()
+        .filter_map(|(index, object)| {
+            if matches!(object.object_type, ObjType::Fruit | ObjType::Droplet) {
+                combo += 1;
+            }
+            object.edge.then_some((index, combo))
+        })
+        .collect()
+}
+
+fn draw_edge_combo_labels(image: &mut Img, render_objects: &[RenderObject], layout: &RenderLayout) {
+    for (index, combo) in edge_combo_numbers(render_objects) {
+        let current = &render_objects[index];
+        let Some(next) = render_objects[index + 1..].iter().find(|candidate| {
+            !matches!(
+                candidate.object_type,
+                ObjType::Banana | ObjType::TinyDroplet
+            )
+        }) else {
+            continue;
+        };
+
+        let config = &crate::config::current().layout.catch.png;
+        let label = format!("{combo}x");
+        let (label_width, label_height) = text_size(&label, config.EDGE_COMBO_LABEL_FONT_SIZE);
+        let (column_index, center_y) = locate_time(current.start_time, layout);
+        let center_x = playfield_left(column_index) as f64 + current.x * layout.playfield_scale;
+        let radius = super::drawing::object_diameter(
+            layout.object_scale,
+            layout.playfield_scale,
+            current.scale_factor,
+        ) / 2.0;
+        let left_x = rhe(center_x - radius - config.EDGE_COMBO_LABEL_GAP - label_width as f64);
+        let right_x = rhe(center_x + radius + config.EDGE_COMBO_LABEL_GAP);
+        let min_x = playfield_left(column_index);
+        let max_x = min_x + layout.visible_playfield_width - label_width as i64;
+        let prefer_left = next.x >= current.x;
+        let label_x = if prefer_left && left_x >= min_x {
+            left_x
+        } else if !prefer_left && right_x <= max_x {
+            right_x
+        } else if right_x <= max_x {
+            right_x
+        } else {
+            left_x.max(min_x)
+        };
+        let chart_top = config.PAGE_MARGIN_TOP + config.INFO_MARGIN_TOP;
+        let chart_bottom = chart_top + layout.total_column_height;
+        let label_y = (center_y - label_height as i64 / 2)
+            .max(chart_top)
+            .min(chart_bottom - label_height as i64);
+
+        // 深色底板可避免边界迫使标签与白色引导线同侧时难以辨认。
+        image.fill_rect(
+            label_x - config.EDGE_COMBO_LABEL_PADDING,
+            label_y - config.EDGE_COMBO_LABEL_PADDING,
+            label_x + label_width as i64 - 1 + config.EDGE_COMBO_LABEL_PADDING,
+            label_y + label_height as i64 - 1 + config.EDGE_COMBO_LABEL_PADDING,
+            config.EDGE_COMBO_LABEL_BACKGROUND,
+        );
+        draw_text(
+            image,
+            label_x + config.EDGE_COMBO_LABEL_SHADOW_GAP,
+            label_y + config.EDGE_COMBO_LABEL_SHADOW_GAP,
+            &label,
+            config.EDGE_COMBO_LABEL_FONT_SIZE,
+            config.EDGE_COMBO_LABEL_SHADOW,
+        );
+        draw_text(
+            image,
+            label_x,
+            label_y,
+            &label,
+            config.EDGE_COMBO_LABEL_FONT_SIZE,
+            config.EDGE_COMBO_LABEL_COLOR,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -788,5 +876,50 @@ mod tests {
         let height = predominant_measure_aligned_height(&timing_lines, 0.5, 5_500).unwrap();
         assert_eq!(height, 5_000);
         assert_eq!(height % 1_000, 0);
+    }
+    #[test]
+    fn edge_combo_numbers_ignore_tiny_droplets_and_bananas() {
+        let mut first = edge_fruit(20.0, 10);
+        first.edge = false;
+        let mut tiny = edge_fruit(30.0, 15);
+        tiny.object_type = ObjType::TinyDroplet;
+        tiny.edge = false;
+        let mut droplet = edge_fruit(40.0, 20);
+        droplet.object_type = ObjType::Droplet;
+        let mut banana = edge_fruit(50.0, 25);
+        banana.object_type = ObjType::Banana;
+        banana.edge = false;
+        let last = edge_fruit(60.0, 30);
+
+        let labels = edge_combo_numbers(&[first, tiny, droplet, banana, last]);
+
+        assert_eq!(labels, vec![(2, 2), (4, 3)]);
+    }
+
+    #[test]
+    fn edge_combo_label_is_drawn_next_to_the_edge_object() {
+        let layout = test_layout(1);
+        let current = edge_fruit(100.0, 10);
+        let mut next = edge_fruit(200.0, 20);
+        next.edge = false;
+        let mut image = Img::new(
+            400,
+            130,
+            crate::config::current().layout.catch.png.IMAGE_BACKGROUND,
+        );
+
+        draw_edge_combo_labels(&mut image, &[current, next], &layout);
+
+        let has_white_label_pixel = (0..image.h).any(|y| {
+            (0..image.w).any(|x| {
+                image.get(x, y)
+                    == crate::config::current()
+                        .layout
+                        .catch
+                        .png
+                        .EDGE_COMBO_LABEL_COLOR
+            })
+        });
+        assert!(has_white_label_pixel);
     }
 }

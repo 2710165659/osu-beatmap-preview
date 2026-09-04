@@ -301,6 +301,7 @@ fn integer_type(path: &[&str], name: &str) -> &'static str {
         (path, name),
         (["layout", "catch", _], "RNG_SEED")
             | (["layout", "catch", "png"], "TIME_LABEL_FONT_SIZE")
+            | (["layout", "catch", "png"], "EDGE_COMBO_LABEL_FONT_SIZE")
             | (["layout", "catch", "gif"], "TIME_LABEL_FONT_SIZE")
             | (["layout", "catch", "gif"], "TIME_LABEL_NOTE_FONT_SIZE")
             | (["layout", "mania", "png"], "SV_TEXT_FONT_SIZE")

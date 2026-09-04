@@ -239,6 +239,13 @@ layout:
       BPM_LABEL_GAP: 2 # BPM 标签与时间标签的垂直间距
       EDGE_GUIDE_COLOR: [255, 255, 255, 255] # edge 跳跃引导线颜色（RGBA）
       EDGE_GUIDE_WIDTH: 3.0 # edge 跳跃引导线宽度
+      EDGE_COMBO_LABEL_COLOR: [255, 255, 255, 255] # edge combo 标签颜色（RGBA）
+      EDGE_COMBO_LABEL_SHADOW: [0, 0, 0, 220] # edge combo 标签阴影颜色（RGBA）
+      EDGE_COMBO_LABEL_BACKGROUND: [7, 7, 7, 230] # edge combo 标签底板颜色（RGBA）
+      EDGE_COMBO_LABEL_FONT_SIZE: 16 # edge combo 标签字号
+      EDGE_COMBO_LABEL_GAP: 5.0 # edge combo 标签与物件的间距
+      EDGE_COMBO_LABEL_PADDING: 2 # edge combo 标签底板内边距
+      EDGE_COMBO_LABEL_SHADOW_GAP: 1 # edge combo 标签阴影偏移
     gif:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
       PLAYFIELD_BACKGROUND: [7, 7, 7, 255] # 游玩区域背景色（RGBA）
