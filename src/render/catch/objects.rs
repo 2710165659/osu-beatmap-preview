@@ -50,6 +50,10 @@ pub(crate) struct RenderObject {
     pub(crate) hyper_dash: bool,
     /// 接近 hyperdash 极限、需要引导线提示的大跨度移动。
     pub(crate) edge: bool,
+    /// 所属香蕉雨编号；仅香蕉物件设置。
+    pub(crate) banana_shower_id: Option<usize>,
+    /// 推荐路线在该香蕉时刻采用的实际接盘中心横坐标。
+    pub(crate) banana_route_x: Option<f64>,
 }
 
 impl RenderObject {
@@ -167,7 +171,12 @@ pub(crate) fn build_catch_render_objects(
     for hit_object in hit_objects.iter() {
         if hit_object.hit_type & 8 != 0 {
             // 香蕉雨：颜色由香蕉自身随机决定，不影响 combo 颜色推进
-            let range = build_banana_shower_objects(hit_object, &mut rng, &mut render_objects);
+            let range = build_banana_shower_objects(
+                hit_object,
+                banana_shower_ranges.len(),
+                &mut rng,
+                &mut render_objects,
+            );
             if !range.is_empty() {
                 banana_shower_ranges.push(range);
             }
@@ -236,6 +245,8 @@ pub(crate) fn build_fruit_object(
         event_time,
         hyper_dash: false,
         edge: false,
+        banana_shower_id: None,
+        banana_route_x: None,
     }
 }
 
@@ -249,6 +260,7 @@ fn stable_slider_end_x(hit_object: &CatchHitObject) -> f64 {
 
 fn build_banana_shower_objects(
     hit_object: &CatchHitObject,
+    shower_id: usize,
     rng: &mut LegacyRandom,
     out: &mut Vec<RenderObject>,
 ) -> std::ops::Range<usize> {
@@ -280,6 +292,8 @@ fn build_banana_shower_objects(
             event_time: Some(current_time as f64),
             hyper_dash: false,
             edge: false,
+            banana_shower_id: Some(shower_id),
+            banana_route_x: None,
         });
         current_time = to_float32(current_time as f64 + spacing as f64);
     }
@@ -566,6 +580,7 @@ fn highlight_recommended_banana_route(
     let mut last_x = banana_route_position(state_index, grid_step);
     let mut last_time = initial_time;
     for (index, banana) in bananas.iter_mut().enumerate() {
+        banana.banana_route_x = Some(catcher_positions[index]);
         if !caught[index] {
             continue;
         }
@@ -660,6 +675,8 @@ fn build_juice_stream_objects(
                     event_time: Some(event.time),
                     hyper_dash: false,
                     edge: false,
+                    banana_shower_id: None,
+                    banana_route_x: None,
                 });
             }
             EventType::LegacyLastTick => {}
@@ -914,6 +931,8 @@ fn build_tiny_droplets_between(
             event_time: Some(time),
             hyper_dash: false,
             edge: false,
+            banana_shower_id: None,
+            banana_route_x: None,
         });
         offset += time_between_tiny;
     }
@@ -1046,6 +1065,8 @@ mod tests {
             event_time: Some(time as f64),
             hyper_dash: false,
             edge: false,
+            banana_shower_id: None,
+            banana_route_x: None,
         }
     }
 
@@ -1059,6 +1080,8 @@ mod tests {
             event_time: Some(time as f64),
             hyper_dash: false,
             edge: false,
+            banana_shower_id: None,
+            banana_route_x: None,
         }
     }
 
@@ -1099,6 +1122,10 @@ mod tests {
 
         assert_eq!(bananas[0].color, RECOMMENDED_BANANA_COLOR);
         assert_eq!(bananas[1].color, RECOMMENDED_BANANA_COLOR);
+        let first_x = bananas[0].banana_route_x.unwrap();
+        let second_x = bananas[1].banana_route_x.unwrap();
+        assert_eq!(first_x, second_x);
+        assert!((137.3..=142.7).contains(&first_x));
     }
 
     #[test]

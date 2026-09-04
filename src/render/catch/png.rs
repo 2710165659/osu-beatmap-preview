@@ -398,7 +398,8 @@ pub(crate) fn render_catch_grid(
         }
     }
 
-    // 引导线放在物件下层，避免遮住水果图形。
+    // 路线和引导线放在物件下层，避免遮住水果图形。
+    draw_banana_routes(&mut image, &render_objects, &layout);
     draw_edge_guides(&mut image, &render_objects, &layout);
 
     // 后发生的对象先画（早出现的盖在上层），同时刻按 类型 排序
@@ -638,8 +639,22 @@ fn edge_guide_segments(
     next: &RenderObject,
     layout: &RenderLayout,
 ) -> Vec<LineSegment> {
-    let start_time = current.event_time_or_start();
-    let end_time = next.event_time_or_start();
+    time_axis_segments(
+        current.event_time_or_start(),
+        current.x,
+        next.event_time_or_start(),
+        next.x,
+        layout,
+    )
+}
+
+fn time_axis_segments(
+    start_time: f64,
+    start_x: f64,
+    end_time: f64,
+    end_x: f64,
+    layout: &RenderLayout,
+) -> Vec<LineSegment> {
     if end_time <= start_time || layout.pixels_per_ms <= 0.0 {
         return Vec::new();
     }
@@ -666,7 +681,7 @@ fn edge_guide_segments(
 
         let point_at = |time: f64| {
             let progress = (time - start_time) / (end_time - start_time);
-            let object_x = current.x + (next.x - current.x) * progress;
+            let object_x = start_x + (end_x - start_x) * progress;
             let x = playfield_left(column) as f64 + object_x * layout.playfield_scale;
             let local_height = (time - column_start) * layout.pixels_per_ms;
             let y = chart_bottom - local_height;
@@ -676,6 +691,41 @@ fn edge_guide_segments(
     }
 
     segments
+}
+
+/// 绘制动态规划实际采用的接盘中心轨迹；未接取的香蕉时刻也保留过渡位置。
+fn draw_banana_routes(image: &mut Img, render_objects: &[RenderObject], layout: &RenderLayout) {
+    let mut previous: Option<(usize, f64, f64)> = None;
+
+    for current in render_objects {
+        let (Some(shower_id), Some(current_x)) = (current.banana_shower_id, current.banana_route_x)
+        else {
+            continue;
+        };
+
+        if let Some((previous_shower_id, previous_time, previous_x)) = previous {
+            if previous_shower_id == shower_id {
+                for (start, end) in time_axis_segments(
+                    previous_time,
+                    previous_x,
+                    current.event_time_or_start(),
+                    current_x,
+                    layout,
+                ) {
+                    image.draw_line(
+                        start.0,
+                        start.1,
+                        end.0,
+                        end.1,
+                        (super::constants::BANANA_ROUTE_LINE_WIDTH * layout.playfield_scale)
+                            .max(1.0),
+                        super::constants::BANANA_ROUTE_LINE_COLOR,
+                    );
+                }
+            }
+        }
+        previous = Some((shower_id, current.event_time_or_start(), current_x));
+    }
 }
 
 fn draw_edge_guides(image: &mut Img, render_objects: &[RenderObject], layout: &RenderLayout) {
@@ -818,7 +868,18 @@ mod tests {
             event_time: Some(time as f64),
             hyper_dash: false,
             edge: true,
+            banana_shower_id: None,
+            banana_route_x: None,
         }
+    }
+
+    fn route_banana(x: f64, route_x: f64, time: i64, shower_id: usize) -> RenderObject {
+        let mut object = edge_fruit(x, time);
+        object.object_type = ObjType::Banana;
+        object.edge = false;
+        object.banana_shower_id = Some(shower_id);
+        object.banana_route_x = Some(route_x);
+        object
     }
 
     #[test]
@@ -859,6 +920,31 @@ mod tests {
         assert_eq!(
             image.get(midpoint_x as u32, (chart_bottom - 15) as u32),
             crate::config::current().layout.catch.png.EDGE_GUIDE_COLOR
+        );
+    }
+
+    #[test]
+    fn banana_route_draws_catcher_center_instead_of_banana_centers() {
+        let layout = test_layout(1);
+        let current = route_banana(0.0, 100.0, 10, 0);
+        let next = route_banana(400.0, 100.0, 20, 0);
+        let background = [7, 7, 7, 255];
+        let mut image = Img::new(400, 130, background);
+
+        draw_banana_routes(&mut image, &[current, next], &layout);
+
+        let route_x = playfield_left(0) + 50;
+        let banana_midpoint_x = playfield_left(0) + 100;
+        let chart_bottom = crate::config::current().layout.catch.png.PAGE_MARGIN_TOP
+            + crate::config::current().layout.catch.png.INFO_MARGIN_TOP
+            + layout.total_column_height;
+        assert_eq!(
+            image.get(route_x as u32, (chart_bottom - 15) as u32),
+            crate::render::catch::constants::BANANA_ROUTE_LINE_COLOR
+        );
+        assert_eq!(
+            image.get(banana_midpoint_x as u32, (chart_bottom - 15) as u32),
+            background
         );
     }
 
