@@ -597,12 +597,28 @@ fn highlight_recommended_banana_route(
     }
 }
 
+fn merge_adjacent_banana_shower_ranges(
+    ranges: &[std::ops::Range<usize>],
+) -> Vec<std::ops::Range<usize>> {
+    let mut merged: Vec<std::ops::Range<usize>> = Vec::with_capacity(ranges.len());
+    for range in ranges {
+        if let Some(previous) = merged.last_mut() {
+            if previous.end == range.start {
+                previous.end = range.end;
+                continue;
+            }
+        }
+        merged.push(range.clone());
+    }
+    merged
+}
+
 fn highlight_banana_shower_routes(
     render_objects: &mut [RenderObject],
     ranges: &[std::ops::Range<usize>],
     circle_size: f64,
 ) {
-    for range in ranges {
+    for range in merge_adjacent_banana_shower_ranges(ranges) {
         let first_time = render_objects[range.start].event_time_or_start();
         let last_time = render_objects[range.end - 1].event_time_or_start();
         let entry = render_objects[..range.start]
@@ -614,12 +630,13 @@ fn highlight_banana_shower_routes(
             .iter()
             .find_map(banana_route_anchor)
             .filter(|anchor| anchor.time >= last_time);
-        highlight_recommended_banana_route(
-            &mut render_objects[range.clone()],
-            circle_size,
-            entry,
-            exit,
-        );
+        let merged_shower_id = render_objects[range.start]
+            .banana_shower_id
+            .unwrap_or(range.start);
+        for banana in &mut render_objects[range.clone()] {
+            banana.banana_shower_id = Some(merged_shower_id);
+        }
+        highlight_recommended_banana_route(&mut render_objects[range], circle_size, entry, exit);
     }
 }
 
@@ -1163,6 +1180,22 @@ mod tests {
             bananas[1].color,
             RECOMMENDED_BANANA_COLOR | RECOMMENDED_DASH_BANANA_COLOR
         ));
+    }
+
+    #[test]
+    fn consecutive_single_banana_showers_share_one_reachable_route() {
+        let mut first = banana(0.0, 1_000);
+        first.banana_shower_id = Some(0);
+        let mut second = banana(512.0, 1_000);
+        second.banana_shower_id = Some(1);
+        let mut objects = vec![first, second];
+
+        highlight_banana_shower_routes(&mut objects, &[0..1, 1..2], 5.0);
+
+        let first_x = objects[0].banana_route_x.unwrap();
+        let second_x = objects[1].banana_route_x.unwrap();
+        assert_eq!(first_x, second_x);
+        assert_eq!(objects[0].banana_shower_id, objects[1].banana_shower_id);
     }
 
     #[test]
