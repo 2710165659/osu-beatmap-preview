@@ -33,9 +33,6 @@ palette:
     MANIA_COLOR_G: [0xcc, 0xfc, 0xb2, 255] # 绿色键道
     MANIA_COLOR_Y: [0xff, 0xe2, 0x74, 255] # 黄色键道
     MANIA_COLOR_R: [0xff, 0x7a, 0x5c, 255] # 红色键道
-effects:
-  catch_drawing:
-    BLOB_SPRITE_SCALE: 0.5 # Catch 光斑精灵的内部渲染缩放倍率，越小越省资源
 video:
   composer:
     PAR_CHUNK_SIZE: 8 # GIF 每批并行渲染的最大帧数
