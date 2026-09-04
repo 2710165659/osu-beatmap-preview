@@ -67,6 +67,9 @@ osu-beatmap-preview --bid=738063 --fmt=png
 # 使用命令行覆盖输出倍率（0.5 倍、2 倍等）
 osu-beatmap-preview --bid=738063 --scale=2
 
+# 覆盖 GIF/MP4 输出帧率
+osu-beatmap-preview --bid=738063 --fmt=gif --fps=30
+
 # 将 Standard 谱面转为 Mania 并输出 GIF
 osu-beatmap-preview --bid=738063 --convert=mania --fmt=gif
 
@@ -91,7 +94,7 @@ Windows PowerShell 中，如果程序位于当前目录，需要使用 `.\osu-be
 ## 命令行参数
 
 ```text
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]
 ```
 
 | 参数 | 说明 |
@@ -102,6 +105,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--mod` | 单个 Mod。组合时重复传入；参数不区分大小写。 |
 | `--time-points` | 游戏时间点，单位为秒，也可传 `preview`。GIF 和 Standard PNG 可重复传入，MP4 最多传入一次。 |
 | `--duration-time` | GIF 每个时间点或 MP4 的输出时长，单位为秒，必须为有限正数。GIF 未指定时使用对应模式配置的片段时长；MP4 默认 `600`。 |
+| `--fps` | GIF 或 MP4 输出帧率，必须为 `1` 至 `60` 的整数。省略时使用对应模式和格式配置中的帧率。 |
 | `--no-cache` | 跳过 `.osu`、OSZ 和输出文件缓存，强制重新下载和渲染。 |
 | `--no-log` | 关闭文件日志。 |
 | `--config` | 配置文件路径，或内联 JSON/YAML 对象。只能传入一次。 |

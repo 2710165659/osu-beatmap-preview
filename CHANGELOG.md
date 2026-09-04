@@ -3,9 +3,33 @@
 All notable changes to this project will be documented in this file.
 
 ---
-## [Unreleased]
+## [1.1.0] - 2026.09.04
 
-- `--duration-time` 现支持 GIF，并会让每个选定时间点分别渲染指定秒数；未指定时仍使用各模式 GIF 配置中的片段时长。
+### Added
+
+- 新增 `--fps=<1-60>`，可为 GIF 和 MP4 单次渲染覆盖配置中的帧率；显式帧率会参与输出缓存区分。
+- GIF 新增 `--duration-time` 支持，可让每个选定时间点分别渲染指定时长；未指定时仍使用对应模式的默认片段时长。
+- 新增四种模式、三种输出格式分别独立的 `SCALE` 配置，以及 `--scale` 单次输出倍率覆盖；倍率会在绘制前作用于文字、图形、间距和布局尺寸。
+- 扩展库接口 `PreviewOptions`，支持传入外部配置、输出倍率和 GIF/MP4 帧率。
+- Catch PNG 新增香蕉雨推荐接盘路线、edge 跳跃引导线和边缘 combo 数字，并可通过 `layout.catch.png.SHOW_BANANA_ROUTE` 开关路线计算与绘制。
+
+### Changed
+
+- 重整四种模式的布局配置，PNG、GIF 和 MP4 可分别配置画布边距、信息区、间距、标签、背景和视频样式；MP4 背景图与暗化程度不再由所有模式共用一组配置。
+- Mania 的各输出格式可独立开关 SV 标签，PNG/GIF/MP4 的键道宽度和边界线宽度按对应皮肤配置参与布局。
+- Catch 渲染物件更改为新样式：水果和水滴使用带白色边框的实心圆，香蕉使用空心圆环，Hyper Dash 使用外环提示。
+- Catch PNG 的多列高度会按主要小节间隔对齐，时间标签旁新增 BPM 信息；edge 引导线会在列边界处连续衔接，减少跨列阅读歧义。
+- DA 参数改为在确定目标模式后按各规则集的 Extended Limits 校验；Standard 支持 AR `-10` 至 `11`、CS/OD/HP `0` 至 `11`。
+- 标准化字体、标签、边距和游玩区域的缩放计算，非 `1` 倍输出会使用倍率后缀区分文件名。
+
+### Contributors
+
+- `yaowan233`：贡献 Catch 预览改进，包括新样式、香蕉雨推荐路线、edge 引导线、边缘 combo 数字、列高对齐和时间/BPM 标签优化。
+
+### Performance
+
+- Catch 物件更改为新样式后，减少了光斑精灵生成与缓存开销，提升 Catch 渲染性能。
+
 
 ## [1.0.8] - 2026.08.30
 

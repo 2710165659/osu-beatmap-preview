@@ -76,6 +76,9 @@ osu-beatmap-preview --bid=738063 --mod=hd --mod=hr
 # Render a 30-second MP4 starting at the beatmap PreviewTime
 osu-beatmap-preview --bid=738063 --fmt=mp4 --time-points=preview --duration-time=30
 
+# Override the GIF/MP4 output frame rate
+osu-beatmap-preview --bid=738063 --fmt=gif --fps=30
+
 # Select four GIF segment start times and render 6 seconds from each point
 osu-beatmap-preview --bid=738063 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20 --duration-time=6
 
@@ -88,7 +91,7 @@ In Windows PowerShell, use `.\osu-beatmap-preview-windows-amd64.exe` or the actu
 ## Command-Line Options
 
 ```text
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]
 ```
 
 | Option | Description |
@@ -99,6 +102,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--mod` | One Mod. Repeat the option to combine Mods; values are case-insensitive. |
 | `--time-points` | A gameplay time in seconds, or `preview`. Repeat it for GIF or Standard PNG output; MP4 accepts at most one. |
 | `--duration-time` | Duration in seconds for each GIF time point or for MP4 output. It must be finite and positive. GIF uses the mode-specific configured segment duration when omitted; MP4 defaults to `600`. |
+| `--fps` | GIF or MP4 output frame rate. It must be an integer from `1` to `60`; when omitted, the mode- and format-specific configured frame rate is used. |
 | `--no-cache` | Bypasses the `.osu`, OSZ, and output caches, forcing a fresh download and render. |
 | `--no-log` | Disables file logging. |
 | `--config` | A configuration file path or an inline JSON/YAML object. It may be supplied only once. |
