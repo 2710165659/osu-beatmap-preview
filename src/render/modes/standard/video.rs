@@ -60,6 +60,19 @@ pub(crate) fn render_standard_video(
             .FPS as u32,
     );
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
+    // 视频帧会被并行且可能乱序地请求；先按时间轴一次性生成可见物件索引，
+    // 避免每帧重复排序完整谱面并分配临时 Vec。索引仅保存 usize，
+    // 相比 RGBA 帧缓冲占用很小，且不改变任何帧的物件顺序。
+    let snapshot_times: Vec<i64> = (0..frame_count)
+        .map(|frame_index| {
+            start + round_half_even(frame_index as f64 * 1000.0 * speed / fps as f64)
+        })
+        .collect();
+    let visible_indexes = build_visible_indexes_by_snapshot(
+        &context.hit_objects,
+        &snapshot_times,
+        context.settings.preempt_ms,
+    );
     // 视频背景在最终 16:9 画布上统一处理；playfield 只提供透明对象层，
     // 避免同一张图在 playfield 和画布中被分别缩放、裁剪。
     let frame_background = background.as_ref().map(|_| {
@@ -80,20 +93,14 @@ pub(crate) fn render_standard_video(
     }
 
     let render = move |frame_index: usize| -> (Img, i64) {
-        let snapshot_time =
-            start + round_half_even(frame_index as f64 * 1000.0 * speed / fps as f64);
-        let groups = build_visible_indexes_by_snapshot(
-            &context_ref.hit_objects,
-            &[snapshot_time],
-            context_ref.settings.preempt_ms,
-        );
+        let snapshot_time = snapshot_times[frame_index];
         let frame = STD_VIDEO_CACHE.with(|cache| {
             render_frame(
                 context_ref,
                 &mut cache.borrow_mut(),
                 snapshot_time,
                 break_ref,
-                &groups[0],
+                &visible_indexes[frame_index],
                 frame_background.as_ref(),
             )
         });
