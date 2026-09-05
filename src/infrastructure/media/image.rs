@@ -271,7 +271,13 @@ pub fn save_animated_gif_streamed(
 
             let delay = (frame_duration_ms / 10) as u16; // GIF delay unit = 10ms
 
-            let mut prev_indexed: Vec<u8> = Vec::new();
+            let pixel_count = w.saturating_mul(h);
+            // 两块缓冲区交替保存当前帧和上一帧，避免每帧重新分配并清零整张 indexed 图像。
+            let mut prev_indexed: Vec<u8> = Vec::with_capacity(pixel_count);
+            let mut indexed: Vec<u8> = Vec::with_capacity(pixel_count);
+            // 差分矩形在 LZW 压缩前只需短暂存在。编码器会把借用的数据替换为独立的
+            // 压缩缓冲区，因此可跨帧复用这块原始索引缓冲，避免反复分配大矩形。
+            let mut delta_buffer: Vec<u8> = Vec::with_capacity(pixel_count);
             let frame_bytes = w.saturating_mul(h).saturating_mul(4).max(1);
             let par_chunk_size = (crate::infrastructure::config::current()
                 .advance
@@ -301,35 +307,49 @@ pub fn save_animated_gif_streamed(
                 // 顺序编码（差分帧必须保持顺序）。
                 for (fi, frame) in (chunk_start..).zip(frames) {
                     deadline.check()?;
-                    let mut indexed = vec![0u8; w * h];
-                    for (i, px) in frame.data.chunks_exact(4).enumerate().take(w * h) {
-                        indexed[i] = lut[posterize(px[0]) as usize >> 3]
-                            [posterize(px[1]) as usize >> 3]
-                            [posterize(px[2]) as usize >> 3];
-                    }
+                    rgba_to_indexed(&frame, &lut, &mut indexed, pixel_count);
                     drop(frame);
 
                     let (rect, buffer, transparent) = if fi == 0 {
-                        ((0usize, 0usize, w, h), indexed.clone(), None)
+                        // make_lzw_pre_encoded 会立即把借用的原始 buffer 替换为压缩数据，
+                        // 因此首帧可以直接借用 indexed，省去一次整帧复制。
+                        (
+                            (0usize, 0usize, w, h),
+                            std::borrow::Cow::Borrowed(indexed.as_slice()),
+                            None,
+                        )
                     } else {
                         match find_delta_rect(&indexed, &prev_indexed, w, h) {
-                            None => ((0, 0, 1, 1), vec![transparent_idx], Some(transparent_idx)),
+                            None => (
+                                (0, 0, 1, 1),
+                                {
+                                    delta_buffer.clear();
+                                    delta_buffer.push(transparent_idx);
+                                    std::borrow::Cow::Borrowed(delta_buffer.as_slice())
+                                },
+                                Some(transparent_idx),
+                            ),
                             Some((min_x, min_y, max_x, max_y)) => {
                                 let rw = max_x - min_x + 1;
                                 let rh = max_y - min_y + 1;
-                                let mut buf = Vec::with_capacity(rw * rh);
+                                delta_buffer.clear();
+                                delta_buffer.reserve(rw.saturating_mul(rh));
                                 for y in min_y..=max_y {
                                     let row = y * w;
                                     for x in min_x..=max_x {
                                         let v = indexed[row + x];
-                                        buf.push(if v == prev_indexed[row + x] {
+                                        delta_buffer.push(if v == prev_indexed[row + x] {
                                             transparent_idx
                                         } else {
                                             v
                                         });
                                     }
                                 }
-                                ((min_x, min_y, rw, rh), buf, Some(transparent_idx))
+                                (
+                                    (min_x, min_y, rw, rh),
+                                    std::borrow::Cow::Borrowed(delta_buffer.as_slice()),
+                                    Some(transparent_idx),
+                                )
                             }
                         }
                     };
@@ -345,13 +365,14 @@ pub fn save_animated_gif_streamed(
                         needs_user_input: false,
                         interlaced: false,
                         palette: None,
-                        buffer: std::borrow::Cow::Owned(buffer),
+                        buffer,
                     };
                     gframe.make_lzw_pre_encoded();
                     encoder
                         .write_lzw_pre_encoded_frame(&gframe)
                         .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-                    prev_indexed = indexed;
+                    // gframe 在此之后已不再借用 indexed，安全地交换两块帧缓冲区。
+                    std::mem::swap(&mut indexed, &mut prev_indexed);
                 }
             }
             drop(encoder); // flush buffered bytes before the temp file is renamed
@@ -359,6 +380,25 @@ pub fn save_animated_gif_streamed(
             Ok(())
         },
     )
+}
+
+/// 将 RGBA 帧映射为 GIF 使用的 indexed 像素。
+///
+/// 帧尺寸由渲染器保证一致；若输入数据不足，保留旧实现的行为，用 0 填充尾部。
+fn rgba_to_indexed(
+    frame: &Img,
+    lut: &[[[u8; 32]; 32]; 32],
+    indexed: &mut Vec<u8>,
+    pixel_count: usize,
+) {
+    indexed.clear();
+    // 保持旧路径对异常短输入的行为：未覆盖的尾部仍为索引 0。
+    // 容量已在动画开始时预分配，resize 不会在正常帧尺寸下重新分配。
+    indexed.resize(pixel_count, 0);
+    for (i, px) in frame.data.chunks_exact(4).enumerate().take(pixel_count) {
+        indexed[i] = lut[posterize(px[0]) as usize >> 3][posterize(px[1]) as usize >> 3]
+            [posterize(px[2]) as usize >> 3];
+    }
 }
 
 /// 查找 `cur` 与 `prev` 之间不同字节的包围盒。

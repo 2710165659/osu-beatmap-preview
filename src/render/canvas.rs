@@ -11,10 +11,17 @@ pub type Rgba = [u8; 4];
 
 impl Img {
     pub fn new(w: u32, h: u32, color: Rgba) -> Self {
-        let mut data = vec![0u8; (w * h * 4) as usize];
-        if color != [0, 0, 0, 0] {
-            for px in data.chunks_exact_mut(4) {
-                px.copy_from_slice(&color);
+        let pixel_bytes = (w as usize).saturating_mul(h as usize).saturating_mul(4);
+        let mut data = vec![0u8; pixel_bytes];
+        if color != [0, 0, 0, 0] && !data.is_empty() {
+            // 先写入一个像素，再按倍增方式复制，避免逐像素调用 copy_from_slice。
+            // 这只改变初始化方式，不改变 RGBA 字节顺序和最终像素内容。
+            data[..4].copy_from_slice(&color);
+            let mut initialized = 4;
+            while initialized < data.len() {
+                let copy_len = initialized.min(data.len() - initialized);
+                data.copy_within(..copy_len, initialized);
+                initialized += copy_len;
             }
         }
         Img { w, h, data }
