@@ -13,7 +13,7 @@ param(
 
 $ErrorActionPreference = "Continue"
 $bin = Join-Path $PSScriptRoot "target\release\osu-beatmap-preview.exe"
-$outdir = "C:\Users\27101\AppData\Local\Temp\osu-beatmap-preview\outputs\batch-config"
+$outdir = Join-Path $env:TEMP "osu-beatmap-preview\outputs\batch-config"
 
 if (-not (Test-Path -LiteralPath $bin -PathType Leaf)) {
     throw "Release binary not found: $bin`nRun cargo build --release first."
@@ -109,15 +109,37 @@ $tasks.Add((New-ConfigTask `
 function New-ConfigJson {
     param($Task, [string]$LogVariant)
 
+    # 配置覆盖项必须按运行时 schema 分层，不能再写入已移除的 layout 节点。
+    $formatConfig = @{}
+    foreach ($entry in $Task.overrides.GetEnumerator()) {
+        switch ($entry.Key) {
+            "SCALE" {
+                $formatConfig.SCALE = $entry.Value
+            }
+            { $_ -in @("ROW_COUNT", "IMAGES_PER_ROW") } {
+                if (-not $formatConfig.ContainsKey("structure")) {
+                    $formatConfig.structure = @{}
+                }
+                $formatConfig.structure[$entry.Key] = $entry.Value
+            }
+            default {
+                if (-not $formatConfig.ContainsKey("style")) {
+                    $formatConfig.style = @{}
+                }
+                $formatConfig.style[$entry.Key] = $entry.Value
+            }
+        }
+    }
+
     $config = @{
         paths = @{
             OUTPUT_DIR = $outdir
             # LOG_DIR 不参与实际绘制；用唯一值生成新的缓存变体，避免命中旧成品。
             LOG_DIR = (Join-Path $outdir ".logs\$LogVariant")
         }
-        layout = @{
+        render = @{
             $Task.configMode = @{
-                $Task.format = $Task.overrides
+                $Task.format = $formatConfig
             }
         }
     }
@@ -348,3 +370,7 @@ Write-Host ("Done: {0}/{1} successful, measured time {2:F3}s, peak memory {3}MB"
     $okResults.Count, $results.Count, ($totalMs / 1000.0), $maxMemory)
 Write-Host "Flattened outputs: $outdir"
 Write-Host "Report: $reportPath"
+
+if ($failed.Count -gt 0) {
+    exit 1
+}

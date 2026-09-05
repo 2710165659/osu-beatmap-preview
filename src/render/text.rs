@@ -49,15 +49,15 @@ fn glyph_height(size: u32) -> u32 {
 /// 基础字号先按旧版 8px 字形取整，再应用输出倍率，以保持 1x 外观不变。
 pub(crate) fn scaled_bitmap_font_height(base_size: u32, output_scale: f64) -> u32 {
     let base_height = (base_size.max(8) / 8).max(1) * 8;
-    crate::parser::round_half_even(base_height as f64 * output_scale).max(1) as u32
+    crate::domain::parser::round_half_even(base_height as f64 * output_scale).max(1) as u32
 }
 
 fn scaled_glyph_width(base_width: u32, height: u32) -> u32 {
-    crate::parser::round_half_even(base_width as f64 * height as f64 / 8.0).max(1) as u32
+    crate::domain::parser::round_half_even(base_width as f64 * height as f64 / 8.0).max(1) as u32
 }
 
 fn glyph_spacing(height: u32) -> u32 {
-    crate::parser::round_half_even(height as f64 / 8.0).max(1) as u32
+    crate::domain::parser::round_half_even(height as f64 / 8.0).max(1) as u32
 }
 
 /// 返回按目标像素高度重采样后的字形包围盒。

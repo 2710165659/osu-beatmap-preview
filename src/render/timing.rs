@@ -1,6 +1,6 @@
 //! 各模式共用的节奏标签辅助函数。
 
-use crate::core::models::TimingPoint;
+use crate::domain::models::TimingPoint;
 
 /// 返回指定时间生效的非继承 BPM；首条红线之前的静音段沿用首条红线 BPM。
 pub(crate) fn bpm_at(timing_points: &[TimingPoint], time: i64) -> Option<f64> {

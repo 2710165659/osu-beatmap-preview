@@ -1,6 +1,6 @@
 //! 四模式共享的 playfield、缩放与视频画布几何。
 
-use crate::parser::round_half_even;
+use crate::domain::parser::round_half_even;
 
 pub(crate) const STANDARD_CATCH_PLAYFIELD_WIDTH: f64 = 409.6;
 pub(crate) const STANDARD_CATCH_PLAYFIELD_HEIGHT: f64 = 307.2;
@@ -40,7 +40,7 @@ pub(crate) struct PlayfieldGeometry {
 }
 
 pub(crate) fn output_scale(mode: GameMode, format: OutputFormat) -> f64 {
-    let layout = &crate::config::current().layout;
+    let layout = &crate::infrastructure::config::current().render;
     match (mode, format) {
         (GameMode::Standard, OutputFormat::Png) => layout.standard.png.SCALE,
         (GameMode::Standard, OutputFormat::Gif) => layout.standard.gif.SCALE,

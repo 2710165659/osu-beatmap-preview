@@ -1,13 +1,14 @@
-mod common;
-mod config;
-mod core;
-mod log;
-mod parser;
-mod pipeline;
+mod application;
+pub(crate) mod domain;
+pub(crate) mod infrastructure;
 mod render;
 
-pub use core::errors::{ErrorKind, PreviewError};
-pub use core::validate::{parse_time_point, TimePoint};
+pub use application::request::{parse_fps, parse_positive_finite};
+pub use application::{
+    ExecutionOptions, OutputOptions, RenderRequest, RulesetOptions, SourceOptions, ViewOptions,
+};
+pub use domain::errors::{ErrorKind, PreviewError};
+pub use domain::validate::{parse_time_point, TimePoint};
 
 #[derive(Debug, Clone)]
 pub struct PreviewOptions {
@@ -41,29 +42,34 @@ impl PreviewOptions {
     }
 }
 
-pub fn generate_preview(options: PreviewOptions) -> Result<serde_json::Value, PreviewError> {
-    let mods = core::validate::validate_cli_options(
-        &options.bid,
-        options.convert.as_deref(),
-        options.format.as_deref(),
-        &options.mods,
-        options.duration_time,
-        options.scale,
-    )?;
-    if let Err(error) = config::initialize_for_cli(options.config.as_deref(), options.scale) {
-        if options.config.is_some() || !error.contains("already been initialized") {
-            return Err(PreviewError::new(format!("configuration error: {error}")));
+impl From<PreviewOptions> for RenderRequest {
+    fn from(options: PreviewOptions) -> Self {
+        Self {
+            source: SourceOptions { bid: options.bid },
+            ruleset: RulesetOptions {
+                convert: options.convert,
+                mods: options.mods,
+            },
+            view: ViewOptions {
+                time_points: options.time_points,
+                duration_seconds: options.duration_time,
+            },
+            output: OutputOptions {
+                format: options.format,
+                fps: options.fps,
+                scale: options.scale,
+            },
+            execution: ExecutionOptions {
+                no_cache: options.no_cache,
+                logging: true,
+                config: options.config,
+            },
         }
     }
+}
 
-    pipeline::service::generate_preview(
-        &options.bid,
-        options.format.as_deref(),
-        options.convert.as_deref(),
-        mods,
-        options.time_points,
-        options.duration_time,
-        options.no_cache,
-        options.fps,
-    )
+pub fn generate_preview(
+    request: impl Into<RenderRequest>,
+) -> Result<serde_json::Value, PreviewError> {
+    application::engine::execute(request.into())
 }

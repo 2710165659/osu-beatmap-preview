@@ -408,3 +408,7 @@ Write-Host ("Done: {0}/{1} successful, {2:F2}ms per chart-second, peak GPU {3:F1
     $okResults.Count, $results.Count, $overallMsPerSecond, $maxGpu, $maxMemory)
 Write-Host "Videos: $outdir"
 Write-Host "Report: $reportPath"
+
+if ($failed.Count -gt 0) {
+    exit 1
+}

@@ -181,25 +181,25 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 osu-beatmap-preview --bid=738063 --config=C:/path/to/config.yml
 
 # 内联 JSON
-osu-beatmap-preview --bid=738063 --config='{"layout":{"standard":{"gif":{"ROW_COUNT":1}}}}'
+osu-beatmap-preview --bid=738063 --config='{"render":{"standard":{"gif":{"structure":{"ROW_COUNT":1}}}}}'
 
 # 内联 YAML
-osu-beatmap-preview --bid=738063 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'
+osu-beatmap-preview --bid=738063 --config='{render: {standard: {gif: {structure: {ROW_COUNT: 1}}}}}'
 ```
 
 以下示例关闭 Standard MP4 背景图、调整暗化程度，并分别设置三种格式的整次请求超时：
 
 ```yaml
-layout:
+render:
   standard:
     mp4:
-      ENABLE_BACKGROUND_IMAGE: false
-      BACKGROUND_DIM: 0.5
-timeouts:
-  render:
-    PNG_TIMEOUT: 300
-    GIF_TIMEOUT: 300
-    MP4_TIMEOUT: 900
+      style:
+        ENABLE_BACKGROUND_IMAGE: false
+        BACKGROUND_DIM: 0.5
+timeout:
+  PNG_TIMEOUT: 300
+  GIF_TIMEOUT: 300
+  MP4_TIMEOUT: 900
 ```
 
 超时单位为秒且必须是正整数。计时从请求入口开始，覆盖下载、解析、转谱、缓存检查、渲染、音频处理、编码和落盘。

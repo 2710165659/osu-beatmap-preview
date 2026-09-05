@@ -259,3 +259,7 @@ Write-Host ("-" * 100)
 Write-Host ("完成: {0}/{1} 成功, 总耗时 {2:F1}s, 峰值内存 {3}MB, 平均CPU {4}%" -f $okCount, $results.Count, ($totalMs / 1000), $maxMem, $avgCpu)
 Write-Host ("图片输出: $outdir")
 Write-Host ("报告文件: $reportPath")
+
+if (@($failed).Count -gt 0) {
+    exit 1
+}

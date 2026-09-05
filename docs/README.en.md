@@ -106,7 +106,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--no-cache` | Bypasses the `.osu`, OSZ, and output caches, forcing a fresh download and render. |
 | `--no-log` | Disables file logging. |
 | `--config` | A configuration file path or an inline JSON/YAML object. It may be supplied only once. |
-| `--scale` | Output scale applied to every mode and format. It overrides all `layout.*.*.SCALE` values and must be positive and finite. |
+| `--scale` | Output scale applied to every mode and format. It overrides all `render.*.*.SCALE` values and must be positive and finite. |
 | `--version` | Prints the version and build time, then exits. |
 | `--help`, `-h` | Prints usage information, then exits. |
 
@@ -178,25 +178,25 @@ Mappings are merged recursively, while arrays and scalar values replace the enti
 osu-beatmap-preview --bid=738063 --config=C:/path/to/config.yml
 
 # Inline JSON
-osu-beatmap-preview --bid=738063 --config='{"layout":{"standard":{"gif":{"ROW_COUNT":1}}}}'
+osu-beatmap-preview --bid=738063 --config='{"render":{"standard":{"gif":{"structure":{"ROW_COUNT":1}}}}}'
 
 # Inline YAML
-osu-beatmap-preview --bid=738063 --config='{layout: {standard: {gif: {ROW_COUNT: 1}}}}'
+osu-beatmap-preview --bid=738063 --config='{render: {standard: {gif: {structure: {ROW_COUNT: 1}}}}}'
 ```
 
 This example disables the Standard MP4 background, changes its dim level, and configures whole-request timeouts for each format:
 
 ```yaml
-layout:
+render:
   standard:
     mp4:
-      ENABLE_BACKGROUND_IMAGE: false
-      BACKGROUND_DIM: 0.5
-timeouts:
-  render:
-    PNG_TIMEOUT: 300
-    GIF_TIMEOUT: 300
-    MP4_TIMEOUT: 900
+      style:
+        ENABLE_BACKGROUND_IMAGE: false
+        BACKGROUND_DIM: 0.5
+timeout:
+  PNG_TIMEOUT: 300
+  GIF_TIMEOUT: 300
+  MP4_TIMEOUT: 900
 ```
 
 Timeouts are positive integer seconds. They start at the request entry point and cover download, parsing, conversion, cache lookup, rendering, audio processing, encoding, and final output.
