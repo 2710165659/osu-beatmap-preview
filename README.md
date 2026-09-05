@@ -67,6 +67,9 @@ osu-beatmap-preview --bid=738063 --fmt=png
 # 使用命令行覆盖输出倍率（0.5 倍、2 倍等）
 osu-beatmap-preview --bid=738063 --scale=2
 
+# 将本次结果输出到指定目录
+osu-beatmap-preview --bid=738063 --output-dir=C:/path/to/outputs
+
 # 覆盖 GIF/MP4 输出帧率
 osu-beatmap-preview --bid=738063 --fmt=gif --fps=30
 
@@ -94,7 +97,7 @@ Windows PowerShell 中，如果程序位于当前目录，需要使用 `.\osu-be
 ## 命令行参数
 
 ```text
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>]
 ```
 
 | 参数 | 说明 |
@@ -110,6 +113,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--no-log` | 关闭文件日志。 |
 | `--config` | 配置文件路径，或内联 JSON/YAML 对象。只能传入一次。 |
 | `--scale` | 本次输出倍率，必须为有限正数。 |
+| `--output-dir` | 指定本次请求的输出根目录。 |
 | `--version` | 打印版本号和构建时间后退出。 |
 | `--help`、`-h` | 打印用法后退出。 |
 
@@ -217,7 +221,7 @@ timeout:
 
 路径由默认配置中的 `paths` 控制。`%TEMP%` 在所有平台都展开为系统临时目录。程序会单独解析 `CONFIG_DIR`：相对路径始终以可执行文件所在目录为基准，不受启动命令时所在目录影响。
 
-默认配置的输出文件直接写入 `OUTPUT_DIR`。只要最终有效配置与默认值不同，程序就会根据差异配置计算稳定的 6 位哈希，并改用 `OUTPUT_DIR/<config-hash>/`；该目录内会写入只包含非默认字段的 `config.yml`。因此等价的配置内容会复用同一输出缓存。
+默认配置的输出文件直接写入 `OUTPUT_DIR`。只要最终有效配置与默认值不同，程序就会根据差异配置计算稳定的 6 位哈希，并改用 `OUTPUT_DIR/<config-hash>/`；该目录内会写入只包含非默认字段的 `config.yml`。因此等价的配置内容会复用同一输出缓存。所有 CLI 参数均不影响 output 目录下的配置哈希。
 
 ## 程序输出、缓存与日志
 

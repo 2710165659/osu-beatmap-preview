@@ -79,6 +79,9 @@ osu-beatmap-preview --bid=738063 --fmt=mp4 --time-points=preview --duration-time
 # Override the GIF/MP4 output frame rate
 osu-beatmap-preview --bid=738063 --fmt=gif --fps=30
 
+# Write this request's result to a specific directory
+osu-beatmap-preview --bid=738063 --output-dir=C:/path/to/outputs
+
 # Select four GIF segment start times and render 6 seconds from each point
 osu-beatmap-preview --bid=738063 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20 --duration-time=6
 
@@ -91,7 +94,7 @@ In Windows PowerShell, use `.\osu-beatmap-preview-windows-amd64.exe` or the actu
 ## Command-Line Options
 
 ```text
-osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]
+osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>]
 ```
 
 | Option | Description |
@@ -107,6 +110,7 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 | `--no-log` | Disables file logging. |
 | `--config` | A configuration file path or an inline JSON/YAML object. It may be supplied only once. |
 | `--scale` | Output scale applied to every mode and format. It overrides all `render.*.*.SCALE` values and must be positive and finite. |
+| `--output-dir` | Sets the output root for this request. |
 | `--version` | Prints the version and build time, then exits. |
 | `--help`, `-h` | Prints usage information, then exits. |
 
@@ -214,7 +218,7 @@ Timeouts are positive integer seconds. They start at the request entry point and
 
 These locations are controlled by `paths` in the default configuration. `%TEMP%` expands to the system temporary directory on every platform. `CONFIG_DIR` is resolved separately: a relative path is always based on the directory containing the executable, regardless of the process working directory.
 
-Output produced with the default configuration is written directly to `OUTPUT_DIR`. When the final effective configuration differs from the defaults, the renderer computes a stable six-character hash of the differences and uses `OUTPUT_DIR/<config-hash>/` instead. That directory also receives a `config.yml` containing only non-default fields. Equivalent configurations therefore share the same output cache.
+Output produced with the default configuration is written directly to `OUTPUT_DIR`. When the final effective configuration differs from the defaults, the renderer computes a stable six-character hash of the differences and uses `OUTPUT_DIR/<config-hash>/` instead. That directory also receives a `config.yml` containing only non-default fields. Equivalent configurations therefore share the same output cache. CLI options do not affect the configuration hash under the output directory.
 
 ## Program Output, Caches, and Logs
 

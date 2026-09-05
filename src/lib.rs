@@ -19,10 +19,10 @@ pub struct PreviewOptions {
     pub time_points: Vec<TimePoint>,
     pub duration_time: Option<f64>,
     pub no_cache: bool,
-    /// GIF/MP4 输出帧率；`None` 使用对应模式配置中的帧率。
     pub fps: Option<u32>,
     pub config: Option<String>,
     pub scale: Option<f64>,
+    pub output_dir: Option<String>,
 }
 
 impl PreviewOptions {
@@ -38,6 +38,7 @@ impl PreviewOptions {
             fps: None,
             config: None,
             scale: None,
+            output_dir: None,
         }
     }
 }
@@ -58,6 +59,7 @@ impl From<PreviewOptions> for RenderRequest {
                 format: options.format,
                 fps: options.fps,
                 scale: options.scale,
+                output_dir: options.output_dir,
             },
             execution: ExecutionOptions {
                 no_cache: options.no_cache,

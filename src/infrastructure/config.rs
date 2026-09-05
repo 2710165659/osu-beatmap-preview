@@ -243,13 +243,20 @@ fn validate_positive_timeouts(config: &Value) -> Result<(), String> {
 }
 
 /// 返回当前有效配置对应的输出缓存目录。
-/// 与默认配置等价的配置直接使用 OUTPUT_DIR。
-pub(crate) fn output_directory() -> Result<PathBuf, String> {
+pub(crate) fn output_directory(output_dir_override: Option<&str>) -> Result<PathBuf, String> {
     let snapshot = RUNTIME_CONFIG.get_or_init(|| {
         load_embedded_snapshot()
             .unwrap_or_else(|error| panic!("invalid embedded configuration: {error}"))
     });
-    let root = resolve_path(snapshot.runtime.paths.OUTPUT_DIR.as_str());
+    output_directory_for_snapshot(snapshot, output_dir_override)
+}
+
+fn output_directory_for_snapshot(
+    snapshot: &ConfigSnapshot,
+    output_dir_override: Option<&str>,
+) -> Result<PathBuf, String> {
+    let root =
+        resolve_path(output_dir_override.unwrap_or(snapshot.runtime.paths.OUTPUT_DIR.as_str()));
     let Some(variant) = &snapshot.variant else {
         return Ok(root);
     };
@@ -573,8 +580,8 @@ fn resolve_config_dir(template: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        config_variant, merge_values, parse_argument, parse_document, resolve_path,
-        write_variant_file,
+        config_variant, merge_values, output_directory_for_snapshot, parse_argument,
+        parse_document, resolve_path, write_variant_file,
     };
 
     fn variant(source: &str) -> Option<super::ConfigVariant> {
@@ -600,6 +607,54 @@ mod tests {
     fn expands_temp_placeholder() {
         let path = resolve_path("%TEMP%/osu-beatmap-preview");
         assert_eq!(path, std::env::temp_dir().join("osu-beatmap-preview"));
+    }
+
+    #[test]
+    fn output_directory_override_replaces_only_the_root() {
+        let default_snapshot = super::load_layers(None, false, None).unwrap();
+        let default_root = std::env::temp_dir().join(format!(
+            "osu-preview-output-override-default-test-{}",
+            std::process::id()
+        ));
+        assert_eq!(
+            output_directory_for_snapshot(&default_snapshot, Some(default_root.to_str().unwrap()))
+                .unwrap(),
+            default_root
+        );
+
+        let configured_snapshot = super::load_layers(
+            Some(r#"{"render":{"standard":{"gif":{"structure":{"ROW_COUNT":1}}}}}"#),
+            false,
+            None,
+        )
+        .unwrap();
+        let hash = configured_snapshot.variant.as_ref().unwrap().hash.clone();
+        let first_root = std::env::temp_dir().join(format!(
+            "osu-preview-output-override-first-test-{}",
+            std::process::id()
+        ));
+        let second_root = std::env::temp_dir().join(format!(
+            "osu-preview-output-override-second-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&first_root);
+        let _ = std::fs::remove_dir_all(&second_root);
+
+        let first =
+            output_directory_for_snapshot(&configured_snapshot, Some(first_root.to_str().unwrap()))
+                .unwrap();
+        let second = output_directory_for_snapshot(
+            &configured_snapshot,
+            Some(second_root.to_str().unwrap()),
+        )
+        .unwrap();
+        assert_eq!(first, first_root.join(&hash));
+        assert_eq!(second, second_root.join(&hash));
+        assert!(first.join("config.yml").is_file());
+        assert!(second.join("config.yml").is_file());
+
+        let _ = std::fs::remove_dir_all(first_root);
+        let _ = std::fs::remove_dir_all(second_root);
     }
 
     #[test]

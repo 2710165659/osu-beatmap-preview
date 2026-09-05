@@ -38,6 +38,14 @@ impl RenderRequest {
         if let Some(scale) = self.output.scale {
             validate::validate_positive_finite("scale", scale)?;
         }
+        if self
+            .output
+            .output_dir
+            .as_deref()
+            .is_some_and(|directory| directory.is_empty())
+        {
+            return Err(PreviewError::new("--output-dir must not be empty"));
+        }
         if let Some(fps) = self.output.fps {
             validate_fps(fps)?;
         }
@@ -81,6 +89,7 @@ pub struct OutputOptions {
     pub format: Option<String>,
     pub fps: Option<u32>,
     pub scale: Option<f64>,
+    pub output_dir: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -159,5 +168,13 @@ mod tests {
         request.output.fps = Some(30);
         let validated = request.validate().unwrap();
         assert!(validated.ruleset.mods.unwrap().hidden);
+    }
+
+    #[test]
+    fn empty_output_directory_is_rejected() {
+        let mut request = RenderRequest::new("123");
+        request.output.output_dir = Some(String::new());
+        let error = request.validate().expect_err("空输出目录必须被拒绝");
+        assert!(error.to_string().contains("--output-dir must not be empty"));
     }
 }

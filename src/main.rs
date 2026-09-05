@@ -12,7 +12,8 @@ fn print_usage_and_exit(code: i32) -> ! {
     eprintln!(
         "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] \
          [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] \
-         [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>]\n\
+         [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] \
+         [--output-dir=<DIR>]\n\
          osu-beatmap-preview --version\n\
          --mod and --time-points may be repeated to provide lists"
     );
@@ -69,6 +70,13 @@ fn parse_args() -> RenderRequest {
                     parse_positive_finite("--scale", &value)
                         .unwrap_or_else(|error| exit_with_argument_error(error)),
                 );
+            }
+            Long("output-dir") => {
+                if request.output.output_dir.is_some() {
+                    eprintln!("error: --output-dir may only be specified once");
+                    print_usage_and_exit(2);
+                }
+                request.output.output_dir = Some(take_value(&mut parser, "--output-dir"));
             }
             Long("version") => {
                 println!("osu-beatmap-preview v{VERSION} (built {BUILD_TIMESTAMP})");
