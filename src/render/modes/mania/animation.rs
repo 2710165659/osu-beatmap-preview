@@ -31,7 +31,6 @@ pub(crate) struct AnimationLayout {
     pub(crate) note_head_height: i64,
     pub(crate) column_left_offsets: Vec<i64>,
     pub(crate) column_widths: Vec<i64>,
-    pub(crate) column_colours: Vec<Rgba>,
     pub(crate) playfield_left: i64,
     pub(crate) playfield_top: i64,
     pub(crate) segment_stride: i64,
@@ -43,6 +42,7 @@ pub(crate) struct AnimationLayout {
     pub(crate) sv_text_color: Rgba,
     pub(crate) render_scale: f64,
     pub(crate) lane_background: Rgba,
+    pub(crate) column_background: Rgba,
     pub(crate) left_panel_background: Rgba,
     pub(crate) judgement_line_color: Rgba,
 }
@@ -468,22 +468,32 @@ pub(crate) fn build_layout(
             config.style.SV_TEXT_COLOR,
         )
     };
-    let (lane_background, left_panel_background, judgement_line_color) = match output_format {
-        crate::render::geometry::OutputFormat::Gif => {
-            let config = &crate::infrastructure::config::current().render.mania.gif;
-            (
-                config.style.LANE_BACKGROUND,
-                config.style.LEFT_PANEL_BACKGROUND,
-                config.style.JUDGEMENT_LINE_COLOR,
-            )
-        }
-        crate::render::geometry::OutputFormat::Mp4 => (
-            crate::render::modes::mania::constants::MP4_LANE_BACKGROUND,
-            crate::render::modes::mania::constants::MP4_LEFT_PANEL_BACKGROUND,
-            crate::render::modes::mania::constants::MP4_JUDGEMENT_LINE_COLOR,
-        ),
-        crate::render::geometry::OutputFormat::Png => unreachable!("PNG 不使用动画布局"),
-    };
+    let (lane_background, column_background, left_panel_background, judgement_line_color) =
+        match output_format {
+            crate::render::geometry::OutputFormat::Gif => {
+                let config = &crate::infrastructure::config::current().render.mania.gif;
+                (
+                    config.style.LANE_BACKGROUND,
+                    crate::render::modes::mania::constants::MANIA_COLUMN_BACKGROUND,
+                    config.style.LEFT_PANEL_BACKGROUND,
+                    config.style.JUDGEMENT_LINE_COLOR,
+                )
+            }
+            crate::render::geometry::OutputFormat::Mp4 => {
+                let config = &crate::infrastructure::config::current().render.mania.mp4;
+                let column_background = with_alpha(
+                    crate::render::modes::mania::constants::MANIA_COLUMN_BACKGROUND,
+                    config.style.LANE_DARKEN_ALPHA,
+                );
+                (
+                    column_background,
+                    column_background,
+                    crate::render::modes::mania::constants::MP4_LEFT_PANEL_BACKGROUND,
+                    crate::render::modes::mania::constants::MP4_JUDGEMENT_LINE_COLOR,
+                )
+            }
+            crate::render::geometry::OutputFormat::Png => unreachable!("PNG 不使用动画布局"),
+        };
     AnimationLayout {
         segment_count,
         segment_width,
@@ -496,7 +506,6 @@ pub(crate) fn build_layout(
         note_head_height,
         column_left_offsets,
         column_widths,
-        column_colours: skin_config.column_colours.clone(),
         playfield_left,
         playfield_top,
         segment_stride,
@@ -508,9 +517,16 @@ pub(crate) fn build_layout(
         sv_text_color,
         render_scale,
         lane_background,
+        column_background,
         left_panel_background,
         judgement_line_color,
     }
+}
+
+/// 将 0..=1 的配置透明度转换为黑色轨道叠加层的 alpha 字节。
+fn with_alpha(mut colour: Rgba, alpha: f64) -> Rgba {
+    colour[3] = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
+    colour
 }
 
 pub(crate) fn build_scaled_columns(
@@ -743,7 +759,7 @@ pub(crate) fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &
             playfield_top,
             lane_width,
             layout.playfield_height,
-            layout.column_colours[lane_index],
+            layout.column_background,
         );
     }
 
@@ -1080,7 +1096,6 @@ mod tests {
             note_head_height: 15,
             column_left_offsets: vec![0],
             column_widths: vec![80],
-            column_colours: vec![[0, 0, 0, 255]],
             playfield_left: 0,
             playfield_top: 20,
             segment_stride: 100,
@@ -1092,6 +1107,7 @@ mod tests {
             sv_text_color: [95, 221, 108, 255],
             render_scale: 1.0,
             lane_background: [0, 0, 0, 255],
+            column_background: [0, 0, 0, 255],
             left_panel_background: [112, 112, 112, 255],
             judgement_line_color: [238, 238, 238, 255],
         }
@@ -1213,5 +1229,14 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn lane_darken_alpha_is_converted_to_black_overlay_alpha() {
+        assert_eq!(with_alpha([0, 0, 0, 255], 0.0), [0, 0, 0, 0]);
+        assert_eq!(with_alpha([0, 0, 0, 255], 0.5), [0, 0, 0, 128]);
+        assert_eq!(with_alpha([0, 0, 0, 255], 1.0), [0, 0, 0, 255]);
+        assert_eq!(with_alpha([0, 0, 0, 255], -1.0), [0, 0, 0, 0]);
+        assert_eq!(with_alpha([0, 0, 0, 255], 2.0), [0, 0, 0, 255]);
     }
 }

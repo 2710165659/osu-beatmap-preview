@@ -19,10 +19,9 @@ pub(crate) mod sizing {
 }
 
 pub(crate) mod style {
-    pub(crate) const MP4_LANE_BACKGROUND: [u8; 4] = [0, 0, 0, 255];
+    pub(crate) const MANIA_COLUMN_BACKGROUND: [u8; 4] = [0, 0, 0, 255];
     pub(crate) const MP4_LEFT_PANEL_BACKGROUND: [u8; 4] = [112, 112, 112, 255];
     pub(crate) const MP4_JUDGEMENT_LINE_COLOR: [u8; 4] = [238, 238, 238, 255];
-    pub(crate) const DEFAULT_LANE_BACKGROUND: [u8; 4] = [0, 0, 0, 255];
     pub(crate) const MANIA_COLOR_W: [u8; 4] = [0xe9, 0xee, 0xf4, 255];
     pub(crate) const MANIA_COLOR_B: [u8; 4] = [0xbc, 0xdb, 0xf1, 255];
     pub(crate) const MANIA_COLOR_G: [u8; 4] = [0xcc, 0xfc, 0xb2, 255];

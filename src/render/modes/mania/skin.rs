@@ -1,9 +1,7 @@
 //! osu!mania 皮肤配置加载。
 //!
 //! 配置来自 `default_config.yml` 生成的运行时快照；每个 `KEYS_N` 块都
-//! 显式保存列宽、列线宽、列颜色和判定线位置。
-
-use crate::render::canvas::Rgba;
+//! 显式保存列宽、列线宽和判定线位置。
 
 /// 单个键数对应的 mania 皮肤配置。
 pub(crate) struct ManiaSkinConfig {
@@ -13,8 +11,6 @@ pub(crate) struct ManiaSkinConfig {
     pub(crate) column_widths: Vec<i64>,
     /// 列分隔线宽度（keys + 1 个：最左、列间、最右）。
     pub(crate) column_line_widths: Vec<i64>,
-    /// 每列背景色。
-    pub(crate) column_colours: Vec<Rgba>,
 }
 
 /// 按键数加载 mania 皮肤配置；没有匹配块时返回默认值。
@@ -60,7 +56,6 @@ pub(crate) fn load_mania_skin_config(
 struct SkinFallback {
     hit_position: f64,
     lane_width: i64,
-    lane_background: Rgba,
 }
 
 fn fallback_for_format(output_format: crate::render::geometry::OutputFormat) -> SkinFallback {
@@ -78,19 +73,12 @@ fn fallback_for_format(output_format: crate::render::geometry::OutputFormat) -> 
                 .png
                 .sizing
                 .LANE_WIDTH,
-            lane_background: crate::infrastructure::config::current()
-                .render
-                .mania
-                .png
-                .style
-                .LANE_BACKGROUND,
         },
         crate::render::geometry::OutputFormat::Gif | crate::render::geometry::OutputFormat::Mp4 => {
             SkinFallback {
                 hit_position:
                     crate::render::modes::mania::constants::DEFAULT_HIT_TARGET_FROM_BOTTOM,
                 lane_width: crate::render::modes::mania::constants::LANE_WIDTH,
-                lane_background: crate::render::modes::mania::constants::DEFAULT_LANE_BACKGROUND,
             }
         }
     }
@@ -103,13 +91,11 @@ where
     let keys = keys.max(1);
     let column_widths = normalize_int_list(block.column_widths(), keys, fallback.lane_width);
     let column_line_widths = normalize_int_list(block.column_line_widths(), keys + 1, 0);
-    let column_colours = normalize_colours(block.column_colours(), keys, fallback.lane_background);
 
     ManiaSkinConfig {
         hit_position: parse_hit_position(block.hit_position()),
         column_widths,
         column_line_widths,
-        column_colours,
     }
 }
 
@@ -118,7 +104,6 @@ trait ManiaSkinBlock {
     fn hit_position(&self) -> i64;
     fn column_widths(&self) -> &[i64];
     fn column_line_widths(&self) -> &[i64];
-    fn column_colours(&self) -> &[[u8; 4]];
 }
 
 macro_rules! impl_mania_skin_block {
@@ -128,7 +113,6 @@ macro_rules! impl_mania_skin_block {
                 fn hit_position(&self) -> i64 { self.HIT_POSITION }
                 fn column_widths(&self) -> &[i64] { &self.COLUMN_WIDTHS }
                 fn column_line_widths(&self) -> &[i64] { &self.COLUMN_LINE_WIDTHS }
-                fn column_colours(&self) -> &[[u8; 4]] { &self.COLUMN_COLORS }
             }
         )+
     };
@@ -168,18 +152,6 @@ fn normalize_int_list(raw: &[i64], count: usize, default: i64) -> Vec<i64> {
     values
 }
 
-fn normalize_colours(raw: &[[u8; 4]], count: usize, fallback: Rgba) -> Vec<Rgba> {
-    let mut values: Vec<Rgba> = raw.to_vec();
-    if values.is_empty() {
-        values.push(fallback);
-    }
-    while values.len() < count {
-        values.push(*values.last().unwrap());
-    }
-    values.truncate(count);
-    values
-}
-
 /// osu! stable 的 HitPosition 基于 480 高坐标系；转换为 768 高 GIF/MP4
 /// 坐标系中距底部的距离。
 fn parse_hit_position(raw: i64) -> f64 {
@@ -193,7 +165,6 @@ fn default_skin_config(keys: i32, fallback: SkinFallback) -> ManiaSkinConfig {
         hit_position: fallback.hit_position,
         column_widths: vec![fallback.lane_width; keys],
         column_line_widths: vec![0; keys + 1],
-        column_colours: vec![fallback.lane_background; keys],
     }
 }
 
@@ -211,7 +182,6 @@ mod tests {
             let config = load(keys);
             assert_eq!(config.column_widths.len(), keys as usize);
             assert_eq!(config.column_line_widths.len(), keys as usize + 1);
-            assert_eq!(config.column_colours.len(), keys as usize);
         }
     }
 

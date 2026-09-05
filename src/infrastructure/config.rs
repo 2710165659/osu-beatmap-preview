@@ -102,6 +102,7 @@ fn load_layers(
     }
     validate_positive_timeouts(&merged)?;
     validate_video_background(&merged)?;
+    validate_mania_lane_darken_alpha(&merged)?;
     validate_render_scales(&merged)?;
     let mut runtime_value = merged.clone();
     apply_render_scales(&mut runtime_value, scale_override)?;
@@ -222,6 +223,18 @@ fn validate_video_background(config: &Value) -> Result<(), String> {
                 "configuration field '{path}' must be a number from 0 to 1"
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_mania_lane_darken_alpha(config: &Value) -> Result<(), String> {
+    let path = "render.mania.mp4.style.LANE_DARKEN_ALPHA";
+    let pointer = "/render/mania/mp4/style/LANE_DARKEN_ALPHA";
+    let value = config.pointer(pointer).and_then(Value::as_f64);
+    if value.is_none_or(|value| !(0.0..=1.0).contains(&value)) {
+        return Err(format!(
+            "configuration field '{path}' must be a number from 0 to 1"
+        ));
     }
     Ok(())
 }
@@ -752,7 +765,6 @@ mod tests {
             ($block:expr, $keys:expr, $width:expr, $line_count:expr, $hit_position:expr) => {{
                 assert_eq!($block.COLUMN_WIDTHS, vec![$width; $keys]);
                 assert_eq!($block.COLUMN_LINE_WIDTHS.len(), $line_count);
-                assert_eq!($block.COLUMN_COLORS.len(), $keys);
                 assert_eq!($block.HIT_POSITION, $hit_position);
             }};
         }
@@ -968,6 +980,33 @@ render:
             let error = load_snapshot(Some(&source)).expect_err("暗化程度超出范围时必须报错");
             assert!(
                 error.contains("render.standard.mp4.style.BACKGROUND_DIM"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn mania_mp4_lane_darken_alpha_defaults_and_overlays_are_typed() {
+        let defaults = load_snapshot(None).unwrap();
+        assert_eq!(defaults.render.mania.mp4.style.LANE_DARKEN_ALPHA, 1.0);
+
+        let configured = load_snapshot(Some(
+            r#"{"render":{"mania":{"mp4":{"style":{"LANE_DARKEN_ALPHA":0.35}}}}}"#,
+        ))
+        .unwrap();
+        assert_eq!(configured.render.mania.mp4.style.LANE_DARKEN_ALPHA, 0.35);
+    }
+
+    #[test]
+    fn mania_mp4_lane_darken_alpha_rejects_values_outside_unit_interval() {
+        for value in [-0.1, 1.1] {
+            let source = serde_json::json!({
+                "render": {"mania": {"mp4": {"style": {"LANE_DARKEN_ALPHA": value}}}}
+            })
+            .to_string();
+            let error = load_snapshot(Some(&source)).expect_err("轨道暗化透明度越界时必须报错");
+            assert!(
+                error.contains("render.mania.mp4.style.LANE_DARKEN_ALPHA"),
                 "{error}"
             );
         }
