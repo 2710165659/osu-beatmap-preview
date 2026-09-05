@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 
 ---
+
+## [1.1.1] - 2026.09.05
+
+### Added
+
+- 新增 `--output-dir=<DIR>`，可为本次渲染指定输出目录根路径；命令行参数不会参与配置哈希。
+- Mania MP4 新增 `render.mania.mp4.style.LANE_DARKEN_ALPHA`，可配置黑色轨道暗化层的透明度，取值范围为 `0..=1`。
+
+### Changed
+
+- Mania 列背景不再按每个 `KEYS_N` 重复配置 `COLUMN_COLORS`，统一使用内置列背景色常量。
+- 重整项目目录结构，按 `application`、`domain`、`infrastructure` 和 `render/modes` 划分应用、领域、基础设施与模式渲染代码。
+
+### Fixed
+
+- 修复不同谱面时长下，轨道宽高上限没有正确应用当前输出 `SCALE` 的问题。
+
 ## [1.1.0] - 2026.09.04
 
 ### Added
