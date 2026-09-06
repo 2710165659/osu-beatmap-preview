@@ -3,6 +3,8 @@
 //! 内嵌 YAML 是默认配置层。CLI 可从 `CONFIG_DIR` 加载可选文件，
 //! 再叠加请求指定的配置，最后初始化不可变的进程级快照。
 
+#[cfg(feature = "wgpu-renderer")]
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -21,8 +23,13 @@ include!(concat!(env!("OUT_DIR"), "/config_schema.rs"));
 
 static RUNTIME_CONFIG: OnceLock<ConfigSnapshot> = OnceLock::new();
 
-#[derive(Debug)]
-struct ConfigSnapshot {
+#[cfg(feature = "wgpu-renderer")]
+thread_local! {
+    static SESSION_CONFIG: Cell<*const RuntimeConfig> = const { Cell::new(std::ptr::null()) };
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ConfigSnapshot {
     runtime: RuntimeConfig,
     variant: Option<ConfigVariant>,
     identity: String,
@@ -36,12 +43,41 @@ struct ConfigVariant {
 
 /// 返回当前生效的配置。未初始化 CLI 配置层的库调用方会得到内嵌默认值。
 pub(crate) fn current() -> &'static RuntimeConfig {
+    #[cfg(feature = "wgpu-renderer")]
+    if let Some(runtime) = SESSION_CONFIG.with(|slot| {
+        let pointer = slot.get();
+        (!pointer.is_null()).then(|| {
+            // 指针只在 `with_session_snapshot` 的动态作用域内生效，且快照在闭包
+            // 返回前始终存活；线程局部槽避免并发会话互相覆盖。
+            unsafe { &*pointer }
+        })
+    }) {
+        return runtime;
+    }
     &RUNTIME_CONFIG
         .get_or_init(|| {
             load_embedded_snapshot()
                 .unwrap_or_else(|error| panic!("invalid embedded configuration: {error}"))
         })
         .runtime
+}
+
+/// 在当前线程临时使用会话私有配置；嵌套调用结束后恢复上一层快照。
+#[cfg(feature = "wgpu-renderer")]
+pub(crate) fn with_session_snapshot<T>(
+    snapshot: &ConfigSnapshot,
+    operation: impl FnOnce() -> T,
+) -> T {
+    struct Restore(*const RuntimeConfig);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            SESSION_CONFIG.with(|slot| slot.set(self.0));
+        }
+    }
+
+    let previous = SESSION_CONFIG.with(|slot| slot.replace(&snapshot.runtime));
+    let _restore = Restore(previous);
+    operation()
 }
 
 /// 为命令行程序初始化进程级配置。
@@ -104,6 +140,7 @@ fn load_layers(
     validate_video_background(&merged)?;
     validate_mania_lane_darken_alpha(&merged)?;
     validate_render_scales(&merged)?;
+    validate_wgpu(&merged)?;
     let mut runtime_value = merged.clone();
     apply_render_scales(&mut runtime_value, scale_override)?;
     let runtime = serde_json::from_value(runtime_value)
@@ -115,6 +152,52 @@ fn load_layers(
         variant,
         identity: format!("{identity}|scale={scale_override:?}"),
     })
+}
+
+/// 为实时会话创建互不影响的配置快照，不写入进程级全局状态。
+#[cfg(feature = "wgpu-renderer")]
+pub(crate) fn load_session_snapshot(
+    cli_value: Option<&str>,
+    scale_override: Option<f64>,
+) -> Result<ConfigSnapshot, String> {
+    load_layers(cli_value, true, scale_override)
+}
+
+#[cfg(feature = "wgpu-renderer")]
+impl ConfigSnapshot {
+    pub(crate) fn runtime(&self) -> &RuntimeConfig {
+        &self.runtime
+    }
+}
+
+fn validate_wgpu(config: &Value) -> Result<(), String> {
+    for mode in ["standard", "taiko", "catch", "mania"] {
+        for name in ["WIDTH", "HEIGHT", "TARGET_FPS", "MAX_IN_FLIGHT"] {
+            let path = format!("render.{mode}.wgpu.{name}");
+            let pointer = format!("/render/{mode}/wgpu/{name}");
+            if config
+                .pointer(&pointer)
+                .and_then(Value::as_u64)
+                .is_none_or(|value| value == 0)
+            {
+                return Err(format!(
+                    "configuration field '{path}' must be a positive integer"
+                ));
+            }
+        }
+        let path = format!("render.{mode}.wgpu.MSAA_SAMPLES");
+        let pointer = format!("/render/{mode}/wgpu/MSAA_SAMPLES");
+        if config
+            .pointer(&pointer)
+            .and_then(Value::as_u64)
+            .is_none_or(|value| !matches!(value, 1 | 2 | 4 | 8 | 16))
+        {
+            return Err(format!(
+                "configuration field '{path}' must be one of 1, 2, 4, 8, 16"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_render_scales(config: &Value) -> Result<(), String> {
@@ -1436,5 +1519,31 @@ render:
             fps.difference,
             serde_json::json!({"render": {"standard": {"gif": {"style": {"FPS": 30}}}}})
         );
+    }
+
+    #[test]
+    fn wgpu配置按模式独立且参与配置哈希() {
+        let defaults = load_snapshot(None).unwrap();
+        assert_eq!(defaults.render.standard.wgpu.WIDTH, 1280);
+        assert_eq!(defaults.render.taiko.wgpu.HEIGHT, 720);
+        assert_eq!(defaults.render.catch.wgpu.MSAA_SAMPLES, 4);
+        assert_eq!(defaults.render.mania.wgpu.TARGET_FPS, 30);
+        assert_eq!(defaults.render.mania.wgpu.MAX_IN_FLIGHT, 3);
+
+        let changed = variant(r#"{"render":{"mania":{"wgpu":{"TARGET_FPS":60}}}}"#).unwrap();
+        assert_eq!(
+            changed.difference,
+            serde_json::json!({"render": {"mania": {"wgpu": {"TARGET_FPS": 60}}}})
+        );
+    }
+
+    #[test]
+    fn wgpu配置拒绝零值和非法采样数() {
+        let zero = load_snapshot(Some(r#"{"render":{"standard":{"wgpu":{"WIDTH":0}}}}"#))
+            .expect_err("零宽度必须失败");
+        assert!(zero.contains("render.standard.wgpu.WIDTH"));
+        let msaa = load_snapshot(Some(r#"{"render":{"catch":{"wgpu":{"MSAA_SAMPLES":3}}}}"#))
+            .expect_err("非法 MSAA 必须失败");
+        assert!(msaa.contains("render.catch.wgpu.MSAA_SAMPLES"));
     }
 }

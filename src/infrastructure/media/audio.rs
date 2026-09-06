@@ -181,7 +181,7 @@ pub(crate) fn prepare_audio_source(
 }
 
 /// 从 OSZ 中读取并解码谱面背景图；缺少背景图时回退到纯色背景。
-fn load_background_image(
+pub(crate) fn load_background_image(
     filename: Option<&str>,
     osz_path: &Path,
     deadline: &RequestDeadline,

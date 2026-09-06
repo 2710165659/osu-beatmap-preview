@@ -1,0 +1,8 @@
+[package]
+name = "osu-beatmap-preview-player"
+version = "1.2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+osu-beatmap-preview = { path = "../..", features = ["wgpu-player"] }

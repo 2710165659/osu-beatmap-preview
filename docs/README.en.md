@@ -21,12 +21,12 @@ See the [batch rendering report](report.md) for performance and resource usage d
 
 Download the executable for your platform from [Releases](https://github.com/2710165659/osu-beatmap-preview/releases):
 
-| Platform | Release file |
-| --- | --- |
-| Windows x64 | `osu-beatmap-preview-windows-amd64.exe` |
-| Linux x64 | `osu-beatmap-preview-linux-amd64` |
-| macOS Intel | `osu-beatmap-preview-macos-amd64` |
-| macOS Apple Silicon | `osu-beatmap-preview-macos-arm64` |
+| Platform | CPU exporter | WGPU exporter |
+| --- | --- | --- |
+| Windows x64 | `osu-beatmap-preview-windows-amd64.exe` | `osu-beatmap-preview-wgpu-windows-amd64.exe` |
+| Linux x64 | `osu-beatmap-preview-linux-amd64` | `osu-beatmap-preview-wgpu-linux-amd64` |
+| macOS Intel | `osu-beatmap-preview-macos-amd64` | `osu-beatmap-preview-wgpu-macos-amd64` |
+| macOS Apple Silicon | `osu-beatmap-preview-macos-arm64` | `osu-beatmap-preview-wgpu-macos-arm64` |
 
 On Linux and macOS, make the downloaded file executable before the first run:
 
@@ -145,6 +145,16 @@ All four modes can produce MP4 videos with the original beatmap audio. MP3, OGG,
 
 On Windows, the renderer automatically selects an available NVENC or AMF hardware encoder and falls back to CPU OpenH264 if needed. Set `OSU_PREVIEW_NO_GPU=1` to force CPU encoding for compatibility checks or performance comparisons.
 
+### WGPU Exporter
+
+The standalone `osu-beatmap-preview-wgpu` accepts the same arguments and emits the same stdout JSON protocol as the original CLI. PNG and GIF remain on the CPU path. MP4 uses a fixed RGBA8 WGPU offscreen canvas, then reuses the existing H.264/AAC/MP4 pipeline after readback. WGPU MP4 names include `_wgpu` immediately after the BID, such as `standard_738063_wgpu_fps30.mp4`, so CPU and WGPU cache entries cannot collide.
+
+```bash
+osu-beatmap-preview-wgpu --bid=738063 --fmt=mp4 --duration-time=30
+```
+
+The renderer requests a HighPerformance adapter by default. Use `WGPU_BACKEND` to restrict backends and `WGPU_ADAPTER_NAME` to select an adapter by a case-insensitive name substring. Unsupported MSAA levels fall back to the highest available level no greater than the request. A missing adapter, device error, or undersized canvas is an explicit error and never falls back to CPU drawing. `OSU_PREVIEW_NO_GPU` controls only H.264 encoder selection; it does not disable WGPU rendering.
+
 ## Mod Support
 
 | Mode | GIF / MP4 | PNG |
@@ -203,6 +213,21 @@ timeout:
   MP4_TIMEOUT: 900
 ```
 
+Each mode also has a separate `render.<mode>.wgpu` section:
+
+```yaml
+render:
+  standard:
+    wgpu:
+      WIDTH: 1280
+      HEIGHT: 720
+      MSAA_SAMPLES: 4
+      TARGET_FPS: 30
+      MAX_IN_FLIGHT: 3
+```
+
+This section controls only the fixed canvas, MSAA, default frame rate, and maximum in-flight readbacks. Mode geometry, `SCALE`, background, and HUD styling continue to come from `render.<mode>.mp4`. WGPU configuration changes participate in the configuration hash. CLI overrides such as `--scale` and `--fps` do not affect the directory hash and remain distinguished by the filename.
+
 Timeouts are positive integer seconds. They start at the request entry point and cover download, parsing, conversion, cache lookup, rendering, audio processing, encoding, and final output.
 
 ### Default Paths
@@ -256,6 +281,12 @@ A stable Rust toolchain and a working C/C++ build environment are required. Inst
 git clone https://github.com/2710165659/osu-beatmap-preview.git
 cd osu-beatmap-preview
 cargo build --release
+
+# Standalone WGPU exporter
+cargo build --release --package osu-beatmap-preview-wgpu
+
+# Local debug player; not included in Release artifacts
+cargo run --release --package osu-beatmap-preview-player -- --bid=738063
 ```
 
 Build output is written to:
@@ -263,13 +294,20 @@ Build output is written to:
 ```text
 target/release/osu-beatmap-preview       # Linux / macOS
 target/release/osu-beatmap-preview.exe   # Windows
+target/release/osu-beatmap-preview-wgpu  # Linux / macOS
+target/release/osu-beatmap-preview-wgpu.exe # Windows
 ```
 
 Run the test suite with:
 
 ```bash
 cargo test
+cargo test --workspace --all-features --all-targets
 ```
+
+With the `wgpu-renderer` feature enabled, the library exposes the `realtime` module. `RealtimeSession` is safe to share and provides scenes by absolute or gameplay time. `OffscreenRenderer` offers runtime-independent async single-frame and backpressured stream methods. A renderer supports only sequential mutable calls, and `RgbaFrame` is always compact row-major RGBA8. The debug player is intentionally limited to play/pause, seek, and `0.5x..=2.0x` runtime speed.
+
+This release does not include a production player UI, WGPU PNG/GIF, mobile support, replays, external texture encoder interop, or zero-copy NVENC.
 
 ## License
 

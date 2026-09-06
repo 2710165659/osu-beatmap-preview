@@ -1,7 +1,12 @@
 mod application;
+#[doc(hidden)]
+pub mod cli;
 pub(crate) mod domain;
 pub(crate) mod infrastructure;
 mod render;
+
+#[cfg(feature = "wgpu-renderer")]
+pub mod realtime;
 
 pub use application::request::{parse_fps, parse_positive_finite};
 pub use application::{
@@ -74,4 +79,11 @@ pub fn generate_preview(
     request: impl Into<RenderRequest>,
 ) -> Result<serde_json::Value, PreviewError> {
     application::engine::execute(request.into())
+}
+
+#[cfg(feature = "wgpu-renderer")]
+pub fn generate_preview_wgpu(
+    request: impl Into<RenderRequest>,
+) -> Result<serde_json::Value, PreviewError> {
+    application::engine::execute_wgpu(request.into())
 }

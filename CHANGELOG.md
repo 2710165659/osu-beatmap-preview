@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.2.0] - 2026.09.06
+
+### Added
+
+- 新增独立 `osu-beatmap-preview-wgpu` exporter：与 CPU CLI 共用参数和 JSON 协议，PNG/GIF 保持 CPU 路径，MP4 使用 WGPU 离屏渲染。
+- 新增公开 `realtime` Rust API，提供可共享会话、绝对/游戏时间场景、紧凑 RGBA8 离屏帧、有背压帧流、取消令牌和分类错误。
+- 新增不发布的 egui/rodio 调试播放器，支持播放/暂停、seek 和 `0.5x..=2.0x` 运行时倍速。
+- 新增四模式 `render.<mode>.wgpu` 画布、MSAA、目标 FPS 和最大在途 readback 配置。
+
+### Changed
+
+- 根目录改为 workspace，默认成员仍只有 CPU 包；现有四模式 CPU 实现迁入 `render/cpu/modes`，WGPU 模式与视频代码位于 `render/wgpu`。
+- WGPU 使用原生精灵与几何 pipeline、straight-alpha 合成、实际 MSAA resolve、纹理缓存和最多 `MAX_IN_FLIGHT` 个顺序 readback。
+- Release matrix 在现有四个 CPU 产物之外增加 Windows、Linux 和 macOS 的四个 WGPU exporter 产物。
+
+### Compatibility
+
+- 原 CPU CLI 的默认依赖图、PNG/GIF/MP4 行为、文件名和配置 hash 规则保持不变。
+- WGPU MP4 在 BID 后加入 `_wgpu` 缓存标识；GPU 不可用时明确失败，不回退 CPU 绘制。
+- 本版本不包含正式播放器 UI、WGPU PNG/GIF、移动端、回放、texture 编码互操作或 NVENC 零拷贝。
+
 ## [1.1.1] - 2026.09.05
 
 ### Added

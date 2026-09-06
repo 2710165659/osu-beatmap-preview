@@ -1,7 +1,29 @@
 [package]
 name = "osu-beatmap-preview"
-version = "1.1.1"
+version = "1.2.0"
 edition = "2021"
+
+[workspace]
+members = [
+    ".",
+    "crates/osu-beatmap-preview-wgpu",
+    "crates/osu-beatmap-preview-player",
+]
+default-members = ["."]
+resolver = "2"
+
+[features]
+default = []
+wgpu-renderer = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]
+wgpu-player = [
+    "wgpu-renderer",
+    "dep:egui",
+    "dep:egui-wgpu",
+    "dep:egui-winit",
+    "dep:eframe",
+    "dep:rodio",
+    "dep:winit",
+]
 
 [build-dependencies]
 vergen = { version = "9", features = ["build"] }
@@ -36,6 +58,15 @@ fdk-aac = "0.8"
 # nvEncodeAPI64.dll / amfrt64.dll，无 GPU 时自动回退到 openh264。
 # nvenc crate 仅含 FFI 声明（无 build.rs、无 bindgen），不增加构建依赖。
 libloading = "0.8"
+bytemuck = { version = "1.25", features = ["derive"], optional = true }
+pollster = { version = "0.4", optional = true }
+wgpu = { version = "29", optional = true }
+winit = { version = "0.30.13", optional = true }
+egui = { version = "0.35", optional = true }
+egui-wgpu = { version = "0.35", optional = true }
+egui-winit = { version = "0.35", optional = true }
+eframe = { version = "0.35", default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"], optional = true }
+rodio = { version = "0.22.2", optional = true }
 
 # Windows 专属依赖：NVENC (NVIDIA GPU 编码) + D3D11 device 创建。
 # 在非 Windows 平台不编译，视频编码回退到 CPU openh264。

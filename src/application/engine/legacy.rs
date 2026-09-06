@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-pub(crate) fn generate_preview(request: ValidatedRequest) -> Result<Value> {
+pub(crate) fn generate_preview(request: ValidatedRequest, use_wgpu: bool) -> Result<Value> {
     let started = Instant::now();
     let bid = request.source.bid.clone();
     logging::set_bid(&bid);
@@ -40,7 +40,7 @@ pub(crate) fn generate_preview(request: ValidatedRequest) -> Result<Value> {
         no_cache: request.execution.no_cache,
         ..SummaryRecord::default()
     };
-    let result = match generate_preview_inner(request, started, deadline, &mut rec) {
+    let result = match generate_preview_inner(request, started, deadline, &mut rec, use_wgpu) {
         Ok(value) => {
             rec.duration_ms = started.elapsed().as_secs_f64() * 1000.0;
             if rec.status.is_empty() {
@@ -67,6 +67,7 @@ fn generate_preview_inner(
     request_started: Instant,
     mut deadline: RequestDeadline,
     rec: &mut SummaryRecord,
+    use_wgpu: bool,
 ) -> Result<Value> {
     deadline.check()?;
     let bid = request.source.bid.clone();
@@ -136,7 +137,11 @@ fn generate_preview_inner(
         _ => "unknown",
     };
 
-    let artifact_name = ArtifactName::from_plan(&plan);
+    let artifact_name = if use_wgpu {
+        ArtifactName::from_plan_with_wgpu(&plan, true)
+    } else {
+        ArtifactName::from_plan(&plan)
+    };
     let output_path = output_root.join(artifact_name.as_str());
 
     // ── 图像缓存检查 ──
@@ -219,6 +224,7 @@ fn generate_preview_inner(
         &output_path,
         audio_job,
         &deadline,
+        use_wgpu,
     )?;
     deadline.check()?;
     rec.render_ms = Some(t_render.elapsed().as_secs_f64() * 1000.0);
@@ -268,7 +274,7 @@ fn fill_beatmap_info(beatmap: &Beatmap, rec: &mut SummaryRecord) {
 }
 
 /// 谱面首尾音符的 (开始时间, 结束时间)，用于计算谱面时长。
-fn object_time_bounds(hit_objects: &HitObjects) -> Option<(i64, i64)> {
+pub(crate) fn object_time_bounds(hit_objects: &HitObjects) -> Option<(i64, i64)> {
     let mut first = i64::MAX;
     let mut last = i64::MIN;
     let mut any = false;
@@ -372,7 +378,7 @@ impl ModeRenderer for StandardRenderer {
     }
 
     fn render_gif(&self, input: ModeRenderInput<'_>, options: GifRenderOptions) -> Result<PathBuf> {
-        crate::render::modes::standard::render_standard_gif(
+        crate::render::cpu::modes::standard::render_standard_gif(
             input.beatmap,
             input.plan.mods.as_ref(),
             options,
@@ -384,7 +390,7 @@ impl ModeRenderer for StandardRenderer {
     }
 
     fn render_png(&self, input: ModeRenderInput<'_>) -> Result<PathBuf> {
-        let image = crate::render::modes::standard::render_standard_png(
+        let image = crate::render::cpu::modes::standard::render_standard_png(
             input.beatmap,
             input.plan.mods.as_ref(),
             input.time_axis,
@@ -401,7 +407,7 @@ impl ModeRenderer for StandardRenderer {
         background: Option<Img>,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::render::modes::standard::render_standard_video(
+        crate::render::cpu::modes::standard::render_standard_video(
             input.beatmap,
             input.plan.mods.as_ref(),
             input.plan.time_points.first().copied(),
@@ -429,7 +435,7 @@ impl ModeRenderer for TaikoRenderer {
     }
 
     fn render_gif(&self, input: ModeRenderInput<'_>, options: GifRenderOptions) -> Result<PathBuf> {
-        crate::render::modes::taiko::render_taiko_gif(
+        crate::render::cpu::modes::taiko::render_taiko_gif(
             input.beatmap,
             input.plan.mods.as_ref(),
             options,
@@ -441,7 +447,7 @@ impl ModeRenderer for TaikoRenderer {
     }
 
     fn render_png(&self, input: ModeRenderInput<'_>) -> Result<PathBuf> {
-        crate::render::modes::taiko::render_taiko_grid(
+        crate::render::cpu::modes::taiko::render_taiko_grid(
             input.beatmap,
             input.output_path,
             input.plan.mods.as_ref(),
@@ -456,7 +462,7 @@ impl ModeRenderer for TaikoRenderer {
         background: Option<Img>,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::render::modes::taiko::render_taiko_video(
+        crate::render::cpu::modes::taiko::render_taiko_video(
             input.beatmap,
             input.plan.mods.as_ref(),
             input.plan.time_points.first().copied(),
@@ -484,7 +490,7 @@ impl ModeRenderer for CatchRenderer {
     }
 
     fn render_gif(&self, input: ModeRenderInput<'_>, options: GifRenderOptions) -> Result<PathBuf> {
-        crate::render::modes::catch::render_catch_gif(
+        crate::render::cpu::modes::catch::render_catch_gif(
             input.beatmap,
             input.plan.mods.as_ref(),
             options,
@@ -496,7 +502,7 @@ impl ModeRenderer for CatchRenderer {
     }
 
     fn render_png(&self, input: ModeRenderInput<'_>) -> Result<PathBuf> {
-        crate::render::modes::catch::render_catch_grid(
+        crate::render::cpu::modes::catch::render_catch_grid(
             input.beatmap,
             input.output_path,
             input.plan.mods.as_ref(),
@@ -511,7 +517,7 @@ impl ModeRenderer for CatchRenderer {
         background: Option<Img>,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::render::modes::catch::render_catch_video(
+        crate::render::cpu::modes::catch::render_catch_video(
             input.beatmap,
             input.plan.mods.as_ref(),
             input.plan.time_points.first().copied(),
@@ -539,7 +545,7 @@ impl ModeRenderer for ManiaRenderer {
     }
 
     fn render_gif(&self, input: ModeRenderInput<'_>, options: GifRenderOptions) -> Result<PathBuf> {
-        crate::render::modes::mania::render_mania_gif(
+        crate::render::cpu::modes::mania::render_mania_gif(
             input.beatmap,
             input.plan.mods.as_ref(),
             options,
@@ -551,7 +557,7 @@ impl ModeRenderer for ManiaRenderer {
     }
 
     fn render_png(&self, input: ModeRenderInput<'_>) -> Result<PathBuf> {
-        crate::render::modes::mania::render_mania_grid(
+        crate::render::cpu::modes::mania::render_mania_grid(
             input.beatmap,
             input.output_path,
             input.plan.mods.as_ref(),
@@ -566,7 +572,7 @@ impl ModeRenderer for ManiaRenderer {
         background: Option<Img>,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
-        crate::render::modes::mania::render_mania_video(
+        crate::render::cpu::modes::mania::render_mania_video(
             input.beatmap,
             input.plan.mods.as_ref(),
             input.plan.time_points.first().copied(),
@@ -584,7 +590,7 @@ impl ModeRenderer for ManiaRenderer {
 
 // ── 转换辅助函数 ──
 
-fn resolve_convert_target(beatmap: &Beatmap, name: &str) -> Result<i32> {
+pub(crate) fn resolve_convert_target(beatmap: &Beatmap, name: &str) -> Result<i32> {
     let key = name.to_lowercase();
     let key = key.trim();
     let target = match key {
@@ -622,7 +628,7 @@ static CONVERTERS: &[(i32, ConvertFn)] = &[
     (3, crate::domain::rulesets::mania::mania_convert),
 ];
 
-fn convert_beatmap(
+pub(crate) fn convert_beatmap(
     beatmap: &Beatmap,
     target_mode: i32,
     mods: Option<&ModSettings>,
@@ -666,6 +672,7 @@ fn render_preview_for_mode(
     output_path: &Path,
     audio_job: Option<AudioSourceJob>,
     deadline: &RequestDeadline,
+    _use_wgpu: bool,
 ) -> Result<PathBuf> {
     deadline.check()?;
 
@@ -716,6 +723,19 @@ fn render_preview_for_mode(
         let mut audio_job =
             audio_job.ok_or_else(|| PreviewError::render("MP4 audio job was not started"))?;
         let background = audio_job.take_background();
+        #[cfg(feature = "wgpu-renderer")]
+        if _use_wgpu {
+            crate::render::wgpu::modes::render_video(
+                input.beatmap,
+                input.plan,
+                input.output_path,
+                background,
+                audio_job,
+                input.time_axis,
+                input.deadline,
+            )?;
+            return Ok(input.output_path.to_path_buf());
+        }
         renderer.render_video(input, background, audio_job)
     } else {
         renderer.render_png(input)

@@ -21,12 +21,12 @@
 
 可以从 [Releases](https://github.com/2710165659/osu-beatmap-preview/releases) 下载对应平台的可执行文件：
 
-| 平台 | 发布文件 |
-| --- | --- |
-| Windows x64 | `osu-beatmap-preview-windows-amd64.exe` |
-| Linux x64 | `osu-beatmap-preview-linux-amd64` |
-| macOS Intel | `osu-beatmap-preview-macos-amd64` |
-| macOS Apple Silicon | `osu-beatmap-preview-macos-arm64` |
+| 平台 | CPU exporter | WGPU exporter |
+| --- | --- | --- |
+| Windows x64 | `osu-beatmap-preview-windows-amd64.exe` | `osu-beatmap-preview-wgpu-windows-amd64.exe` |
+| Linux x64 | `osu-beatmap-preview-linux-amd64` | `osu-beatmap-preview-wgpu-linux-amd64` |
+| macOS Intel | `osu-beatmap-preview-macos-amd64` | `osu-beatmap-preview-wgpu-macos-amd64` |
+| macOS Apple Silicon | `osu-beatmap-preview-macos-arm64` | `osu-beatmap-preview-wgpu-macos-arm64` |
 
 Linux 和 macOS 首次运行前需要添加执行权限：
 
@@ -148,6 +148,16 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 
 Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退到 CPU OpenH264。设置环境变量 `OSU_PREVIEW_NO_GPU=1` 可以强制使用 CPU 编码，便于兼容性检查或性能对比。
 
+### WGPU exporter
+
+独立的 `osu-beatmap-preview-wgpu` 使用与原 CLI 完全相同的参数和 stdout JSON 协议。PNG 与 GIF 继续走原 CPU 路径；MP4 使用固定 RGBA8 WGPU 离屏画布，读回后复用现有 H.264/AAC/MP4 编码管线。WGPU MP4 文件名会在 BID 后加入 `_wgpu`，例如 `standard_738063_wgpu_fps30.mp4`，不会命中或覆盖 CPU MP4。
+
+```bash
+osu-beatmap-preview-wgpu --bid=738063 --fmt=mp4 --duration-time=30
+```
+
+默认请求 HighPerformance 适配器。`WGPU_BACKEND` 可限制后端，`WGPU_ADAPTER_NAME` 可按名称子串选择适配器。请求的 MSAA 不受设备支持时会降到不高于请求值的可用等级；没有匹配 GPU、设备丢失或画布不足时会明确失败，不回退到 CPU 绘制。`OSU_PREVIEW_NO_GPU` 只控制 MP4 H.264 编码器，不会关闭 WGPU 绘制。
+
 ## Mod 支持
 
 | 模式 | GIF / MP4 | PNG |
@@ -206,6 +216,21 @@ timeout:
   MP4_TIMEOUT: 900
 ```
 
+每个模式还有独立的 `render.<mode>.wgpu` 段：
+
+```yaml
+render:
+  standard:
+    wgpu:
+      WIDTH: 1280
+      HEIGHT: 720
+      MSAA_SAMPLES: 4
+      TARGET_FPS: 30
+      MAX_IN_FLIGHT: 3
+```
+
+WGPU 段只控制固定画布、MSAA、默认帧率和最大在途 readback 数量。模式几何、`SCALE`、背景与 HUD 样式仍读取 `render.<mode>.mp4`。配置文件中的 WGPU 变更参与配置 hash；`--scale`、`--fps` 等 CLI 覆盖仍不参与目录 hash，并由文件名区分。
+
 超时单位为秒且必须是正整数。计时从请求入口开始，覆盖下载、解析、转谱、缓存检查、渲染、音频处理、编码和落盘。
 
 ### 默认路径
@@ -259,6 +284,12 @@ timeout:
 git clone https://github.com/2710165659/osu-beatmap-preview.git
 cd osu-beatmap-preview
 cargo build --release
+
+# 独立 WGPU exporter
+cargo build --release --package osu-beatmap-preview-wgpu
+
+# 本地调试播放器，不属于 Release 产物
+cargo run --release --package osu-beatmap-preview-player -- --bid=738063
 ```
 
 构建产物位于：
@@ -266,13 +297,20 @@ cargo build --release
 ```text
 target/release/osu-beatmap-preview       # Linux / macOS
 target/release/osu-beatmap-preview.exe   # Windows
+target/release/osu-beatmap-preview-wgpu  # Linux / macOS
+target/release/osu-beatmap-preview-wgpu.exe # Windows
 ```
 
 运行测试：
 
 ```bash
 cargo test
+cargo test --workspace --all-features --all-targets
 ```
+
+启用 `wgpu-renderer` feature 后，库会公开 `realtime` 模块。`RealtimeSession` 可安全共享并提供绝对时间/游戏时间场景，`OffscreenRenderer` 提供运行时无关的异步单帧和有背压帧流接口。单个 renderer 仅支持顺序可变调用；`RgbaFrame` 固定为紧凑、行优先 RGBA8。调试播放器只提供播放/暂停、seek 与 `0.5x..=2.0x` 倍速。
+
+本版本不包含正式播放器 UI、WGPU PNG/GIF、移动端、回放、外部 texture 编码互操作或 NVENC 零拷贝。
 
 ## 许可证
 

@@ -15,6 +15,22 @@ available free of charge at the following immutable revisions:
 
 No local modifications are made to these dependencies.
 
+## Optional WGPU and debug-player dependencies
+
+The separately built WGPU exporter and unpublished debug player additionally
+use the following crates. They are not linked into the default CPU binary.
+
+- wgpu 29.0.4: MIT OR Apache-2.0, https://github.com/gfx-rs/wgpu
+- bytemuck 1.25.0: Zlib OR Apache-2.0 OR MIT, https://github.com/Lokathor/bytemuck
+- pollster 0.4.0: MIT OR Apache-2.0, https://github.com/zesterer/pollster
+- winit 0.30.13: Apache-2.0, https://github.com/rust-windowing/winit
+- egui, egui-wgpu, egui-winit, and eframe 0.35: MIT OR Apache-2.0,
+  https://github.com/emilk/egui
+- rodio 0.22.2: MIT OR Apache-2.0, https://github.com/RustAudio/rodio
+
+The corresponding license texts are distributed by each crate and are
+available at the immutable versions recorded in `Cargo.lock`.
+
 ## Symphonia 0.5.4
 
 Symphonia and the enabled MP3, OGG/Vorbis, WAV, and PCM components are licensed

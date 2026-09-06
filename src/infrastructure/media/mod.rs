@@ -49,6 +49,13 @@ pub(crate) struct VideoStyle {
     pub(crate) black_opaque: [u8; 4],
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FrameComposition {
+    Playfield,
+    FinalRgba,
+}
+
 pub(crate) fn video_style(mode: crate::render::geometry::GameMode) -> VideoStyle {
     let layout = &crate::infrastructure::config::current().render;
     macro_rules! make {
@@ -225,7 +232,7 @@ pub(crate) fn save_mp4_streamed(
     chart_start_ms: i64,
     last_object_ms: i64,
     speed: f64,
-    render: impl Fn(usize) -> (Img, i64) + Send + Sync,
+    render: impl Fn(usize) -> Result<(Img, i64)> + Send + Sync,
     output_path: &Path,
     fps: u32,
     audio_job: AudioSourceJob,
@@ -233,6 +240,7 @@ pub(crate) fn save_mp4_streamed(
     time_axis: TimeAxis,
     deadline: &RequestDeadline,
     mode: crate::render::geometry::GameMode,
+    composition: FrameComposition,
 ) -> Result<()> {
     deadline.check()?;
     if frame_count == 0 {
@@ -289,14 +297,20 @@ pub(crate) fn save_mp4_streamed(
     );
 
     // ── 渲染首帧以确定游戏区域尺寸 ──
-    let (first_frame, first_time) = render(0);
+    let (first_frame, first_time) = render(0)?;
     deadline.check()?;
     let (pf_w, pf_h) = (first_frame.w, first_frame.h);
-    let (out_w, out_h) = crate::render::geometry::video_canvas_16_9(pf_w, pf_h);
+    let (out_w, out_h) = match composition {
+        FrameComposition::Playfield => crate::render::geometry::video_canvas_16_9(pf_w, pf_h),
+        FrameComposition::FinalRgba => (pf_w, pf_h),
+    };
     let style = video_style(mode);
-    let background = background
-        .as_ref()
-        .map(|image| prepare_video_background(image, out_w, out_h, style));
+    let background = match composition {
+        FrameComposition::Playfield => background
+            .as_ref()
+            .map(|image| prepare_video_background(image, out_w, out_h, style)),
+        FrameComposition::FinalRgba => None,
+    };
 
     // ── 选择最佳可用编码后端 ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
@@ -333,15 +347,18 @@ pub(crate) fn save_mp4_streamed(
         );
 
     // ── 编码首帧并提取 SPS/PPS，供 MP4 轨道配置使用 ──
-    let first_comp = compose_frame(
-        first_frame,
-        time_axis.to_display(first_time),
-        time_axis.to_display(last_object_ms),
-        out_w,
-        out_h,
-        background.as_ref(),
-        style,
-    );
+    let first_comp = match composition {
+        FrameComposition::Playfield => compose_frame(
+            first_frame,
+            time_axis.to_display(first_time),
+            time_axis.to_display(last_object_ms),
+            out_w,
+            out_h,
+            background.as_ref(),
+            style,
+        ),
+        FrameComposition::FinalRgba => first_frame,
+    };
     let first_encoded = encoder.encode(&first_comp)?;
     deadline.check()?;
     if first_encoded.slice.is_empty() {
@@ -435,23 +452,27 @@ pub(crate) fn save_mp4_streamed(
             let frames: Vec<Img> = (chunk_start..chunk_end)
                 .into_par_iter()
                 .map(|fi| -> Result<Img> {
-                    let (pf, time) = render(fi);
+                    let (pf, time) = render(fi)?;
                     if pf.w != pf_w || pf.h != pf_h {
                         return Err(PreviewError::render(format!(
                             "video frame {fi} has size {}x{}, expected {}x{}",
                             pf.w, pf.h, pf_w, pf_h
                         )));
                     }
-                    // 在此并行合成，避免串行瓶颈。
-                    Ok(compose_frame(
-                        pf,
-                        time_axis.to_display(time),
-                        gameplay_total,
-                        out_w,
-                        out_h,
-                        background.as_ref(),
-                        style,
-                    ))
+                    // CPU playfield 在此并行合成；WGPU 帧已经包含背景和 HUD，
+                    // 必须原样送入编码器，避免再次经过 CPU 像素合成。
+                    Ok(match composition {
+                        FrameComposition::Playfield => compose_frame(
+                            pf,
+                            time_axis.to_display(time),
+                            gameplay_total,
+                            out_w,
+                            out_h,
+                            background.as_ref(),
+                            style,
+                        ),
+                        FrameComposition::FinalRgba => pf,
+                    })
                 })
                 .collect::<Result<Vec<_>>>()?;
             deadline.check()?;
@@ -558,6 +579,209 @@ pub(crate) fn save_mp4_streamed(
     });
 
     Ok(())
+}
+
+/// 以固定 WGPU 画布完成每个 playfield 的离屏提交和 readback，再复用现有
+/// H.264/AAC/MP4 封装。任何 GPU 初始化或设备错误都会终止导出，不回退 CPU 绘制。
+#[cfg(feature = "wgpu-renderer")]
+pub(crate) fn save_mp4_streamed_wgpu(
+    frame_count: usize,
+    chart_start_ms: i64,
+    last_object_ms: i64,
+    speed: f64,
+    render: impl Fn(usize) -> Result<crate::render::scene::FrameScene> + Send + Sync + 'static,
+    output_path: &Path,
+    fps: u32,
+    audio_job: AudioSourceJob,
+    background: Option<Img>,
+    time_axis: TimeAxis,
+    deadline: &RequestDeadline,
+    mode: crate::render::geometry::GameMode,
+) -> Result<()> {
+    let config = crate::realtime::configured_offscreen(mode);
+    let mut renderer = pollster::block_on(crate::realtime::OffscreenRenderer::new(config))
+        .map_err(|error| PreviewError::render(error.to_string()))?;
+    eprintln!(
+        "[wgpu] using {} ({}, MSAA {}x)",
+        renderer.info().adapter_name,
+        renderer.info().backend,
+        renderer.info().msaa_samples,
+    );
+    let style = video_style(mode);
+    let background = background.as_ref().map(|image| {
+        std::sync::Arc::new(prepare_video_background(
+            image,
+            config.width,
+            config.height,
+            style,
+        ))
+    });
+    let render = std::sync::Arc::new(render);
+    let cancellation = crate::realtime::CancellationToken::new();
+    let producer_cancellation = cancellation.clone();
+    let producer_deadline = deadline.clone();
+    let (sender, receiver) = std::sync::mpsc::sync_channel(config.max_in_flight);
+    let producer = std::thread::spawn(move || {
+        let requests = (0..frame_count).map(|index| crate::realtime::FrameRequest {
+            index: index as u64,
+            absolute_time_ms: chart_start_ms
+                + round_half_even(index as f64 * 1000.0 * speed / fps as f64),
+        });
+        let result = pollster::block_on(renderer.render_generated_stream(
+            requests,
+            &producer_cancellation,
+            |request| {
+                producer_deadline
+                    .check()
+                    .map_err(|error| crate::realtime::RealtimeError::Callback(error.to_string()))?;
+                let playfield = render(request.index as usize)?;
+                if playfield.width() > config.width || playfield.height() > config.height {
+                    return Err(crate::realtime::RealtimeError::CanvasTooSmall {
+                        width: config.width,
+                        height: config.height,
+                        required_width: playfield.width(),
+                        required_height: playfield.height(),
+                    });
+                }
+                Ok(crate::render::wgpu::composition::compose_video_scene(
+                    playfield,
+                    time_axis.to_display(request.absolute_time_ms),
+                    time_axis.to_display(last_object_ms),
+                    config.width,
+                    config.height,
+                    background.as_ref(),
+                    style,
+                ))
+            },
+            |frame| {
+                producer_deadline
+                    .check()
+                    .map_err(|error| crate::realtime::RealtimeError::Callback(error.to_string()))?;
+                sender.send(Ok(frame)).map_err(|_| {
+                    crate::realtime::RealtimeError::Callback(
+                        "MP4 encoder stopped receiving WGPU frames".to_string(),
+                    )
+                })
+            },
+        ));
+        if let Err(error) = &result {
+            let _ = sender.send(Err(error.clone()));
+        }
+        result
+    });
+    let frames = WgpuFrameReceiver::new(receiver, cancellation, producer);
+    let result = save_mp4_streamed(
+        frame_count,
+        chart_start_ms,
+        last_object_ms,
+        speed,
+        |frame_index| frames.take(frame_index),
+        output_path,
+        fps,
+        audio_job,
+        None,
+        time_axis,
+        deadline,
+        mode,
+        FrameComposition::FinalRgba,
+    );
+    let producer_result = frames.finish();
+    match (result, producer_result) {
+        (Err(error), _) => Err(error),
+        (Ok(()), Err(error)) => Err(PreviewError::render(error.to_string())),
+        (Ok(()), Ok(())) => Ok(()),
+    }
+}
+
+#[cfg(feature = "wgpu-renderer")]
+struct WgpuFrameReceiver {
+    state: std::sync::Mutex<WgpuFrameReceiverState>,
+    cancellation: crate::realtime::CancellationToken,
+    producer: std::sync::Mutex<
+        Option<std::thread::JoinHandle<std::result::Result<(), crate::realtime::RealtimeError>>>,
+    >,
+}
+
+#[cfg(feature = "wgpu-renderer")]
+struct WgpuFrameReceiverState {
+    receiver: Option<
+        std::sync::mpsc::Receiver<
+            std::result::Result<crate::realtime::RenderedFrame, crate::realtime::RealtimeError>,
+        >,
+    >,
+    buffered: std::collections::BTreeMap<usize, crate::realtime::RenderedFrame>,
+}
+
+#[cfg(feature = "wgpu-renderer")]
+impl WgpuFrameReceiver {
+    fn new(
+        receiver: std::sync::mpsc::Receiver<
+            std::result::Result<crate::realtime::RenderedFrame, crate::realtime::RealtimeError>,
+        >,
+        cancellation: crate::realtime::CancellationToken,
+        producer: std::thread::JoinHandle<std::result::Result<(), crate::realtime::RealtimeError>>,
+    ) -> Self {
+        Self {
+            state: std::sync::Mutex::new(WgpuFrameReceiverState {
+                receiver: Some(receiver),
+                buffered: std::collections::BTreeMap::new(),
+            }),
+            cancellation,
+            producer: std::sync::Mutex::new(Some(producer)),
+        }
+    }
+
+    fn take(&self, frame_index: usize) -> Result<(Img, i64)> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| PreviewError::render("WGPU frame receiver lock is poisoned"))?;
+        loop {
+            if let Some(frame) = state.buffered.remove(&frame_index) {
+                return Ok((
+                    Img {
+                        w: frame.rgba.width(),
+                        h: frame.rgba.height(),
+                        data: frame.rgba.into_bytes(),
+                    },
+                    frame.absolute_time_ms,
+                ));
+            }
+            let received = state
+                .receiver
+                .as_ref()
+                .ok_or_else(|| PreviewError::render("WGPU frame stream is closed"))?
+                .recv()
+                .map_err(|_| PreviewError::render("WGPU frame producer stopped unexpectedly"))?;
+            let frame = received.map_err(|error| PreviewError::render(error.to_string()))?;
+            state.buffered.insert(frame.index as usize, frame);
+        }
+    }
+
+    fn finish(&self) -> std::result::Result<(), crate::realtime::RealtimeError> {
+        self.cancellation.cancel();
+        if let Ok(mut state) = self.state.lock() {
+            state.receiver.take();
+            state.buffered.clear();
+        }
+        self.producer
+            .lock()
+            .map_err(|_| {
+                crate::realtime::RealtimeError::Callback(
+                    "WGPU producer handle lock is poisoned".to_string(),
+                )
+            })?
+            .take()
+            .ok_or_else(|| {
+                crate::realtime::RealtimeError::Callback(
+                    "WGPU producer was already joined".to_string(),
+                )
+            })?
+            .join()
+            .map_err(|_| {
+                crate::realtime::RealtimeError::Callback("WGPU frame producer panicked".to_string())
+            })?
+    }
 }
 
 struct JoinedAudioTask {
@@ -682,7 +906,7 @@ pub(crate) fn prepare_video_background(
 
 /// 将游戏区域帧居中放置到 16:9 背景画布，并在右上角绘制
 ///“当前 / 总时长”游戏时间标签；没有谱面背景时画布为黑色。
-fn compose_frame(
+pub(crate) fn compose_frame(
     pf: Img,
     current_ms: i64,
     total_ms: i64,

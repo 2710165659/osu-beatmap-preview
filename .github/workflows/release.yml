@@ -17,15 +17,43 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: osu-beatmap-preview-linux-amd64
+            package: osu-beatmap-preview
+            binary: osu-beatmap-preview
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: osu-beatmap-preview-windows-amd64.exe
+            package: osu-beatmap-preview
+            binary: osu-beatmap-preview.exe
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact: osu-beatmap-preview-macos-amd64
+            package: osu-beatmap-preview
+            binary: osu-beatmap-preview
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: osu-beatmap-preview-macos-arm64
+            package: osu-beatmap-preview
+            binary: osu-beatmap-preview
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: osu-beatmap-preview-wgpu-linux-amd64
+            package: osu-beatmap-preview-wgpu
+            binary: osu-beatmap-preview-wgpu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: osu-beatmap-preview-wgpu-windows-amd64.exe
+            package: osu-beatmap-preview-wgpu
+            binary: osu-beatmap-preview-wgpu.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: osu-beatmap-preview-wgpu-macos-amd64
+            package: osu-beatmap-preview-wgpu
+            binary: osu-beatmap-preview-wgpu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: osu-beatmap-preview-wgpu-macos-arm64
+            package: osu-beatmap-preview-wgpu
+            binary: osu-beatmap-preview-wgpu
 
     runs-on: ${{ matrix.os }}
 
@@ -38,17 +66,17 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --package ${{ matrix.package }} --target ${{ matrix.target }}
 
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'
         run: |
-          cp target/${{ matrix.target }}/release/osu-beatmap-preview ${{ matrix.artifact }}
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.artifact }}
 
       - name: Rename binary (Windows)
         if: runner.os == 'Windows'
         run: |
-          cp target/${{ matrix.target }}/release/osu-beatmap-preview.exe ${{ matrix.artifact }}
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

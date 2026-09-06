@@ -8,7 +8,14 @@ pub(crate) struct ArtifactName(String);
 
 impl ArtifactName {
     pub(crate) fn from_plan(plan: &RenderPlan) -> Self {
+        Self::from_plan_with_wgpu(plan, false)
+    }
+
+    pub(crate) fn from_plan_with_wgpu(plan: &RenderPlan, wgpu: bool) -> Self {
         let mut parts = vec![mode_name(plan.target_mode).to_string(), plan.bid.clone()];
+        if wgpu && plan.format == OutputFormat::Mp4 {
+            parts.push("wgpu".to_string());
+        }
         if plan.convert_used {
             parts.push("convert".to_string());
         }
@@ -178,6 +185,18 @@ mod tests {
         assert_eq!(
             ArtifactName::from_plan(&plan(None, None, false, true)).as_str(),
             ArtifactName::from_plan(&plan(None, None, true, false)).as_str()
+        );
+    }
+
+    #[test]
+    fn wgpu标识固定放在bid之后() {
+        let mut request = RenderRequest::new("738063");
+        request.output.format = Some("mp4".to_string());
+        request.output.fps = Some(30);
+        let plan = RenderPlan::build(request.validate().unwrap(), 0, false).unwrap();
+        assert_eq!(
+            ArtifactName::from_plan_with_wgpu(&plan, true).as_str(),
+            "standard_738063_wgpu_fps30.mp4"
         );
     }
 }
