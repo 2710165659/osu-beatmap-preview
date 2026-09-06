@@ -171,33 +171,43 @@ impl ConfigSnapshot {
 }
 
 fn validate_wgpu(config: &Value) -> Result<(), String> {
-    for mode in ["standard", "taiko", "catch", "mania"] {
-        for name in ["WIDTH", "HEIGHT", "TARGET_FPS", "MAX_IN_FLIGHT"] {
-            let path = format!("render.{mode}.wgpu.{name}");
-            let pointer = format!("/render/{mode}/wgpu/{name}");
-            if config
-                .pointer(&pointer)
-                .and_then(Value::as_u64)
-                .is_none_or(|value| value == 0)
-            {
-                return Err(format!(
-                    "configuration field '{path}' must be a positive integer"
-                ));
-            }
-        }
-        let path = format!("render.{mode}.wgpu.MSAA_SAMPLES");
-        let pointer = format!("/render/{mode}/wgpu/MSAA_SAMPLES");
+    for name in ["WIDTH", "HEIGHT", "TARGET_FPS", "MAX_IN_FLIGHT"] {
+        let path = format!("advance.wgpu.{name}");
+        let pointer = format!("/advance/wgpu/{name}");
         if config
             .pointer(&pointer)
             .and_then(Value::as_u64)
-            .is_none_or(|value| !matches!(value, 1 | 2 | 4 | 8 | 16))
+            .is_none_or(|value| value == 0)
         {
             return Err(format!(
-                "configuration field '{path}' must be one of 1, 2, 4, 8, 16"
+                "configuration field '{path}' must be a positive integer"
             ));
         }
     }
+    let path = "advance.wgpu.MSAA_SAMPLES";
+    let pointer = "/advance/wgpu/MSAA_SAMPLES";
+    if config
+        .pointer(pointer)
+        .and_then(Value::as_u64)
+        .is_none_or(|value| !matches!(value, 1 | 2 | 4 | 8 | 16))
+    {
+        return Err(format!(
+            "configuration field '{path}' must be one of 1, 2, 4, 8, 16"
+        ));
+    }
     Ok(())
+}
+
+#[cfg(feature = "wgpu-renderer")]
+pub(crate) fn wgpu_config(runtime: &RuntimeConfig) -> crate::realtime::OffscreenConfig {
+    let config = &runtime.advance.wgpu;
+    crate::realtime::OffscreenConfig {
+        width: config.WIDTH as u32,
+        height: config.HEIGHT as u32,
+        msaa_samples: config.MSAA_SAMPLES as u32,
+        target_fps: config.TARGET_FPS as u32,
+        max_in_flight: config.MAX_IN_FLIGHT as usize,
+    }
 }
 
 fn validate_render_scales(config: &Value) -> Result<(), String> {
@@ -1522,28 +1532,28 @@ render:
     }
 
     #[test]
-    fn wgpu配置按模式独立且参与配置哈希() {
+    fn wgpu配置位于advance并参与配置哈希() {
         let defaults = load_snapshot(None).unwrap();
-        assert_eq!(defaults.render.standard.wgpu.WIDTH, 1280);
-        assert_eq!(defaults.render.taiko.wgpu.HEIGHT, 720);
-        assert_eq!(defaults.render.catch.wgpu.MSAA_SAMPLES, 4);
-        assert_eq!(defaults.render.mania.wgpu.TARGET_FPS, 30);
-        assert_eq!(defaults.render.mania.wgpu.MAX_IN_FLIGHT, 3);
+        assert_eq!(defaults.advance.wgpu.WIDTH, 1280);
+        assert_eq!(defaults.advance.wgpu.HEIGHT, 720);
+        assert_eq!(defaults.advance.wgpu.MSAA_SAMPLES, 4);
+        assert_eq!(defaults.advance.wgpu.TARGET_FPS, 30);
+        assert_eq!(defaults.advance.wgpu.MAX_IN_FLIGHT, 3);
 
-        let changed = variant(r#"{"render":{"mania":{"wgpu":{"TARGET_FPS":60}}}}"#).unwrap();
+        let changed = variant(r#"{"advance":{"wgpu":{"TARGET_FPS":60}}}"#).unwrap();
         assert_eq!(
             changed.difference,
-            serde_json::json!({"render": {"mania": {"wgpu": {"TARGET_FPS": 60}}}})
+            serde_json::json!({"advance": {"wgpu": {"TARGET_FPS": 60}}})
         );
     }
 
     #[test]
     fn wgpu配置拒绝零值和非法采样数() {
-        let zero = load_snapshot(Some(r#"{"render":{"standard":{"wgpu":{"WIDTH":0}}}}"#))
-            .expect_err("零宽度必须失败");
-        assert!(zero.contains("render.standard.wgpu.WIDTH"));
-        let msaa = load_snapshot(Some(r#"{"render":{"catch":{"wgpu":{"MSAA_SAMPLES":3}}}}"#))
+        let zero =
+            load_snapshot(Some(r#"{"advance":{"wgpu":{"WIDTH":0}}}"#)).expect_err("零宽度必须失败");
+        assert!(zero.contains("advance.wgpu.WIDTH"));
+        let msaa = load_snapshot(Some(r#"{"advance":{"wgpu":{"MSAA_SAMPLES":3}}}"#))
             .expect_err("非法 MSAA 必须失败");
-        assert!(msaa.contains("render.catch.wgpu.MSAA_SAMPLES"));
+        assert!(msaa.contains("advance.wgpu.MSAA_SAMPLES"));
     }
 }

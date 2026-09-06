@@ -116,11 +116,12 @@ impl RealtimeSession {
         })?;
         let background = with_session_snapshot(&snapshot, || {
             background.as_ref().map(|image| {
-                Arc::new(crate::infrastructure::media::prepare_video_background(
+                Arc::new(crate::infrastructure::media::prepare_wgpu_video_background(
                     image,
                     offscreen.width,
                     offscreen.height,
                     crate::infrastructure::media::video_style(game_mode(target_mode)),
+                    game_mode(target_mode),
                 ))
             })
         });
@@ -157,17 +158,7 @@ impl RealtimeSession {
     pub fn scene_at_absolute(&self, absolute_time_ms: i64) -> Result<FrameScene, RealtimeError> {
         with_session_snapshot(&self.inner.snapshot, || {
             let playfield = self.inner.source.render(absolute_time_ms)?;
-            if playfield.width() > self.inner.offscreen.width
-                || playfield.height() > self.inner.offscreen.height
-            {
-                return Err(RealtimeError::CanvasTooSmall {
-                    width: self.inner.offscreen.width,
-                    height: self.inner.offscreen.height,
-                    required_width: playfield.width(),
-                    required_height: playfield.height(),
-                });
-            }
-            Ok(crate::render::wgpu::composition::compose_video_scene(
+            crate::render::wgpu::composition::compose_video_scene(
                 playfield,
                 absolute_time_ms.saturating_sub(self.inner.timeline.first_object_ms),
                 self.inner.timeline.duration_ms,
@@ -175,7 +166,8 @@ impl RealtimeSession {
                 self.inner.offscreen.height,
                 self.inner.background.as_ref(),
                 crate::infrastructure::media::video_style(self.inner.source.mode),
-            ))
+                self.inner.source.mode,
+            )
         })
     }
 
@@ -231,27 +223,9 @@ fn game_mode(mode: i32) -> GameMode {
 
 fn offscreen_config(
     runtime: &crate::infrastructure::config::RuntimeConfig,
-    mode: i32,
+    _mode: i32,
 ) -> OffscreenConfig {
-    macro_rules! make {
-        ($config:expr) => {{
-            let config = $config;
-            OffscreenConfig {
-                width: config.WIDTH as u32,
-                height: config.HEIGHT as u32,
-                msaa_samples: config.MSAA_SAMPLES as u32,
-                target_fps: config.TARGET_FPS as u32,
-                max_in_flight: config.MAX_IN_FLIGHT as usize,
-            }
-        }};
-    }
-    match mode {
-        0 => make!(&runtime.render.standard.wgpu),
-        1 => make!(&runtime.render.taiko.wgpu),
-        2 => make!(&runtime.render.catch.wgpu),
-        3 => make!(&runtime.render.mania.wgpu),
-        _ => unreachable!("谱面模式已经由解析器校验"),
-    }
+    crate::infrastructure::config::wgpu_config(runtime)
 }
 
 fn load_media(

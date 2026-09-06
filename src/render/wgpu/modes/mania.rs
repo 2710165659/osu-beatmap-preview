@@ -89,12 +89,6 @@ pub(crate) fn prepare_realtime(
         .zip(&pos_end)
         .map(|(&start, &end)| (end - start).max(0.0))
         .fold(0.0_f64, f64::max);
-    let image_background = crate::infrastructure::config::current()
-        .render
-        .mania
-        .mp4
-        .style
-        .IMAGE_BACKGROUND;
     let sv_sprites = sv_changes
         .iter()
         .zip(&sv_positions)
@@ -114,7 +108,7 @@ pub(crate) fn prepare_realtime(
                 layout.image_height as u32,
                 absolute_time_ms,
             );
-            draw_background_scene(&mut scene, left, &layout, image_background);
+            draw_background_scene(&mut scene, left, &layout);
             draw_sv_scene(
                 &mut scene,
                 &sv_sprites,
@@ -165,12 +159,7 @@ fn draw_background_scene(
     scene: &mut FrameSceneBuilder,
     left: i64,
     layout: &crate::render::cpu::modes::mania::animation::AnimationLayout,
-    image_background: Rgba,
 ) {
-    scene.rectangle(
-        rect(0, 0, layout.image_width, layout.image_height),
-        image_background,
-    );
     let top = layout.playfield_top;
     let lane_left = left + layout.left_panel_width;
     let lane_right = lane_left + layout.lane_area_width;

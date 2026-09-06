@@ -213,20 +213,19 @@ timeout:
   MP4_TIMEOUT: 900
 ```
 
-Each mode also has a separate `render.<mode>.wgpu` section:
+All four modes share the `advance.wgpu` section:
 
 ```yaml
-render:
-  standard:
-    wgpu:
-      WIDTH: 1280
-      HEIGHT: 720
-      MSAA_SAMPLES: 4
-      TARGET_FPS: 30
-      MAX_IN_FLIGHT: 3
+advance:
+  wgpu:
+    WIDTH: 1280
+    HEIGHT: 720
+    MSAA_SAMPLES: 4
+    TARGET_FPS: 30
+    MAX_IN_FLIGHT: 3
 ```
 
-This section controls only the fixed canvas, MSAA, default frame rate, and maximum in-flight readbacks. Mode geometry, `SCALE`, background, and HUD styling continue to come from `render.<mode>.mp4`. WGPU configuration changes participate in the configuration hash. CLI overrides such as `--scale` and `--fps` do not affect the directory hash and remain distinguished by the filename.
+This section controls the fixed canvas, MSAA, default frame rate, and maximum in-flight readbacks shared by all modes. Mode geometry, `SCALE`, background, and HUD styling continue to come from the corresponding `render.<mode>.mp4` section. Standard/Catch use centered proportional contain with the chart background in the remaining margins; Taiko fills the width and pads vertically, while Mania fills the height and pads horizontally. Taiko/Mania fail explicitly if the other dimension would exceed the canvas. WGPU configuration changes participate in the configuration hash. CLI overrides such as `--scale` and `--fps` do not affect the directory hash and remain distinguished by the filename.
 
 Timeouts are positive integer seconds. They start at the request entry point and cover download, parsing, conversion, cache lookup, rendering, audio processing, encoding, and final output.
 

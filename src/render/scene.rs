@@ -207,6 +207,11 @@ impl FrameSceneBuilder {
     }
 
     pub(crate) fn append(&mut self, scene: &FrameScene, offset: [f32; 2]) {
+        self.append_scaled(scene, offset, 1.0);
+    }
+
+    pub(crate) fn append_scaled(&mut self, scene: &FrameScene, offset: [f32; 2], scale: f32) {
+        assert!(scale.is_finite() && scale > 0.0, "场景缩放必须为正有限数");
         let remapped = scene
             .resources
             .iter()
@@ -214,7 +219,7 @@ impl FrameSceneBuilder {
             .collect::<BTreeMap<_, _>>();
         for command in scene.commands.iter() {
             self.commands
-                .push(translate_command(command, &remapped, offset));
+                .push(transform_command(command, &remapped, offset, scale));
         }
     }
 
@@ -238,17 +243,19 @@ impl FrameSceneBuilder {
     }
 }
 
-fn translate_command(
+fn transform_command(
     command: &DrawCommand,
     resources: &BTreeMap<ResourceId, ResourceId>,
     offset: [f32; 2],
+    scale: f32,
 ) -> DrawCommand {
     let rect = |rect: SceneRect| SceneRect {
-        x: rect.x + offset[0],
-        y: rect.y + offset[1],
-        ..rect
+        x: rect.x * scale + offset[0],
+        y: rect.y * scale + offset[1],
+        width: rect.width * scale,
+        height: rect.height * scale,
     };
-    let point = |point: [f32; 2]| [point[0] + offset[0], point[1] + offset[1]];
+    let point = |point: [f32; 2]| [point[0] * scale + offset[0], point[1] * scale + offset[1]];
     match command {
         DrawCommand::PushClip(value) => DrawCommand::PushClip(rect(*value)),
         DrawCommand::PopClip => DrawCommand::PopClip,
@@ -271,7 +278,7 @@ fn translate_command(
             color,
         } => DrawCommand::Circle {
             center: point(*center),
-            radius: *radius,
+            radius: *radius * scale,
             color: *color,
         },
         DrawCommand::Ring {
@@ -281,8 +288,8 @@ fn translate_command(
             color,
         } => DrawCommand::Ring {
             center: point(*center),
-            radius: *radius,
-            thickness: *thickness,
+            radius: *radius * scale,
+            thickness: *thickness * scale,
             color: *color,
         },
         DrawCommand::Line {
@@ -293,7 +300,7 @@ fn translate_command(
         } => DrawCommand::Line {
             from: point(*from),
             to: point(*to),
-            thickness: *thickness,
+            thickness: *thickness * scale,
             color: *color,
         },
         DrawCommand::Glyph {
@@ -316,7 +323,7 @@ fn translate_command(
                 .map(|&vertex| point(vertex))
                 .collect::<Vec<_>>()
                 .into(),
-            thickness: *thickness,
+            thickness: *thickness * scale,
             border: *border,
             body: *body,
         },

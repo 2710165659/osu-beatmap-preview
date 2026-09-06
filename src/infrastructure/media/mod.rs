@@ -609,11 +609,12 @@ pub(crate) fn save_mp4_streamed_wgpu(
     );
     let style = video_style(mode);
     let background = background.as_ref().map(|image| {
-        std::sync::Arc::new(prepare_video_background(
+        std::sync::Arc::new(prepare_wgpu_video_background(
             image,
             config.width,
             config.height,
             style,
+            mode,
         ))
     });
     let render = std::sync::Arc::new(render);
@@ -635,15 +636,7 @@ pub(crate) fn save_mp4_streamed_wgpu(
                     .check()
                     .map_err(|error| crate::realtime::RealtimeError::Callback(error.to_string()))?;
                 let playfield = render(request.index as usize)?;
-                if playfield.width() > config.width || playfield.height() > config.height {
-                    return Err(crate::realtime::RealtimeError::CanvasTooSmall {
-                        width: config.width,
-                        height: config.height,
-                        required_width: playfield.width(),
-                        required_height: playfield.height(),
-                    });
-                }
-                Ok(crate::render::wgpu::composition::compose_video_scene(
+                crate::render::wgpu::composition::compose_video_scene(
                     playfield,
                     time_axis.to_display(request.absolute_time_ms),
                     time_axis.to_display(last_object_ms),
@@ -651,7 +644,8 @@ pub(crate) fn save_mp4_streamed_wgpu(
                     config.height,
                     background.as_ref(),
                     style,
-                ))
+                    mode,
+                )
             },
             |frame| {
                 producer_deadline
@@ -880,20 +874,50 @@ pub(crate) fn prepare_video_background(
     height: u32,
     style: VideoStyle,
 ) -> Img {
+    prepare_video_background_inner(source, width, height, style, false)
+}
+
+/// 为 WGPU 的 Standard/Catch 固定画布铺满谱面背景，避免 playfield 两侧的
+/// contain 留边再次显示为黑色。背景仍保持等比缩放，超出画布的部分从中心裁剪；
+/// Taiko/Mania 保留原有适配方式，使其空白区域继续由对应模式背景色控制。
+#[cfg(feature = "wgpu-renderer")]
+pub(crate) fn prepare_wgpu_video_background(
+    source: &Img,
+    width: u32,
+    height: u32,
+    style: VideoStyle,
+    mode: crate::render::geometry::GameMode,
+) -> Img {
+    let cover = matches!(
+        mode,
+        crate::render::geometry::GameMode::Standard | crate::render::geometry::GameMode::Catch
+    );
+    prepare_video_background_inner(source, width, height, style, cover)
+}
+
+fn prepare_video_background_inner(
+    source: &Img,
+    width: u32,
+    height: u32,
+    style: VideoStyle,
+    cover: bool,
+) -> Img {
     let mut result = Img::new(width, height, style.black_opaque);
     if source.w == 0 || source.h == 0 || width == 0 || height == 0 {
         return result;
     }
 
-    // FitMode.Fit 的等价处理：以较小缩放比例完整容纳原图，避免裁掉边缘。
-    let scale = (width as f64 / source.w as f64).min(height as f64 / source.h as f64);
-    let resized_width = ((source.w as f64 * scale).round() as u32).max(1).min(width);
-    let resized_height = ((source.h as f64 * scale).round() as u32)
-        .max(1)
-        .min(height);
+    // CPU 路径使用 contain；WGPU 的 Standard/Catch 使用 cover，消除固定画布黑边。
+    let scale = if cover {
+        (width as f64 / source.w as f64).max(height as f64 / source.h as f64)
+    } else {
+        (width as f64 / source.w as f64).min(height as f64 / source.h as f64)
+    };
+    let resized_width = ((source.w as f64 * scale).round() as u32).max(1);
+    let resized_height = ((source.h as f64 * scale).round() as u32).max(1);
     let resized = source.resize(resized_width, resized_height);
-    let left = ((width - resized_width) / 2) as i64;
-    let top = ((height - resized_height) / 2) as i64;
+    let left = (width as i64 - resized_width as i64) / 2;
+    let top = (height as i64 - resized_height as i64) / 2;
     result.alpha_composite(&resized, left, top);
     let brightness = 1.0 - style.background_dim.clamp(0.0, 1.0);
     for pixel in result.data.chunks_exact_mut(4) {
@@ -1202,6 +1226,25 @@ mod tests {
         assert_eq!(background.get(0, 2), [77, 30, 0, 255]);
         assert_eq!(background.get(3, 1), [0, 30, 77, 255]);
         assert_eq!(background.get(0, 3), [0, 0, 0, 255]);
+    }
+
+    #[cfg(feature = "wgpu-renderer")]
+    #[test]
+    fn wgpu_standard_background_covers_canvas_without_black_borders() {
+        let source = Img::new(4, 2, [255, 100, 0, 255]);
+        let background = prepare_wgpu_video_background(
+            &source,
+            4,
+            4,
+            video_style(crate::render::geometry::GameMode::Standard),
+            crate::render::geometry::GameMode::Standard,
+        );
+        assert_eq!((background.w, background.h), (4, 4));
+        assert!(background.data.chunks_exact(4).all(|pixel| pixel[3] == 255));
+        assert!(background
+            .data
+            .chunks_exact(4)
+            .all(|pixel| pixel[..3] != [0, 0, 0]));
     }
 
     #[test]

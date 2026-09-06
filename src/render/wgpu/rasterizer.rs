@@ -60,6 +60,17 @@ enum BatchKind {
     Solid,
     Sprite(ResourceKey),
     Glyph(ResourceKey),
+    SliderBorderCoverage,
+    SliderBorderColor,
+    SliderBodyCoverage,
+    SliderBodyColor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StencilMode {
+    Keep,
+    Coverage,
+    Color,
 }
 
 struct DrawBatch {
@@ -88,8 +99,12 @@ pub(super) struct SceneRasterizer {
     solid_pipeline: wgpu::RenderPipeline,
     sprite_pipeline: wgpu::RenderPipeline,
     glyph_pipeline: wgpu::RenderPipeline,
+    slider_coverage_pipeline: wgpu::RenderPipeline,
+    slider_color_pipeline: wgpu::RenderPipeline,
     resolve_pipeline: wgpu::RenderPipeline,
     resolve_bind_group: wgpu::BindGroup,
+    _depth_stencil: wgpu::Texture,
+    depth_stencil_view: wgpu::TextureView,
     textures: HashMap<ResourceKey, CachedTexture>,
 }
 
@@ -126,6 +141,21 @@ impl SceneRasterizer {
         let msaa_view = msaa
             .as_ref()
             .map(|texture| texture.create_view(&Default::default()));
+        let depth_stencil = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("osu-beatmap-preview slider stencil"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Stencil8,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let depth_stencil_view = depth_stencil.create_view(&Default::default());
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("osu-beatmap-preview scene texture layout"),
             entries: &[
@@ -170,6 +200,7 @@ impl SceneRasterizer {
             &solid_layout,
             "solid_fragment",
             sample_count,
+            StencilMode::Keep,
             "osu-beatmap-preview solid pipeline",
         );
         let sprite_pipeline = create_scene_pipeline(
@@ -178,6 +209,7 @@ impl SceneRasterizer {
             &scene_layout,
             "sprite_fragment",
             sample_count,
+            StencilMode::Keep,
             "osu-beatmap-preview sprite pipeline",
         );
         let glyph_pipeline = create_scene_pipeline(
@@ -186,7 +218,26 @@ impl SceneRasterizer {
             &scene_layout,
             "glyph_fragment",
             sample_count,
+            StencilMode::Keep,
             "osu-beatmap-preview glyph pipeline",
+        );
+        let slider_coverage_pipeline = create_scene_pipeline(
+            device,
+            &shader,
+            &solid_layout,
+            "solid_fragment",
+            sample_count,
+            StencilMode::Coverage,
+            "osu-beatmap-preview slider coverage pipeline",
+        );
+        let slider_color_pipeline = create_scene_pipeline(
+            device,
+            &shader,
+            &solid_layout,
+            "solid_fragment",
+            sample_count,
+            StencilMode::Color,
+            "osu-beatmap-preview slider color pipeline",
         );
         let resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("osu-beatmap-preview alpha resolve layout"),
@@ -215,8 +266,12 @@ impl SceneRasterizer {
             solid_pipeline,
             sprite_pipeline,
             glyph_pipeline,
+            slider_coverage_pipeline,
+            slider_color_pipeline,
             resolve_pipeline,
             resolve_bind_group,
+            _depth_stencil: depth_stencil,
+            depth_stencil_view,
             textures: HashMap::new(),
         }
     }
@@ -257,9 +312,18 @@ impl SceneRasterizer {
                     store,
                 },
             })];
+            let depth_stencil = Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_stencil_view,
+                depth_ops: None,
+                stencil_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0),
+                    store: wgpu::StoreOp::Store,
+                }),
+            });
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("osu-beatmap-preview scene pass"),
                 color_attachments: &attachments,
+                depth_stencil_attachment: depth_stencil,
                 ..Default::default()
             });
             if let Some(vertex_buffer) = &vertex_buffer {
@@ -271,6 +335,7 @@ impl SceneRasterizer {
                         batch.scissor[2],
                         batch.scissor[3],
                     );
+                    pass.set_stencil_reference(stencil_reference(batch.kind) as u32);
                     match batch.kind {
                         BatchKind::Solid => pass.set_pipeline(&self.solid_pipeline),
                         BatchKind::Sprite(key) => {
@@ -296,6 +361,12 @@ impl SceneRasterizer {
                                     .bind_group,
                                 &[],
                             );
+                        }
+                        BatchKind::SliderBorderCoverage | BatchKind::SliderBodyCoverage => {
+                            pass.set_pipeline(&self.slider_coverage_pipeline);
+                        }
+                        BatchKind::SliderBorderColor | BatchKind::SliderBodyColor => {
+                            pass.set_pipeline(&self.slider_color_pipeline);
                         }
                     }
                     pass.draw(batch.vertices, 0..1);
@@ -433,8 +504,35 @@ fn create_scene_pipeline(
     layout: &wgpu::PipelineLayout,
     fragment_entry: &str,
     sample_count: u32,
+    stencil_mode: StencilMode,
     label: &str,
 ) -> wgpu::RenderPipeline {
+    let (compare, pass_op, write_mask, color_write_mask) = match stencil_mode {
+        StencilMode::Keep => (
+            wgpu::CompareFunction::Always,
+            wgpu::StencilOperation::Keep,
+            0,
+            wgpu::ColorWrites::ALL,
+        ),
+        StencilMode::Coverage => (
+            wgpu::CompareFunction::NotEqual,
+            wgpu::StencilOperation::Replace,
+            0xff,
+            wgpu::ColorWrites::empty(),
+        ),
+        StencilMode::Color => (
+            wgpu::CompareFunction::Equal,
+            wgpu::StencilOperation::IncrementClamp,
+            0xff,
+            wgpu::ColorWrites::ALL,
+        ),
+    };
+    let stencil_face = wgpu::StencilFaceState {
+        compare,
+        fail_op: wgpu::StencilOperation::Keep,
+        depth_fail_op: wgpu::StencilOperation::Keep,
+        pass_op,
+    };
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(layout),
@@ -445,7 +543,18 @@ fn create_scene_pipeline(
             buffers: &[GpuVertex::layout()],
         },
         primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Stencil8,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState {
+                front: stencil_face,
+                back: stencil_face,
+                read_mask: 0xff,
+                write_mask,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        }),
         multisample: wgpu::MultisampleState {
             count: sample_count,
             ..Default::default()
@@ -468,7 +577,7 @@ fn create_scene_pipeline(
                         operation: wgpu::BlendOperation::Add,
                     },
                 }),
-                write_mask: wgpu::ColorWrites::ALL,
+                write_mask: color_write_mask,
             })],
         }),
         multiview_mask: None,
@@ -672,7 +781,7 @@ fn build_batches(
                 body,
             } => {
                 let clip = current_scissor(&clips, offset, target_width, target_height);
-                push_polyline(
+                push_slider_layer(
                     &mut batches,
                     clip,
                     vertices,
@@ -681,8 +790,10 @@ fn build_batches(
                     offset,
                     target_width,
                     target_height,
+                    BatchKind::SliderBorderCoverage,
+                    BatchKind::SliderBorderColor,
                 );
-                push_polyline(
+                push_slider_layer(
                     &mut batches,
                     clip,
                     vertices,
@@ -691,6 +802,8 @@ fn build_batches(
                     offset,
                     target_width,
                     target_height,
+                    BatchKind::SliderBodyCoverage,
+                    BatchKind::SliderBodyColor,
                 );
             }
         }
@@ -935,7 +1048,7 @@ fn push_line(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn push_polyline(
+fn push_slider_layer(
     batches: &mut Vec<DrawBatch>,
     scissor: [u32; 4],
     points: &[[f32; 2]],
@@ -944,28 +1057,82 @@ fn push_polyline(
     offset: [f32; 2],
     width: u32,
     height: u32,
+    coverage_kind: BatchKind,
+    color_kind: BatchKind,
 ) {
     if points.is_empty() || thickness <= 0.0 || color[3] == 0 {
         return;
     }
-    for segment in points.windows(2) {
-        push_line(
-            batches, scissor, segment[0], segment[1], thickness, color, offset, width, height,
-            false,
-        );
-    }
+    let mut path = Vec::with_capacity(points.len());
     for &point in points {
-        push_circle(
-            batches,
-            scissor,
-            point,
-            thickness / 2.0,
-            color,
-            offset,
-            width,
-            height,
-        );
+        if path
+            .last()
+            .is_none_or(|last: &[f32; 2]| (point[0] - last[0]).hypot(point[1] - last[1]) > 1e-4)
+        {
+            path.push(point);
+        }
     }
+    let mut vertices = Vec::new();
+    let rgba = color_f32(color);
+    for segment in path.windows(2) {
+        let from = segment[0];
+        let to = segment[1];
+        let dx = to[0] - from[0];
+        let dy = to[1] - from[1];
+        let length = dx.hypot(dy);
+        if length <= f32::EPSILON {
+            continue;
+        }
+        let scale = thickness / (2.0 * length);
+        let normal = [-dy * scale, dx * scale];
+        let quad_points = [
+            [from[0] + normal[0], from[1] + normal[1]],
+            [to[0] + normal[0], to[1] + normal[1]],
+            [to[0] - normal[0], to[1] - normal[1]],
+            [from[0] - normal[0], from[1] - normal[1]],
+        ];
+        let positions =
+            quad_points.map(|point| vertex(point, [0.0; 2], rgba, offset, width, height));
+        vertices.extend_from_slice(&[
+            positions[0],
+            positions[1],
+            positions[2],
+            positions[0],
+            positions[2],
+            positions[3],
+        ]);
+    }
+    // 圆形连接头和端帽保留 CPU 的 round join 外观；stencil coverage pass 会将重叠区域去重。
+    let segments = circle_segments(thickness / 2.0);
+    for &center in &path {
+        let center_vertex = vertex(center, [0.0; 2], rgba, offset, width, height);
+        for index in 0..segments {
+            vertices.extend_from_slice(&[
+                center_vertex,
+                vertex(
+                    radial_point(center, thickness / 2.0, index, segments),
+                    [0.0; 2],
+                    rgba,
+                    offset,
+                    width,
+                    height,
+                ),
+                vertex(
+                    radial_point(center, thickness / 2.0, index + 1, segments),
+                    [0.0; 2],
+                    rgba,
+                    offset,
+                    width,
+                    height,
+                ),
+            ]);
+        }
+    }
+    if vertices.is_empty() {
+        return;
+    }
+    push_batch(batches, coverage_kind, scissor, vertices.clone());
+    push_batch(batches, color_kind, scissor, vertices);
 }
 
 fn push_batch(
@@ -1004,6 +1171,14 @@ fn upload_batches(batches: Vec<DrawBatch>) -> (Vec<GpuVertex>, Vec<UploadedBatch
         });
     }
     (vertices, uploaded)
+}
+
+fn stencil_reference(kind: BatchKind) -> u8 {
+    match kind {
+        BatchKind::SliderBorderCoverage | BatchKind::SliderBorderColor => 1,
+        BatchKind::SliderBodyCoverage | BatchKind::SliderBodyColor => 3,
+        _ => 0,
+    }
 }
 
 fn rect_positions(rect: SceneRect, offset: [f32; 2], width: u32, height: u32) -> [[f32; 2]; 4] {
@@ -1155,7 +1330,7 @@ mod tests {
     }
 
     #[test]
-    fn 滑条网格生成两层圆角厚线三角形() {
+    fn 滑条网格生成两层圆角覆盖并集() {
         let points: Arc<[[f32; 2]]> = Arc::from([[10.0, 10.0], [40.0, 10.0], [40.0, 30.0]]);
         let scene = scene(vec![DrawCommand::SliderMesh {
             vertices: points,
@@ -1164,8 +1339,15 @@ mod tests {
             body: [255, 0, 0, 255],
         }]);
         let batches = build_batches(&scene, 100, 50).unwrap();
-        assert_eq!(batches.len(), 1);
-        assert!(batches[0].vertices.len() > 100);
+        assert_eq!(batches.len(), 4);
+        assert_eq!(batches[0].kind, BatchKind::SliderBorderCoverage);
+        assert_eq!(batches[1].kind, BatchKind::SliderBorderColor);
+        assert_eq!(batches[2].kind, BatchKind::SliderBodyCoverage);
+        assert_eq!(batches[3].kind, BatchKind::SliderBodyColor);
+        assert_eq!(batches[0].vertices.len(), batches[1].vertices.len());
+        assert_eq!(batches[2].vertices.len(), batches[3].vertices.len());
+        assert_eq!(stencil_reference(batches[0].kind), 1);
+        assert_eq!(stencil_reference(batches[2].kind), 3);
     }
 
     #[test]

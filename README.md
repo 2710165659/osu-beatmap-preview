@@ -216,20 +216,19 @@ timeout:
   MP4_TIMEOUT: 900
 ```
 
-每个模式还有独立的 `render.<mode>.wgpu` 段：
+四种模式共享 `advance.wgpu` 段：
 
 ```yaml
-render:
-  standard:
-    wgpu:
-      WIDTH: 1280
-      HEIGHT: 720
-      MSAA_SAMPLES: 4
-      TARGET_FPS: 30
-      MAX_IN_FLIGHT: 3
+advance:
+  wgpu:
+    WIDTH: 1280
+    HEIGHT: 720
+    MSAA_SAMPLES: 4
+    TARGET_FPS: 30
+    MAX_IN_FLIGHT: 3
 ```
 
-WGPU 段只控制固定画布、MSAA、默认帧率和最大在途 readback 数量。模式几何、`SCALE`、背景与 HUD 样式仍读取 `render.<mode>.mp4`。配置文件中的 WGPU 变更参与配置 hash；`--scale`、`--fps` 等 CLI 覆盖仍不参与目录 hash，并由文件名区分。
+WGPU 段只控制四种模式共用的固定画布、MSAA、默认帧率和最大在途 readback 数量。模式几何、`SCALE`、背景与 HUD 样式仍读取对应的 `render.<mode>.mp4`。Standard/Catch 以等比 contain 居中，空出的边缘使用谱面背景；Taiko 按宽度铺满并在上下补边，Mania 按高度铺满并在左右补边，若 Taiko/Mania 的另一方向超出画布则明确报错。配置文件中的 WGPU 变更参与配置 hash；`--scale`、`--fps` 等 CLI 覆盖仍不参与目录 hash，并由文件名区分。
 
 超时单位为秒且必须是正整数。计时从请求入口开始，覆盖下载、解析、转谱、缓存检查、渲染、音频处理、编码和落盘。
 

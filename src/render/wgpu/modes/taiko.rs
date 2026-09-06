@@ -56,12 +56,6 @@ pub(crate) fn prepare_realtime(
         1,
         OutputFormat::Mp4,
     );
-    let image_background = crate::infrastructure::config::current()
-        .render
-        .taiko
-        .mp4
-        .style
-        .IMAGE_BACKGROUND;
     Ok(RealtimeFrameSource::new(
         GameMode::Taiko,
         move |absolute_time_ms| {
@@ -70,7 +64,7 @@ pub(crate) fn prepare_realtime(
                 layout.image_height as u32,
                 absolute_time_ms,
             );
-            draw_background_scene(&mut scene, &layout, image_background);
+            draw_background_scene(&mut scene, &layout);
             draw_objects_scene(
                 &mut scene,
                 &prepared_hit_objects,
@@ -92,15 +86,7 @@ fn rect(x: i64, y: i64, width: i64, height: i64) -> SceneRect {
     }
 }
 
-fn draw_background_scene(
-    scene: &mut FrameSceneBuilder,
-    layout: &AnimationLayout,
-    image_background: [u8; 4],
-) {
-    scene.rectangle(
-        rect(0, 0, layout.image_width, layout.image_height),
-        image_background,
-    );
+fn draw_background_scene(scene: &mut FrameSceneBuilder, layout: &AnimationLayout) {
     let top = gif_row_top(0, layout);
     let left = layout.playfield_left;
     let panel_width = layout.left_panel_width;
@@ -181,12 +167,6 @@ fn draw_objects_scene(
     let clip_left = judgement_line_x(layout);
     let clip_right = layout.playfield_left + layout.left_panel_width + layout.right_panel_width;
     let top = gif_row_top(0, layout);
-    scene.push_clip(rect(
-        clip_left,
-        top,
-        clip_right - clip_left,
-        layout.row_height,
-    ));
     draw_measure_lines_scene(
         scene,
         measure_lines,
@@ -205,9 +185,23 @@ fn draw_objects_scene(
         ) {
             continue;
         }
+
+        // CPU 路径的普通 note 不裁剪判定线左侧：圆心到达判定线前始终绘制整颗
+        // note，越线后一次性隐藏。长条/滚奏仍需裁剪，避免尾部穿过判定线。
+        let clipped = hit_object.hit_object.hit_type & (SWELL_FLAG | DRUMROLL_FLAG) != 0;
+        if clipped {
+            scene.push_clip(rect(
+                clip_left,
+                top,
+                clip_right - clip_left,
+                layout.row_height,
+            ));
+        }
         draw_hit_object_scene(scene, hit_object, layout, snapshot_time);
+        if clipped {
+            scene.pop_clip();
+        }
     }
-    scene.pop_clip();
 }
 
 fn draw_measure_lines_scene(
@@ -275,6 +269,11 @@ fn draw_hit_object_scene(
             object.start_multiplier,
             layout,
         );
+        // 与 CPU 路径一致：普通 note 的中心越过判定线后整颗消失，
+        // 不显示被 scissor 从中间切开的半颗 note。
+        if center_x < judgement_line_x(layout) {
+            return;
+        }
         let diameter = if base.hitsound & HIT_SOUNDS_STRONG != 0 {
             layout.big_note_diameter
         } else {

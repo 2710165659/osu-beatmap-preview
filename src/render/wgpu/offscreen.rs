@@ -556,4 +556,39 @@ mod tests {
         assert_eq!(pixel(65, 31), &[0, 255, 0, 255]);
         assert_eq!(pixel(72, 44), &[255, 64, 128, 255]);
     }
+
+    #[test]
+    #[ignore = "需要本机可用的 WGPU 适配器"]
+    fn wgpu滑条圆角连接不会重复累加透明度或产生尖角() {
+        let config = OffscreenConfig {
+            width: 96,
+            height: 64,
+            msaa_samples: 4,
+            target_fps: 30,
+            max_in_flight: 3,
+        };
+        let scene = FrameScene {
+            size: SceneSize {
+                width: 96,
+                height: 64,
+            },
+            absolute_time_ms: 0,
+            commands: vec![DrawCommand::SliderMesh {
+                vertices: Arc::from([[20.0, 20.0], [50.0, 20.0], [50.0, 50.0]]),
+                thickness: 12.0,
+                border: [255, 0, 0, 128],
+                body: [0, 0, 0, 0],
+            }]
+            .into(),
+            resources: Arc::new(BTreeMap::new()),
+        };
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(config)).unwrap();
+        let frame = pollster::block_on(renderer.render(&scene)).unwrap();
+        let alpha = |x: usize, y: usize| frame.as_bytes()[(y * 96 + x) * 4 + 3];
+
+        // 直线与折角中心都只应用一次滑条 alpha；远离路径的位置保持透明。
+        assert!((126..=129).contains(&alpha(30, 20)));
+        assert!((126..=129).contains(&alpha(50, 20)));
+        assert_eq!(alpha(75, 5), 0);
+    }
 }

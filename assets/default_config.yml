@@ -39,6 +39,12 @@ advance:
     AUDIO_SAMPLE_RATE: 48000 # 输出音频采样率，单位 Hz
     AUDIO_BITRATE: 96000 # 输出音频码率，单位 bit/s
     MAX_EXTRACTED_AUDIO_BYTES: 268435456 # 解码后音频允许占用的最大字节数
+  wgpu:
+    WIDTH: 1280 # 离屏与调试播放器画布宽度
+    HEIGHT: 720 # 离屏与调试播放器画布高度
+    MSAA_SAMPLES: 4 # 首选多重采样数；设备不支持时逐级降级
+    TARGET_FPS: 30 # WGPU CLI 未指定 --fps 时的目标帧率
+    MAX_IN_FLIGHT: 3 # 同时等待 GPU readback 的最大帧数
 # 四模式渲染配置
 render:
   standard:
@@ -112,12 +118,6 @@ render:
         BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成使用的不透明黑色（RGBA）
         CANVAS_BACKGROUND_COLOR: [0, 0, 0, 255] # 最终视频画布的背景色
         IMAGE_BACKGROUND_COLOR: [0, 0, 0, 255] # 游玩区域背景色
-    wgpu:
-      WIDTH: 1280 # 离屏与调试播放器画布宽度
-      HEIGHT: 720 # 离屏与调试播放器画布高度
-      MSAA_SAMPLES: 4 # 首选多重采样数；设备不支持时逐级降级
-      TARGET_FPS: 30 # WGPU CLI 未指定 --fps 时的目标帧率
-      MAX_IN_FLIGHT: 3 # 同时等待 GPU readback 的最大帧数
   taiko:
     png:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
@@ -211,12 +211,6 @@ render:
         TRACK_ACCENT_COLOR: [254, 59, 1, 255] # 轨道强调色（RGBA）
         SHOW_MEASURE_LINES: true # 是否绘制随谱面滚动的小节线
         FPS: 15.0 # MP4 帧率
-    wgpu:
-      WIDTH: 1280 # 离屏与调试播放器画布宽度
-      HEIGHT: 720 # 离屏与调试播放器画布高度
-      MSAA_SAMPLES: 4 # 首选多重采样数；设备不支持时逐级降级
-      TARGET_FPS: 30 # WGPU CLI 未指定 --fps 时的目标帧率
-      MAX_IN_FLIGHT: 3 # 同时等待 GPU readback 的最大帧数
   catch:
     png:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
@@ -301,12 +295,6 @@ render:
         BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成使用的不透明黑色（RGBA）
         PLAYFIELD_BACKGROUND: [7, 7, 7, 255] # 游玩区域背景色（RGBA）
         FPS: 15.0 # MP4 帧率
-    wgpu:
-      WIDTH: 1280 # 离屏与调试播放器画布宽度
-      HEIGHT: 720 # 离屏与调试播放器画布高度
-      MSAA_SAMPLES: 4 # 首选多重采样数；设备不支持时逐级降级
-      TARGET_FPS: 30 # WGPU CLI 未指定 --fps 时的目标帧率
-      MAX_IN_FLIGHT: 3 # 同时等待 GPU readback 的最大帧数
   mania:
     png:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
@@ -403,12 +391,6 @@ render:
         SV_TEXT_COLOR: [95, 221, 108, 255] # SV 文本颜色（RGBA）
         SHOW_SV_LABEL: false # 是否显示 SV 标签
         LANE_DARKEN_ALPHA: 1.0 # MP4 轨道黑色暗化层透明度（0..1）
-    wgpu:
-      WIDTH: 1280 # 离屏与调试播放器画布宽度
-      HEIGHT: 720 # 离屏与调试播放器画布高度
-      MSAA_SAMPLES: 4 # 首选多重采样数；设备不支持时逐级降级
-      TARGET_FPS: 30 # WGPU CLI 未指定 --fps 时的目标帧率
-      MAX_IN_FLIGHT: 3 # 同时等待 GPU readback 的最大帧数
 skin:
   # 皮肤颜色均为 RGB/RGBA；MANIA 下的 KEYS_N 为对应键数的列布局。
   COMBO_COLORS: [[150, 230, 255], [255, 125, 177], [130, 255, 160]] # Standard 连击颜色，按顺序循环

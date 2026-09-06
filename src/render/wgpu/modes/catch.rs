@@ -54,6 +54,7 @@ fn render_scene(
         layout.frame_height as u32,
         absolute_time_ms,
     );
+    // 背景由固定画布合成阶段提供，透明占位保持空帧也有稳定命令序列。
     scene.rectangle(
         SceneRect {
             x: 0.0,
@@ -61,7 +62,7 @@ fn render_scene(
             width: layout.frame_width as f32,
             height: layout.frame_height as f32,
         },
-        layout.playfield_background,
+        [0, 0, 0, 0],
     );
     let playfield_right = layout.playfield_left
         + crate::render::cpu::modes::catch::constants::PLAYFIELD_WIDTH * layout.playfield_scale;

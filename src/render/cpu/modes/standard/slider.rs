@@ -662,7 +662,7 @@ pub(crate) fn draw_slider_reverse_arrows(
 /// 白色胶囊（lazer 为 40×20 / 128 物件）+ 深色 `»` 双 V 形图标
 /// （lazer 的 FontAwesome AngleDoubleRight，icon 高约为胶囊高的 80%）。
 /// 游戏内有 1.0→1.3 的脉冲缩放，静态图按 1.0 绘制，避免过大。
-fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
+pub(crate) fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
     let s = circle_diameter as f64 / 128.0; // 按 1.0 绘制，不放大
     let cap_w = 40.0 * s;
     let cap_h = 20.0 * s;
@@ -713,7 +713,7 @@ fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
 /// 程序化 Argon 折返边缘纹理（对照 repeat-edge-piece.png）。
 /// 白色左半圆 + 水平 alpha 渐变：从左边缘 A=127 线性衰减到右边缘 A=0。
 /// 200×200 原始纹理的像素分析确认：alpha 只取决于 x 位置，半圆边界由弧形自然裁剪。
-fn build_reverse_edge_piece(diameter: i64) -> Img {
+pub(crate) fn build_reverse_edge_piece(diameter: i64) -> Img {
     let d = diameter.max(1);
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let cx = d as f64 / 2.0;

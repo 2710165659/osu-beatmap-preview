@@ -30,13 +30,13 @@
 
 CPU CLI 使用进程级只读配置。`RealtimeSession` 使用私有 `ConfigSnapshot`，通过线程局部动态作用域让既有模式计算读取本会话配置，因此不同会话不会改写进程全局状态。
 
-`render.<mode>.wgpu` 只包含固定画布宽高、MSAA、目标 FPS 和最大在途 readback。模式几何、`SCALE`、背景和 HUD 继续读取对应的 `render.<mode>.mp4`。配置文件变更参与稳定配置 hash；CLI 的 `--scale`、`--fps`、Mod 和时间选段不参与目录 hash，由产物文件名表达。
+四种模式共享 `advance.wgpu`，只包含固定画布宽高、MSAA、目标 FPS 和最大在途 readback。模式几何、`SCALE`、背景和 HUD 继续读取对应的 `render.<mode>.mp4`。Standard/Catch 使用中心锚定的等比 contain，空出的边缘使用谱面背景；Taiko 按宽度铺满并上下补边，Mania 按高度铺满并左右补边，另一方向超出画布时返回明确错误。配置文件变更参与稳定配置 hash；CLI 的 `--scale`、`--fps`、Mod 和时间选段不参与目录 hash，由产物文件名表达。
 
 ## 场景与后端
 
 `FrameScene` 对外字段私有，只公开尺寸与绝对时间。内部场景由有序命令和会话资源组成，支持裁剪、精灵、矩形、圆/环、线段、字形和 Standard 滑条厚线网格。`FrameSceneBuilder` 负责合并场景时平移命令并重新编号资源。
 
-WGPU 后端把场景坐标映射到固定 RGBA8 画布并居中，不会整体缩放。场景大于画布时返回所需尺寸。渲染使用 premultiplied 中间目标完成 straight-alpha src-over 混合，最终 pass 恢复 straight RGBA；MSAA 不可用时只向下选择。纹理按稳定资源编号和资源实例缓存，相邻同类命令合并批次，裁剪映射为 scissor。
+WGPU 后端在场景合成阶段按模式把场景坐标映射到固定 RGBA8 画布并居中缩放，不在最终 RGBA 上做整体缩放。Standard/Catch 的背景图使用等比铺满并居中裁剪，避免固定画布出现黑色留边；Taiko/Mania 的补边保留对应模式背景色。场景仍会在无法满足模式布局时返回所需尺寸。渲染使用 premultiplied 中间目标完成 straight-alpha src-over 混合，最终 pass 恢复 straight RGBA；MSAA 不可用时只向下选择。纹理按稳定资源编号和资源实例缓存，相邻同类命令合并批次，裁剪映射为 scissor。
 
 readback buffer 按 `MAX_IN_FLIGHT` 预分配。`render_stream` 在提交任何 GPU 工作前拒绝重复 frame index，按 index 排序，最多保留配置数量的在途映射，并严格按顺序回调。取消、场景错误、设备错误或回调错误都会停止新提交并取消其余映射。
 
