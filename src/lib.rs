@@ -70,6 +70,7 @@ impl From<PreviewOptions> for RenderRequest {
                 no_cache: options.no_cache,
                 logging: true,
                 config: options.config,
+                use_wgpu: false,
             },
         }
     }

@@ -2,11 +2,20 @@
 name = "osu-beatmap-preview"
 version = "1.2.0"
 edition = "2021"
+autobins = false
+
+[[bin]]
+name = "osu-beatmap-preview"
+path = "src/main.rs"
+
+[[bin]]
+name = "osu-beatmap-preview-wgpu"
+path = "src/main_wgpu.rs"
+required-features = ["wgpu-renderer"]
 
 [workspace]
 members = [
     ".",
-    "crates/osu-beatmap-preview-wgpu",
     "crates/osu-beatmap-preview-player",
 ]
 default-members = ["."]

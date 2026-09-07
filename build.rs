@@ -6,6 +6,17 @@ use vergen::BuildBuilder;
 use vergen::Emitter;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Cargo 没有提供 build.rs 在链接完成后重命名二进制的钩子；WGPU 产物名称由
+    // Cargo manifest 中的显式 bin target 决定。这里声明 feature 依赖并把构建类型
+    // 注入编译环境，确保切换 feature 时构建脚本重新执行且入口可诊断当前构建。
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_WGPU_RENDERER");
+    let build_flavor = if env::var_os("CARGO_FEATURE_WGPU_RENDERER").is_some() {
+        "wgpu"
+    } else {
+        "cpu"
+    };
+    println!("cargo:rustc-env=OSU_BEATMAP_PREVIEW_BUILD_FLAVOR={build_flavor}");
+
     let build = BuildBuilder::default().build_timestamp(true).build()?;
     Emitter::default().add_instructions(&build)?.emit()?;
 

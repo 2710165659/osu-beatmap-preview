@@ -37,23 +37,27 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: osu-beatmap-preview-wgpu-linux-amd64
-            package: osu-beatmap-preview-wgpu
+            package: osu-beatmap-preview
             binary: osu-beatmap-preview-wgpu
+            features: --features wgpu-renderer --bin osu-beatmap-preview-wgpu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: osu-beatmap-preview-wgpu-windows-amd64.exe
-            package: osu-beatmap-preview-wgpu
+            package: osu-beatmap-preview
             binary: osu-beatmap-preview-wgpu.exe
+            features: --features wgpu-renderer --bin osu-beatmap-preview-wgpu
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact: osu-beatmap-preview-wgpu-macos-amd64
-            package: osu-beatmap-preview-wgpu
+            package: osu-beatmap-preview
             binary: osu-beatmap-preview-wgpu
+            features: --features wgpu-renderer --bin osu-beatmap-preview-wgpu
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: osu-beatmap-preview-wgpu-macos-arm64
-            package: osu-beatmap-preview-wgpu
+            package: osu-beatmap-preview
             binary: osu-beatmap-preview-wgpu
+            features: --features wgpu-renderer --bin osu-beatmap-preview-wgpu
 
     runs-on: ${{ matrix.os }}
 
@@ -66,7 +70,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --package ${{ matrix.package }} --target ${{ matrix.target }}
+        run: cargo build --release --package ${{ matrix.package }} --target ${{ matrix.target }} ${{ matrix.features }}
 
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'

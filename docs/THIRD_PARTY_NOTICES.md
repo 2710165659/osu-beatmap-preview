@@ -17,7 +17,7 @@ No local modifications are made to these dependencies.
 
 ## Optional WGPU and debug-player dependencies
 
-The separately built WGPU exporter and unpublished debug player additionally
+The WGPU-enabled root binary and unpublished debug player additionally
 use the following crates. They are not linked into the default CPU binary.
 
 - wgpu 29.0.4: MIT OR Apache-2.0, https://github.com/gfx-rs/wgpu

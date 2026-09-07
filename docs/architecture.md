@@ -19,14 +19,13 @@
 - `src/render/cpu`：原 PNG/GIF/MP4 软件光栅化代码及 CPU 场景参考后端。
 - `src/render/wgpu`：WGPU 模式帧源、场景合成、pipeline、纹理缓存、MSAA 和离屏 readback。
 - `src/realtime`：公开 realtime API 的会话和数据类型，只在 `wgpu-renderer` 下存在。
-- `crates/osu-beatmap-preview-wgpu`：正式 WGPU exporter；PNG/GIF 调用 CPU，MP4 调用 WGPU。
 - `crates/osu-beatmap-preview-player`：不发布的 egui/rodio 调试播放器。
 
-根 workspace 使用 `default-members = ["."]`。因此普通 `cargo build --release` 只产生原 CPU 二进制，不编译或链接 WGPU、winit、egui 或 rodio。正式发布矩阵分别构建四个 CPU 产物和四个 WGPU exporter 产物；播放器不进入 Release。
+根 workspace 使用 `default-members = ["."]`。因此普通 `cargo build --release` 只产生原 CPU 二进制，不编译或链接 WGPU、winit、egui 或 rodio。WGPU Release 使用同一个根包并额外启用 `wgpu-renderer` feature，Cargo 同时生成 `osu-beatmap-preview-wgpu` 命名入口，运行时通过 `--wgpu` 选择 MP4 路径；播放器不进入 Release。
 
 ## 请求与配置
 
-两个 CLI 复用根库中 `#[doc(hidden)]` 的词法适配器，并生成相同的 `RenderRequest`。`RenderRequest::validate` 处理不依赖谱面的语法和范围，`RenderPlan::build` 在目标模式确定后处理格式、Mod、时间点和默认值。
+根 CLI 通过 `--wgpu` 生成带 WGPU 执行标记的 `RenderRequest`。默认构建收到该标记时明确报错；启用 `wgpu-renderer` 后仅 MP4 切换 WGPU，PNG/GIF 继续使用 CPU。`RenderRequest::validate` 处理不依赖谱面的语法和范围，`RenderPlan::build` 在目标模式确定后处理格式、Mod、时间点和默认值。
 
 CPU CLI 使用进程级只读配置。`RealtimeSession` 使用私有 `ConfigSnapshot`，通过线程局部动态作用域让既有模式计算读取本会话配置，因此不同会话不会改写进程全局状态。
 

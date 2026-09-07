@@ -21,7 +21,7 @@
 
 可以从 [Releases](https://github.com/2710165659/osu-beatmap-preview/releases) 下载对应平台的可执行文件：
 
-| 平台 | CPU exporter | WGPU exporter |
+| 平台 | 默认 CPU 产物 | WGPU 产物（同一 CLI，启用 feature） |
 | --- | --- | --- |
 | Windows x64 | `osu-beatmap-preview-windows-amd64.exe` | `osu-beatmap-preview-wgpu-windows-amd64.exe` |
 | Linux x64 | `osu-beatmap-preview-linux-amd64` | `osu-beatmap-preview-wgpu-linux-amd64` |
@@ -148,12 +148,13 @@ osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|
 
 Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退到 CPU OpenH264。设置环境变量 `OSU_PREVIEW_NO_GPU=1` 可以强制使用 CPU 编码，便于兼容性检查或性能对比。
 
-### WGPU exporter
+### WGPU MP4
 
-独立的 `osu-beatmap-preview-wgpu` 使用与原 CLI 完全相同的参数和 stdout JSON 协议。PNG 与 GIF 继续走原 CPU 路径；MP4 使用固定 RGBA8 WGPU 离屏画布，读回后复用现有 H.264/AAC/MP4 编码管线。WGPU MP4 文件名会在 BID 后加入 `_wgpu`，例如 `standard_738063_wgpu_fps30.mp4`，不会命中或覆盖 CPU MP4。
+根 CLI 通过 `--wgpu` 选择 WGPU MP4 路径。默认构建不包含 WGPU；在默认构建中使用 `--wgpu` 会明确报错。启用 `wgpu-renderer` feature 后，Cargo 还会产出 `osu-beatmap-preview-wgpu` 命名入口；PNG 与 GIF 仍走 CPU，MP4 使用固定 RGBA8 WGPU 离屏画布，读回后复用现有 H.264/AAC/MP4 编码管线。WGPU MP4 文件名以 `_wgpu` 结尾，例如 `standard_738063_fps30_wgpu.mp4`，不会命中或覆盖 CPU MP4。
 
 ```bash
-osu-beatmap-preview-wgpu --bid=738063 --fmt=mp4 --duration-time=30
+cargo build --release --features wgpu-renderer
+target/release/osu-beatmap-preview-wgpu --wgpu --bid=738063 --fmt=mp4 --duration-time=30
 ```
 
 默认请求 HighPerformance 适配器。`WGPU_BACKEND` 可限制后端，`WGPU_ADAPTER_NAME` 可按名称子串选择适配器。请求的 MSAA 不受设备支持时会降到不高于请求值的可用等级；没有匹配 GPU、设备丢失或画布不足时会明确失败，不回退到 CPU 绘制。`OSU_PREVIEW_NO_GPU` 只控制 MP4 H.264 编码器，不会关闭 WGPU 绘制。
@@ -284,8 +285,8 @@ git clone https://github.com/2710165659/osu-beatmap-preview.git
 cd osu-beatmap-preview
 cargo build --release
 
-# 独立 WGPU exporter
-cargo build --release --package osu-beatmap-preview-wgpu
+# WGPU CLI（与 CPU 共用根包，feature 构建会额外产出带 -wgpu 后缀的二进制）
+cargo build --release --features wgpu-renderer
 
 # 本地调试播放器，不属于 Release 产物
 cargo run --release --package osu-beatmap-preview-player -- --bid=738063
@@ -296,8 +297,8 @@ cargo run --release --package osu-beatmap-preview-player -- --bid=738063
 ```text
 target/release/osu-beatmap-preview       # Linux / macOS
 target/release/osu-beatmap-preview.exe   # Windows
-target/release/osu-beatmap-preview-wgpu  # Linux / macOS
-target/release/osu-beatmap-preview-wgpu.exe # Windows
+target/release/osu-beatmap-preview-wgpu  # Linux / macOS，启用 wgpu-renderer 时
+target/release/osu-beatmap-preview-wgpu.exe  # Windows，启用 wgpu-renderer 时
 ```
 
 运行测试：

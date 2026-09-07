@@ -147,10 +147,11 @@ On Windows, the renderer automatically selects an available NVENC or AMF hardwar
 
 ### WGPU Exporter
 
-The standalone `osu-beatmap-preview-wgpu` accepts the same arguments and emits the same stdout JSON protocol as the original CLI. PNG and GIF remain on the CPU path. MP4 uses a fixed RGBA8 WGPU offscreen canvas, then reuses the existing H.264/AAC/MP4 pipeline after readback. WGPU MP4 names include `_wgpu` immediately after the BID, such as `standard_738063_wgpu_fps30.mp4`, so CPU and WGPU cache entries cannot collide.
+The root package uses `--wgpu` to select the WGPU MP4 path. The default build does not include WGPU and rejects `--wgpu`; enabling `wgpu-renderer` also emits the `osu-beatmap-preview-wgpu` binary. WGPU MP4 names end with `_wgpu`, such as `standard_738063_fps30_wgpu.mp4`, so CPU and WGPU cache entries cannot collide.
 
 ```bash
-osu-beatmap-preview-wgpu --bid=738063 --fmt=mp4 --duration-time=30
+cargo build --release --features wgpu-renderer
+target/release/osu-beatmap-preview-wgpu --wgpu --bid=738063 --fmt=mp4 --duration-time=30
 ```
 
 The renderer requests a HighPerformance adapter by default. Use `WGPU_BACKEND` to restrict backends and `WGPU_ADAPTER_NAME` to select an adapter by a case-insensitive name substring. Unsupported MSAA levels fall back to the highest available level no greater than the request. A missing adapter, device error, or undersized canvas is an explicit error and never falls back to CPU drawing. `OSU_PREVIEW_NO_GPU` controls only H.264 encoder selection; it does not disable WGPU rendering.
@@ -281,8 +282,8 @@ git clone https://github.com/2710165659/osu-beatmap-preview.git
 cd osu-beatmap-preview
 cargo build --release
 
-# Standalone WGPU exporter
-cargo build --release --package osu-beatmap-preview-wgpu
+# WGPU CLI (same root package; the feature build also emits a -wgpu binary)
+cargo build --release --features wgpu-renderer
 
 # Local debug player; not included in Release artifacts
 cargo run --release --package osu-beatmap-preview-player -- --bid=738063
@@ -293,8 +294,8 @@ Build output is written to:
 ```text
 target/release/osu-beatmap-preview       # Linux / macOS
 target/release/osu-beatmap-preview.exe   # Windows
-target/release/osu-beatmap-preview-wgpu  # Linux / macOS
-target/release/osu-beatmap-preview-wgpu.exe # Windows
+target/release/osu-beatmap-preview-wgpu  # Linux / macOS, with wgpu-renderer
+target/release/osu-beatmap-preview-wgpu.exe  # Windows, with wgpu-renderer
 ```
 
 Run the test suite with:

@@ -1,4 +1,4 @@
-//! 两个命令行程序共用的纯词法适配层。
+//! 命令行共用的纯词法适配层。
 
 use std::ffi::OsString;
 
@@ -6,7 +6,7 @@ use lexopt::prelude::*;
 
 use crate::{parse_fps, parse_positive_finite, parse_time_point, RenderRequest};
 
-pub const USAGE: &str = "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>]\n       osu-beatmap-preview --version\n       --mod and --time-points may be repeated to provide lists";
+pub const USAGE: &str = "usage: osu-beatmap-preview --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--wgpu] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>]\n       osu-beatmap-preview --version\n       --mod and --time-points may be repeated to provide lists\n       --wgpu uses the WGPU renderer for MP4 when the binary is built with the wgpu-renderer feature";
 
 #[derive(Debug, Clone)]
 pub enum CliAction {
@@ -59,6 +59,19 @@ pub fn parse_args(
                     Some(parse_positive_finite("--duration-time", &value).map_err(argument_error)?);
             }
             Long("no-cache") => request.execution.no_cache = true,
+            Long("wgpu") => {
+                #[cfg(feature = "wgpu-renderer")]
+                {
+                    request.execution.use_wgpu = true;
+                }
+                #[cfg(not(feature = "wgpu-renderer"))]
+                {
+                    return Err(CliError(
+                        "--wgpu is unavailable in this build; rebuild with --features wgpu-renderer"
+                            .to_string(),
+                    ));
+                }
+            }
             Long("fps") => {
                 let value = take_value(&mut parser, "--fps")?;
                 request.output.fps = Some(parse_fps(&value).map_err(argument_error)?);
@@ -132,6 +145,23 @@ mod tests {
         assert_eq!(request.ruleset.mods, ["HD"]);
         assert_eq!(request.output.fps, Some(30));
         assert_eq!(request.output.scale, Some(1.5));
+    }
+
+    #[cfg(feature = "wgpu-renderer")]
+    #[test]
+    fn wgpu开关写入请求而不是改变默认行为() {
+        let CliAction::Render(request) = parse_args(["--bid=738063", "--wgpu"]).unwrap() else {
+            panic!("应解析为渲染请求");
+        };
+        assert!(request.execution.use_wgpu);
+        assert!(!RenderRequest::new("738063").execution.use_wgpu);
+    }
+
+    #[cfg(not(feature = "wgpu-renderer"))]
+    #[test]
+    fn 默认构建拒绝wgpu开关() {
+        let error = parse_args(["--bid=738063", "--wgpu"]).expect_err("默认构建必须拒绝 WGPU");
+        assert!(error.to_string().contains("--wgpu is unavailable"));
     }
 
     #[test]

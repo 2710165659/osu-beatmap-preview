@@ -1,4 +1,4 @@
-# osu-beatmap-preview MP4 默认行为批量基准
+# osu-beatmap-preview WGPU MP4 批量基准
 #
 # 用法：
 #   powershell -File ".\batch_render_video_wgpu.ps1"
@@ -21,7 +21,7 @@ $appOutputDir = [System.IO.Path]::GetFullPath(
 )
 $outdir = Join-Path $appOutputDir "batch-video-wgpu"
 if (-not (Test-Path -LiteralPath $bin -PathType Leaf)) {
-    throw "Release binary not found: $bin`nRun cargo build --release first."
+    throw "WGPU release binary not found: $bin`nRun cargo build --release --features wgpu-renderer first."
 }
 
 function Resolve-Executable {
@@ -78,7 +78,7 @@ function Get-ExpectedOutputName {
         "mania" { "mania" }
         default { throw "Unknown mode: $($Task.mode)" }
     }
-    return "${prefix}_$($Task.bid).mp4"
+    return "${prefix}_$($Task.bid)_wgpu.mp4"
 }
 
 function Get-LegacyOutputName {
@@ -90,7 +90,7 @@ function Get-LegacyOutputName {
         "mania" { "mania" }
         default { throw "Unknown mode: $($Task.mode)" }
     }
-    return "${prefix}_$($Task.bid)_video-start0-duration600.mp4"
+    return "${prefix}_$($Task.bid)_video-start0-duration600_wgpu.mp4"
 }
 
 function Get-Mp4DurationSeconds {
@@ -195,7 +195,8 @@ foreach ($task in $tasks) {
 
     $argList = @(
         "--bid=$($task.bid)",
-        "--fmt=mp4"
+        "--fmt=mp4",
+        "--wgpu"
     )
     if ($NoCache) { $argList += "--no-cache" }
 
