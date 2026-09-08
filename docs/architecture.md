@@ -7,7 +7,7 @@
                              |-> PNG/GIF -> render/cpu -> 现有编码器
                              |-> CPU MP4 -> render/cpu -> RGBA -> H.264/AAC/MP4
                              |-> WGPU MP4 -> FrameScene -> render/wgpu -> RGBA -> H.264/AAC/MP4
-                             `-> 调试播放器 -> RealtimeSession -> FrameScene -> WGPU 窗口
+                             `-> Web 调试播放器 -> HTTP API -> RealtimeSession -> FrameScene -> WGPU 离屏帧
 ```
 
 ## 目录职责
@@ -19,7 +19,7 @@
 - `src/render/cpu`：原 PNG/GIF/MP4 软件光栅化代码及 CPU 场景参考后端。
 - `src/render/wgpu`：WGPU 模式帧源、场景合成、pipeline、纹理缓存、MSAA 和离屏 readback。
 - `src/realtime`：公开 realtime API 的会话和数据类型，只在 `wgpu-renderer` 下存在。
-- `crates/osu-beatmap-preview-player`：不发布的 egui/rodio 调试播放器。
+- `crates/osu-beatmap-preview-player`：不发布的本地 Web 调试播放器，浏览器通过 HTTP API 消费 WGPU 离屏帧和音频。
 
 根 workspace 使用 `default-members = ["."]`。因此普通 `cargo build --release` 只产生原 CPU 二进制，不编译或链接 WGPU、winit、egui 或 rodio。WGPU Release 使用同一个根包并额外启用 `wgpu-renderer` feature，Cargo 同时生成 `osu-beatmap-preview-wgpu` 命名入口，运行时通过 `--wgpu` 选择 MP4 路径；播放器不进入 Release。
 
@@ -47,4 +47,4 @@ GPU 选择默认使用 HighPerformance，支持 `WGPU_BACKEND` 与 `WGPU_ADAPTER
 
 ## 非目标
 
-当前版本不包含正式播放器产品 UI、WGPU PNG/GIF、移动端、回放解析、外部 WGPU texture 编码 API 或 NVENC/AMF 零拷贝。播放器只用于本机调试，控制面仅包含播放/暂停、seek 和 `0.5x..=2.0x` 倍速。
+当前版本不包含正式播放器产品 UI、WGPU PNG/GIF、移动端、回放解析、外部 WGPU texture 编码 API 或 NVENC/AMF 零拷贝。播放器只用于本机调试，控制面包含播放/暂停、seek、跳转、音频和 `0.5x..=2.0x` 倍速。

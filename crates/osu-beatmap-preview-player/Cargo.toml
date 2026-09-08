@@ -5,4 +5,9 @@ edition = "2021"
 publish = false
 
 [dependencies]
-osu-beatmap-preview = { path = "../..", features = ["wgpu-player"] }
+osu-beatmap-preview = { path = "../..", features = ["wgpu-renderer"] }
+pollster = "0.4"
+png = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tiny_http = "0.12"

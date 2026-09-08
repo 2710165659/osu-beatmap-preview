@@ -24,15 +24,6 @@ resolver = "2"
 [features]
 default = []
 wgpu-renderer = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]
-wgpu-player = [
-    "wgpu-renderer",
-    "dep:egui",
-    "dep:egui-wgpu",
-    "dep:egui-winit",
-    "dep:eframe",
-    "dep:rodio",
-    "dep:winit",
-]
 
 [build-dependencies]
 vergen = { version = "9", features = ["build"] }
@@ -70,12 +61,6 @@ libloading = "0.8"
 bytemuck = { version = "1.25", features = ["derive"], optional = true }
 pollster = { version = "0.4", optional = true }
 wgpu = { version = "29", optional = true }
-winit = { version = "0.30.13", optional = true }
-egui = { version = "0.35", optional = true }
-egui-wgpu = { version = "0.35", optional = true }
-egui-winit = { version = "0.35", optional = true }
-eframe = { version = "0.35", default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"], optional = true }
-rodio = { version = "0.22.2", optional = true }
 
 # Windows 专属依赖：NVENC (NVIDIA GPU 编码) + D3D11 device 创建。
 # 在非 Windows 平台不编译，视频编码回退到 CPU openh264。

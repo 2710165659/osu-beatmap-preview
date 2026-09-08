@@ -24,9 +24,6 @@ use the following crates. They are not linked into the default CPU binary.
 - bytemuck 1.25.0: Zlib OR Apache-2.0 OR MIT, https://github.com/Lokathor/bytemuck
 - pollster 0.4.0: MIT OR Apache-2.0, https://github.com/zesterer/pollster
 - winit 0.30.13: Apache-2.0, https://github.com/rust-windowing/winit
-- egui, egui-wgpu, egui-winit, and eframe 0.35: MIT OR Apache-2.0,
-  https://github.com/emilk/egui
-- rodio 0.22.2: MIT OR Apache-2.0, https://github.com/RustAudio/rodio
 
 The corresponding license texts are distributed by each crate and are
 available at the immutable versions recorded in `Cargo.lock`.

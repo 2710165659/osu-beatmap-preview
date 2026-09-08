@@ -15,6 +15,3 @@ pub(crate) fn configured_offscreen(mode: crate::render::geometry::GameMode) -> O
     let _ = mode;
     crate::infrastructure::config::wgpu_config(crate::infrastructure::config::current())
 }
-
-#[cfg(feature = "wgpu-player")]
-pub mod player;

@@ -285,8 +285,8 @@ cargo build --release
 # WGPU CLI (same root package; the feature build also emits a -wgpu binary)
 cargo build --release --features wgpu-renderer
 
-# Local debug player; not included in Release artifacts
-cargo run --release --package osu-beatmap-preview-player -- --bid=738063
+# Local Web debug player; not included in Release artifacts. Open http://127.0.0.1:8787 after startup.
+cargo run --release --package osu-beatmap-preview-player
 ```
 
 Build output is written to:
@@ -305,7 +305,7 @@ cargo test
 cargo test --workspace --all-features --all-targets
 ```
 
-With the `wgpu-renderer` feature enabled, the library exposes the `realtime` module. `RealtimeSession` is safe to share and provides scenes by absolute or gameplay time. `OffscreenRenderer` offers runtime-independent async single-frame and backpressured stream methods. A renderer supports only sequential mutable calls, and `RgbaFrame` is always compact row-major RGBA8. The debug player is intentionally limited to play/pause, seek, and `0.5x..=2.0x` runtime speed.
+With the `wgpu-renderer` feature enabled, the library exposes the `realtime` module. `RealtimeSession` is safe to share and provides scenes by absolute or gameplay time. `OffscreenRenderer` offers runtime-independent async single-frame and backpressured stream methods. A renderer supports only sequential mutable calls, and `RgbaFrame` is always compact row-major RGBA8. The Web debug player supports beatmap loading, mods, conversion, play/pause, seeking, audio, and `0.5x..=2.0x` runtime speed.
 
 This release does not include a production player UI, WGPU PNG/GIF, mobile support, replays, external texture encoder interop, or zero-copy NVENC.
 

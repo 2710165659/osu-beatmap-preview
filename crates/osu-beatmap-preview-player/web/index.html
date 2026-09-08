@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>osu! beatmap preview</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    html, body { overflow: hidden; }
+    .setup-view { overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section id="setup" class="setup-view">
+      <div class="brand"><span class="brand-mark">o!</span><div><p class="kicker">REALTIME LAB</p><h1>Beatmap Preview</h1></div></div>
+      <p class="intro">把谱面变成一段可以拖动、试听、逐帧观察的实时画面。</p>
+      <form id="load-form" class="setup-form">
+        <label class="field wide"><span>谱面 BID</span><input id="bid" name="bid" placeholder="例如 738063" inputmode="numeric" required></label>
+        <label class="field wide"><span>Mod</span><input id="mods" name="mods" placeholder="HD HR DT" autocomplete="off"></label>
+        <label class="field"><span>转谱目标</span><select id="convert"><option value="">原模式</option><option value="standard">Standard</option><option value="taiko">Taiko</option><option value="catch">Catch</option><option value="mania">Mania</option></select></label>
+        <label class="field"><span>渲染缩放</span><input id="scale" name="scale" placeholder="默认" inputmode="decimal"></label>
+        <label class="check"><input id="no-cache" type="checkbox"><span>跳过缓存</span></label>
+        <button class="primary wide" type="submit"><span>加载预览</span><span class="arrow">↗</span></button>
+      </form>
+      <div id="setup-error" class="notice" hidden></div>
+      <details id="setup-log" class="log" hidden><summary>错误日志</summary><pre id="setup-log-content"></pre></details>
+    </section>
+
+    <section id="player" class="player-view" hidden>
+      <header class="player-header"><div class="brand compact"><span class="brand-mark">o!</span><div><p class="kicker">REALTIME LAB</p><h1>Beatmap Preview</h1></div></div><div class="session-chip" id="mode-chip">READY</div><button id="back" class="ghost" type="button">返回设置</button></header>
+      <div class="stage-wrap"><div class="stage"><img id="frame" alt="Beatmap frame"><div id="frame-status" class="frame-status">等待画面</div></div></div>
+      <section class="controls">
+        <div class="progress-row"><span id="current-time">00:00</span><input id="seek" type="range" min="0" max="1" value="0" step="1"><span id="total-time">00:00</span></div>
+        <div class="control-row"><button id="play" class="play" type="button" aria-label="播放">▶</button><button id="back5" class="icon-button" type="button">−5</button><button id="forward5" class="icon-button" type="button">+5</button><div class="control-spacer"></div><label class="speed">速度 <select id="speed"><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1" selected>1.0x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2.0x</option></select></label></div>
+        <details id="player-log" class="log" hidden><summary>错误日志</summary><pre id="player-log-content"></pre></details>
+      </section>
+      <audio id="audio" preload="auto"></audio>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

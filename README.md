@@ -288,8 +288,8 @@ cargo build --release
 # WGPU CLI（与 CPU 共用根包，feature 构建会额外产出带 -wgpu 后缀的二进制）
 cargo build --release --features wgpu-renderer
 
-# 本地调试播放器，不属于 Release 产物
-cargo run --release --package osu-beatmap-preview-player -- --bid=738063
+# 本地 Web 调试播放器，不属于 Release 产物；启动后访问 http://127.0.0.1:8787
+cargo run --release --package osu-beatmap-preview-player
 ```
 
 构建产物位于：
@@ -308,7 +308,7 @@ cargo test
 cargo test --workspace --all-features --all-targets
 ```
 
-启用 `wgpu-renderer` feature 后，库会公开 `realtime` 模块。`RealtimeSession` 可安全共享并提供绝对时间/游戏时间场景，`OffscreenRenderer` 提供运行时无关的异步单帧和有背压帧流接口。单个 renderer 仅支持顺序可变调用；`RgbaFrame` 固定为紧凑、行优先 RGBA8。调试播放器只提供播放/暂停、seek 与 `0.5x..=2.0x` 倍速。
+启用 `wgpu-renderer` feature 后，库会公开 `realtime` 模块。`RealtimeSession` 可安全共享并提供绝对时间/游戏时间场景，`OffscreenRenderer` 提供运行时无关的异步单帧和有背压帧流接口。单个 renderer 仅支持顺序可变调用；`RgbaFrame` 固定为紧凑、行优先 RGBA8。Web 调试播放器提供谱面加载、Mod、转谱、播放/暂停、点击画面、seek、音频和 `0.5x..=2.0x` 倍速。
 
 本版本不包含正式播放器 UI、WGPU PNG/GIF、移动端、回放、外部 texture 编码互操作或 NVENC 零拷贝。
 
