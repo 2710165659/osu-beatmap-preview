@@ -15,15 +15,14 @@ available free of charge at the following immutable revisions:
 
 No local modifications are made to these dependencies.
 
-## Optional WGPU and debug-player dependencies
+## WGPU renderer and debug-player dependencies
 
-The WGPU-enabled root binary and unpublished debug player additionally
-use the following crates. They are not linked into the default CPU binary.
+The renderer and unpublished debug player use the following crates. They are
+kept out of the CLI crate, which only performs CPU export and media encoding.
 
 - wgpu 29.0.4: MIT OR Apache-2.0, https://github.com/gfx-rs/wgpu
 - bytemuck 1.25.0: Zlib OR Apache-2.0 OR MIT, https://github.com/Lokathor/bytemuck
 - pollster 0.4.0: MIT OR Apache-2.0, https://github.com/zesterer/pollster
-- winit 0.30.13: Apache-2.0, https://github.com/rust-windowing/winit
 
 The corresponding license texts are distributed by each crate and are
 available at the immutable versions recorded in `Cargo.lock`.

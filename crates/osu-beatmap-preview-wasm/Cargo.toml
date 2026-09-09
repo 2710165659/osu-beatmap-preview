@@ -1,0 +1,18 @@
+[package]
+name = "osu-beatmap-preview-wasm"
+version = "1.2.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+osu-beatmap-preview-core = { path = "../osu-beatmap-preview-core" }
+osu-beatmap-preview-renderer = { path = "../osu-beatmap-preview-renderer" }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+serde-wasm-bindgen = "0.6"
+wgpu = { version = "29", features = ["webgpu"] }
+web-sys = { version = "0.3", features = ["HtmlCanvasElement"] }

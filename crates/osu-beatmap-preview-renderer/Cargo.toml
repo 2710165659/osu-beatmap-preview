@@ -1,0 +1,15 @@
+[package]
+name = "osu-beatmap-preview-renderer"
+version = "1.2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+osu-beatmap-preview-core = { path = "../osu-beatmap-preview-core" }
+wgpu = "29"
+bytemuck = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[dev-dependencies]
+pollster = "0.4"
+

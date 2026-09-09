@@ -1,35 +1,33 @@
 # 架构说明
 
-项目同时保留稳定的 CPU 导出链和可选的 WGPU 实时/离屏链。领域模型、转谱、Mod、时间轴、配置和媒体封装不依赖 WGPU；GPU 代码只在 `wgpu-renderer` feature 下编译。
+项目将文件导出与实时绘制分开。核心数据和场景描述不依赖窗口、网络或音频设备；GPU 代码由 renderer crate 提供，平台适配层负责创建 surface。
 
 ```text
-共享 CLI -> RenderRequest -> 加载 / 校验 / 转谱 / RenderPlan
-                             |-> PNG/GIF -> render/cpu -> 现有编码器
-                             |-> CPU MP4 -> render/cpu -> RGBA -> H.264/AAC/MP4
-                             |-> WGPU MP4 -> FrameScene -> render/wgpu -> RGBA -> H.264/AAC/MP4
-                             `-> Web 调试播放器 -> HTTP API -> RealtimeSession -> FrameScene -> WGPU 离屏帧
+CLI -> cli 应用层 -> 文件/下载/缓存/配置/媒体适配
+                    `-> core 单帧计算 -> export 时间序列组装 -> PNG/GIF/MP4 编码
+
+Web -> 宿主 fetch 字节 -> wasm -> core RealtimeSession -> renderer WebGPU Canvas
 ```
 
 ## 目录职责
 
-- `src/application`：请求校验、渲染计划、产物命名和 CLI 用例编排。
-- `src/domain`：谱面模型、`.osu` 解析、Mod、转谱和时间选择规则。
-- `src/infrastructure`：配置快照、缓存、下载、日志、音频和 H.264/AAC/MP4 封装。
-- `src/render`：CPU/WGPU 共用的画布类型、几何、文字、时序和 `FrameScene` 契约。
-- `src/render/cpu`：原 PNG/GIF/MP4 软件光栅化代码及 CPU 场景参考后端。
-- `src/render/wgpu`：WGPU 模式帧源、场景合成、pipeline、纹理缓存、MSAA 和离屏 readback。
-- `src/realtime`：公开 realtime API 的会话和数据类型，只在 `wgpu-renderer` 下存在。
-- `crates/osu-beatmap-preview-player`：不发布的本地 Web 调试播放器，浏览器通过 HTTP API 消费 WGPU 离屏帧和音频。
+- `crates/osu-beatmap-preview-core`：谱面模型、`.osu` 解析、Mod、转谱、时间轴、CPU 场景与 `FrameScene`。
+- `crates/osu-beatmap-preview-renderer`：平台无关的 WGPU 场景绘制、surface 和离屏后端。
+- `crates/osu-beatmap-preview-cli`：CLI/native 适配、文件/下载/缓存/配置/日志、媒体编码和导出编排。
+- `crates/osu-beatmap-preview-wasm`：将 core 会话和 renderer 接到宿主 WebGPU Canvas 的 WASM API。
+- `crates/osu-beatmap-preview-player`：本地 Web/WASM 示例播放器，资源由宿主加载，不轮询帧接口。
+- `crates/osu-beatmap-preview-gui`：桌面 surface、输入和播放生命周期接口骨架。
+- `crates/osu-beatmap-preview-mobile`：Android/iOS surface、输入和音频时钟接口骨架。
 
-根 workspace 使用 `default-members = ["."]`。因此普通 `cargo build --release` 只产生原 CPU 二进制，不编译或链接 WGPU、winit、egui 或 rodio。WGPU Release 使用同一个根包并额外启用 `wgpu-renderer` feature，Cargo 同时生成 `osu-beatmap-preview-wgpu` 命名入口，运行时通过 `--wgpu` 选择 MP4 路径；播放器不进入 Release。
+workspace 的默认成员是 `osu-beatmap-preview-cli`。普通 `cargo build --release` 构建 CLI。CLI 不依赖 renderer crate，也不提供 `--wgpu` 参数；根目录不再包含业务 crate 或兼容入口，播放器不进入 CLI Release。
 
 ## 请求与配置
 
-根 CLI 通过 `--wgpu` 生成带 WGPU 执行标记的 `RenderRequest`。默认构建收到该标记时明确报错；启用 `wgpu-renderer` 后仅 MP4 切换 WGPU，PNG/GIF 继续使用 CPU。`RenderRequest::validate` 处理不依赖谱面的语法和范围，`RenderPlan::build` 在目标模式确定后处理格式、Mod、时间点和默认值。
+`RenderRequest::validate` 处理不依赖谱面的语法和范围，`RenderPlan::build` 在目标模式确定后处理格式、Mod、时间点和默认值。CLI 的 `export` 模块只负责组织 PNG、GIF 和 MP4 导出，不作为跨平台实时渲染 API。
 
-CPU CLI 使用进程级只读配置。`RealtimeSession` 使用私有 `ConfigSnapshot`，通过线程局部动态作用域让既有模式计算读取本会话配置，因此不同会话不会改写进程全局状态。
+CPU CLI 使用进程级只读配置。实时会话通过 `RealtimeOptions` 接收类型化配置，宿主可以为每个会话独立构造配置，不访问 CLI 的配置文件。
 
-四种模式共享 `advance.wgpu`，只包含固定画布宽高、MSAA、目标 FPS 和最大在途 readback。模式几何、`SCALE`、背景和 HUD 继续读取对应的 `render.<mode>.mp4`。Standard/Catch 使用中心锚定的等比 contain，空出的边缘使用谱面背景；Taiko 按宽度铺满并上下补边，Mania 按高度铺满并左右补边，另一方向超出画布时返回明确错误。配置文件变更参与稳定配置 hash；CLI 的 `--scale`、`--fps`、Mod 和时间选段不参与目录 hash，由产物文件名表达。
+模式几何、`SCALE`、背景和 HUD 读取对应的 `render.<mode>.<format>` 配置。配置文件变更参与稳定配置 hash；CLI 的 `--scale`、`--fps`、Mod 和时间选段不参与目录 hash，由产物文件名表达。renderer 的画布尺寸、MSAA 和 readback 并发数由 Web、GUI 或移动端宿主通过类型化 API 提供，不读取 CLI 配置。
 
 ## 场景与后端
 
@@ -41,10 +39,10 @@ readback buffer 按 `MAX_IN_FLIGHT` 预分配。`render_stream` 在提交任何 
 
 ## API 边界
 
-公开 `realtime` API 提供 `RealtimeSession`、`FrameScene`、`OffscreenRenderer`、`RgbaFrame`、时间线、媒体策略、帧请求、取消令牌和分类错误。会话通过 `Arc` 安全共享；单个 `OffscreenRenderer` 只允许顺序的 `&mut self` 调用。异步方法不绑定 Tokio，CLI 和播放器使用 `pollster` 驱动。
+core 提供 `RealtimeSession`、`FrameScene`、资源包、时间线和分类错误；renderer 提供 `SurfaceRenderer`、GPU `OffscreenRenderer` 和 `RgbaFrame`。会话通过资源字节和类型化选项构造，不自行下载或访问文件。异步 WGPU 方法不绑定 Tokio，宿主可以自行选择执行器。
 
-GPU 选择默认使用 HighPerformance，支持 `WGPU_BACKEND` 与 `WGPU_ADAPTER_NAME`。GPU 不可用或设备失败时 WGPU API 明确返回错误，不切换到 CPU 绘制。Windows 的 NVENC/AMF 是 WGPU readback 之后独立的 H.264 编码选择，仍可回退 OpenH264。
+GPU 不可用或设备失败时 WGPU API 明确返回错误，不切换到 CPU 绘制。Windows 的 NVENC/AMF 仅属于 CLI 的 H.264 编码选择，仍可回退 OpenH264，与 renderer 的 WGPU 绘制无关。
 
 ## 非目标
 
-当前版本不包含正式播放器产品 UI、WGPU PNG/GIF、移动端、回放解析、外部 WGPU texture 编码 API 或 NVENC/AMF 零拷贝。播放器只用于本机调试，控制面包含播放/暂停、seek、跳转、音频和 `0.5x..=2.0x` 倍速。
+当前版本不包含正式 GUI/移动端产品 UI、WGPU PNG/GIF、回放解析、外部 texture 编码 API 或 NVENC/AMF 零拷贝；GUI/mobile crate 仅提供适配接口骨架。Web 播放器控制面包含播放/暂停、seek、跳转、音频和 `0.5x..=2.0x` 倍速。

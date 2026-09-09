@@ -45,12 +45,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
-name = "ascii"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d92bec98840b8f03a5ff5413de5293bfcd8bf96467cf5452609f939ec6f5de16"
-
-[[package]]
 name = "ash"
 version = "0.38.0+1.3.281"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -204,12 +198,6 @@ name = "cfg_aliases"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
-
-[[package]]
-name = "chunked_transfer"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e4de3bc4ea267985becf712dc6d9eed8b04c953b3fcfb339ebc87acd9804901"
 
 [[package]]
 name = "codespan-reporting"
@@ -698,12 +686,6 @@ name = "hexf-parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
-
-[[package]]
-name = "httpdate"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "icu_collections"
@@ -1222,10 +1204,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "osu-beatmap-preview"
+name = "osu-beatmap-preview-cli"
 version = "1.2.0"
 dependencies = [
- "bytemuck",
  "bytes",
  "color_quant",
  "fdk-aac",
@@ -1237,8 +1218,8 @@ dependencies = [
  "mp4",
  "nvenc",
  "openh264",
+ "osu-beatmap-preview-core",
  "png 0.17.16",
- "pollster",
  "rayon",
  "serde",
  "serde_json",
@@ -1249,21 +1230,69 @@ dependencies = [
  "time",
  "ureq",
  "vergen",
- "wgpu",
  "windows",
  "zip",
+]
+
+[[package]]
+name = "osu-beatmap-preview-core"
+version = "1.2.0"
+dependencies = [
+ "font8x8",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "osu-beatmap-preview-gui"
+version = "1.2.0"
+dependencies = [
+ "osu-beatmap-preview-core",
+ "osu-beatmap-preview-renderer",
+]
+
+[[package]]
+name = "osu-beatmap-preview-mobile"
+version = "1.2.0"
+dependencies = [
+ "osu-beatmap-preview-core",
+ "osu-beatmap-preview-renderer",
 ]
 
 [[package]]
 name = "osu-beatmap-preview-player"
 version = "1.2.0"
 dependencies = [
- "osu-beatmap-preview",
- "png 0.17.16",
+ "osu-beatmap-preview-core",
+ "ureq",
+ "zip",
+]
+
+[[package]]
+name = "osu-beatmap-preview-renderer"
+version = "1.2.0"
+dependencies = [
+ "bytemuck",
+ "osu-beatmap-preview-core",
  "pollster",
- "serde",
- "serde_json",
- "tiny_http",
+ "thiserror 2.0.18",
+ "wgpu",
+]
+
+[[package]]
+name = "osu-beatmap-preview-wasm"
+version = "1.2.0"
+dependencies = [
+ "js-sys",
+ "osu-beatmap-preview-core",
+ "osu-beatmap-preview-renderer",
+ "serde-wasm-bindgen",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "wgpu",
 ]
 
 [[package]]
@@ -1569,6 +1598,17 @@ checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1915,18 +1955,6 @@ checksum = "71c652a3727a9cbb9a02f707f530b618ce00d0ccd762009c8c23bd191df3c17d"
 dependencies = [
  "num-conv",
  "time-core",
-]
-
-[[package]]
-name = "tiny_http"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "389915df6413a2e74fb181895f933386023c71110878cd0825588928e64cdc82"
-dependencies = [
- "ascii",
- "chunked_transfer",
- "httpdate",
- "log",
 ]
 
 [[package]]

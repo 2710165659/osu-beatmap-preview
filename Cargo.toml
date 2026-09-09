@@ -1,81 +1,15 @@
-[package]
-name = "osu-beatmap-preview"
-version = "1.2.0"
-edition = "2021"
-autobins = false
-
-[[bin]]
-name = "osu-beatmap-preview"
-path = "src/main.rs"
-
-[[bin]]
-name = "osu-beatmap-preview-wgpu"
-path = "src/main_wgpu.rs"
-required-features = ["wgpu-renderer"]
-
 [workspace]
 members = [
-    ".",
+    "crates/osu-beatmap-preview-core",
+    "crates/osu-beatmap-preview-renderer",
+    "crates/osu-beatmap-preview-cli",
+    "crates/osu-beatmap-preview-wasm",
     "crates/osu-beatmap-preview-player",
+    "crates/osu-beatmap-preview-gui",
+    "crates/osu-beatmap-preview-mobile",
 ]
-default-members = ["."]
+default-members = ["crates/osu-beatmap-preview-cli"]
 resolver = "2"
-
-[features]
-default = []
-wgpu-renderer = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]
-
-[build-dependencies]
-vergen = { version = "9", features = ["build"] }
-serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
-
-[dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
-ureq = "2"
-lexopt = "0.3"
-serde_json = { version = "1", features = ["preserve_order"] }
-sha2 = "0.10"
-time = { version = "0.3", default-features = false, features = ["formatting", "local-offset", "macros"] }
-gif = "0.13"
-color_quant = "1.1"
-png = "0.17"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-rayon = "1"
-font8x8 = "0.3"
-thiserror = "2"
-# Video (MP4/H.264) output. openh264 默认 `source` feature 把 Cisco 源码通过 cc
-# crate 静态编译进二进制，保持「单文件无运行时依赖」；构建期需要 C++ 编译器。
-# 作为 CPU 回退编码器始终可用。
-openh264 = "0.9"
-mp4 = "0.14"
-bytes = "1"
-zip = { version = "2.4", default-features = false, features = ["deflate"] }
-symphonia = { version = "0.5.4", default-features = false, features = ["mp3", "ogg", "vorbis", "wav", "pcm"] }
-fdk-aac = "0.8"
-# GPU 硬件编码（NVENC / AMF）：运行时通过 libloading 动态加载
-# nvEncodeAPI64.dll / amfrt64.dll，无 GPU 时自动回退到 openh264。
-# nvenc crate 仅含 FFI 声明（无 build.rs、无 bindgen），不增加构建依赖。
-libloading = "0.8"
-bytemuck = { version = "1.25", features = ["derive"], optional = true }
-pollster = { version = "0.4", optional = true }
-wgpu = { version = "29", optional = true }
-
-# Windows 专属依赖：NVENC (NVIDIA GPU 编码) + D3D11 device 创建。
-# 在非 Windows 平台不编译，视频编码回退到 CPU openh264。
-[target.'cfg(windows)'.dependencies]
-nvenc = "0.1"
-windows = { version = "0.62", features = [
-    "Win32_Foundation",
-    "Win32_Graphics_Dxgi",
-    "Win32_Graphics_Dxgi_Common",
-    "Win32_Graphics_Direct3D",
-    "Win32_Graphics_Direct3D11",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Console",
-    "Win32_System_Threading",
-] }
 
 [profile.release]
 opt-level = 3

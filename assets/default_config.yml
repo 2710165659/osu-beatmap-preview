@@ -39,12 +39,6 @@ advance:
     AUDIO_SAMPLE_RATE: 48000 # 输出音频采样率，单位 Hz
     AUDIO_BITRATE: 96000 # 输出音频码率，单位 bit/s
     MAX_EXTRACTED_AUDIO_BYTES: 268435456 # 解码后音频允许占用的最大字节数
-  wgpu:
-    WIDTH: 1280 # 离屏与调试播放器画布宽度
-    HEIGHT: 720 # 离屏与调试播放器画布高度
-    MSAA_SAMPLES: 4 # 首选多重采样数；设备不支持时逐级降级
-    TARGET_FPS: 30 # WGPU CLI 未指定 --fps 时的目标帧率
-    MAX_IN_FLIGHT: 3 # 同时等待 GPU readback 的最大帧数
 # 四模式渲染配置
 render:
   standard:

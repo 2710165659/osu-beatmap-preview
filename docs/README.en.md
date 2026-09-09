@@ -21,12 +21,12 @@ See the [batch rendering report](report.md) for performance and resource usage d
 
 Download the executable for your platform from [Releases](https://github.com/2710165659/osu-beatmap-preview/releases):
 
-| Platform | CPU exporter | WGPU exporter |
-| --- | --- | --- |
-| Windows x64 | `osu-beatmap-preview-windows-amd64.exe` | `osu-beatmap-preview-wgpu-windows-amd64.exe` |
-| Linux x64 | `osu-beatmap-preview-linux-amd64` | `osu-beatmap-preview-wgpu-linux-amd64` |
-| macOS Intel | `osu-beatmap-preview-macos-amd64` | `osu-beatmap-preview-wgpu-macos-amd64` |
-| macOS Apple Silicon | `osu-beatmap-preview-macos-arm64` | `osu-beatmap-preview-wgpu-macos-arm64` |
+| Platform | CLI artifact |
+| --- | --- |
+| Windows x64 | `osu-beatmap-preview-windows-amd64.exe` |
+| Linux x64 | `osu-beatmap-preview-linux-amd64` |
+| macOS Intel | `osu-beatmap-preview-macos-amd64` |
+| macOS Apple Silicon | `osu-beatmap-preview-macos-arm64` |
 
 On Linux and macOS, make the downloaded file executable before the first run:
 
@@ -145,17 +145,6 @@ All four modes can produce MP4 videos with the original beatmap audio. MP3, OGG,
 
 On Windows, the renderer automatically selects an available NVENC or AMF hardware encoder and falls back to CPU OpenH264 if needed. Set `OSU_PREVIEW_NO_GPU=1` to force CPU encoding for compatibility checks or performance comparisons.
 
-### WGPU Exporter
-
-The root package uses `--wgpu` to select the WGPU MP4 path. The default build does not include WGPU and rejects `--wgpu`; enabling `wgpu-renderer` also emits the `osu-beatmap-preview-wgpu` binary. WGPU MP4 names end with `_wgpu`, such as `standard_738063_fps30_wgpu.mp4`, so CPU and WGPU cache entries cannot collide.
-
-```bash
-cargo build --release --features wgpu-renderer
-target/release/osu-beatmap-preview-wgpu --wgpu --bid=738063 --fmt=mp4 --duration-time=30
-```
-
-The renderer requests a HighPerformance adapter by default. Use `WGPU_BACKEND` to restrict backends and `WGPU_ADAPTER_NAME` to select an adapter by a case-insensitive name substring. Unsupported MSAA levels fall back to the highest available level no greater than the request. A missing adapter, device error, or undersized canvas is an explicit error and never falls back to CPU drawing. `OSU_PREVIEW_NO_GPU` controls only H.264 encoder selection; it does not disable WGPU rendering.
-
 ## Mod Support
 
 | Mode | GIF / MP4 | PNG |
@@ -214,20 +203,6 @@ timeout:
   MP4_TIMEOUT: 900
 ```
 
-All four modes share the `advance.wgpu` section:
-
-```yaml
-advance:
-  wgpu:
-    WIDTH: 1280
-    HEIGHT: 720
-    MSAA_SAMPLES: 4
-    TARGET_FPS: 30
-    MAX_IN_FLIGHT: 3
-```
-
-This section controls the fixed canvas, MSAA, default frame rate, and maximum in-flight readbacks shared by all modes. Mode geometry, `SCALE`, background, and HUD styling continue to come from the corresponding `render.<mode>.mp4` section. Standard/Catch use centered proportional contain with the chart background in the remaining margins; Taiko fills the width and pads vertically, while Mania fills the height and pads horizontally. Taiko/Mania fail explicitly if the other dimension would exceed the canvas. WGPU configuration changes participate in the configuration hash. CLI overrides such as `--scale` and `--fps` do not affect the directory hash and remain distinguished by the filename.
-
 Timeouts are positive integer seconds. They start at the request entry point and cover download, parsing, conversion, cache lookup, rendering, audio processing, encoding, and final output.
 
 ### Default Paths
@@ -282,9 +257,6 @@ git clone https://github.com/2710165659/osu-beatmap-preview.git
 cd osu-beatmap-preview
 cargo build --release
 
-# WGPU CLI (same root package; the feature build also emits a -wgpu binary)
-cargo build --release --features wgpu-renderer
-
 # Local Web debug player; not included in Release artifacts. Open http://127.0.0.1:8787 after startup.
 cargo run --release --package osu-beatmap-preview-player
 ```
@@ -292,10 +264,8 @@ cargo run --release --package osu-beatmap-preview-player
 Build output is written to:
 
 ```text
-target/release/osu-beatmap-preview       # Linux / macOS
-target/release/osu-beatmap-preview.exe   # Windows
-target/release/osu-beatmap-preview-wgpu  # Linux / macOS, with wgpu-renderer
-target/release/osu-beatmap-preview-wgpu.exe  # Windows, with wgpu-renderer
+target/release/osu-beatmap-preview-cli      # Linux / macOS
+target/release/osu-beatmap-preview-cli.exe  # Windows
 ```
 
 Run the test suite with:
@@ -305,7 +275,7 @@ cargo test
 cargo test --workspace --all-features --all-targets
 ```
 
-With the `wgpu-renderer` feature enabled, the library exposes the `realtime` module. `RealtimeSession` is safe to share and provides scenes by absolute or gameplay time. `OffscreenRenderer` offers runtime-independent async single-frame and backpressured stream methods. A renderer supports only sequential mutable calls, and `RgbaFrame` is always compact row-major RGBA8. The Web debug player supports beatmap loading, mods, conversion, play/pause, seeking, audio, and `0.5x..=2.0x` runtime speed.
+The CLI only exports PNG, GIF, and MP4 files and has no WGPU drawing entry point. `RealtimeSession` belongs to core and provides scenes by absolute time. `SurfaceRenderer` and `OffscreenRenderer` belong to the renderer crate and are used by Web, GUI, and mobile adapters. The Web debug player supports beatmap loading, mods, conversion, play/pause, seeking, audio, and `0.5x..=2.0x` runtime speed.
 
 This release does not include a production player UI, WGPU PNG/GIF, mobile support, replays, external texture encoder interop, or zero-copy NVENC.
 
