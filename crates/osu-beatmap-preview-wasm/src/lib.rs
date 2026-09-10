@@ -168,7 +168,10 @@ impl WebGpuSession {
         self.surface_config.height = height;
         self.surface
             .configure(self.renderer.device(), &self.surface_config);
-        self.renderer.resize(width, height).map_err(js_error)
+        self.renderer.resize(width, height).map_err(js_error)?;
+        // 合成场景的尺寸由 core 的 RealtimeOptions 决定；只调整 surface 会让
+        // 画面仍按旧尺寸渲染并贴在左上角，因此需要同步更新 core。
+        self.inner.set_render_size(width, height).map_err(js_error)
     }
 }
 

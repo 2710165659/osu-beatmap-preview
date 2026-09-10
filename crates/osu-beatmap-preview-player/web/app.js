@@ -8,12 +8,36 @@ const audio = $('#audio');
 const seek = $('#seek');
 const play = $('#play');
 const speed = $('#speed');
+const fpsSelect = $('#fps');
+const resolutionSelect = $('#resolution');
 const current = $('#current');
 const total = $('#total');
 const empty = $('#empty');
 const modControls = $('#mod-controls');
+const daControls = $('#da-controls');
+const daAr = $('#da-ar');
+const daCs = $('#da-cs');
+const daArValue = $('#da-ar-value');
+const daCsValue = $('#da-cs-value');
+const viewport = $('#viewport');
+const playerControls = $('#player-controls');
+
+// 画布分辨率只影响输出尺寸和合成阶段，谱面、mod 解析仍在 WASM/core 中完成。
+const RESOLUTIONS = Object.freeze({
+  '1080': { width: 1920, height: 1080 },
+  '720': { width: 1280, height: 720 },
+  '480': { width: 854, height: 480 },
+});
+const selectedResolution = () => RESOLUTIONS[resolutionSelect.value] || RESOLUTIONS['720'];
+const selectedFps = () => Number(fpsSelect.value) || 60;
+const resolutionKeyFor = (width, height) =>
+  Object.keys(RESOLUTIONS).find(key => {
+    const size = RESOLUTIONS[key];
+    return size.width === width && size.height === height;
+  }) || '720';
 
 let session = null;
+let backgroundBitmap = null;
 let bid = '';
 let playing = false;
 let position = 0;
@@ -21,6 +45,8 @@ let duration = 1;
 let absoluteStart = 0;
 let beatmapSpeed = 1;
 let lastTick = 0;
+let lastRenderTime = 0;
+let hasRenderedFrame = false;
 let animation = 0;
 let wasmReady = null;
 let pendingAudioTime = null;
@@ -29,6 +55,9 @@ let ignoreAudioUntil = 0;
 let audioFailureLogged = false;
 let activeMods = [];
 let modSwitching = false;
+let controlsHideTimer = 0;
+let viewportObserver = null;
+let targetFps = selectedFps();
 // 播放页沿用 osu! 视频预览的默认背景暗化：暗化 70%，保留 30% 亮度，
 // 只处理背景资源，不改变 playfield 和其他平台的渲染配置。
 const BACKGROUND_DIM = 0.7;
@@ -42,9 +71,62 @@ const errorText = error => {
   if (typeof error === 'string') return error;
   try { return JSON.stringify(error); } catch (_) { return String(error); }
 };
-const log = (target, message) => { target.textContent += `${new Date().toLocaleTimeString()} ${errorText(message)}\n`; };
+const log = (target, message) => {
+  target.textContent += `${new Date().toLocaleTimeString()} ${errorText(message)}\n`;
+  target.scrollTop = target.scrollHeight;
+};
 const playbackRate = () => Number(speed.value) * beatmapSpeed;
 const absoluteTime = () => absoluteStart + position;
+
+// 控制条 HUD 自动隐藏逻辑：播放中无操作后淡出，暂停或指针在控制条上时保持。
+function scheduleControlsHide(delay = 2600) {
+  clearTimeout(controlsHideTimer);
+  if (!playing) return;
+  controlsHideTimer = setTimeout(() => {
+    if (playerControls.matches(':hover') || playerControls.matches(':focus-within')) {
+      scheduleControlsHide(1200);
+      return;
+    }
+    viewport.classList.remove('controls-visible');
+  }, delay);
+}
+function revealControls() {
+  viewport.classList.add('controls-visible');
+  scheduleControlsHide();
+}
+function keepControlsVisible() {
+  clearTimeout(controlsHideTimer);
+  viewport.classList.add('controls-visible');
+}
+
+// canvas 的 width/height 属性是 WASM/GPU 的像素尺寸；CSS 显示尺寸由这里按
+// viewport 内容区做 contain 计算，避免浏览器只按宽度缩放导致底部被裁掉。
+function fitCanvasToViewport() {
+  if (!session || playPage.hidden) return;
+  const style = getComputedStyle(viewport);
+  const availableWidth = viewport.clientWidth
+    - parseFloat(style.paddingLeft)
+    - parseFloat(style.paddingRight);
+  const availableHeight = viewport.clientHeight
+    - parseFloat(style.paddingTop)
+    - parseFloat(style.paddingBottom);
+  if (availableWidth <= 0 || availableHeight <= 0) return;
+  const sourceWidth = session.width();
+  const sourceHeight = session.height();
+  if (!(sourceWidth > 0 && sourceHeight > 0)) return;
+  const scale = Math.min(availableWidth / sourceWidth, availableHeight / sourceHeight);
+  canvas.style.width = `${Math.max(1, Math.floor(sourceWidth * scale))}px`;
+  canvas.style.height = `${Math.max(1, Math.floor(sourceHeight * scale))}px`;
+}
+
+// 侧栏尺寸、窗口尺寸、设备旋转等变化时重新 contain。
+if (window.ResizeObserver) {
+  viewportObserver = new ResizeObserver(() => fitCanvasToViewport());
+  viewportObserver.observe(viewport);
+} else {
+  window.addEventListener('resize', fitCanvasToViewport);
+}
+window.addEventListener('orientationchange', fitCanvasToViewport);
 
 async function loadWasm() {
   if (!wasmReady) {
@@ -62,16 +144,13 @@ async function fetchBeatmap(value) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-async function loadBackground(value) {
-  const response = await fetch(`/resource/background?bid=${encodeURIComponent(value)}`);
-  if (!response.ok) throw new Error(await response.text());
-  const bitmap = await createImageBitmap(await response.blob());
+function paintBackground() {
+  if (!session || !backgroundBitmap) return;
   const decoder = document.createElement('canvas');
   decoder.width = session.width();
   decoder.height = session.height();
   const decoderContext = decoder.getContext('2d', { willReadFrequently: true });
-  decoderContext.drawImage(bitmap, 0, 0, decoder.width, decoder.height);
-  bitmap.close();
+  decoderContext.drawImage(backgroundBitmap, 0, 0, decoder.width, decoder.height);
   const rgba = decoderContext.getImageData(0, 0, decoder.width, decoder.height).data;
   const brightness = 1 - BACKGROUND_DIM;
   for (let index = 0; index < rgba.length; index += 4) {
@@ -83,31 +162,13 @@ async function loadBackground(value) {
   canvas.style.backgroundImage = '';
 }
 
-function loadAudio(value) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const ready = () => {
-      if (settled) return;
-      settled = true;
-      audio.removeEventListener('canplay', ready);
-      audio.removeEventListener('loadedmetadata', ready);
-      audio.removeEventListener('error', failed);
-      resolve();
-    };
-    const failed = () => {
-      if (settled) return;
-      settled = true;
-      audio.removeEventListener('canplay', ready);
-      audio.removeEventListener('loadedmetadata', ready);
-      audio.removeEventListener('error', failed);
-      reject(new Error(audio.error?.message || '音频无法解码或播放'));
-    };
-    audio.addEventListener('canplay', ready, { once: true });
-    audio.addEventListener('loadedmetadata', ready, { once: true });
-    audio.addEventListener('error', failed, { once: true });
-    audio.src = `/resource/audio?bid=${encodeURIComponent(value)}`;
-    audio.load();
-  });
+async function loadBackground(value) {
+  const response = await fetch(`/resource/background?bid=${encodeURIComponent(value)}`);
+  if (!response.ok) throw new Error(await response.text());
+  const bitmap = await createImageBitmap(await response.blob());
+  if (backgroundBitmap) backgroundBitmap.close();
+  backgroundBitmap = bitmap;
+  paintBackground();
 }
 
 async function loadAudioBlob(value) {
@@ -181,14 +242,19 @@ function seekTo(nextPosition) {
   syncAudioToPosition();
   render();
   updateControls();
+  revealControls();
   if (resume) playState(true);
 }
 
 function playState(next) {
   playing = next;
   lastTick = 0;
+  lastRenderTime = 0;
+  hasRenderedFrame = false;
+  cancelAnimationFrame(animation);
   audio.playbackRate = playbackRate();
   if (playing) {
+    revealControls();
     syncAudioToPosition();
     if (absoluteTime() >= 0 && !audioEnded) {
       audio.play().catch(error => {
@@ -201,6 +267,7 @@ function playState(next) {
     animation = requestAnimationFrame(tick);
   } else {
     audio.pause();
+    keepControlsVisible();
   }
   updateControls();
 }
@@ -230,8 +297,23 @@ function tick(now) {
       position = Math.min(duration, position + delta * playbackRate());
     }
   }
-  render();
-  updateControls();
+
+  // 始终按显示刷新率推进时钟，但只按所选帧率提交渲染。用目标帧间隔
+  // 累加而不是直接用 `now` 覆盖，避免 144Hz 等显示器上 60FPS 被降到 48FPS。
+  const frameInterval = 1000 / targetFps;
+  if (!hasRenderedFrame) {
+    hasRenderedFrame = true;
+    lastRenderTime = now;
+    render();
+    updateControls();
+    if (!playing) return;
+  } else if (now - lastRenderTime >= frameInterval) {
+    lastRenderTime += frameInterval * Math.floor((now - lastRenderTime) / frameInterval);
+    render();
+    updateControls();
+    if (!playing) return;
+  }
+
   if (position >= duration) {
     playState(false);
     return;
@@ -246,13 +328,14 @@ async function loadPreview(event) {
     bid = $('#bid').value.trim();
     if (!bid) throw new Error('请输入谱面 BID');
     const [wasm, bytes] = await Promise.all([loadWasm(), fetchBeatmap(bid)]);
+    const resolution = selectedResolution();
     const options = {
       convert: $('#convert').value || undefined,
       // Mod 只通过播放页的可选控件设置，避免手写 token 与当前模式不匹配。
       mods: [],
-      // 加载页中的 Canvas 处于 hidden 状态，不能从 clientWidth/clientHeight 取尺寸。
-      width: 1280,
-      height: 720,
+      // WASM 会话和 core 的 RealtimeOptions 都使用这组输出宽高。
+      width: resolution.width,
+      height: resolution.height,
     };
     activeMods = options.mods.slice();
     session = await wasm.WebGpuSession.create(bytes, canvas, options);
@@ -281,19 +364,35 @@ async function loadPreview(event) {
     buildModControls();
     loadPage.hidden = true;
     playPage.hidden = false;
+    fitCanvasToViewport();
     $('#status').textContent = audioResult.status === 'fulfilled' ? '就绪' : '无音频';
     updateControls();
     render();
+    // 加载完成后直接进入播放状态。浏览器可能因自动播放策略拒绝音频，
+    // 但画面时钟仍由 requestAnimationFrame 继续推进。
+    playState(true);
   } catch (error) {
     log($('#load-log'), error);
   }
 }
 
 const modOptions = {
-  standard: ['EZ', 'HR', 'HD', 'TC', 'DT', 'HT'],
+  // README「Mod 支持」表：Standard / Taiko / Catch / Mania 的 GIF & MP4 支持项。
+  standard: ['EZ', 'HR', 'HD', 'DA', 'TC', 'DT', 'HT'],
   taiko: ['EZ', 'HR', 'SW', 'CS', 'DT', 'HT'],
   catch: ['EZ', 'HR', 'DT', 'HT'],
-  mania: ['4K', '5K', '6K', '7K', '8K', '9K', 'DS', 'IN', 'HO', 'DT', 'HT'],
+  mania: ['CS', 'DT', 'HT', '1K', '2K', '3K', '4K', '5K', '6K', '7K', '8K', '9K', '10K', 'DS', 'IN', 'HO'],
+};
+
+// DA 需要参数；UI 暴露 AR/CS 两个可调参数，勾选 DA 后生成 DAAR<value>CS<value>。
+const daNumber = value => {
+  const number = Number(value);
+  return Number.isFinite(number) ? String(number) : '0';
+};
+const activeDaToken = () => `DAAR${daNumber(daAr.value)}CS${daNumber(daCs.value)}`;
+const updateDaLabels = () => {
+  daArValue.textContent = Number(daAr.value).toFixed(1);
+  daCsValue.textContent = Number(daCs.value).toFixed(1);
 };
 
 function buildModControls() {
@@ -305,10 +404,13 @@ function buildModControls() {
     input.type = 'checkbox';
     input.value = token;
     input.checked = activeMods.some(value => value.toUpperCase() === token);
+    if (token === 'DA') input.title = 'Difficulty Adjust（可调 AR / CS）';
     input.addEventListener('change', updateMods);
     label.append(input, document.createTextNode(token));
     modControls.append(label);
   }
+  daControls.hidden = !options.includes('DA');
+  updateDaLabels();
 }
 
 function updateMods() {
@@ -317,8 +419,11 @@ function updateMods() {
   const previous = activeMods;
   modSwitching = true;
   modControls.querySelectorAll('input').forEach(input => { input.disabled = true; });
+  const submitted = requested
+    .filter(token => token !== 'DA')
+    .concat(requested.includes('DA') ? [activeDaToken()] : []);
   try {
-    session.set_mods(requested);
+    session.set_mods(submitted);
     activeMods = requested;
     duration = Math.max(1, session.duration_ms_number());
     absoluteStart = session.absolute_start_ms_number();
@@ -329,6 +434,7 @@ function updateMods() {
     syncAudioToPosition();
     render();
     updateControls();
+    revealControls();
   } catch (error) {
     log($('#play-log'), `Mod 切换失败：${errorText(error)}`);
     modControls.querySelectorAll('input').forEach(input => {
@@ -340,13 +446,76 @@ function updateMods() {
   }
 }
 
+function applyResolution() {
+  if (!session) return;
+  const { width, height } = selectedResolution();
+  if (session.width() === width && session.height() === height) return;
+  const previous = resolutionKeyFor(session.width(), session.height());
+  const resume = playing;
+  if (resume) playState(false);
+  try {
+    // session.resize 同时更新 WASM surface 和 core 的合成尺寸，否则场景会
+    // 继续按旧宽高绘制并贴在新画布的左上角。
+    session.resize(width, height);
+    canvas.width = width;
+    canvas.height = height;
+    fitCanvasToViewport();
+    paintBackground();
+    render();
+    updateControls();
+    revealControls();
+  } catch (error) {
+    resolutionSelect.value = previous;
+    log($('#play-log'), `分辨率切换失败：${errorText(error)}`);
+  } finally {
+    if (resume) playState(true);
+  }
+}
+
 form.addEventListener('submit', loadPreview);
 play.addEventListener('click', () => playState(!playing));
 canvas.addEventListener('click', () => playState(!playing));
 $('#minus').addEventListener('click', () => seekTo(position - 5000));
 $('#plus').addEventListener('click', () => seekTo(position + 5000));
 seek.addEventListener('input', () => seekTo(Number(seek.value)));
-speed.addEventListener('change', () => { audio.playbackRate = playbackRate(); });
+speed.addEventListener('change', () => {
+  audio.playbackRate = playbackRate();
+  revealControls();
+});
+fpsSelect.addEventListener('change', () => {
+  targetFps = selectedFps();
+  lastRenderTime = 0;
+  hasRenderedFrame = false;
+  if (!playPage.hidden) render();
+  revealControls();
+});
+resolutionSelect.addEventListener('change', applyResolution);
+
+// DA 的 AR/CS 滑杆：松开后自动勾选 DA 并重新应用 Mod。
+daAr.addEventListener('input', updateDaLabels);
+daCs.addEventListener('input', updateDaLabels);
+daAr.addEventListener('change', () => {
+  updateDaLabels();
+  const daInput = [...modControls.querySelectorAll('input')].find(input => input.value === 'DA');
+  if (daInput) daInput.checked = true;
+  updateMods();
+});
+daCs.addEventListener('change', () => {
+  updateDaLabels();
+  const daInput = [...modControls.querySelectorAll('input')].find(input => input.value === 'DA');
+  if (daInput) daInput.checked = true;
+  updateMods();
+});
+
+// 鼠标移入视频区域或触摸时显示 HUD；移出后延迟隐藏。
+viewport.addEventListener('mousemove', revealControls);
+viewport.addEventListener('touchstart', revealControls, { passive: true });
+viewport.addEventListener('mouseleave', () => scheduleControlsHide(700));
+playerControls.addEventListener('mouseenter', () => clearTimeout(controlsHideTimer));
+playerControls.addEventListener('mouseleave', () => scheduleControlsHide(900));
+playerControls.addEventListener('focusin', keepControlsVisible);
+playerControls.addEventListener('focusout', () => scheduleControlsHide(900));
+
 audio.addEventListener('ended', () => {
   // 音频可能比谱面短，结束后继续用 requestAnimationFrame 驱动画面时钟。
   audioEnded = true;
@@ -363,18 +532,52 @@ audio.addEventListener('error', () => {
   $('#status').textContent = '音频错误';
   log($('#play-log'), `音频失败：${message}`);
 });
+
 $('#back').addEventListener('click', () => {
   playState(false);
+  clearTimeout(controlsHideTimer);
+  viewport.classList.remove('controls-visible');
   cancelAnimationFrame(animation);
   const objectUrl = audio.dataset.objectUrl;
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   delete audio.dataset.objectUrl;
   audio.removeAttribute('src');
   audio.load();
+  if (backgroundBitmap) {
+    backgroundBitmap.close();
+    backgroundBitmap = null;
+  }
   canvas.style.backgroundImage = '';
+  canvas.style.width = '';
+  canvas.style.height = '';
+  $('#play-log').textContent = '';
   session = null;
   playPage.hidden = true;
   loadPage.hidden = false;
 });
-document.addEventListener('keydown', event => { if (event.code === 'Space' && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) && !playPage.hidden) { event.preventDefault(); playState(!playing); } });
+
+const isEditableTarget = target =>
+  target instanceof HTMLElement
+  && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
+
+document.addEventListener('keydown', event => {
+  if (playPage.hidden || isEditableTarget(event.target)) return;
+  if (event.code === 'Space') {
+    event.preventDefault();
+    playState(!playing);
+    return;
+  }
+  if (event.repeat) return;
+  if (event.code === 'ArrowLeft') {
+    event.preventDefault();
+    seekTo(position - 5000);
+    return;
+  }
+  if (event.code === 'ArrowRight') {
+    event.preventDefault();
+    seekTo(position + 5000);
+  }
+});
+
+targetFps = selectedFps();
 updateControls();

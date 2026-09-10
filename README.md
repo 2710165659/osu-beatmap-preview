@@ -283,7 +283,7 @@ cargo test
 cargo test --workspace --all-features --all-targets
 ```
 
-CLI 仅负责 PNG/GIF/MP4 导出，不提供 WGPU 绘制入口。`RealtimeSession` 属于 core，提供绝对时间场景；`SurfaceRenderer` 和 `OffscreenRenderer` 属于 renderer crate，由 Web、GUI 和移动端适配层使用。Web 调试播放器提供谱面加载、Mod、转谱、播放/暂停、点击画面、seek、音频和 `0.5x..=2.0x` 倍速。
+CLI 仅负责 PNG/GIF/MP4 导出，不提供 WGPU 绘制入口。`RealtimeSession` 属于 core，提供绝对时间场景；`SurfaceRenderer` 和 `OffscreenRenderer` 属于 renderer crate，由 Web、GUI 和移动端适配层使用。Web 调试播放器提供谱面加载、Mod、转谱、自动/点击/空格播放、方向键跳转、seek、音频、`0.5x..=2.0x` 倍速、30/60 FPS 和 1080P/720P/480P 分辨率切换。
 
 本版本不包含正式播放器 UI、WGPU PNG/GIF、移动端、回放、外部 texture 编码互操作或 NVENC 零拷贝。
 

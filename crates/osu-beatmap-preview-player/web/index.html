@@ -1,7 +1,96 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>osu! Beatmap Preview</title><link rel="stylesheet" href="/style.css"></head>
-<body><main class="app">
-  <section id="load-page" class="page load-page"><div class="brand"><span>o!</span><div><small>LOCAL RENDER ENGINE</small><h1>谱面预览</h1></div></div>
-    <form id="load-form"><label>谱面 BID<input id="bid" required placeholder="例如 738063"></label><label>转谱<select id="convert"><option value="">原模式</option><option>standard</option><option>taiko</option><option>catch</option><option>mania</option></select></label><button>加载预览</button></form><pre id="load-log"></pre></section>
-  <section id="play-page" class="page play-page" hidden><header><button id="back">返回加载</button><strong id="mode">READY</strong><span id="status"></span></header><div class="viewport"><canvas id="canvas"></canvas><div id="empty">等待渲染</div></div><div class="controls"><div id="mod-controls" class="mod-controls" aria-label="实时 Mod"></div><div class="timeline"><span id="current">00:00</span><input id="seek" type="range" min="0" max="1" value="0"><span id="total">00:00</span></div><div class="buttons"><button id="play">播放</button><button id="minus">-5 秒</button><button id="plus">+5 秒</button><label>速度<select id="speed"><option>0.5</option><option>0.75</option><option selected>1</option><option>1.5</option><option>2</option></select>x</label></div><pre id="play-log"></pre></div><audio id="audio" preload="auto"></audio></section>
-</main><script src="/app.js"></script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>osu! Beatmap Preview</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="app">
+  <section id="load-page" class="page load-page">
+    <div class="brand">
+      <span>o!</span>
+      <div><small>LOCAL RENDER ENGINE</small><h1>谱面预览</h1></div>
+    </div>
+    <form id="load-form">
+      <label>谱面 BID<input id="bid" required placeholder="例如 738063"></label>
+      <label>转谱<select id="convert">
+        <option value="">原模式</option>
+        <option>standard</option>
+        <option>taiko</option>
+        <option>catch</option>
+        <option>mania</option>
+      </select></label>
+      <button>加载预览</button>
+    </form>
+    <pre id="load-log"></pre>
+  </section>
+
+  <section id="play-page" class="page play-page" hidden>
+    <header class="player-header">
+      <button id="back">返回加载</button>
+      <strong id="mode">READY</strong>
+      <span id="status"></span>
+    </header>
+
+    <div id="viewport" class="viewport">
+      <canvas id="canvas"></canvas>
+      <div id="empty">等待渲染</div>
+
+      <div id="player-controls" class="player-controls" aria-label="播放控制">
+        <div class="timeline">
+          <span id="current">00:00</span>
+          <input id="seek" type="range" min="0" max="1" value="0" aria-label="播放进度">
+          <span id="total">00:00</span>
+        </div>
+        <div class="control-row">
+          <div class="buttons">
+            <button id="play" title="播放/暂停（空格）">播放</button>
+            <button id="minus" title="后退 5 秒（←）">-5 秒</button>
+            <button id="plus" title="前进 5 秒（→）">+5 秒</button>
+          </div>
+          <div class="view-controls">
+            <label>帧率<select id="fps">
+              <option value="60" selected>60 FPS</option>
+              <option value="30">30 FPS</option>
+            </select></label>
+            <label>清晰度<select id="resolution">
+              <option value="1080">1080P</option>
+              <option value="720" selected>720P</option>
+              <option value="480">480P</option>
+            </select></label>
+            <label>倍速<select id="speed">
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select></label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>Mod</h2>
+        <div id="mod-controls" class="mod-controls" aria-label="实时 Mod"></div>
+        <div id="da-controls" class="da-controls" hidden>
+          <p class="da-hint">DA 参数</p>
+          <label>AR<input id="da-ar" type="range" min="-10" max="11" step="0.1" value="9"><output id="da-ar-value" for="da-ar">9.0</output></label>
+          <label>CS<input id="da-cs" type="range" min="0" max="11" step="0.1" value="4"><output id="da-cs-value" for="da-cs">4.0</output></label>
+        </div>
+      </section>
+      <section id="log-drawer" class="log-drawer">
+        <h2>运行日志</h2>
+        <pre id="play-log"></pre>
+      </section>
+    </aside>
+
+    <audio id="audio" preload="auto"></audio>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

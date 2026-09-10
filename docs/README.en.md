@@ -280,7 +280,7 @@ cargo test
 cargo test --workspace --all-features --all-targets
 ```
 
-The CLI only exports PNG, GIF, and MP4 files and has no WGPU drawing entry point. `RealtimeSession` belongs to core and provides scenes by absolute time. `SurfaceRenderer` and `OffscreenRenderer` belong to the renderer crate and are used by Web, GUI, and mobile adapters. The Web debug player supports beatmap loading, mods, conversion, play/pause, seeking, audio, and `0.5x..=2.0x` runtime speed.
+The CLI only exports PNG, GIF, and MP4 files and has no WGPU drawing entry point. `RealtimeSession` belongs to core and provides scenes by absolute time. `SurfaceRenderer` and `OffscreenRenderer` belong to the renderer crate and are used by Web, GUI, and mobile adapters. The Web debug player supports beatmap loading, mods, conversion, auto/click/space play, arrow-key seeking, audio, `0.5x..=2.0x` runtime speed, 30/60 FPS, and 1080P/720P/480P resolution switching.
 
 This release does not include a production player UI, WGPU PNG/GIF, mobile support, replays, external texture encoder interop, or zero-copy NVENC.
 

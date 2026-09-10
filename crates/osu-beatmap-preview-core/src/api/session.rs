@@ -159,6 +159,19 @@ impl RealtimeSession {
         Ok(())
     }
 
+    /// 更新后续 `scene_at_absolute` 使用的输出尺寸。
+    ///
+    /// 实时播放器可以在不重建会话的情况下切换画布分辨率；此时只更新合成
+    /// 场景的尺寸，已缓存的谱面、mod 和背景资源保持不变。
+    pub fn set_render_size(&mut self, width: u32, height: u32) -> Result<()> {
+        if width == 0 || height == 0 {
+            return Err(PreviewError::render("render dimensions must be positive"));
+        }
+        self.options.render.width = width;
+        self.options.render.height = height;
+        Ok(())
+    }
+
     pub fn set_audio(&mut self, audio: AudioData) {
         self.resources.audio = Some(audio);
     }
