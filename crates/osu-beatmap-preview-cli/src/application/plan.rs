@@ -1,9 +1,11 @@
 //! 第二阶段业务校验及渲染计划。
 
 use crate::application::request::ValidatedRequest;
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::validate::{self, TimePoint, ValidateContext};
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::processing::validation::{
+    self as validate, TimePoint, ValidateContext,
+};
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputFormat {

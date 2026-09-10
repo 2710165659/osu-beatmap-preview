@@ -1,7 +1,7 @@
 //! 输出缓存辅助函数：基于修改时间的缓存有效性和原子写入。
 
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::models::KvSection;
+use osu_beatmap_preview_core::model::KvSection;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -72,7 +72,7 @@ pub fn output_cache_hit(
 
     // 输出文件必须晚于程序构建时间。
     let out_mtime = out_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-    if out_mtime < osu_beatmap_preview_core::domain::build_time::build_time() {
+    if out_mtime < osu_beatmap_preview_core::support::build::build_time() {
         return None;
     }
 
@@ -140,7 +140,7 @@ pub(crate) fn with_atomic_output<T>(
 pub(crate) fn with_atomic_output_deadline<T>(
     output_path: &Path,
     tmp_suffix: &str,
-    deadline: &osu_beatmap_preview_core::domain::timeout::RequestDeadline,
+    deadline: &osu_beatmap_preview_core::support::timeout::RequestDeadline,
     write: impl FnOnce(&Path) -> Result<T>,
 ) -> Result<T> {
     with_atomic_output(output_path, tmp_suffix, |tmp_path| {
@@ -237,7 +237,7 @@ fn png_bytes_complete(data: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+    use osu_beatmap_preview_core::support::timeout::RequestDeadline;
     use std::time::{Duration, Instant};
 
     fn test_dir() -> PathBuf {

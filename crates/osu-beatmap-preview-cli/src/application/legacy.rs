@@ -1,16 +1,16 @@
 use crate::application::artifact::ArtifactName;
 use crate::application::plan::{OutputFormat, RenderPlan};
 use crate::application::request::ValidatedRequest;
+use crate::cache;
 use crate::export::canvas::Img;
-use crate::infrastructure::cache;
-use crate::infrastructure::logging::{self, CacheKind, SummaryRecord};
-use crate::infrastructure::media::audio::AudioSourceJob;
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::models::{Beatmap, HitObjects};
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::shared::time_selection::{GifRenderOptions, TimeAxis};
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
-use osu_beatmap_preview_core::domain::validate::TimePoint;
+use crate::logging::{self, CacheKind, SummaryRecord};
+use crate::media::audio::AudioSourceJob;
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::model::{Beatmap, HitObjects};
+use osu_beatmap_preview_core::processing::timeline::{GifRenderOptions, TimeAxis};
+use osu_beatmap_preview_core::processing::validation::TimePoint;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -70,15 +70,13 @@ fn generate_preview_inner(
 ) -> Result<Value> {
     deadline.check()?;
     let bid = request.source.bid.clone();
-    let runtime_config = crate::infrastructure::config::current();
-    let cache_root =
-        crate::infrastructure::config::resolve_path(runtime_config.paths.CACHE_DIR.as_str());
-    let output_root =
-        crate::infrastructure::config::output_directory(request.output.output_dir.as_deref())
-            .map_err(PreviewError::new)?;
+    let runtime_config = crate::config::current();
+    let cache_root = crate::config::resolve_path(runtime_config.paths.CACHE_DIR.as_str());
+    let output_root = crate::config::output_directory(request.output.output_dir.as_deref())
+        .map_err(PreviewError::new)?;
     // ── .osu 下载与解析 ──
     let t0 = Instant::now();
-    let beatmap_path = crate::infrastructure::download::download_beatmap_file(
+    let beatmap_path = crate::download::download_beatmap_file(
         &bid,
         &cache_root.join("osu-download-cache"),
         request.execution.no_cache,
@@ -104,7 +102,7 @@ fn generate_preview_inner(
     );
 
     if request.output.format.as_deref() == Some("mp4") && beatmap.beatmap_set_id().is_none() {
-        let set_id = crate::infrastructure::download::resolve_beatmap_set_id(&bid, &deadline)?;
+        let set_id = crate::download::resolve_beatmap_set_id(&bid, &deadline)?;
         beatmap.metadata.insert("BeatmapSetID", set_id.to_string());
     }
     fill_beatmap_info(&beatmap, rec);
@@ -391,7 +389,7 @@ impl ModeRenderer for StandardRenderer {
             input.absolute_time_points,
             input.deadline,
         )?;
-        crate::infrastructure::media::image::save_png(&image, input.output_path, input.deadline)?;
+        crate::media::image::save_png(&image, input.output_path, input.deadline)?;
         Ok(input.output_path.to_path_buf())
     }
 
@@ -617,18 +615,9 @@ pub(crate) fn resolve_convert_target(beatmap: &Beatmap, name: &str) -> Result<i3
 type ConvertFn = fn(&Beatmap, i32, Option<&ModSettings>) -> Result<Beatmap>;
 
 static CONVERTERS: &[(i32, ConvertFn)] = &[
-    (
-        1,
-        osu_beatmap_preview_core::domain::rulesets::taiko::taiko_convert,
-    ),
-    (
-        2,
-        osu_beatmap_preview_core::domain::rulesets::catch::catch_convert,
-    ),
-    (
-        3,
-        osu_beatmap_preview_core::domain::rulesets::mania::mania_convert,
-    ),
+    (1, osu_beatmap_preview_core::taiko_convert),
+    (2, osu_beatmap_preview_core::catch_convert),
+    (3, osu_beatmap_preview_core::mania_convert),
 ];
 
 pub(crate) fn convert_beatmap(
@@ -676,7 +665,7 @@ fn render_preview_for_mode(
     audio_job: Option<AudioSourceJob>,
     deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
-    let core_config = crate::infrastructure::config::core_config();
+    let core_config = crate::config::core_config();
     osu_beatmap_preview_core::config::with_config(core_config, || {
         render_preview_for_mode_inner(renderer, beatmap, plan, output_path, audio_job, deadline)
     })
@@ -746,7 +735,7 @@ fn render_preview_for_mode_inner(
 }
 
 fn timeout_for_format(format: &str) -> Duration {
-    let timeouts = &crate::infrastructure::config::current().timeout;
+    let timeouts = &crate::config::current().timeout;
     match format {
         "png" => timeouts.PNG_TIMEOUT,
         "gif" => timeouts.GIF_TIMEOUT,
@@ -778,10 +767,10 @@ fn initial_deadline(
         };
         return deadline_for_format(started, format);
     }
-    let timeout = crate::infrastructure::config::current()
+    let timeout = crate::config::current()
         .timeout
         .PNG_TIMEOUT
-        .max(crate::infrastructure::config::current().timeout.GIF_TIMEOUT);
+        .max(crate::config::current().timeout.GIF_TIMEOUT);
     RequestDeadline::new(started, "PNG/GIF", timeout)
 }
 
@@ -826,7 +815,7 @@ fn resolve_time_points(
                     ));
                 }
                 let milliseconds =
-                    osu_beatmap_preview_core::domain::parser::round_half_even(milliseconds_f64);
+                    osu_beatmap_preview_core::processing::parse::round_half_even(milliseconds_f64);
                 time_axis.to_absolute(milliseconds)?
             }
         };
@@ -838,7 +827,7 @@ fn resolve_time_points(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use osu_beatmap_preview_core::domain::models::ManiaHitObject;
+    use osu_beatmap_preview_core::model::ManiaHitObject;
 
     #[test]
     fn time_axis_uses_first_object_from_target_mode_objects() {

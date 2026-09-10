@@ -21,6 +21,12 @@ pub mod timeline {
     };
 }
 
+pub mod path {
+    pub use crate::domain::shared::slider_path::{
+        build_catch_slider_path, path_position_at, slice_path, SliderPath,
+    };
+}
+
 pub mod validation {
     pub use crate::domain::validate::{
         parse_positive_finite, parse_time_point, validate_bid, validate_convert_value,

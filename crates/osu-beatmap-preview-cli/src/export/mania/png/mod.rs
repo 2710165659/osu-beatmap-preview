@@ -3,13 +3,13 @@
 
 use crate::export::canvas::{Img, Rgba};
 use crate::export::text::{draw_text, text_size};
-use crate::infrastructure::media::image::save_png;
-use osu_beatmap_preview_core::domain::errors::Result;
-use osu_beatmap_preview_core::domain::models::{Beatmap, ManiaHitObject, TimingPoint};
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::parser::round_half_even;
-use osu_beatmap_preview_core::domain::shared::time_selection::TimeAxis;
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+use crate::media::image::save_png;
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::model::{Beatmap, ManiaHitObject, TimingPoint};
+use osu_beatmap_preview_core::processing::parse::round_half_even;
+use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::support::error::Result;
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -72,7 +72,7 @@ pub(crate) fn render_mania_grid(
         .min()
         .unwrap_or(0);
     let chart_start_time = if first_note_time >= 5000 {
-        osu_beatmap_preview_core::domain::shared::time_selection::snap_to_beat_grid(
+        osu_beatmap_preview_core::processing::timeline::snap_to_beat_grid(
             first_note_time - 1000,
             &beatmap.timing_points,
         )
@@ -89,7 +89,7 @@ pub(crate) fn render_mania_grid(
 
     let beatmap_duration = hit_objects.iter().map(|ho| ho.end_time).max().unwrap_or(0);
     let chart_end_time = beatmap_duration
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .mania
             .png
@@ -120,7 +120,7 @@ pub(crate) fn render_mania_grid(
     );
     let sv_changes = if cs_mode
         || !native_mania
-        || !crate::infrastructure::config::current()
+        || !crate::config::current()
             .render
             .mania
             .png
@@ -142,7 +142,7 @@ pub(crate) fn render_mania_grid(
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
@@ -161,7 +161,7 @@ pub(crate) fn render_mania_grid(
         if tl.show_label {
             if let Some(prev) = last_label_time {
                 if (tl.time - prev).abs()
-                    < crate::infrastructure::config::current()
+                    < crate::config::current()
                         .render
                         .mania
                         .png
@@ -212,7 +212,7 @@ fn build_png_layout(
             &skin_config.column_line_widths,
             output_scale,
         );
-    let logical_pixels_per_ms = crate::infrastructure::config::current()
+    let logical_pixels_per_ms = crate::config::current()
         .render
         .mania
         .png
@@ -234,73 +234,61 @@ fn build_png_layout(
     );
     let total_column_height = top_buffer + column_height;
     let lane_area_width = skin_lane_area_width
-        + (key_count as i64 - 1)
-            * crate::infrastructure::config::current()
-                .render
-                .mania
-                .png
-                .sizing
-                .LANE_GAP;
-    let column_width = crate::infrastructure::config::current()
+        + (key_count as i64 - 1) * crate::config::current().render.mania.png.sizing.LANE_GAP;
+    let column_width = crate::config::current()
         .render
         .mania
         .png
         .sizing
         .LEFT_PANEL_WIDTH
         + lane_area_width;
-    let image_width = crate::infrastructure::config::current()
+    let image_width = crate::config::current()
         .render
         .mania
         .png
         .sizing
         .PAGE_MARGIN_LEFT
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .mania
             .png
             .sizing
             .PAGE_MARGIN_RIGHT
         + column_count
-            * (crate::infrastructure::config::current()
+            * (crate::config::current()
                 .render
                 .mania
                 .png
                 .sizing
                 .INFO_MARGIN_LEFT
                 + column_width
-                + crate::infrastructure::config::current()
+                + crate::config::current()
                     .render
                     .mania
                     .png
                     .sizing
                     .INFO_MARGIN_RIGHT)
-        + (column_count - 1)
-            * crate::infrastructure::config::current()
-                .render
-                .mania
-                .png
-                .sizing
-                .COLUMN_GAP;
-    let image_height = crate::infrastructure::config::current()
+        + (column_count - 1) * crate::config::current().render.mania.png.sizing.COLUMN_GAP;
+    let image_height = crate::config::current()
         .render
         .mania
         .png
         .sizing
         .PAGE_MARGIN_TOP
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .mania
             .png
             .sizing
             .PAGE_MARGIN_BOTTOM
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .mania
             .png
             .sizing
             .INFO_MARGIN_TOP
         + total_column_height
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .mania
             .png
@@ -323,7 +311,7 @@ fn build_png_layout(
 }
 
 fn png_column_left(column_index: i64, layout: &RenderLayout) -> i64 {
-    let config = &crate::infrastructure::config::current().render.mania.png;
+    let config = &crate::config::current().render.mania.png;
     config.sizing.PAGE_MARGIN_LEFT
         + config.sizing.INFO_MARGIN_LEFT
         + column_index
@@ -334,13 +322,13 @@ fn png_column_left(column_index: i64, layout: &RenderLayout) -> i64 {
 }
 
 fn png_chart_top() -> i64 {
-    crate::infrastructure::config::current()
+    crate::config::current()
         .render
         .mania
         .png
         .sizing
         .PAGE_MARGIN_TOP
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .mania
             .png
@@ -354,7 +342,7 @@ fn ceil_div(a: i64, b: i64) -> i64 {
 
 fn calculate_column_count(beatmap_duration: i64, total_chart_height: i64) -> Result<i64> {
     if beatmap_duration
-        >= crate::infrastructure::config::current()
+        >= crate::config::current()
             .render
             .mania
             .png
@@ -362,13 +350,13 @@ fn calculate_column_count(beatmap_duration: i64, total_chart_height: i64) -> Res
             .MAX_SUPPORTED_DURATION_MS
     {
         return Err(
-            osu_beatmap_preview_core::domain::errors::PreviewError::render(
+            osu_beatmap_preview_core::support::error::PreviewError::render(
                 "songs longer than 10 minutes are not supported",
             ),
         );
     }
     if beatmap_duration >= 6 * 60 * 1000 {
-        return Ok(crate::infrastructure::config::current()
+        return Ok(crate::config::current()
             .render
             .mania
             .png
@@ -381,42 +369,42 @@ fn calculate_column_count(beatmap_duration: i64, total_chart_height: i64) -> Res
 
 fn resolve_max_area_height(beatmap_duration: i64) -> i64 {
     if beatmap_duration < 60 * 1000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
             .sizing
             .MAX_AREA_HEIGHT_0_TO_1_MINUTES
     } else if beatmap_duration < 2 * 60 * 1000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
             .sizing
             .MAX_AREA_HEIGHT_1_TO_2_MINUTES
     } else if beatmap_duration < 3 * 60 * 1000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
             .sizing
             .MAX_AREA_HEIGHT_2_TO_3_MINUTES
     } else if beatmap_duration < 4 * 60 * 1000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
             .sizing
             .MAX_AREA_HEIGHT_3_TO_4_MINUTES
     } else if beatmap_duration < 5 * 60 * 1000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
             .sizing
             .MAX_AREA_HEIGHT_4_TO_5_MINUTES
     } else {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
@@ -434,7 +422,7 @@ fn draw_column_background(
     let column_left = png_column_left(column_index, layout);
     let chart_top = png_chart_top();
     let lane_area_left = column_left
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .mania
             .png
@@ -444,14 +432,14 @@ fn draw_column_background(
     image.set_rect_size(
         column_left,
         chart_top,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
             .sizing
             .LEFT_PANEL_WIDTH,
         layout.total_column_height,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
@@ -462,20 +450,14 @@ fn draw_column_background(
     for lane_index in 0..key_count as i64 {
         let lane_left = lane_area_left
             + layout.lane_left_offsets[lane_index as usize]
-            + lane_index
-                * crate::infrastructure::config::current()
-                    .render
-                    .mania
-                    .png
-                    .sizing
-                    .LANE_GAP;
+            + lane_index * crate::config::current().render.mania.png.sizing.LANE_GAP;
         let lane_right = lane_left + layout.lane_widths[lane_index as usize];
         image.set_rect_size(
             lane_left,
             chart_top,
             lane_right - lane_left,
             layout.total_column_height,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .mania
                 .png
@@ -495,7 +477,7 @@ fn draw_column_background(
                 chart_top,
                 separator_width,
                 layout.total_column_height,
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .mania
                     .png
@@ -517,7 +499,7 @@ fn draw_timing_line(
     let local_time = timing_line.time - column_index * layout.time_per_column;
     let column_left = png_column_left(column_index, layout);
     let lane_area_left = column_left
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .mania
             .png
@@ -527,7 +509,7 @@ fn draw_timing_line(
     let y = chart_top + layout.column_height
         - round_half_even(
             local_time as f64
-                * crate::infrastructure::config::current()
+                * crate::config::current()
                     .render
                     .mania
                     .png
@@ -556,7 +538,7 @@ fn draw_timing_line(
         );
         let (_, label_height) = text_size(
             &label,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .mania
                 .png
@@ -579,13 +561,13 @@ fn draw_timing_line(
             label_x,
             label_y,
             &label,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .mania
                 .png
                 .sizing
                 .TIME_LABEL_FONT_SIZE,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .mania
                 .png
@@ -596,7 +578,7 @@ fn draw_timing_line(
         if let Some(ref bpm_label) = timing_line.bpm_label {
             let (_, bpm_h) = text_size(
                 bpm_label,
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .mania
                     .png
@@ -612,7 +594,7 @@ fn draw_timing_line(
                 ),
             );
             let bpm_y = (label_y + label_height as i64 + bpm_gap).min(
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .mania
                     .png
@@ -626,13 +608,13 @@ fn draw_timing_line(
                 bpm_x,
                 bpm_y,
                 bpm_label,
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .mania
                     .png
                     .sizing
                     .TIME_LABEL_FONT_SIZE,
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .mania
                     .png
@@ -660,7 +642,7 @@ fn draw_png_hit_object(
     for column_index in start_column..=end_column {
         let column_left = png_column_left(column_index, layout);
         let lane_area_left = column_left
-            + crate::infrastructure::config::current()
+            + crate::config::current()
                 .render
                 .mania
                 .png
@@ -671,21 +653,15 @@ fn draw_png_hit_object(
         let chart_bottom = chart_axis_top + layout.column_height;
         let lane_left = lane_area_left
             + layout.lane_left_offsets[lane]
-            + lane as i64
-                * crate::infrastructure::config::current()
-                    .render
-                    .mania
-                    .png
-                    .sizing
-                    .LANE_GAP
-            + crate::infrastructure::config::current()
+            + lane as i64 * crate::config::current().render.mania.png.sizing.LANE_GAP
+            + crate::config::current()
                 .render
                 .mania
                 .png
                 .sizing
                 .NOTE_SIDE_PADDING;
         let lane_right = lane_left + layout.lane_widths[lane]
-            - crate::infrastructure::config::current()
+            - crate::config::current()
                 .render
                 .mania
                 .png
@@ -701,7 +677,7 @@ fn draw_png_hit_object(
         let y_start = chart_axis_top + layout.column_height
             - round_half_even(
                 (segment_start - column_index * layout.time_per_column) as f64
-                    * crate::infrastructure::config::current()
+                    * crate::config::current()
                         .render
                         .mania
                         .png
@@ -711,7 +687,7 @@ fn draw_png_hit_object(
         let y_end = chart_axis_top + layout.column_height
             - round_half_even(
                 (segment_end - column_index * layout.time_per_column) as f64
-                    * crate::infrastructure::config::current()
+                    * crate::config::current()
                         .render
                         .mania
                         .png
@@ -723,7 +699,7 @@ fn draw_png_hit_object(
             let body_top = chart_top.max(
                 y_end.min(
                     y_start
-                        - crate::infrastructure::config::current()
+                        - crate::config::current()
                             .render
                             .mania
                             .png
@@ -744,7 +720,7 @@ fn draw_png_hit_object(
             if column_index == start_column {
                 let head_top = chart_top.max(
                     y_start
-                        - crate::infrastructure::config::current()
+                        - crate::config::current()
                             .render
                             .mania
                             .png
@@ -765,7 +741,7 @@ fn draw_png_hit_object(
         } else {
             let head_top = chart_top.max(
                 y_start
-                    - crate::infrastructure::config::current()
+                    - crate::config::current()
                         .render
                         .mania
                         .png
@@ -806,7 +782,7 @@ fn build_timing_lines(
         };
 
         let beat_pixels = point.beat_length
-            * crate::infrastructure::config::current()
+            * crate::config::current()
                 .render
                 .mania
                 .png
@@ -840,21 +816,21 @@ fn build_timing_lines(
                     TimingLine {
                         time: round_half_even(current),
                         color: if is_bar {
-                            crate::infrastructure::config::current()
+                            crate::config::current()
                                 .render
                                 .mania
                                 .png
                                 .style
                                 .MEASURE_LINE_COLOR
                         } else if is_beat {
-                            crate::infrastructure::config::current()
+                            crate::config::current()
                                 .render
                                 .mania
                                 .png
                                 .style
                                 .BEAT_LINE_COLOR
                         } else {
-                            crate::infrastructure::config::current()
+                            crate::config::current()
                                 .render
                                 .mania
                                 .png
@@ -927,7 +903,7 @@ fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &RenderLayo
     let y = chart_top + layout.column_height
         - round_half_even(
             local_time as f64
-                * crate::infrastructure::config::current()
+                * crate::config::current()
                     .render
                     .mania
                     .png
@@ -938,7 +914,7 @@ fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &RenderLayo
     let label = super::format_sv_label(sv);
     let (label_width, label_height) = text_size(
         &label,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
@@ -960,13 +936,13 @@ fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &RenderLayo
         label_x,
         label_y,
         &label,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png
             .sizing
             .SV_TEXT_FONT_SIZE,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .mania
             .png

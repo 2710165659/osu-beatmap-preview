@@ -16,11 +16,11 @@ mod rasterizer;
 fn save_animation_frames(
     frames: osu_beatmap_preview_core::render::cpu::AnimationFrames,
     output_path: &std::path::Path,
-    deadline: &osu_beatmap_preview_core::domain::timeout::RequestDeadline,
+    deadline: &osu_beatmap_preview_core::support::timeout::RequestDeadline,
 ) -> osu_beatmap_preview_core::Result<()> {
     let frame_count = frames.frame_count();
     let frame_duration_ms = frames.frame_duration_ms();
-    crate::infrastructure::media::image::save_animated_gif_streamed(
+    crate::media::image::save_animated_gif_streamed(
         frame_count,
         move |frame_index| frames.render(frame_index),
         output_path,

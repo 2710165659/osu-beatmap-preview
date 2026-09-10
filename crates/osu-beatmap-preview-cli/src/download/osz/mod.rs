@@ -1,5 +1,5 @@
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::cmp::Reverse;
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
@@ -153,7 +153,7 @@ impl OszLogContext {
     }
 
     fn event(&self, status: &str, msg: impl AsRef<str>) {
-        crate::infrastructure::logging::event(
+        crate::logging::event(
             "download-osz",
             status,
             Some(&self.request_bid),
@@ -193,24 +193,22 @@ impl AttemptMonitor {
         self.samples.push_back((now, bytes));
         while self.samples.len() > 1
             && self.samples.get(1).is_some_and(|(time, _)| {
-                now.duration_since(*time)
-                    >= crate::infrastructure::download::constants::LOW_SPEED_WINDOW
+                now.duration_since(*time) >= crate::download::constants::LOW_SPEED_WINDOW
             })
         {
             self.samples.pop_front();
         }
 
         let reason = if !progress.has_first_byte()
-            && now.duration_since(started)
-                >= crate::infrastructure::download::constants::NO_FIRST_BYTE_TIMEOUT
+            && now.duration_since(started) >= crate::download::constants::NO_FIRST_BYTE_TIMEOUT
         {
             Some("no-first-byte")
         } else if let Some((oldest, old_bytes)) = self.samples.front().copied() {
             let elapsed = now.duration_since(oldest);
             let received = bytes.saturating_sub(old_bytes);
-            if elapsed >= crate::infrastructure::download::constants::LOW_SPEED_WINDOW
+            if elapsed >= crate::download::constants::LOW_SPEED_WINDOW
                 && received.saturating_mul(1000)
-                    < crate::infrastructure::download::constants::LOW_SPEED_BYTES_PER_SECOND
+                    < crate::download::constants::LOW_SPEED_BYTES_PER_SECOND
                         .saturating_mul(elapsed.as_millis() as u64)
             {
                 Some("low-speed")
@@ -255,28 +253,22 @@ pub fn download_beatmapset_archive(
         deadline.check()?;
         let size_mib = target_path
             .metadata()
-            .map(|m| m.len() as f64 / crate::infrastructure::download::constants::MIB_BYTES as f64)
+            .map(|m| m.len() as f64 / crate::download::constants::MIB_BYTES as f64)
             .unwrap_or(0.0);
         log.event("done", format!("cache hit ({size_mib:.1} MiB)"));
-        crate::infrastructure::logging::record_cache(
-            crate::infrastructure::logging::CacheKind::Osz,
-            "hit",
-        );
-        crate::infrastructure::logging::record_stage_status("download_osz_ms", "hit");
+        crate::logging::record_cache(crate::logging::CacheKind::Osz, "hit");
+        crate::logging::record_stage_status("download_osz_ms", "hit");
         return Ok(target_path);
     }
 
-    let preferred_ip = crate::infrastructure::download::cf_ip::read_preferred_ip(temp_dir);
-    crate::infrastructure::download::cf_ip::spawn_refresh(temp_dir, preferred_ip.is_none());
+    let preferred_ip = crate::download::cf_ip::read_preferred_ip(temp_dir);
+    crate::download::cf_ip::spawn_refresh(temp_dir, preferred_ip.is_none());
     let candidates = build_candidates(preferred_ip);
     log.event(
         "start",
         format!(
             "race={} candidates={} preferred_ip={}",
-            crate::infrastructure::config::current()
-                .download
-                .osz
-                .MAX_ACTIVE_ATTEMPTS,
+            crate::config::current().download.osz.MAX_ACTIVE_ATTEMPTS,
             candidates.len(),
             preferred_ip
                 .map(|ip| ip.to_string())
@@ -289,8 +281,8 @@ pub fn download_beatmapset_archive(
         Ok(winner) => winner,
         Err(failures) => {
             deadline.check()?;
-            crate::infrastructure::download::cf_ip::invalidate(temp_dir);
-            crate::infrastructure::download::cf_ip::spawn_refresh(temp_dir, true);
+            crate::download::cf_ip::invalidate(temp_dir);
+            crate::download::cf_ip::spawn_refresh(temp_dir, true);
             log.event("error", failures.join("; "));
             return Err(PreviewError::download(format!(
                 "failed to download beatmapset {set_id} from all mirrors: {}",
@@ -309,17 +301,14 @@ pub fn download_beatmapset_archive(
     let ms = started.elapsed().as_secs_f64() * 1000.0;
     let size_mib = target_path
         .metadata()
-        .map(|m| m.len() as f64 / crate::infrastructure::download::constants::MIB_BYTES as f64)
+        .map(|m| m.len() as f64 / crate::download::constants::MIB_BYTES as f64)
         .unwrap_or(0.0);
     log.event(
         "done",
         format!("downloaded {size_mib:.1} MiB in {ms:.0} ms"),
     );
-    crate::infrastructure::logging::record_cache(
-        crate::infrastructure::logging::CacheKind::Osz,
-        "downloaded",
-    );
-    crate::infrastructure::logging::record_stage("download_osz_ms", ms);
+    crate::logging::record_cache(crate::logging::CacheKind::Osz, "downloaded");
+    crate::logging::record_stage("download_osz_ms", ms);
     Ok(target_path)
 }
 
@@ -353,18 +342,12 @@ fn build_agent(preferred_ip: Option<Ipv4Addr>, deadline: &RequestDeadline) -> ur
             .unwrap_or_else(|_| Duration::from_millis(1))
     };
     let builder = ureq::AgentBuilder::new()
-        .timeout_connect(min_timeout(
-            crate::infrastructure::download::constants::CONNECT_TIMEOUT,
-        ))
-        .timeout_read(min_timeout(
-            crate::infrastructure::download::constants::READ_TIMEOUT,
-        ))
-        .timeout_write(min_timeout(
-            crate::infrastructure::download::constants::WRITE_TIMEOUT,
-        ));
+        .timeout_connect(min_timeout(crate::download::constants::CONNECT_TIMEOUT))
+        .timeout_read(min_timeout(crate::download::constants::READ_TIMEOUT))
+        .timeout_write(min_timeout(crate::download::constants::WRITE_TIMEOUT));
     if let Some(ip) = preferred_ip {
         builder
-            .resolver(crate::infrastructure::download::cf_ip::resolver_for(ip))
+            .resolver(crate::download::cf_ip::resolver_for(ip))
             .build()
     } else {
         builder.build()
@@ -382,11 +365,7 @@ fn run_download_race(
     let mut failures = Vec::new();
     let mut next_candidate = 0;
     let mut next_id = 0;
-    let deadline = Instant::now()
-        + crate::infrastructure::config::current()
-            .download
-            .osz
-            .DOWNLOAD_HARD_TIMEOUT;
+    let deadline = Instant::now() + crate::config::current().download.osz.DOWNLOAD_HARD_TIMEOUT;
     let mut preferred_refresh_triggered = false;
 
     start_next_attempt(
@@ -417,7 +396,7 @@ fn run_download_race(
         }
 
         let poll_interval = request_deadline
-            .cap(crate::infrastructure::download::constants::POLL_INTERVAL)
+            .cap(crate::download::constants::POLL_INTERVAL)
             .unwrap_or_else(|_| Duration::from_millis(1));
         match receiver.recv_timeout(poll_interval) {
             Ok(message) => {
@@ -502,7 +481,7 @@ fn run_download_race(
             }
             if attempt.progress.has_first_byte()
                 && now.duration_since(attempt.last_speed_log)
-                    >= crate::infrastructure::download::constants::LOW_SPEED_WINDOW
+                    >= crate::download::constants::LOW_SPEED_WINDOW
             {
                 attempt.last_speed_log = now;
                 let speed = attempt
@@ -543,12 +522,7 @@ fn run_download_race(
                     active.len(),
                 ),
             );
-            if active.len()
-                >= crate::infrastructure::config::current()
-                    .download
-                    .osz
-                    .MAX_ACTIVE_ATTEMPTS
-            {
+            if active.len() >= crate::config::current().download.osz.MAX_ACTIVE_ATTEMPTS {
                 if let Some(position) = slowest_attempt(&active, now) {
                     let attempt = active.swap_remove(position);
                     cancel_attempt(log, attempt);
@@ -597,11 +571,7 @@ fn start_next_attempt(
 ) {
     maybe_insert_preferred_candidate(candidates, *next_candidate, temp_dir);
     if *next_candidate >= candidates.len()
-        || active.len()
-            >= crate::infrastructure::config::current()
-                .download
-                .osz
-                .MAX_ACTIVE_ATTEMPTS
+        || active.len() >= crate::config::current().download.osz.MAX_ACTIVE_ATTEMPTS
     {
         return;
     }
@@ -659,7 +629,7 @@ fn maybe_insert_preferred_candidate(
     {
         return;
     }
-    if let Some(ip) = crate::infrastructure::download::cf_ip::read_preferred_ip(temp_dir) {
+    if let Some(ip) = crate::download::cf_ip::read_preferred_ip(temp_dir) {
         candidates.insert(
             next_candidate,
             MirrorCandidate {
@@ -702,8 +672,8 @@ fn handle_attempt_result(
                 && !*preferred_refresh_triggered
             {
                 *preferred_refresh_triggered = true;
-                crate::infrastructure::download::cf_ip::invalidate(temp_dir);
-                crate::infrastructure::download::cf_ip::spawn_refresh(temp_dir, true);
+                crate::download::cf_ip::invalidate(temp_dir);
+                crate::download::cf_ip::spawn_refresh(temp_dir, true);
             }
             failures.push(format!("{}: {reason}", source.name()));
             HandledAttempt::Failed
@@ -801,11 +771,7 @@ fn probe_range_support(
         .get(url)
         .set(
             "User-Agent",
-            crate::infrastructure::config::current()
-                .download
-                .osz
-                .USER_AGENT
-                .as_str(),
+            crate::config::current().download.osz.USER_AGENT.as_str(),
         )
         .set("Accept-Encoding", "identity")
         .set("Range", "bytes=0-0")
@@ -855,13 +821,7 @@ fn download_parallel(
     total: u64,
     context: &DownloadContext,
 ) -> std::result::Result<(), String> {
-    let ranges = split_ranges(
-        total,
-        crate::infrastructure::config::current()
-            .download
-            .osz
-            .PARALLEL_PARTS,
-    );
+    let ranges = split_ranges(total, crate::config::current().download.osz.PARALLEL_PARTS);
     let file =
         File::create(part_path).map_err(|e| format!("failed to create temporary osz: {e}"))?;
     file.set_len(total)
@@ -933,11 +893,7 @@ fn download_range_part(
         .get(url)
         .set(
             "User-Agent",
-            crate::infrastructure::config::current()
-                .download
-                .osz
-                .USER_AGENT
-                .as_str(),
+            crate::config::current().download.osz.USER_AGENT.as_str(),
         )
         .set("Accept-Encoding", "identity")
         .set("Range", &range_header)
@@ -975,7 +931,7 @@ fn download_range_part(
         .map_err(|_| format!("{range_header} is too large for this platform"))?;
     let mut data = Vec::with_capacity(capacity);
     let mut reader = response.into_reader();
-    let mut buffer = vec![0u8; crate::infrastructure::download::constants::BUFFER_SIZE];
+    let mut buffer = vec![0u8; crate::download::constants::BUFFER_SIZE];
     loop {
         check_cancelled_with_worker(context, worker_cancel)?;
         let count = reader
@@ -1022,11 +978,7 @@ fn download_single(
         .get(url)
         .set(
             "User-Agent",
-            crate::infrastructure::config::current()
-                .download
-                .osz
-                .USER_AGENT
-                .as_str(),
+            crate::config::current().download.osz.USER_AGENT.as_str(),
         )
         .set("Accept-Encoding", "identity")
         .call()
@@ -1050,7 +1002,7 @@ fn download_response(
     let mut output =
         File::create(part_path).map_err(|e| format!("failed to create temporary osz: {e}"))?;
     let mut reader = response.into_reader();
-    let mut buffer = vec![0u8; crate::infrastructure::download::constants::BUFFER_SIZE];
+    let mut buffer = vec![0u8; crate::download::constants::BUFFER_SIZE];
     let mut copied = 0u64;
     loop {
         check_cancelled(context)?;
@@ -1061,17 +1013,12 @@ fn download_response(
             break;
         }
         copied = copied.saturating_add(count as u64);
-        if copied
-            > crate::infrastructure::config::current()
-                .download
-                .osz
-                .MAX_OSZ_BYTES
-        {
+        if copied > crate::config::current().download.osz.MAX_OSZ_BYTES {
             remove_if_exists(part_path);
             return Err(format!(
                 "OSZ is too large while reading the response: received more than {} bytes ({:.2} MiB)",
-                crate::infrastructure::config::current().download.osz.MAX_OSZ_BYTES,
-                crate::infrastructure::config::current().download.osz.MAX_OSZ_BYTES as f64 / crate::infrastructure::download::constants::MIB_BYTES as f64,
+                crate::config::current().download.osz.MAX_OSZ_BYTES,
+                crate::config::current().download.osz.MAX_OSZ_BYTES as f64 / crate::download::constants::MIB_BYTES as f64,
             ));
         }
         output
@@ -1138,17 +1085,12 @@ fn validate_declared_size(length: u64) -> std::result::Result<(), String> {
     if length == 0 {
         return Err("server declared an empty response (Content-Length: 0 bytes)".to_string());
     }
-    if length
-        > crate::infrastructure::config::current()
-            .download
-            .osz
-            .MAX_OSZ_BYTES
-    {
+    if length > crate::config::current().download.osz.MAX_OSZ_BYTES {
         return Err(format!(
             "OSZ is too large: server declared {length} bytes ({:.2} MiB), exceeding the download limit of {} bytes ({:.2} MiB)",
-            length as f64 / crate::infrastructure::download::constants::MIB_BYTES as f64,
-            crate::infrastructure::config::current().download.osz.MAX_OSZ_BYTES,
-            crate::infrastructure::config::current().download.osz.MAX_OSZ_BYTES as f64 / crate::infrastructure::download::constants::MIB_BYTES as f64,
+            length as f64 / crate::download::constants::MIB_BYTES as f64,
+            crate::config::current().download.osz.MAX_OSZ_BYTES,
+            crate::config::current().download.osz.MAX_OSZ_BYTES as f64 / crate::download::constants::MIB_BYTES as f64,
         ));
     }
     Ok(())
@@ -1199,11 +1141,7 @@ fn valid_osz(path: &Path) -> bool {
     };
     if !meta.is_file()
         || meta.len() == 0
-        || meta.len()
-            > crate::infrastructure::config::current()
-                .download
-                .osz
-                .MAX_OSZ_BYTES
+        || meta.len() > crate::config::current().download.osz.MAX_OSZ_BYTES
     {
         return false;
     }
@@ -1218,208 +1156,4 @@ fn remove_if_exists(path: &Path) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::{BufRead, BufReader, Cursor};
-    use std::net::TcpListener;
-    use std::time::Duration;
-    use zip::write::SimpleFileOptions;
-
-    #[test]
-    fn candidate_order_skips_missing_preferred_ip() {
-        let names = build_candidates(None)
-            .into_iter()
-            .map(|candidate| candidate.source.name())
-            .collect::<Vec<_>>();
-        assert_eq!(names, vec!["sayobot", "osu.direct-dns", "nekoha", "catboy"]);
-    }
-
-    #[test]
-    fn candidate_order_places_preferred_ip_before_dns() {
-        let names = build_candidates(Some(Ipv4Addr::new(192, 0, 2, 1)))
-            .into_iter()
-            .map(|candidate| candidate.source.name())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            names,
-            vec![
-                "sayobot",
-                "osu.direct-preferred-ip",
-                "osu.direct-dns",
-                "nekoha",
-                "catboy"
-            ]
-        );
-    }
-
-    #[test]
-    fn osz_log_message_includes_request_bid_and_set_id() {
-        let context = OszLogContext::new("738063", 12345);
-        assert_eq!(
-            context.message("cache hit (1.0 MiB)"),
-            "bid=738063 set=12345 cache hit (1.0 MiB)"
-        );
-    }
-
-    #[test]
-    fn newly_cached_preferred_ip_is_inserted_before_dns() {
-        let root = std::env::temp_dir().join(format!(
-            "osu-preview-dynamic-cf-test-{}",
-            std::process::id()
-        ));
-        let osz_cache = root.join("osz-download-cache");
-        std::fs::create_dir_all(&osz_cache).unwrap();
-        let tested_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        std::fs::write(
-            root.join("osu-direct-preferred-ip.json"),
-            serde_json::json!({ "ip": "104.16.1.1", "tested_at": tested_at }).to_string(),
-        )
-        .unwrap();
-        let mut candidates = build_candidates(None);
-        maybe_insert_preferred_candidate(&mut candidates, 1, &osz_cache);
-        assert!(matches!(
-            candidates[1].source,
-            MirrorSource::OsuDirectPreferred(ip) if ip == Ipv4Addr::new(104, 16, 1, 1)
-        ));
-        assert_eq!(candidates[2].source, MirrorSource::OsuDirectDns);
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn attempt_paths_are_process_scoped() {
-        let path = attempt_path(Path::new("cache"), 42, 3);
-        let name = path.file_name().unwrap().to_string_lossy();
-        assert!(name.contains(&std::process::id().to_string()));
-        assert!(name.ends_with("attempt-3.osz.part"));
-    }
-
-    #[test]
-    fn no_first_byte_triggers_after_three_seconds() {
-        let started =
-            Instant::now() - crate::infrastructure::download::constants::NO_FIRST_BYTE_TIMEOUT;
-        let progress = AttemptProgress {
-            started,
-            bytes: AtomicU64::new(0),
-            first_byte_ms: AtomicU64::new(0),
-        };
-        let mut monitor = AttemptMonitor::new();
-        assert_eq!(
-            monitor.fallback_reason(Instant::now(), started, &progress),
-            Some("no-first-byte")
-        );
-    }
-
-    #[test]
-    fn low_speed_window_triggers_fallback() {
-        let now = Instant::now();
-        let started = now - Duration::from_secs(6);
-        let progress = AttemptProgress {
-            started,
-            bytes: AtomicU64::new(32 * 1024),
-            first_byte_ms: AtomicU64::new(1),
-        };
-        let mut monitor = AttemptMonitor::new();
-        monitor.samples.push_back((
-            now - crate::infrastructure::download::constants::LOW_SPEED_WINDOW,
-            0,
-        ));
-        assert_eq!(
-            monitor.fallback_reason(now, started, &progress),
-            Some("low-speed")
-        );
-    }
-
-    #[test]
-    fn splits_and_validates_ranges() {
-        assert_eq!(split_ranges(10, 4).len(), 4);
-        assert_eq!(
-            parse_content_range("bytes 10-19/100").unwrap(),
-            ContentRange {
-                start: 10,
-                end: 19,
-                total: 100
-            }
-        );
-        assert!(parse_content_range("bytes 20-10/100").is_err());
-    }
-
-    #[test]
-    fn downloads_and_reassembles_four_http_ranges() {
-        let archive = make_test_osz();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server_archive = archive.clone();
-        let server = std::thread::spawn(move || {
-            let mut requested_ranges = Vec::new();
-            for _ in 0..=crate::infrastructure::config::current()
-                .download
-                .osz
-                .PARALLEL_PARTS
-            {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut requested = None;
-                loop {
-                    let mut line = String::new();
-                    reader.read_line(&mut line).unwrap();
-                    if line == "\r\n" || line.is_empty() {
-                        break;
-                    }
-                    if let Some(value) = line
-                        .trim()
-                        .strip_prefix("Range: bytes=")
-                        .or_else(|| line.trim().strip_prefix("range: bytes="))
-                    {
-                        let (start, end) = value.split_once('-').unwrap();
-                        requested =
-                            Some((start.parse::<u64>().unwrap(), end.parse::<u64>().unwrap()));
-                    }
-                }
-                let (start, end) = requested.expect("request must contain a byte range");
-                requested_ranges.push((start, end));
-                let body = &server_archive[start as usize..=end as usize];
-                write!(
-                    stream,
-                    "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {start}-{end}/{}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
-                    body.len(),
-                    server_archive.len()
-                )
-                .unwrap();
-                stream.write_all(body).unwrap();
-            }
-            requested_ranges
-        });
-        let dir = std::env::temp_dir().join(format!("osu-preview-osz-test-{}", std::process::id()));
-        let path = dir.join("fixture.osz.part");
-        std::fs::create_dir_all(&dir).unwrap();
-        let context = DownloadContext {
-            cancel: Arc::new(AtomicBool::new(false)),
-            progress: Arc::new(AttemptProgress::new()),
-        };
-        let agent = ureq::AgentBuilder::new().build();
-        download_osz_once(
-            &agent,
-            &format!("http://{address}/fixture.osz"),
-            &path,
-            &context,
-        )
-        .unwrap();
-        let requested_ranges = server.join().unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), archive);
-        assert_eq!(requested_ranges[0], (0, 0));
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    fn make_test_osz() -> Vec<u8> {
-        let cursor = Cursor::new(Vec::new());
-        let mut archive = zip::ZipWriter::new(cursor);
-        archive
-            .start_file("audio.mp3", SimpleFileOptions::default())
-            .unwrap();
-        archive.write_all(&vec![0x5a; 8 * 1024]).unwrap();
-        archive.finish().unwrap().into_inner()
-    }
-}
+mod tests;

@@ -71,10 +71,7 @@ fn event_and_summary_write_parseable_lines() {
     assert_eq!(value["duration_ms"], 42.5);
     assert_eq!(value["title"], "quote \" and \n newline");
     assert_eq!(value["hit_object_count"], 7);
-    assert_eq!(
-        value["app_version"],
-        crate::infrastructure::logging::APP_VERSION
-    );
+    assert_eq!(value["app_version"], crate::logging::APP_VERSION);
 
     let _ = std::fs::remove_dir_all(&dir);
 }

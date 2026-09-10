@@ -75,11 +75,11 @@ fn generate_runtime_struct(
         if let Some(kind) = special_kind(path, key) {
             if kind == "duration_secs" {
                 generated.push_str(
-                    "    #[serde(deserialize_with = \"crate::infrastructure::config::deserialize_duration_secs\")]\n",
+                    "    #[serde(deserialize_with = \"crate::config::deserialize_duration_secs\")]\n",
                 );
             } else if kind == "positive_duration_secs" {
                 generated.push_str(
-                    "    #[serde(deserialize_with = \"crate::infrastructure::config::deserialize_positive_duration_secs\")]\n",
+                    "    #[serde(deserialize_with = \"crate::config::deserialize_positive_duration_secs\")]\n",
                 );
             }
         }

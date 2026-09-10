@@ -2,11 +2,11 @@
 
 use crate::export::canvas::Img;
 use crate::export::text::format_mmssmmm;
-use osu_beatmap_preview_core::domain::errors::Result;
-use osu_beatmap_preview_core::domain::models::Beatmap;
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::shared::time_selection::TimeAxis;
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::support::error::Result;
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 
 use super::context::*;
 use super::draw_time_label;
@@ -32,19 +32,19 @@ pub(crate) fn render_standard_png(
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .standard
             .png
             .structure
             .ROW_COUNT,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .standard
             .png
             .structure
             .IMAGES_PER_ROW,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .standard
             .png
@@ -57,7 +57,7 @@ pub(crate) fn render_standard_png(
     let mut canvas = Img::new(
         canvas_w as u32,
         canvas_h as u32,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .standard
             .png
@@ -68,7 +68,7 @@ pub(crate) fn render_standard_png(
 
     for (row_index, row_timing) in row_timings.iter().enumerate() {
         deadline.check()?;
-        let snapshot_times: Vec<i64> = (0..crate::infrastructure::config::current()
+        let snapshot_times: Vec<i64> = (0..crate::config::current()
             .render
             .standard
             .png
@@ -77,7 +77,7 @@ pub(crate) fn render_standard_png(
             .map(|i| {
                 row_timing.start_time
                     + i as i64
-                        * crate::infrastructure::config::current()
+                        * crate::config::current()
                             .render
                             .standard
                             .png
@@ -90,14 +90,14 @@ pub(crate) fn render_standard_png(
             &snapshot_times,
             context.settings.preempt_ms,
         );
-        let config = &crate::infrastructure::config::current().render.standard.png;
+        let config = &crate::config::current().render.standard.png;
         let unit_height = context.frame_layout.frame_height
             + config.sizing.INFO_MARGIN_TOP
             + config.sizing.INFO_MARGIN_BOTTOM;
         let y = config.sizing.PAGE_MARGIN_TOP
             + config.sizing.INFO_MARGIN_TOP
             + row_index as i64 * (unit_height + config.sizing.ROW_GAP);
-        for image_index in 0..crate::infrastructure::config::current()
+        for image_index in 0..crate::config::current()
             .render
             .standard
             .png
@@ -112,8 +112,7 @@ pub(crate) fn render_standard_png(
             let x = config.sizing.PAGE_MARGIN_LEFT
                 + config.sizing.INFO_MARGIN_LEFT
                 + image_index as i64 * (unit_width + config.sizing.COLUMN_GAP);
-            let empty_breaks: Vec<osu_beatmap_preview_core::domain::models::BreakPeriod> =
-                Vec::new();
+            let empty_breaks: Vec<osu_beatmap_preview_core::model::BreakPeriod> = Vec::new();
             let breaks = if row_timing.is_preview {
                 &row_timing.break_periods
             } else {
@@ -145,14 +144,14 @@ pub(crate) fn render_standard_png(
                 config.sizing.TIME_LABEL_NOTE_FONT_SIZE,
                 config.sizing.TIME_LABEL_NOTE_TOP_GAP,
                 if is_preview_label {
-                    crate::infrastructure::config::current()
+                    crate::config::current()
                         .render
                         .standard
                         .png
                         .style
                         .PREVIEW_TIME_LABEL_COLOR
                 } else {
-                    crate::infrastructure::config::current()
+                    crate::config::current()
                         .render
                         .standard
                         .png
@@ -160,14 +159,14 @@ pub(crate) fn render_standard_png(
                         .TIME_LABEL_COLOR
                 },
                 if is_preview_label {
-                    crate::infrastructure::config::current()
+                    crate::config::current()
                         .render
                         .standard
                         .png
                         .style
                         .PREVIEW_TIME_LABEL_COLOR
                 } else {
-                    crate::infrastructure::config::current()
+                    crate::config::current()
                         .render
                         .standard
                         .png

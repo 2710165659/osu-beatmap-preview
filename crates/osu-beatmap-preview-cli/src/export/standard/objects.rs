@@ -1,7 +1,7 @@
 //! 音符对象渲染：打击圈、滑条、转盘和接近圈。
 
 use crate::export::canvas::Img;
-use osu_beatmap_preview_core::domain::models::{BreakPeriod, StandardHitObject};
+use osu_beatmap_preview_core::model::{BreakPeriod, StandardHitObject};
 
 use super::alpha::*;
 use super::constants::*;
@@ -28,7 +28,7 @@ pub(crate) fn render_frame(
     let mut frame = background.cloned().unwrap_or_else(|| {
         let color = match context.output_format {
             crate::export::geometry::OutputFormat::Png => {
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .standard
                     .png
@@ -36,7 +36,7 @@ pub(crate) fn render_frame(
                     .IMAGE_BACKGROUND_COLOR
             }
             crate::export::geometry::OutputFormat::Gif => {
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .standard
                     .gif
@@ -44,7 +44,7 @@ pub(crate) fn render_frame(
                     .IMAGE_BACKGROUND_COLOR
             }
             crate::export::geometry::OutputFormat::Mp4 => {
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .standard
                     .mp4
@@ -158,7 +158,7 @@ fn draw_slider(
             context.settings.traceable,
         );
     } else {
-        let visible_path = osu_beatmap_preview_core::domain::shared::slider_path::slice_path(
+        let visible_path = osu_beatmap_preview_core::processing::path::slice_path(
             &slider_data.frame_path,
             snaked_start,
             snaked_end,

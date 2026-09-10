@@ -1,9 +1,9 @@
 //! 汇总记录：每张谱面渲染完写一行 NDJSON 到 `render.log`。
 
-use crate::infrastructure::logging::config::{enabled, process_elapsed_ms};
-use crate::infrastructure::logging::context::{snapshot, CacheKind};
-use crate::infrastructure::logging::timestamp::now_local_millis;
-use crate::infrastructure::logging::writer::append_line;
+use crate::logging::config::{enabled, process_elapsed_ms};
+use crate::logging::context::{snapshot, CacheKind};
+use crate::logging::timestamp::now_local_millis;
+use crate::logging::writer::append_line;
 use serde_json::{json, Map, Value};
 
 /// 一张谱面渲染的汇总字段（由调用方逐步填充）。
@@ -61,11 +61,11 @@ pub fn write_summary(rec: &SummaryRecord) {
     map.insert("total_ms".to_string(), json!(round1(process_elapsed_ms())));
     map.insert(
         "app_version".to_string(),
-        Value::String(crate::infrastructure::logging::APP_VERSION.to_string()),
+        Value::String(crate::logging::APP_VERSION.to_string()),
     );
     map.insert(
         "build_time".to_string(),
-        Value::String(crate::infrastructure::logging::BUILD_TIMESTAMP.to_string()),
+        Value::String(crate::logging::BUILD_TIMESTAMP.to_string()),
     );
     if let Ok(cores) = std::thread::available_parallelism() {
         map.insert("cores".to_string(), json!(cores.get()));

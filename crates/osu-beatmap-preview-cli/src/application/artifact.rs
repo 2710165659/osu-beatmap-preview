@@ -1,8 +1,8 @@
 //! 渲染产物文件名；请求差异在文件名中表达，不参与配置目录哈希。
 
 use crate::application::plan::{OutputFormat, RenderPlan};
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::validate::TimePoint;
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::processing::validation::TimePoint;
 
 pub(crate) struct ArtifactName(String);
 

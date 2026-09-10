@@ -4,7 +4,7 @@
 //!（以起始码标记的 NAL 单元）。本模块将其拆分为 SPS / PPS / slice，
 //! 并为 slice 添加长度前缀，以匹配 `mp4` crate 的 `Mp4Sample` 格式。
 
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use std::path::Path;
 
 /// NAL 单元类型是首字节的低 5 位（起始码已由 `nal_units` 移除）。

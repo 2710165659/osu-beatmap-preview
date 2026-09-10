@@ -5,14 +5,14 @@
 //! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
 use crate::export::canvas::Img;
-use crate::infrastructure::media::audio::AudioSourceJob;
-use crate::infrastructure::media::{resolve_video_time_range, save_mp4_streamed};
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::models::Beatmap;
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::shared::time_selection::TimeAxis;
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
-use osu_beatmap_preview_core::domain::validate::TimePoint;
+use crate::media::audio::AudioSourceJob;
+use crate::media::{resolve_video_time_range, save_mp4_streamed};
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::processing::validation::TimePoint;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::path::Path;
 
 use super::animation::{build_animation_layout, render_animation_frame};
@@ -47,14 +47,7 @@ pub(crate) fn render_catch_video(
     let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = fps.unwrap_or_else(|| {
-        crate::infrastructure::config::current()
-            .render
-            .catch
-            .mp4
-            .style
-            .FPS as u32
-    });
+    let fps = fps.unwrap_or_else(|| crate::config::current().render.catch.mp4.style.FPS as u32);
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let layout = build_animation_layout(
@@ -98,6 +91,6 @@ pub(crate) fn render_catch_video(
         time_axis,
         deadline,
         crate::export::geometry::GameMode::Catch,
-        crate::infrastructure::media::FrameComposition::Playfield,
+        crate::media::FrameComposition::Playfield,
     )
 }

@@ -1,8 +1,8 @@
 //! 与 CLI、库 API 共用的请求模型及第一阶段格式校验。
 
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::validate::{self, TimePoint};
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::processing::validation::{self as validate, TimePoint};
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 
 #[derive(Debug, Clone)]
 pub struct RenderRequest {
@@ -52,7 +52,7 @@ impl RenderRequest {
         let mods = if self.ruleset.mods.is_empty() {
             None
         } else {
-            Some(osu_beatmap_preview_core::domain::mods::parse_mods(
+            Some(osu_beatmap_preview_core::model::mods::parse_mods(
                 &self.ruleset.mods,
             )?)
         };

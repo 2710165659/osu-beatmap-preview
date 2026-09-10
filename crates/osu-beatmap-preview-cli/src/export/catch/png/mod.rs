@@ -6,13 +6,13 @@
 
 use crate::export::canvas::Img;
 use crate::export::text::{draw_text, text_size};
-use crate::infrastructure::media::image::save_png;
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::models::{Beatmap, TimingPoint};
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::parser::round_half_even;
-use osu_beatmap_preview_core::domain::shared::time_selection::TimeAxis;
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+use crate::media::image::save_png;
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::model::{Beatmap, TimingPoint};
+use osu_beatmap_preview_core::processing::parse::round_half_even;
+use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -51,42 +51,42 @@ fn pixels_per_ms_for_ar(approach_rate: f64, playfield_scale: f64) -> f64 {
 
 fn resolve_max_area_height(beatmap_duration: i64) -> i64 {
     if beatmap_duration < 60_000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .MAX_AREA_HEIGHT_0_TO_1_MINUTES
     } else if beatmap_duration < 2 * 60_000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .MAX_AREA_HEIGHT_1_TO_2_MINUTES
     } else if beatmap_duration < 3 * 60_000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .MAX_AREA_HEIGHT_2_TO_3_MINUTES
     } else if beatmap_duration < 4 * 60_000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .MAX_AREA_HEIGHT_3_TO_4_MINUTES
     } else if beatmap_duration < 5 * 60_000 {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .MAX_AREA_HEIGHT_4_TO_5_MINUTES
     } else {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
@@ -107,7 +107,7 @@ fn build_layout(
     timing_lines: &[TimingLine],
 ) -> Result<RenderLayout> {
     if beatmap_duration
-        >= crate::infrastructure::config::current()
+        >= crate::config::current()
             .render
             .catch
             .png
@@ -134,14 +134,14 @@ fn build_layout(
     let mut pixels_per_ms = pixels_per_ms_for_ar(approach_rate, playfield_scale);
     let natural_height = beatmap_duration as f64 * pixels_per_ms;
     if natural_height
-        > crate::infrastructure::config::current()
+        > crate::config::current()
             .render
             .catch
             .png
             .sizing
             .MAX_TOTAL_CHART_HEIGHT as f64
     {
-        pixels_per_ms *= crate::infrastructure::config::current()
+        pixels_per_ms *= crate::config::current()
             .render
             .catch
             .png
@@ -157,7 +157,7 @@ fn build_layout(
             .unwrap_or(max_area_height);
     let total_column_height = total_chart_height.min(aligned_height).max(1);
     let column_count = ceil_div(total_chart_height, total_column_height).max(1);
-    let config = &crate::infrastructure::config::current().render.catch.png;
+    let config = &crate::config::current().render.catch.png;
     let unit_width = config.sizing.INFO_MARGIN_LEFT
         + config.sizing.COLUMN_WIDTH
         + config.sizing.INFO_MARGIN_RIGHT;
@@ -211,7 +211,7 @@ fn predominant_measure_aligned_height(
 }
 
 fn column_left(column_index: i64) -> i64 {
-    let config = &crate::infrastructure::config::current().render.catch.png;
+    let config = &crate::config::current().render.catch.png;
     config.sizing.PAGE_MARGIN_LEFT
         + config.sizing.INFO_MARGIN_LEFT
         + column_index
@@ -223,7 +223,7 @@ fn column_left(column_index: i64) -> i64 {
 
 fn playfield_left(column_index: i64) -> i64 {
     column_left(column_index)
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .catch
             .png
@@ -233,7 +233,7 @@ fn playfield_left(column_index: i64) -> i64 {
 }
 
 fn playfield_side_padding() -> i64 {
-    let config = &crate::infrastructure::config::current().render.catch.png;
+    let config = &crate::config::current().render.catch.png;
     let render_scale = crate::export::geometry::output_scale(
         crate::export::geometry::GameMode::Catch,
         crate::export::geometry::OutputFormat::Png,
@@ -364,7 +364,7 @@ pub(crate) fn render_catch_grid(
         hit_objects,
         mods,
         &difficulty,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
@@ -378,7 +378,7 @@ pub(crate) fn render_catch_grid(
     // 并对齐到红线节拍网格。
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let chart_start_time = if first_note_time >= 5000 {
-        osu_beatmap_preview_core::domain::shared::time_selection::snap_to_beat_grid(
+        osu_beatmap_preview_core::processing::timeline::snap_to_beat_grid(
             first_note_time - 1000,
             &beatmap.timing_points,
         )
@@ -420,7 +420,7 @@ pub(crate) fn render_catch_grid(
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
@@ -440,7 +440,7 @@ pub(crate) fn render_catch_grid(
         if tl.show_label {
             if let Some(prev) = last_label_time {
                 if (tl.time - prev).abs()
-                    < crate::infrastructure::config::current()
+                    < crate::config::current()
                         .render
                         .catch
                         .png
@@ -461,7 +461,7 @@ pub(crate) fn render_catch_grid(
     }
 
     // 路线和引导线放在物件下层，避免遮住水果图形。
-    if crate::infrastructure::config::current()
+    if crate::config::current()
         .render
         .catch
         .png
@@ -492,19 +492,19 @@ pub(crate) fn render_catch_grid(
 /// 画单列背景：左右留白从列宽推导，保证自定义倍率和列宽使用同一几何关系。
 fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: i64) {
     let column_left = column_left(column_index);
-    let chart_top = crate::infrastructure::config::current()
+    let chart_top = crate::config::current()
         .render
         .catch
         .png
         .sizing
         .PAGE_MARGIN_TOP
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .catch
             .png
             .sizing
             .INFO_MARGIN_TOP;
-    let panel_width = crate::infrastructure::config::current()
+    let panel_width = crate::config::current()
         .render
         .catch
         .png
@@ -528,7 +528,7 @@ fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: 
         chart_top,
         panel_width,
         layout.total_column_height,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
@@ -540,7 +540,7 @@ fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: 
         chart_top,
         layout.visible_playfield_width,
         layout.total_column_height,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
@@ -552,7 +552,7 @@ fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: 
         chart_top,
         border_width,
         layout.total_column_height,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
@@ -564,7 +564,7 @@ fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: 
         chart_top,
         border_width,
         layout.total_column_height,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
@@ -580,13 +580,13 @@ fn locate_time(time: i64, layout: &RenderLayout) -> (i64, i64) {
         .clamp(0, layout.column_count - 1);
     let local_y_from_top = rhe(absolute_y - (column_index * layout.total_column_height) as f64);
     // 从列底部开始计算，时间 0 在底部，时间增大向上
-    let chart_bottom = crate::infrastructure::config::current()
+    let chart_bottom = crate::config::current()
         .render
         .catch
         .png
         .sizing
         .PAGE_MARGIN_TOP
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .catch
             .png
@@ -602,25 +602,25 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
     let left = playfield_left(column_index);
     let right = left + layout.visible_playfield_width;
     let y = y.clamp(
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .PAGE_MARGIN_TOP
-            + crate::infrastructure::config::current()
+            + crate::config::current()
                 .render
                 .catch
                 .png
                 .sizing
                 .INFO_MARGIN_TOP,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .PAGE_MARGIN_TOP
-            + crate::infrastructure::config::current()
+            + crate::config::current()
                 .render
                 .catch
                 .png
@@ -636,7 +636,7 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
     let (thickness, color) = if timing_line.is_measure {
         (
             crate::export::geometry::scale_stroke_px(2.0, render_scale),
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .catch
                 .png
@@ -646,7 +646,7 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
     } else {
         (
             crate::export::geometry::scale_stroke_px(1.0, render_scale),
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .catch
                 .png
@@ -665,32 +665,32 @@ fn draw_timing_label_png(
 ) {
     let (column_index, y) = locate_time(timing_line.time, layout);
     let border_right = column_left(column_index)
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .catch
             .png
             .sizing
             .COLUMN_WIDTH;
     let y = y.clamp(
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .PAGE_MARGIN_TOP
-            + crate::infrastructure::config::current()
+            + crate::config::current()
                 .render
                 .catch
                 .png
                 .sizing
                 .INFO_MARGIN_TOP,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .PAGE_MARGIN_TOP
-            + crate::infrastructure::config::current()
+            + crate::config::current()
                 .render
                 .catch
                 .png
@@ -703,7 +703,7 @@ fn draw_timing_label_png(
     );
     let (label_width, label_height) = text_size(
         &label,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
@@ -720,7 +720,7 @@ fn draw_timing_label_png(
     let label_x = (border_right + label_gap).min(
         layout.image_width
             - label_width as i64
-            - crate::infrastructure::config::current()
+            - crate::config::current()
                 .render
                 .catch
                 .png
@@ -732,7 +732,7 @@ fn draw_timing_label_png(
     let bpm_height = bpm_label.as_ref().map_or(0, |text| {
         text_size(
             text,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .catch
                 .png
@@ -740,7 +740,7 @@ fn draw_timing_label_png(
                 .TIME_LABEL_FONT_SIZE,
         )
         .1 as i64
-            + crate::infrastructure::config::current()
+            + crate::config::current()
                 .render
                 .catch
                 .png
@@ -748,13 +748,13 @@ fn draw_timing_label_png(
                 .BPM_LABEL_GAP
     });
     let group_height = label_height as i64 + bpm_height;
-    let chart_top = crate::infrastructure::config::current()
+    let chart_top = crate::config::current()
         .render
         .catch
         .png
         .sizing
         .PAGE_MARGIN_TOP
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .catch
             .png
@@ -769,13 +769,13 @@ fn draw_timing_label_png(
         label_x,
         label_y,
         &label,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
             .sizing
             .TIME_LABEL_FONT_SIZE,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .catch
             .png
@@ -785,7 +785,7 @@ fn draw_timing_label_png(
     if let Some(bpm_label) = bpm_label {
         let (bpm_width, _) = text_size(
             &bpm_label,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .catch
                 .png
@@ -795,7 +795,7 @@ fn draw_timing_label_png(
         let bpm_x = (border_right + label_gap).min(
             layout.image_width
                 - bpm_width as i64
-                - crate::infrastructure::config::current()
+                - crate::config::current()
                     .render
                     .catch
                     .png
@@ -807,20 +807,20 @@ fn draw_timing_label_png(
             bpm_x,
             label_y
                 + label_height as i64
-                + crate::infrastructure::config::current()
+                + crate::config::current()
                     .render
                     .catch
                     .png
                     .sizing
                     .BPM_LABEL_GAP,
             &bpm_label,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .catch
                 .png
                 .sizing
                 .TIME_LABEL_FONT_SIZE,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .catch
                 .png
@@ -875,13 +875,13 @@ fn time_axis_segments(
     let column_duration = layout.total_column_height as f64 / layout.pixels_per_ms;
     let start_column = (start_time / column_duration).floor() as i64;
     let end_column = (end_time / column_duration).floor() as i64;
-    let chart_bottom = (crate::infrastructure::config::current()
+    let chart_bottom = (crate::config::current()
         .render
         .catch
         .png
         .sizing
         .PAGE_MARGIN_TOP
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .catch
             .png
@@ -971,13 +971,13 @@ fn draw_edge_guides(image: &mut Img, render_objects: &[RenderObject], layout: &R
                 start.1,
                 end.0,
                 end.1,
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .catch
                     .png
                     .sizing
                     .EDGE_GUIDE_WIDTH,
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .catch
                     .png
@@ -1016,7 +1016,7 @@ fn draw_edge_combo_labels(image: &mut Img, render_objects: &[RenderObject], layo
             continue;
         };
 
-        let config = &crate::infrastructure::config::current().render.catch.png;
+        let config = &crate::config::current().render.catch.png;
         let label = format!("{combo}x");
         let (label_width, label_height) =
             text_size(&label, config.sizing.EDGE_COMBO_LABEL_FONT_SIZE);
@@ -1074,248 +1074,4 @@ fn draw_edge_combo_labels(image: &mut Img, render_objects: &[RenderObject], layo
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_layout(column_count: i64) -> RenderLayout {
-        RenderLayout {
-            column_count,
-            total_column_height: 100,
-            visible_playfield_width: 260,
-            image_width: 1_000,
-            image_height: 130,
-            playfield_scale: 0.5,
-            object_scale: 0.5,
-            pixels_per_ms: 1.0,
-            chart_start_time: 0,
-        }
-    }
-
-    fn edge_fruit(x: f64, time: i64) -> RenderObject {
-        RenderObject {
-            object_type: ObjType::Fruit,
-            x,
-            start_time: time,
-            color: crate::export::catch::constants::LAZER_COMBO_COLORS[0],
-            scale_factor: 1.0,
-            event_time: Some(time as f64),
-            hyper_dash: false,
-            edge: true,
-            banana_shower_id: None,
-            banana_route_x: None,
-        }
-    }
-
-    fn route_banana(x: f64, route_x: f64, time: i64, shower_id: usize) -> RenderObject {
-        let mut object = edge_fruit(x, time);
-        object.object_type = ObjType::Banana;
-        object.edge = false;
-        object.banana_shower_id = Some(shower_id);
-        object.banana_route_x = Some(route_x);
-        object
-    }
-
-    #[test]
-    fn edge_guide_is_split_at_column_boundary() {
-        let current = edge_fruit(0.0, 90);
-        let next = edge_fruit(200.0, 110);
-
-        let segments = edge_guide_segments(&current, &next, &test_layout(2));
-
-        assert_eq!(segments.len(), 2);
-        let chart_top = (crate::infrastructure::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::infrastructure::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP) as f64;
-        let chart_bottom = chart_top + 100.0;
-        let ((_, first_start_y), (first_end_x, first_end_y)) = segments[0];
-        let ((second_start_x, second_start_y), (_, second_end_y)) = segments[1];
-        assert_eq!(first_start_y, chart_bottom - 90.0);
-        assert_eq!(first_end_y, chart_top);
-        assert_eq!(second_start_y, chart_bottom);
-        assert_eq!(second_end_y, chart_bottom - 10.0);
-        assert!(second_start_x > first_end_x);
-    }
-
-    #[test]
-    fn edge_guide_draws_configured_pixels_behind_objects() {
-        let layout = test_layout(1);
-        let current = edge_fruit(0.0, 10);
-        let mut next = edge_fruit(200.0, 20);
-        next.edge = false;
-        let mut image = Img::new(400, 130, [7, 7, 7, 255]);
-
-        draw_edge_guides(&mut image, &[current, next], &layout);
-
-        let midpoint_x = playfield_left(0) + 50;
-        let chart_bottom = crate::infrastructure::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::infrastructure::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP
-            + layout.total_column_height;
-        assert_eq!(
-            image.get(midpoint_x as u32, (chart_bottom - 15) as u32),
-            crate::infrastructure::config::current()
-                .render
-                .catch
-                .png
-                .style
-                .EDGE_GUIDE_COLOR
-        );
-    }
-
-    #[test]
-    fn banana_route_draws_catcher_center_instead_of_banana_centers() {
-        let layout = test_layout(1);
-        let current = route_banana(0.0, 100.0, 10, 0);
-        let next = route_banana(400.0, 100.0, 20, 0);
-        let background = [7, 7, 7, 255];
-        let mut image = Img::new(400, 130, background);
-
-        draw_banana_routes(&mut image, &[current, next], &layout);
-
-        let route_x = playfield_left(0) + 50;
-        let banana_midpoint_x = playfield_left(0) + 100;
-        let chart_bottom = crate::infrastructure::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::infrastructure::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP
-            + layout.total_column_height;
-        assert_eq!(
-            image.get(route_x as u32, (chart_bottom - 15) as u32),
-            crate::export::catch::constants::BANANA_ROUTE_LINE_COLOR
-        );
-        assert_eq!(
-            image.get(banana_midpoint_x as u32, (chart_bottom - 15) as u32),
-            background
-        );
-    }
-
-    #[test]
-    fn column_height_is_aligned_to_dominant_measure_interval() {
-        let timing_lines: Vec<TimingLine> = (0..10)
-            .map(|index| TimingLine {
-                time: index * 2_000,
-                is_measure: true,
-                show_label: true,
-                bpm: None,
-            })
-            .collect();
-
-        let height = predominant_measure_aligned_height(&timing_lines, 0.5, 5_500).unwrap();
-        assert_eq!(height, 5_000);
-        assert_eq!(height % 1_000, 0);
-    }
-
-    #[test]
-    fn derived_playfield_padding_scales_with_the_column() {
-        for scale in [0.5, 1.0, 1.5, 2.0] {
-            let column_width = crate::export::geometry::scale_px(315.0, scale);
-            let panel_width = crate::export::geometry::scale_px(9.0, scale);
-            let playfield_width = crate::export::geometry::scale_px(260.0, scale);
-            let padding = playfield_side_padding_for(column_width, panel_width, playfield_width);
-
-            assert!((padding as f64 / scale - 23.0).abs() <= 1.0);
-        }
-    }
-
-    #[test]
-    fn aligned_column_count_is_stable_across_output_scales() {
-        let timing_lines: Vec<TimingLine> = (0..10)
-            .map(|index| TimingLine {
-                time: index * 2_000,
-                is_measure: true,
-                show_label: true,
-                bpm: None,
-            })
-            .collect();
-
-        for scale in [0.5, 1.0, 1.5, 2.0] {
-            let pixels_per_ms = 0.5 * scale;
-            let max_area_height = crate::export::geometry::scale_px(5_500.0, scale);
-            let aligned =
-                predominant_measure_aligned_height(&timing_lines, pixels_per_ms, max_area_height)
-                    .unwrap();
-            let total_height = crate::export::geometry::scale_px(9_000.0, scale);
-
-            assert_eq!(ceil_div(total_height, aligned), 2);
-            assert!((aligned as f64 / scale - 5_000.0).abs() <= 1.0);
-        }
-    }
-
-    #[test]
-    fn edge_combo_numbers_ignore_tiny_droplets_and_bananas() {
-        let mut first = edge_fruit(20.0, 10);
-        first.edge = false;
-        let mut tiny = edge_fruit(30.0, 15);
-        tiny.object_type = ObjType::TinyDroplet;
-        tiny.edge = false;
-        let mut droplet = edge_fruit(40.0, 20);
-        droplet.object_type = ObjType::Droplet;
-        let mut banana = edge_fruit(50.0, 25);
-        banana.object_type = ObjType::Banana;
-        banana.edge = false;
-        let last = edge_fruit(60.0, 30);
-
-        let labels = edge_combo_numbers(&[first, tiny, droplet, banana, last]);
-
-        assert_eq!(labels, vec![(2, 2), (4, 3)]);
-    }
-
-    #[test]
-    fn edge_combo_label_is_drawn_next_to_the_edge_object() {
-        let layout = test_layout(1);
-        let current = edge_fruit(100.0, 10);
-        let mut next = edge_fruit(200.0, 20);
-        next.edge = false;
-        let mut image = Img::new(
-            400,
-            130,
-            crate::infrastructure::config::current()
-                .render
-                .catch
-                .png
-                .style
-                .IMAGE_BACKGROUND,
-        );
-
-        draw_edge_combo_labels(&mut image, &[current, next], &layout);
-
-        let has_white_label_pixel = (0..image.h).any(|y| {
-            (0..image.w).any(|x| {
-                image.get(x, y)
-                    == crate::infrastructure::config::current()
-                        .render
-                        .catch
-                        .png
-                        .style
-                        .EDGE_COMBO_LABEL_COLOR
-            })
-        });
-        assert!(has_white_label_pixel);
-    }
-}
+mod tests;

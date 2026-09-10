@@ -3,8 +3,8 @@
 //! 帧由 rayon 分块并行渲染，再按顺序编码以保持差分帧顺序。
 
 use crate::export::canvas::Img;
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -62,31 +62,26 @@ pub fn save_png(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<
 
     // 写入同目录临时文件，PNG 完整编码后再原子替换最终路径，
     // 确保中断渲染不会留下可被缓存误用的残缺文件。
-    crate::infrastructure::cache::with_atomic_output_deadline(
-        path,
-        "png.tmp",
-        deadline,
-        |tmp_path| {
-            let file = std::fs::File::create(tmp_path)
-                .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
-            let writer = std::io::BufWriter::new(file);
-            let mut encoder = png::Encoder::new(writer, image.w, image.h);
-            encoder.set_color(png::ColorType::Indexed);
-            encoder.set_depth(png::BitDepth::Eight);
-            encoder.set_palette(&palette_rgb);
-            encoder.set_compression(png::Compression::Default);
-            encoder.set_filter(png::FilterType::Paeth);
-            let mut writer = encoder
-                .write_header()
-                .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
-            writer
-                .write_image_data(&indexed)
-                .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
-            drop(writer); // flush buffered bytes before the temp file is renamed
-            deadline.check()?;
-            Ok(())
-        },
-    )
+    crate::cache::with_atomic_output_deadline(path, "png.tmp", deadline, |tmp_path| {
+        let file = std::fs::File::create(tmp_path)
+            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
+        let writer = std::io::BufWriter::new(file);
+        let mut encoder = png::Encoder::new(writer, image.w, image.h);
+        encoder.set_color(png::ColorType::Indexed);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_palette(&palette_rgb);
+        encoder.set_compression(png::Compression::Default);
+        encoder.set_filter(png::FilterType::Paeth);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
+        writer
+            .write_image_data(&indexed)
+            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
+        drop(writer); // flush buffered bytes before the temp file is renamed
+        deadline.check()?;
+        Ok(())
+    })
 }
 
 /// 将通道海报化为 5 位（32 级），复制高位以保持完整 0..255 范围。
@@ -212,38 +207,19 @@ pub fn save_animated_gif_streamed(
     // LZW 初始码只需 7 位，不会因索引 255 被迫使用 8 位。
     let nq = color_quant::NeuQuant::new(
         10,
-        crate::infrastructure::config::current()
-            .advance
-            .gif
-            .PALETTE_COLORS,
+        crate::config::current().advance.gif.PALETTE_COLORS,
         &sample,
     );
     deadline.check()?;
-    let mut palette: Vec<u8> = Vec::with_capacity(
-        (crate::infrastructure::config::current()
-            .advance
-            .gif
-            .PALETTE_COLORS
-            + 1)
-            * 3,
-    );
+    let mut palette: Vec<u8> =
+        Vec::with_capacity((crate::config::current().advance.gif.PALETTE_COLORS + 1) * 3);
     for px in nq.color_map_rgba().chunks_exact(4) {
         palette.extend_from_slice(&px[..3]);
     }
-    while palette.len()
-        < (crate::infrastructure::config::current()
-            .advance
-            .gif
-            .PALETTE_COLORS
-            + 1)
-            * 3
-    {
+    while palette.len() < (crate::config::current().advance.gif.PALETTE_COLORS + 1) * 3 {
         palette.extend_from_slice(&[0, 0, 0]);
     }
-    let transparent_idx: u8 = crate::infrastructure::config::current()
-        .advance
-        .gif
-        .PALETTE_COLORS as u8;
+    let transparent_idx: u8 = crate::config::current().advance.gif.PALETTE_COLORS as u8;
 
     // 预计算将海报化 RGB 映射到调色板索引的 32³ 三维查找表。
     // 每个通道会缩减为 16 个值，>>3 后无冲突地落入 32 个槽位中的 16 个，
@@ -255,131 +231,117 @@ pub fn save_animated_gif_streamed(
 
     // 写入同目录临时文件，所有帧编码完成后才原子替换最终路径，
     // 确保中断渲染不会留下可被缓存误用的残缺文件。
-    crate::infrastructure::cache::with_atomic_output_deadline(
-        path,
-        "gif.tmp",
-        deadline,
-        |tmp_path| {
-            let file = std::fs::File::create(tmp_path)
-                .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-            let writer = std::io::BufWriter::new(file);
-            let mut encoder = gif::Encoder::new(writer, w as u16, h as u16, &palette)
-                .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-            encoder
-                .set_repeat(gif::Repeat::Infinite)
-                .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+    crate::cache::with_atomic_output_deadline(path, "gif.tmp", deadline, |tmp_path| {
+        let file = std::fs::File::create(tmp_path)
+            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+        let writer = std::io::BufWriter::new(file);
+        let mut encoder = gif::Encoder::new(writer, w as u16, h as u16, &palette)
+            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+        encoder
+            .set_repeat(gif::Repeat::Infinite)
+            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
 
-            let delay = (frame_duration_ms / 10) as u16; // GIF delay unit = 10ms
+        let delay = (frame_duration_ms / 10) as u16; // GIF delay unit = 10ms
 
-            let pixel_count = w.saturating_mul(h);
-            // 两块缓冲区交替保存当前帧和上一帧，避免每帧重新分配并清零整张 indexed 图像。
-            let mut prev_indexed: Vec<u8> = Vec::with_capacity(pixel_count);
-            let mut indexed: Vec<u8> = Vec::with_capacity(pixel_count);
-            // 差分矩形在 LZW 压缩前只需短暂存在。编码器会把借用的数据替换为独立的
-            // 压缩缓冲区，因此可跨帧复用这块原始索引缓冲，避免反复分配大矩形。
-            let mut delta_buffer: Vec<u8> = Vec::with_capacity(pixel_count);
-            let frame_bytes = w.saturating_mul(h).saturating_mul(4).max(1);
-            let par_chunk_size = (crate::infrastructure::config::current()
-                .advance
-                .gif
-                .MAX_PAR_FRAME_BYTES
-                / frame_bytes)
-                .clamp(
-                    1,
-                    crate::infrastructure::config::current()
-                        .advance
-                        .gif
-                        .PAR_CHUNK_SIZE,
-                );
+        let pixel_count = w.saturating_mul(h);
+        // 两块缓冲区交替保存当前帧和上一帧，避免每帧重新分配并清零整张 indexed 图像。
+        let mut prev_indexed: Vec<u8> = Vec::with_capacity(pixel_count);
+        let mut indexed: Vec<u8> = Vec::with_capacity(pixel_count);
+        // 差分矩形在 LZW 压缩前只需短暂存在。编码器会把借用的数据替换为独立的
+        // 压缩缓冲区，因此可跨帧复用这块原始索引缓冲，避免反复分配大矩形。
+        let mut delta_buffer: Vec<u8> = Vec::with_capacity(pixel_count);
+        let frame_bytes = w.saturating_mul(h).saturating_mul(4).max(1);
+        let par_chunk_size = (crate::config::current().advance.gif.MAX_PAR_FRAME_BYTES
+            / frame_bytes)
+            .clamp(1, crate::config::current().advance.gif.PAR_CHUNK_SIZE);
 
-            // ── 分块并行渲染与编码 ──
-            for chunk_start in (0..frame_count).step_by(par_chunk_size) {
-                deadline.check()?;
-                let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
-
-                // 并行渲染当前分块；每个线程独立调用 `render(i)`。
-                let frames: Vec<Img> = (chunk_start..chunk_end)
-                    .into_par_iter()
-                    .map(&render)
-                    .collect();
-                deadline.check()?;
-
-                // 顺序编码（差分帧必须保持顺序）。
-                for (fi, frame) in (chunk_start..).zip(frames) {
-                    deadline.check()?;
-                    rgba_to_indexed(&frame, &lut, &mut indexed, pixel_count);
-                    drop(frame);
-
-                    let (rect, buffer, transparent) = if fi == 0 {
-                        // make_lzw_pre_encoded 会立即把借用的原始 buffer 替换为压缩数据，
-                        // 因此首帧可以直接借用 indexed，省去一次整帧复制。
-                        (
-                            (0usize, 0usize, w, h),
-                            std::borrow::Cow::Borrowed(indexed.as_slice()),
-                            None,
-                        )
-                    } else {
-                        match find_delta_rect(&indexed, &prev_indexed, w, h) {
-                            None => (
-                                (0, 0, 1, 1),
-                                {
-                                    delta_buffer.clear();
-                                    delta_buffer.push(transparent_idx);
-                                    std::borrow::Cow::Borrowed(delta_buffer.as_slice())
-                                },
-                                Some(transparent_idx),
-                            ),
-                            Some((min_x, min_y, max_x, max_y)) => {
-                                let rw = max_x - min_x + 1;
-                                let rh = max_y - min_y + 1;
-                                delta_buffer.clear();
-                                delta_buffer.reserve(rw.saturating_mul(rh));
-                                for y in min_y..=max_y {
-                                    let row = y * w;
-                                    for x in min_x..=max_x {
-                                        let v = indexed[row + x];
-                                        delta_buffer.push(if v == prev_indexed[row + x] {
-                                            transparent_idx
-                                        } else {
-                                            v
-                                        });
-                                    }
-                                }
-                                (
-                                    (min_x, min_y, rw, rh),
-                                    std::borrow::Cow::Borrowed(delta_buffer.as_slice()),
-                                    Some(transparent_idx),
-                                )
-                            }
-                        }
-                    };
-
-                    let mut gframe = gif::Frame::<'_> {
-                        width: rect.2 as u16,
-                        height: rect.3 as u16,
-                        left: rect.0 as u16,
-                        top: rect.1 as u16,
-                        delay,
-                        dispose: gif::DisposalMethod::Keep,
-                        transparent,
-                        needs_user_input: false,
-                        interlaced: false,
-                        palette: None,
-                        buffer,
-                    };
-                    gframe.make_lzw_pre_encoded();
-                    encoder
-                        .write_lzw_pre_encoded_frame(&gframe)
-                        .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-                    // gframe 在此之后已不再借用 indexed，安全地交换两块帧缓冲区。
-                    std::mem::swap(&mut indexed, &mut prev_indexed);
-                }
-            }
-            drop(encoder); // flush buffered bytes before the temp file is renamed
+        // ── 分块并行渲染与编码 ──
+        for chunk_start in (0..frame_count).step_by(par_chunk_size) {
             deadline.check()?;
-            Ok(())
-        },
-    )
+            let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
+
+            // 并行渲染当前分块；每个线程独立调用 `render(i)`。
+            let frames: Vec<Img> = (chunk_start..chunk_end)
+                .into_par_iter()
+                .map(&render)
+                .collect();
+            deadline.check()?;
+
+            // 顺序编码（差分帧必须保持顺序）。
+            for (fi, frame) in (chunk_start..).zip(frames) {
+                deadline.check()?;
+                rgba_to_indexed(&frame, &lut, &mut indexed, pixel_count);
+                drop(frame);
+
+                let (rect, buffer, transparent) = if fi == 0 {
+                    // make_lzw_pre_encoded 会立即把借用的原始 buffer 替换为压缩数据，
+                    // 因此首帧可以直接借用 indexed，省去一次整帧复制。
+                    (
+                        (0usize, 0usize, w, h),
+                        std::borrow::Cow::Borrowed(indexed.as_slice()),
+                        None,
+                    )
+                } else {
+                    match find_delta_rect(&indexed, &prev_indexed, w, h) {
+                        None => (
+                            (0, 0, 1, 1),
+                            {
+                                delta_buffer.clear();
+                                delta_buffer.push(transparent_idx);
+                                std::borrow::Cow::Borrowed(delta_buffer.as_slice())
+                            },
+                            Some(transparent_idx),
+                        ),
+                        Some((min_x, min_y, max_x, max_y)) => {
+                            let rw = max_x - min_x + 1;
+                            let rh = max_y - min_y + 1;
+                            delta_buffer.clear();
+                            delta_buffer.reserve(rw.saturating_mul(rh));
+                            for y in min_y..=max_y {
+                                let row = y * w;
+                                for x in min_x..=max_x {
+                                    let v = indexed[row + x];
+                                    delta_buffer.push(if v == prev_indexed[row + x] {
+                                        transparent_idx
+                                    } else {
+                                        v
+                                    });
+                                }
+                            }
+                            (
+                                (min_x, min_y, rw, rh),
+                                std::borrow::Cow::Borrowed(delta_buffer.as_slice()),
+                                Some(transparent_idx),
+                            )
+                        }
+                    }
+                };
+
+                let mut gframe = gif::Frame::<'_> {
+                    width: rect.2 as u16,
+                    height: rect.3 as u16,
+                    left: rect.0 as u16,
+                    top: rect.1 as u16,
+                    delay,
+                    dispose: gif::DisposalMethod::Keep,
+                    transparent,
+                    needs_user_input: false,
+                    interlaced: false,
+                    palette: None,
+                    buffer,
+                };
+                gframe.make_lzw_pre_encoded();
+                encoder
+                    .write_lzw_pre_encoded_frame(&gframe)
+                    .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+                // gframe 在此之后已不再借用 indexed，安全地交换两块帧缓冲区。
+                std::mem::swap(&mut indexed, &mut prev_indexed);
+            }
+        }
+        drop(encoder); // flush buffered bytes before the temp file is renamed
+        deadline.check()?;
+        Ok(())
+    })
 }
 
 /// 将 RGBA 帧映射为 GIF 使用的 indexed 像素。

@@ -22,10 +22,10 @@
 //! - 输出为 Annex-B，由共享 `mux` 模块解析。
 
 use crate::export::canvas::Img;
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 
 use super::mux::extract_nals_from_annexb;
-use super::{EncodedFrame, FrameEncoder};
+use super::video::{EncodedFrame, FrameEncoder};
 
 use nvenc::bitstream::BitStream;
 use nvenc::session::{InitParams, Session};
@@ -110,10 +110,8 @@ impl NvencEncoder {
         config.preset_cfg.gop_len = keyframe_period;
         config.preset_cfg.frame_interval_p = 1;
         config.preset_cfg.rc_params.rate_control_mode = NVencParamsRcMode::VBR;
-        config.preset_cfg.rc_params.average_bit_rate = crate::infrastructure::config::current()
-            .advance
-            .video
-            .VIDEO_BITRATE;
+        config.preset_cfg.rc_params.average_bit_rate =
+            crate::config::current().advance.video.VIDEO_BITRATE;
 
         // ── 5. 初始化编码器 ──
         let init_params = InitParams {

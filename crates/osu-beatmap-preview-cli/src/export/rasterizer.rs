@@ -4,7 +4,7 @@
 
 use crate::export::canvas::Img;
 use crate::export::scene::{DrawCommand, FrameScene, SceneRect};
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 
 pub(crate) trait FrameBackend {
     fn render_frame(&mut self, scene: &FrameScene) -> Result<Img>;

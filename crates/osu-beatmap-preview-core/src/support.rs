@@ -10,3 +10,7 @@ pub mod error {
 pub mod timeout {
     pub use crate::domain::timeout::RequestDeadline;
 }
+
+pub mod build {
+    pub use crate::domain::build_time::build_time;
+}

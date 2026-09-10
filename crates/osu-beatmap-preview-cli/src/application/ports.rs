@@ -1,8 +1,8 @@
 //! 应用层端口。后续下载源、实时 Surface 和回放时间线从这里接入。
 
 use crate::application::plan::RenderPlan;
-use osu_beatmap_preview_core::domain::errors::Result;
-use osu_beatmap_preview_core::domain::models::Beatmap;
+use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::support::error::Result;
 use std::path::{Path, PathBuf};
 
 #[allow(dead_code)]

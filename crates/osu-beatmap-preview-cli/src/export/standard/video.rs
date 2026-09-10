@@ -5,15 +5,15 @@
 //! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
 use crate::export::canvas::Img;
-use crate::infrastructure::media::audio::AudioSourceJob;
-use crate::infrastructure::media::{resolve_video_time_range, save_mp4_streamed};
-use osu_beatmap_preview_core::domain::errors::Result;
-use osu_beatmap_preview_core::domain::models::Beatmap;
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::parser::round_half_even;
-use osu_beatmap_preview_core::domain::shared::time_selection::TimeAxis;
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
-use osu_beatmap_preview_core::domain::validate::TimePoint;
+use crate::media::audio::AudioSourceJob;
+use crate::media::{resolve_video_time_range, save_mp4_streamed};
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::processing::parse::round_half_even;
+use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::processing::validation::TimePoint;
+use osu_beatmap_preview_core::support::error::Result;
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -52,14 +52,7 @@ pub(crate) fn render_standard_video(
         crate::export::geometry::OutputFormat::Mp4,
     );
     let total_ms = end - start;
-    let fps = fps.unwrap_or_else(|| {
-        crate::infrastructure::config::current()
-            .render
-            .standard
-            .mp4
-            .style
-            .FPS as u32
-    });
+    let fps = fps.unwrap_or_else(|| crate::config::current().render.standard.mp4.style.FPS as u32);
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
     // 视频帧会被并行且可能乱序地请求；先按时间轴一次性生成可见物件索引，
     // 避免每帧重复排序完整谱面并分配临时 Vec。索引仅保存 usize，
@@ -121,6 +114,6 @@ pub(crate) fn render_standard_video(
         time_axis,
         deadline,
         crate::export::geometry::GameMode::Standard,
-        crate::infrastructure::media::FrameComposition::Playfield,
+        crate::media::FrameComposition::Playfield,
     )
 }

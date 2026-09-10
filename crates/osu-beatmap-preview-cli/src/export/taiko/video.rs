@@ -5,14 +5,14 @@
 //! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
 use crate::export::canvas::Img;
-use crate::infrastructure::media::audio::AudioSourceJob;
-use crate::infrastructure::media::{resolve_video_time_range, save_mp4_streamed};
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::models::Beatmap;
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::shared::time_selection::TimeAxis;
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
-use osu_beatmap_preview_core::domain::validate::TimePoint;
+use crate::media::audio::AudioSourceJob;
+use crate::media::{resolve_video_time_range, save_mp4_streamed};
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::processing::validation::TimePoint;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -49,14 +49,7 @@ pub(crate) fn render_taiko_video(
     let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let total_ms = end - start;
-    let fps = fps.unwrap_or_else(|| {
-        crate::infrastructure::config::current()
-            .render
-            .taiko
-            .mp4
-            .style
-            .FPS as u32
-    });
+    let fps = fps.unwrap_or_else(|| crate::config::current().render.taiko.mp4.style.FPS as u32);
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;
@@ -75,7 +68,7 @@ pub(crate) fn render_taiko_video(
         &hit_objects,
         &timing_points,
         &multiplier_lookup,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .taiko
             .mp4
@@ -93,7 +86,7 @@ pub(crate) fn render_taiko_video(
             if background.is_some() {
                 [0, 0, 0, 0]
             } else {
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .taiko
                     .mp4
@@ -141,7 +134,7 @@ pub(crate) fn render_taiko_video(
         time_axis,
         deadline,
         crate::export::geometry::GameMode::Taiko,
-        crate::infrastructure::media::FrameComposition::Playfield,
+        crate::media::FrameComposition::Playfield,
     )
 }
 

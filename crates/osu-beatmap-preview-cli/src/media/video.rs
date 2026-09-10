@@ -18,26 +18,21 @@
 //!（`extract_nals` + `mp4` writer），因此输出文件结构一致。GPU DLL 通过
 //! `libloading` 加载；构建或运行时缺少 DLL 都不会影响程序，编码器会静默回退到 CPU。
 
+use crate::cache::with_atomic_output_deadline;
 use crate::export::canvas::Img;
 use crate::export::text::{draw_text, text_size};
-use crate::infrastructure::cache::with_atomic_output_deadline;
-use crate::infrastructure::media::audio::{
-    encode_audio_segment, full_video_start_time, AudioSourceJob,
-};
+use crate::media::audio::{encode_audio_segment, full_video_start_time, AudioSourceJob};
 use bytes::Bytes;
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::models::Beatmap;
-use osu_beatmap_preview_core::domain::parser::round_half_even;
-use osu_beatmap_preview_core::domain::shared::time_selection::TimeAxis;
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
-use osu_beatmap_preview_core::domain::validate::TimePoint;
+use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::processing::parse::round_half_even;
+use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::processing::validation::TimePoint;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use rayon::prelude::*;
 use std::io::BufWriter;
 use std::path::Path;
 use std::time::Instant;
-
-pub(crate) mod audio;
-pub(crate) mod image;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct VideoStyle {
@@ -59,7 +54,7 @@ pub(crate) enum FrameComposition {
 }
 
 pub(crate) fn video_style(mode: crate::export::geometry::GameMode) -> VideoStyle {
-    let layout = &crate::infrastructure::config::current().render;
+    let layout = &crate::config::current().render;
     macro_rules! make {
         ($section:expr, $background:expr) => {{
             let section = $section;
@@ -92,13 +87,6 @@ pub(crate) fn video_style(mode: crate::export::geometry::GameMode) -> VideoStyle
     }
 }
 
-#[allow(non_camel_case_types, dead_code)]
-mod amf;
-mod cpu;
-mod mux;
-#[cfg(windows)]
-mod nvenc;
-
 /// 并行渲染分块大小（与 GIF 一致：一次约 8 帧）。
 /// 限制异常大游戏区域带来的临时 RGBA 帧内存。
 
@@ -118,12 +106,7 @@ pub(crate) fn resolve_video_time_range(
 ) -> Result<VideoTimeRange> {
     let full_start = full_video_start_time(first_object_ms, beatmap.audio_lead_in_ms());
     let full_end = last_object_ms
-        .checked_add(
-            crate::infrastructure::config::current()
-                .advance
-                .video
-                .VIDEO_END_PADDING_MS,
-        )
+        .checked_add(crate::config::current().advance.video.VIDEO_END_PADDING_MS)
         .ok_or_else(|| PreviewError::new("mp4 time range is outside the supported range"))?;
     let full_range = validate_video_time_range(VideoTimeRange {
         start: full_start,
@@ -212,11 +195,11 @@ fn preview_time_or_first_object(beatmap: &Beatmap, first_object_ms: i64) -> i64 
 ///
 /// 仅携带 SPS/PPS 的帧对应字段为 `Some`。`slice` 是带长度前缀的 slice NAL 数据，
 /// `is_keyframe` 表示是否实际包含 IDR NAL。
-struct EncodedFrame {
-    sps: Option<Vec<u8>>,
-    pps: Option<Vec<u8>>,
-    slice: Vec<u8>,
-    is_keyframe: bool,
+pub(super) struct EncodedFrame {
+    pub(super) sps: Option<Vec<u8>>,
+    pub(super) pps: Option<Vec<u8>>,
+    pub(super) slice: Vec<u8>,
+    pub(super) is_keyframe: bool,
 }
 
 /// 后端 H.264 编码器：接收合成后的 RGBA 帧并产生 Annex-B NAL。
@@ -225,7 +208,7 @@ struct EncodedFrame {
 /// 安全约定：`encode` 仅由单线程（封装循环）顺序调用，因此后端无需实现 `Sync`。
 /// trait 对象会跨 rayon 并行渲染分块持有，所以 `into_par_iter` 期间不得借用它。
 /// `save_mp4_streamed` 在并行收集完成后才编码，因此符合约定。
-trait FrameEncoder {
+pub(super) trait FrameEncoder {
     /// 编码一帧合成 RGBA，返回拆分为 SPS / PPS / slice 的 NAL 供封装。
     fn encode(&mut self, rgba: &Img) -> Result<EncodedFrame>;
 
@@ -261,14 +244,11 @@ pub(crate) fn save_mp4_streamed(
         return Err(PreviewError::render("no frames to encode"));
     }
     let video_started = Instant::now();
-    let audio_sample_rate = crate::infrastructure::config::current()
+    let audio_sample_rate = crate::config::current()
         .advance
         .video_audio
         .AUDIO_SAMPLE_RATE;
-    let audio_bitrate = crate::infrastructure::config::current()
-        .advance
-        .video_audio
-        .AUDIO_BITRATE;
+    let audio_bitrate = crate::config::current().advance.video_audio.AUDIO_BITRATE;
     let audio_freq_index = sample_freq_index(audio_sample_rate)?;
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)
@@ -288,7 +268,7 @@ pub(crate) fn save_mp4_streamed(
                 speed,
                 &audio_deadline,
             )?;
-            crate::infrastructure::logging::event(
+            crate::logging::event(
                 "audio-encode",
                 "done",
                 None,
@@ -329,7 +309,7 @@ pub(crate) fn save_mp4_streamed(
     // ── 选择最佳可用编码后端 ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
     deadline.check()?;
-    crate::infrastructure::logging::event(
+    crate::logging::event(
         "video-backend",
         "done",
         None,
@@ -347,18 +327,8 @@ pub(crate) fn save_mp4_streamed(
         .saturating_mul(out_h as usize)
         .saturating_mul(4)
         .max(1);
-    let par_chunk_size = (crate::infrastructure::config::current()
-        .advance
-        .video
-        .MAX_PAR_FRAME_BYTES
-        / frame_bytes)
-        .clamp(
-            1,
-            crate::infrastructure::config::current()
-                .advance
-                .video
-                .PAR_CHUNK_SIZE,
-        );
+    let par_chunk_size = (crate::config::current().advance.video.MAX_PAR_FRAME_BYTES / frame_bytes)
+        .clamp(1, crate::config::current().advance.video.PAR_CHUNK_SIZE);
 
     // ── 编码首帧并提取 SPS/PPS，供 MP4 轨道配置使用 ──
     let first_comp = match composition {
@@ -522,7 +492,7 @@ pub(crate) fn save_mp4_streamed(
 
         let video_elapsed = video_started.elapsed();
         if !audio_task.is_finished() {
-            crate::infrastructure::logging::event(
+            crate::logging::event(
                 "audio-wait",
                 "start",
                 None,
@@ -557,19 +527,17 @@ pub(crate) fn save_mp4_streamed(
             audio_wait.as_secs_f64(),
             encoder.name(),
         );
-        crate::infrastructure::logging::record_video_stats(
-            crate::infrastructure::logging::VideoStats {
-                backend: Some(encoder.name().to_string()),
-                resolution: Some(format!("{out_w}x{out_h}")),
-                fps: Some(fps),
-                frame_count: Some(frame_count),
-                video_ms: Some(video_elapsed.as_secs_f64() * 1000.0),
-                render_compose_ms: Some(t_render.as_secs_f64() * 1000.0),
-                encode_ms: Some(t_encode.as_secs_f64() * 1000.0),
-                mux_ms: Some(t_mux.as_secs_f64() * 1000.0),
-                audio_ms: Some(audio_wait.as_secs_f64() * 1000.0),
-            },
-        );
+        crate::logging::record_video_stats(crate::logging::VideoStats {
+            backend: Some(encoder.name().to_string()),
+            resolution: Some(format!("{out_w}x{out_h}")),
+            fps: Some(fps),
+            frame_count: Some(frame_count),
+            video_ms: Some(video_elapsed.as_secs_f64() * 1000.0),
+            render_compose_ms: Some(t_render.as_secs_f64() * 1000.0),
+            encode_ms: Some(t_encode.as_secs_f64() * 1000.0),
+            mux_ms: Some(t_mux.as_secs_f64() * 1000.0),
+            audio_ms: Some(audio_wait.as_secs_f64() * 1000.0),
+        });
 
         mp4_writer
             .write_end()
@@ -579,7 +547,7 @@ pub(crate) fn save_mp4_streamed(
         std::io::Write::flush(&mut writer)
             .map_err(|e| PreviewError::render(format!("mp4 flush failed: {e}")))?;
         drop(writer);
-        mux::make_mp4_faststart(tmp_path)?;
+        crate::media::mux::make_mp4_faststart(tmp_path)?;
         deadline.check()?;
 
         Ok(encoder)
@@ -596,13 +564,13 @@ pub(crate) fn save_mp4_streamed(
 }
 
 struct JoinedAudioTask {
-    handle: Option<std::thread::JoinHandle<Result<audio::EncodedAudio>>>,
+    handle: Option<std::thread::JoinHandle<Result<crate::media::audio::EncodedAudio>>>,
     deadline: RequestDeadline,
 }
 
 impl JoinedAudioTask {
     fn new(
-        handle: std::thread::JoinHandle<Result<audio::EncodedAudio>>,
+        handle: std::thread::JoinHandle<Result<crate::media::audio::EncodedAudio>>,
         deadline: RequestDeadline,
     ) -> Self {
         Self {
@@ -617,7 +585,7 @@ impl JoinedAudioTask {
             .is_none_or(|handle| handle.is_finished())
     }
 
-    fn join(&mut self) -> Result<audio::EncodedAudio> {
+    fn join(&mut self) -> Result<crate::media::audio::EncodedAudio> {
         self.handle
             .take()
             .expect("audio task joined more than once")
@@ -667,19 +635,19 @@ fn create_encoder(w: u32, h: u32, fps: u32) -> Result<Box<dyn FrameEncoder>> {
     // 1. NVENC（NVIDIA）——仅 Windows。
     #[cfg(windows)]
     if !force_cpu {
-        if let Some(enc) = nvenc::try_create(w, h, fps)? {
+        if let Some(enc) = crate::media::nvenc::try_create(w, h, fps)? {
             return Ok(Box::new(enc));
         }
     }
     // 2. AMF（AMD）——仅 Windows（amfrt64.dll）。
     #[cfg(windows)]
     if !force_cpu {
-        if let Some(enc) = amf::try_create(w, h, fps)? {
+        if let Some(enc) = crate::media::amf::try_create(w, h, fps)? {
             return Ok(Box::new(enc));
         }
     }
     // 3. CPU 回退（始终可用）。
-    Ok(Box::new(cpu::CpuEncoder::new(w, h, fps)?))
+    Ok(Box::new(crate::media::cpu::CpuEncoder::new(w, h, fps)?))
 }
 
 /// 将谱面背景图按 osu! 的等比适应方式缩放并居中，超出部分保留黑边，
@@ -814,237 +782,5 @@ fn drop_stdout_silence<F: FnOnce()>(f: F) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use osu_beatmap_preview_core::domain::models::{HitObjects, KvSection};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    fn beatmap_with_preview(preview_time: Option<&str>, lead_in: Option<&str>) -> Beatmap {
-        let mut general = KvSection::default();
-        if let Some(value) = preview_time {
-            general.insert("PreviewTime", value.to_string());
-        }
-        if let Some(value) = lead_in {
-            general.insert("AudioLeadIn", value.to_string());
-        }
-        Beatmap {
-            metadata: KvSection::default(),
-            difficulty: KvSection::default(),
-            general,
-            timing_points: Vec::new(),
-            hit_objects: HitObjects::Standard(Vec::new()),
-            break_periods: Vec::new(),
-            background_filename: None,
-            combo_colors: Vec::new(),
-            beat_divisor: 0,
-        }
-    }
-
-    #[test]
-    fn preview_start_uses_preview_time_and_duration() {
-        let beatmap = beatmap_with_preview(Some("45000"), None);
-        let range = resolve_video_time_range(
-            &beatmap,
-            10_000,
-            100_000,
-            Some(TimePoint::Preview),
-            Some(30.0),
-            1.0,
-        )
-        .unwrap();
-        assert_eq!(
-            range,
-            VideoTimeRange {
-                start: 45_000,
-                end: 75_000
-            }
-        );
-    }
-
-    #[test]
-    fn default_start_uses_requested_duration_on_a_long_chart() {
-        let beatmap = beatmap_with_preview(None, None);
-        let range =
-            resolve_video_time_range(&beatmap, 10_000, 100_000, None, Some(60.0), 1.0).unwrap();
-        assert_eq!(
-            range,
-            VideoTimeRange {
-                start: 10_000,
-                end: 70_000
-            }
-        );
-    }
-
-    #[test]
-    fn numeric_start_shifts_backward_when_it_runs_past_chart_tail() {
-        let beatmap = beatmap_with_preview(None, None);
-        let range = resolve_video_time_range(
-            &beatmap,
-            10_000,
-            100_000,
-            Some(TimePoint::Seconds(50.0)),
-            Some(60.0),
-            1.0,
-        )
-        .unwrap();
-        assert_eq!(
-            range,
-            VideoTimeRange {
-                start: 42_000,
-                end: 102_000
-            }
-        );
-    }
-
-    #[test]
-    fn short_chart_returns_full_playable_range_instead_of_padding_to_duration() {
-        let beatmap = beatmap_with_preview(None, None);
-        let range =
-            resolve_video_time_range(&beatmap, 10_000, 20_000, None, Some(60.0), 1.0).unwrap();
-        assert_eq!(
-            range,
-            VideoTimeRange {
-                start: 8_000,
-                end: 22_000
-            }
-        );
-    }
-
-    #[test]
-    fn short_chart_uses_full_range_even_with_a_negative_requested_start() {
-        let beatmap = beatmap_with_preview(None, None);
-        let range = resolve_video_time_range(
-            &beatmap,
-            10_000,
-            20_000,
-            Some(TimePoint::Seconds(-20.0)),
-            Some(60.0),
-            1.0,
-        )
-        .unwrap();
-        assert_eq!(
-            range,
-            VideoTimeRange {
-                start: 8_000,
-                end: 22_000
-            }
-        );
-    }
-
-    #[test]
-    fn negative_start_is_preserved_when_tail_adjustment_is_not_needed() {
-        let beatmap = beatmap_with_preview(None, None);
-        let range = resolve_video_time_range(
-            &beatmap,
-            10_000,
-            100_000,
-            Some(TimePoint::Seconds(-20.0)),
-            Some(60.0),
-            1.0,
-        )
-        .unwrap();
-        assert_eq!(
-            range,
-            VideoTimeRange {
-                start: -10_000,
-                end: 50_000
-            }
-        );
-    }
-
-    #[test]
-    fn speed_multiplier_scales_chart_span() {
-        let beatmap = beatmap_with_preview(None, None);
-        let range =
-            resolve_video_time_range(&beatmap, 10_000, 100_000, None, Some(30.0), 1.5).unwrap();
-        assert_eq!(
-            range,
-            VideoTimeRange {
-                start: 10_000,
-                end: 55_000
-            }
-        );
-    }
-
-    #[test]
-    fn numeric_start_is_relative_to_first_object() {
-        let beatmap = beatmap_with_preview(None, None);
-        let range = resolve_video_time_range(
-            &beatmap,
-            10_000,
-            100_000,
-            Some(TimePoint::Seconds(-2.0)),
-            Some(10.0),
-            1.5,
-        )
-        .unwrap();
-        assert_eq!(
-            range,
-            VideoTimeRange {
-                start: 8_000,
-                end: 23_000
-            }
-        );
-    }
-
-    #[test]
-    fn progress_label_uses_current_skin_time_and_full_playable_duration() {
-        let time_axis = TimeAxis::new(12_500);
-        let total_ms = time_axis.to_display(102_500);
-
-        assert_eq!(total_ms, 90_000);
-        assert_eq!(
-            format_progress_label(time_axis.to_display(12_000), total_ms),
-            "-0:01/1:30"
-        );
-        assert_eq!(
-            format_progress_label(time_axis.to_display(92_500), total_ms),
-            "1:20/1:30"
-        );
-    }
-
-    #[test]
-    fn video_background_fits_entire_image_and_keeps_black_borders() {
-        let mut source = Img::new(4, 2, [255, 100, 0, 255]);
-        for y in 0..2 {
-            for x in 2..4 {
-                source.put(x, y, [0, 100, 255, 255]);
-            }
-        }
-        let background = prepare_video_background(
-            &source,
-            4,
-            4,
-            video_style(crate::export::geometry::GameMode::Standard),
-        );
-        assert_eq!((background.w, background.h), (4, 4));
-        assert_eq!(background.get(0, 0), [0, 0, 0, 255]);
-        assert_eq!(background.get(0, 1), [77, 30, 0, 255]);
-        assert_eq!(background.get(0, 2), [77, 30, 0, 255]);
-        assert_eq!(background.get(3, 1), [0, 30, 77, 255]);
-        assert_eq!(background.get(0, 3), [0, 0, 0, 255]);
-    }
-
-    #[test]
-    fn dropping_audio_task_cancels_and_joins_worker() {
-        let deadline = RequestDeadline::new(Instant::now(), "mp4", Duration::from_secs(300));
-        let worker_deadline = deadline.clone();
-        let finished = Arc::new(AtomicBool::new(false));
-        let worker_finished = finished.clone();
-        let task = JoinedAudioTask::new(
-            std::thread::spawn(move || loop {
-                if let Err(error) = worker_deadline.check() {
-                    worker_finished.store(true, Ordering::Relaxed);
-                    return Err(error);
-                }
-                std::thread::yield_now();
-            }),
-            deadline,
-        );
-
-        drop(task);
-        assert!(finished.load(Ordering::Relaxed));
-    }
-}
+#[path = "tests.rs"]
+mod tests;

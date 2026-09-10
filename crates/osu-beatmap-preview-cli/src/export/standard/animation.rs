@@ -2,12 +2,12 @@
 
 use crate::export::canvas::Img;
 use crate::export::text::format_mmssmmm;
-use crate::infrastructure::media::image::save_animated_gif_streamed;
-use osu_beatmap_preview_core::domain::errors::Result;
-use osu_beatmap_preview_core::domain::models::Beatmap;
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::shared::time_selection::{GifRenderOptions, TimeAxis};
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+use crate::media::image::save_animated_gif_streamed;
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::processing::timeline::{GifRenderOptions, TimeAxis};
+use osu_beatmap_preview_core::support::error::Result;
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -64,7 +64,7 @@ fn render_standard_segment_gif(
     );
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let segment_duration_ms = duration_seconds.map(|seconds| seconds * 1000.0).unwrap_or(
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .standard
             .gif
@@ -72,24 +72,19 @@ fn render_standard_segment_gif(
             .DURATION_MS as f64,
     );
     let gameplay_segment_duration = py_round(segment_duration_ms * speed_multiplier);
-    let fps = fps.map(f64::from).unwrap_or(
-        crate::infrastructure::config::current()
-            .render
-            .standard
-            .gif
-            .style
-            .FPS as f64,
-    );
+    let fps = fps
+        .map(f64::from)
+        .unwrap_or(crate::config::current().render.standard.gif.style.FPS as f64);
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .standard
             .gif
             .structure
             .ROW_COUNT
-            * crate::infrastructure::config::current()
+            * crate::config::current()
                 .render
                 .standard
                 .gif
@@ -134,7 +129,7 @@ fn render_standard_segment_gif(
         let mut canvas = Img::new(
             canvas_w as u32,
             canvas_h as u32,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .standard
                 .gif
@@ -167,7 +162,7 @@ fn render_standard_segment_gif(
                     time_axis.to_display(row_timing.start_time + gameplay_segment_duration)
                 )
             );
-            if crate::infrastructure::config::current()
+            if crate::config::current()
                 .render
                 .standard
                 .gif
@@ -179,7 +174,7 @@ fn render_standard_segment_gif(
                     &label,
                     x,
                     y + context.frame_layout.frame_height
-                        + crate::infrastructure::config::current()
+                        + crate::config::current()
                             .render
                             .standard
                             .gif
@@ -187,33 +182,33 @@ fn render_standard_segment_gif(
                             .TIME_LABEL_TOP_GAP,
                     note,
                     context.frame_layout.frame_width,
-                    crate::infrastructure::config::current()
+                    crate::config::current()
                         .render
                         .standard
                         .gif
                         .sizing
                         .TIME_LABEL_FONT_SIZE,
-                    crate::infrastructure::config::current()
+                    crate::config::current()
                         .render
                         .standard
                         .gif
                         .sizing
                         .TIME_LABEL_NOTE_FONT_SIZE,
-                    crate::infrastructure::config::current()
+                    crate::config::current()
                         .render
                         .standard
                         .gif
                         .sizing
                         .TIME_LABEL_NOTE_TOP_GAP,
                     if row_timing.is_preview {
-                        crate::infrastructure::config::current()
+                        crate::config::current()
                             .render
                             .standard
                             .gif
                             .style
                             .PREVIEW_TIME_LABEL_COLOR
                     } else {
-                        crate::infrastructure::config::current()
+                        crate::config::current()
                             .render
                             .standard
                             .gif
@@ -221,14 +216,14 @@ fn render_standard_segment_gif(
                             .TIME_LABEL_COLOR
                     },
                     if row_timing.is_preview {
-                        crate::infrastructure::config::current()
+                        crate::config::current()
                             .render
                             .standard
                             .gif
                             .style
                             .PREVIEW_TIME_LABEL_COLOR
                     } else {
-                        crate::infrastructure::config::current()
+                        crate::config::current()
                             .render
                             .standard
                             .gif

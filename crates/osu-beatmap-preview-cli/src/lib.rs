@@ -1,6 +1,6 @@
 //! CLI 与 native 平台适配层。
 //!
-//! 本 crate 同时承载命令行解析、文件/网络/缓存、配置、媒体编码和导出实现。
+//! 本 crate 同时承载命令行解析、文件/网络资源、缓存、配置、媒体编码和导出实现。
 
 use osu_beatmap_preview_core::{
     parse_beatmap_bytes, AudioData, Beatmap, ImageData, ResourceBundle, Result,
@@ -10,20 +10,24 @@ use std::sync::Arc;
 
 pub mod adapters;
 pub(crate) mod application;
+pub(crate) mod cache;
 pub mod cli;
+pub(crate) mod config;
+pub(crate) mod download;
 pub(crate) mod export;
-pub(crate) mod infrastructure;
+pub(crate) mod logging;
+pub(crate) mod media;
 
 pub use application::request::{parse_fps, parse_positive_finite, RenderRequest};
 pub use application::{
     ExecutionOptions, OutputOptions, RulesetOptions, SourceOptions, ViewOptions,
 };
-pub use osu_beatmap_preview_core::domain::validate::parse_time_point;
+pub use osu_beatmap_preview_core::processing::validation::parse_time_point;
 pub use osu_beatmap_preview_core::ErrorKind;
 pub use osu_beatmap_preview_core::PreviewError;
 
 pub fn generate_preview(request: RenderRequest) -> Result<serde_json::Value> {
-    application::engine::execute(request)
+    application::execute(request)
 }
 
 pub fn read_bytes(path: impl AsRef<Path>) -> Result<Vec<u8>> {

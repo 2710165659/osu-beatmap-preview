@@ -5,13 +5,13 @@
 
 use crate::export::canvas::Img;
 use crate::export::text::{draw_text, text_size};
-use crate::infrastructure::media::image;
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::models::{Beatmap, TaikoHitObject};
-use osu_beatmap_preview_core::domain::mods::ModSettings;
-use osu_beatmap_preview_core::domain::parser::round_half_even;
-use osu_beatmap_preview_core::domain::shared::time_selection::TimeAxis;
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+use crate::media::image;
+use osu_beatmap_preview_core::model::mods::ModSettings;
+use osu_beatmap_preview_core::model::{Beatmap, TaikoHitObject};
+use osu_beatmap_preview_core::processing::parse::round_half_even;
+use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -69,7 +69,7 @@ pub(crate) fn render_taiko_grid(
 
     let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap();
     if chart_end_time
-        >= crate::infrastructure::config::current()
+        >= crate::config::current()
             .render
             .taiko
             .png
@@ -83,11 +83,10 @@ pub(crate) fn render_taiko_grid(
 
     // 始终裁剪开头的静音，直接从第一个音符开始。
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
-    let chart_start_time =
-        osu_beatmap_preview_core::domain::shared::time_selection::snap_to_beat_grid(
-            first_note_time,
-            &beatmap.timing_points,
-        );
+    let chart_start_time = osu_beatmap_preview_core::processing::timeline::snap_to_beat_grid(
+        first_note_time,
+        &beatmap.timing_points,
+    );
 
     let effective_chart_end_time: i64;
     if chart_start_time > 0 {
@@ -118,7 +117,7 @@ pub(crate) fn render_taiko_grid(
         &spacing_timing_points,
         effective_chart_end_time,
         slider_multiplier,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .taiko
             .png
@@ -150,7 +149,7 @@ pub(crate) fn render_taiko_grid(
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .taiko
             .png
@@ -162,12 +161,7 @@ pub(crate) fn render_taiko_grid(
     let track_bg = {
         let mut bg = Img::new(
             layout.content_width as u32,
-            crate::infrastructure::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .ROW_HEIGHT as u32,
+            crate::config::current().render.taiko.png.sizing.ROW_HEIGHT as u32,
             [0, 0, 0, 0],
         );
         draw_track_background(
@@ -175,19 +169,14 @@ pub(crate) fn render_taiko_grid(
             0,
             0,
             layout.content_width,
-            crate::infrastructure::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .ROW_HEIGHT,
-            crate::infrastructure::config::current()
+            crate::config::current().render.taiko.png.sizing.ROW_HEIGHT,
+            crate::config::current()
                 .render
                 .taiko
                 .png
                 .style
                 .TRACK_BACKGROUND_COLOR,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -203,7 +192,7 @@ pub(crate) fn render_taiko_grid(
         let row_top = png_row_top(row_index);
         image.alpha_composite(
             &track_bg,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -220,7 +209,7 @@ pub(crate) fn render_taiko_grid(
         if tl.show_label {
             if let Some(prev) = last_label_time {
                 if (tl.time - prev).abs()
-                    < crate::infrastructure::config::current()
+                    < crate::config::current()
                         .render
                         .taiko
                         .png
@@ -290,7 +279,7 @@ fn build_png_layout(
     chart_start_time: i64,
 ) -> RenderLayout {
     let base_row_width = resolve_base_row_width(beatmap_duration);
-    let bpm_width_multiplier = if crate::infrastructure::config::current()
+    let bpm_width_multiplier = if crate::config::current()
         .render
         .taiko
         .png
@@ -327,7 +316,7 @@ fn build_png_layout(
     }
     let used_row_width = (used_row_width.ceil() as i64).clamp(1, max_row_width);
 
-    let content_width = crate::infrastructure::config::current()
+    let content_width = crate::config::current()
         .render
         .taiko
         .png
@@ -335,32 +324,27 @@ fn build_png_layout(
         .ROW_INNER_PADDING_X
         * 2
         + used_row_width;
-    let image_width = crate::infrastructure::config::current()
+    let image_width = crate::config::current()
         .render
         .taiko
         .png
         .sizing
         .PAGE_MARGIN_LEFT
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .taiko
             .png
             .sizing
             .PAGE_MARGIN_RIGHT
         + content_width;
-    let config = &crate::infrastructure::config::current().render.taiko.png;
+    let config = &crate::config::current().render.taiko.png;
     let image_height = config.sizing.PAGE_MARGIN_TOP
         + config.sizing.PAGE_MARGIN_BOTTOM
         + config.sizing.INFO_MARGIN_TOP
         + row_count * (config.sizing.ROW_HEIGHT + config.sizing.INFO_MARGIN_BOTTOM)
         + (row_count - 1).max(0) * config.sizing.ROW_GAP;
     let normal_note_diameter = pyround(
-        crate::infrastructure::config::current()
-            .render
-            .taiko
-            .png
-            .sizing
-            .ROW_HEIGHT as f64
+        crate::config::current().render.taiko.png.sizing.ROW_HEIGHT as f64
             * crate::export::taiko::constants::NORMAL_NOTE_SIZE_RATIO,
     );
     let big_note_diameter =
@@ -380,7 +364,7 @@ fn build_png_layout(
 
 fn resolve_base_row_width(beatmap_duration: i64) -> i64 {
     if beatmap_duration < 60_000 {
-        return crate::infrastructure::config::current()
+        return crate::config::current()
             .render
             .taiko
             .png
@@ -388,7 +372,7 @@ fn resolve_base_row_width(beatmap_duration: i64) -> i64 {
             .BASE_ROW_WIDTH_0_TO_1_MINUTES;
     }
     if beatmap_duration < 2 * 60_000 {
-        return crate::infrastructure::config::current()
+        return crate::config::current()
             .render
             .taiko
             .png
@@ -396,7 +380,7 @@ fn resolve_base_row_width(beatmap_duration: i64) -> i64 {
             .BASE_ROW_WIDTH_1_TO_2_MINUTES;
     }
     if beatmap_duration < 3 * 60_000 {
-        return crate::infrastructure::config::current()
+        return crate::config::current()
             .render
             .taiko
             .png
@@ -404,7 +388,7 @@ fn resolve_base_row_width(beatmap_duration: i64) -> i64 {
             .BASE_ROW_WIDTH_2_TO_3_MINUTES;
     }
     if beatmap_duration < 4 * 60_000 {
-        return crate::infrastructure::config::current()
+        return crate::config::current()
             .render
             .taiko
             .png
@@ -412,7 +396,7 @@ fn resolve_base_row_width(beatmap_duration: i64) -> i64 {
             .BASE_ROW_WIDTH_3_TO_4_MINUTES;
     }
     if beatmap_duration < 5 * 60_000 {
-        return crate::infrastructure::config::current()
+        return crate::config::current()
             .render
             .taiko
             .png
@@ -420,14 +404,14 @@ fn resolve_base_row_width(beatmap_duration: i64) -> i64 {
             .BASE_ROW_WIDTH_4_TO_5_MINUTES;
     }
     if beatmap_duration < 6 * 60_000 {
-        return crate::infrastructure::config::current()
+        return crate::config::current()
             .render
             .taiko
             .png
             .sizing
             .BASE_ROW_WIDTH_5_TO_6_MINUTES;
     }
-    crate::infrastructure::config::current()
+    crate::config::current()
         .render
         .taiko
         .png
@@ -438,7 +422,7 @@ fn resolve_base_row_width(beatmap_duration: i64) -> i64 {
 fn resolve_row_width_bpm_multiplier(redline_sections: &[RedlineSection]) -> f64 {
     let main_bpm = resolve_main_bpm(redline_sections);
     if main_bpm < 180.0 {
-        return crate::infrastructure::config::current()
+        return crate::config::current()
             .render
             .taiko
             .png
@@ -446,7 +430,7 @@ fn resolve_row_width_bpm_multiplier(redline_sections: &[RedlineSection]) -> f64 
             .ROW_WIDTH_MULTIPLIER_BPM_0_TO_180;
     }
     if main_bpm < 240.0 {
-        return crate::infrastructure::config::current()
+        return crate::config::current()
             .render
             .taiko
             .png
@@ -454,14 +438,14 @@ fn resolve_row_width_bpm_multiplier(redline_sections: &[RedlineSection]) -> f64 
             .ROW_WIDTH_MULTIPLIER_BPM_180_TO_240;
     }
     if main_bpm < 300.0 {
-        return crate::infrastructure::config::current()
+        return crate::config::current()
             .render
             .taiko
             .png
             .style
             .ROW_WIDTH_MULTIPLIER_BPM_240_TO_300;
     }
-    crate::infrastructure::config::current()
+    crate::config::current()
         .render
         .taiko
         .png
@@ -500,7 +484,7 @@ fn resolve_main_bpm(redline_sections: &[RedlineSection]) -> f64 {
 // ─── 行辅助函数 ───
 
 fn png_row_top(row_index: i64) -> i64 {
-    let config = &crate::infrastructure::config::current().render.taiko.png;
+    let config = &crate::config::current().render.taiko.png;
     config.sizing.PAGE_MARGIN_TOP
         + config.sizing.INFO_MARGIN_TOP
         + row_index
@@ -508,24 +492,17 @@ fn png_row_top(row_index: i64) -> i64 {
 }
 
 fn png_row_center_y(row_index: i64) -> i64 {
-    png_row_top(row_index)
-        + crate::infrastructure::config::current()
-            .render
-            .taiko
-            .png
-            .sizing
-            .ROW_HEIGHT
-            / 2
+    png_row_top(row_index) + crate::config::current().render.taiko.png.sizing.ROW_HEIGHT / 2
 }
 
 fn png_row_chart_left(_layout: &RenderLayout, _row_index: i64) -> i64 {
-    crate::infrastructure::config::current()
+    crate::config::current()
         .render
         .taiko
         .png
         .sizing
         .PAGE_MARGIN_LEFT
-        + crate::infrastructure::config::current()
+        + crate::config::current()
             .render
             .taiko
             .png
@@ -550,13 +527,7 @@ fn draw_timing_line(
     }
     let line_x = pyround(png_row_chart_left(layout, row_index) as f64 + local_position);
     let line_y0 = png_row_top(row_index);
-    let line_y1 = line_y0
-        + crate::infrastructure::config::current()
-            .render
-            .taiko
-            .png
-            .sizing
-            .ROW_HEIGHT;
+    let line_y1 = line_y0 + crate::config::current().render.taiko.png.sizing.ROW_HEIGHT;
 
     let render_scale = crate::export::geometry::output_scale(
         crate::export::geometry::GameMode::Taiko,
@@ -565,7 +536,7 @@ fn draw_timing_line(
     let (width, color) = if timing_line.is_measure {
         (
             crate::export::geometry::scale_stroke_px(2.0, render_scale),
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -575,7 +546,7 @@ fn draw_timing_line(
     } else {
         (
             crate::export::geometry::scale_stroke_px(1.0, render_scale),
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -607,14 +578,14 @@ fn draw_time_label(
         None
     };
     let label_color = if timing_line.is_kiai {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .taiko
             .png
             .style
             .ACCENT_LABEL_COLOR
     } else {
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .taiko
             .png
@@ -623,7 +594,7 @@ fn draw_time_label(
     };
     let (label_width, label_height) = text_size(
         &label,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .taiko
             .png
@@ -632,7 +603,7 @@ fn draw_time_label(
     );
     let label_x = pyround(line_x as f64 - label_width as f64 / 2.0)
         .min(
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -640,7 +611,7 @@ fn draw_time_label(
                 .PAGE_MARGIN_LEFT
                 + layout.content_width
                 - label_width as i64
-                - crate::infrastructure::config::current()
+                - crate::config::current()
                     .render
                     .taiko
                     .png
@@ -648,7 +619,7 @@ fn draw_time_label(
                     .LABEL_RIGHT_PADDING,
         )
         .max(
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -656,13 +627,8 @@ fn draw_time_label(
                 .PAGE_MARGIN_LEFT,
         );
     let label_y = row_top
-        + crate::infrastructure::config::current()
-            .render
-            .taiko
-            .png
-            .sizing
-            .ROW_HEIGHT
-        + crate::infrastructure::config::current()
+        + crate::config::current().render.taiko.png.sizing.ROW_HEIGHT
+        + crate::config::current()
             .render
             .taiko
             .png
@@ -674,7 +640,7 @@ fn draw_time_label(
         label_x,
         label_y,
         &label,
-        crate::infrastructure::config::current()
+        crate::config::current()
             .render
             .taiko
             .png
@@ -687,7 +653,7 @@ fn draw_time_label(
     if let Some(note) = note {
         let (note_width, note_height) = text_size(
             note,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -696,7 +662,7 @@ fn draw_time_label(
         );
         let note_x = pyround(line_x as f64 - note_width as f64 / 2.0)
             .min(
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .taiko
                     .png
@@ -704,7 +670,7 @@ fn draw_time_label(
                     .PAGE_MARGIN_LEFT
                     + layout.content_width
                     - note_width as i64
-                    - crate::infrastructure::config::current()
+                    - crate::config::current()
                         .render
                         .taiko
                         .png
@@ -712,7 +678,7 @@ fn draw_time_label(
                         .LABEL_RIGHT_PADDING,
             )
             .max(
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .taiko
                     .png
@@ -720,7 +686,7 @@ fn draw_time_label(
                     .PAGE_MARGIN_LEFT,
             );
         let note_y = next_y
-            + crate::infrastructure::config::current()
+            + crate::config::current()
                 .render
                 .taiko
                 .png
@@ -731,13 +697,13 @@ fn draw_time_label(
             note_x,
             note_y,
             note,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
                 .sizing
                 .TIME_LABEL_NOTE_FONT_SIZE,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -751,7 +717,7 @@ fn draw_time_label(
         let bpm_label = format!("{bpm:.0}BPM");
         let (bpm_width, _) = text_size(
             &bpm_label,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -760,7 +726,7 @@ fn draw_time_label(
         );
         let bpm_x = pyround(line_x as f64 - bpm_width as f64 / 2.0)
             .min(
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .taiko
                     .png
@@ -768,7 +734,7 @@ fn draw_time_label(
                     .PAGE_MARGIN_LEFT
                     + layout.content_width
                     - bpm_width as i64
-                    - crate::infrastructure::config::current()
+                    - crate::config::current()
                         .render
                         .taiko
                         .png
@@ -776,29 +742,23 @@ fn draw_time_label(
                         .LABEL_RIGHT_PADDING,
             )
             .max(
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .taiko
                     .png
                     .sizing
                     .PAGE_MARGIN_LEFT,
             );
-        let bpm_y = next_y
-            + crate::infrastructure::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .BPM_TOP_GAP;
+        let bpm_y = next_y + crate::config::current().render.taiko.png.sizing.BPM_TOP_GAP;
         let bpm_color = if timing_line.is_kiai {
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
                 .style
                 .ACCENT_LABEL_COLOR
         } else {
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -810,7 +770,7 @@ fn draw_time_label(
             bpm_x,
             bpm_y,
             &bpm_label,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -832,7 +792,7 @@ fn draw_sv_indicators(image: &mut Img, sv_changes: &[SvChange], layout: &RenderL
         let label = format_sv_label(sv_change.sv);
         let (label_width, label_height) = text_size(
             &label,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -842,15 +802,10 @@ fn draw_sv_indicators(image: &mut Img, sv_changes: &[SvChange], layout: &RenderL
 
         let label_x = pyround(x as f64 - label_width as f64 / 2.0);
         let label_y = (row_top
-            - crate::infrastructure::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .SV_TOP_GAP
+            - crate::config::current().render.taiko.png.sizing.SV_TOP_GAP
             - label_height as i64)
             .max(
-                crate::infrastructure::config::current()
+                crate::config::current()
                     .render
                     .taiko
                     .png
@@ -862,13 +817,13 @@ fn draw_sv_indicators(image: &mut Img, sv_changes: &[SvChange], layout: &RenderL
             label_x,
             label_y,
             &label,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
                 .sizing
                 .SV_TEXT_FONT_SIZE,
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .render
                 .taiko
                 .png
@@ -1084,40 +1039,4 @@ fn draw_span_tail(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::compute_row_start_positions;
-
-    #[test]
-    fn row_break_measure_anchors_are_scale_invariant_for_all_bpm_tiers() {
-        let logical_measures = [0.0, 600.0, 1_200.0, 1_800.0, 2_400.0, 3_000.0, 3_600.0];
-        let logical_chart_width = 3_900.0;
-
-        for multiplier in [1.0, 1.15, 1.3, 1.45] {
-            let logical_row_width = 1_300.0 * multiplier;
-            let baseline = compute_row_start_positions(
-                &logical_measures,
-                logical_chart_width,
-                osu_beatmap_preview_core::domain::parser::round_half_even(logical_row_width),
-            );
-
-            for scale in [0.5, 1.0, 1.5, 2.0] {
-                let measures: Vec<f64> = logical_measures
-                    .iter()
-                    .map(|position| position * scale)
-                    .collect();
-                let starts = compute_row_start_positions(
-                    &measures,
-                    logical_chart_width * scale,
-                    osu_beatmap_preview_core::domain::parser::round_half_even(
-                        logical_row_width * scale,
-                    ),
-                );
-
-                assert_eq!(starts.len(), baseline.len());
-                for (actual, expected) in starts.iter().zip(&baseline) {
-                    assert!((actual / scale - expected).abs() <= 1.0);
-                }
-            }
-        }
-    }
-}
+mod tests;

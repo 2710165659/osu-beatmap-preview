@@ -3,10 +3,10 @@
 //! 行格式：`2026-08-01 15:04:05.123 pid=1234 bid=5242890 step=download-osu
 //! status=done msg="..."`（msg 为 JSON 转义，保证单行）。
 
-use crate::infrastructure::logging::config::enabled;
-use crate::infrastructure::logging::context;
-use crate::infrastructure::logging::timestamp::now_local_millis;
-use crate::infrastructure::logging::writer::append_line;
+use crate::logging::config::enabled;
+use crate::logging::context;
+use crate::logging::timestamp::now_local_millis;
+use crate::logging::writer::append_line;
 
 /// 写一条进度事件。
 ///

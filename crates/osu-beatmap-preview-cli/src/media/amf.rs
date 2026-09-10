@@ -24,10 +24,10 @@
 //! AMF 默认输出 Annex-B，由共享 `mux` 模块解析。
 
 use crate::export::canvas::Img;
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 
 use super::mux::extract_nals_from_annexb;
-use super::{EncodedFrame, FrameEncoder};
+use super::video::{EncodedFrame, FrameEncoder};
 
 use libloading::Library;
 use std::ffi::c_void;
@@ -332,10 +332,7 @@ pub(crate) fn try_create(w: u32, h: u32, fps: u32) -> Result<Option<AmfEncoder>>
         (wstr("ProfileLevel"), 41), // Level 4.1
         (
             wstr("TargetBitrate"),
-            crate::infrastructure::config::current()
-                .advance
-                .video
-                .VIDEO_BITRATE as i64,
+            crate::config::current().advance.video.VIDEO_BITRATE as i64,
         ),
         (wstr("RateControlMethod"), 1), // CBR
         (wstr("BPicturesPattern"), 0),  // No B-frames

@@ -16,12 +16,7 @@ static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 /// 默认日志目录：`<临时目录>/osu-beatmap-preview/logs`。
 #[allow(dead_code)] // 运行时初始化由二进制目标负责。
 pub fn default_log_dir() -> PathBuf {
-    crate::infrastructure::config::resolve_path(
-        crate::infrastructure::config::current()
-            .paths
-            .LOG_DIR
-            .as_str(),
-    )
+    crate::config::resolve_path(crate::config::current().paths.LOG_DIR.as_str())
 }
 
 /// 初始化日志（幂等），目录来自运行时配置快照。
@@ -39,7 +34,7 @@ fn init_with_dir(dir: PathBuf) {
         if guard.is_some() {
             return;
         }
-        let runtime = crate::infrastructure::config::current();
+        let runtime = crate::config::current();
         let cfg = LogConfig {
             progress_path: dir.join(&runtime.paths.PROGRESS_LOG),
             render_path: dir.join(&runtime.paths.RENDER_LOG),
@@ -52,7 +47,7 @@ fn init_with_dir(dir: PathBuf) {
             ),
         }
     }
-    crate::infrastructure::logging::event::event("session-start", "info", None, &session_message());
+    crate::logging::event::event("session-start", "info", None, &session_message());
 }
 
 #[allow(dead_code)]
@@ -60,8 +55,8 @@ fn session_message() -> String {
     let args: Vec<String> = std::env::args().collect();
     format!(
         "version={} build={} args={}",
-        crate::infrastructure::logging::APP_VERSION,
-        crate::infrastructure::logging::BUILD_TIMESTAMP,
+        crate::logging::APP_VERSION,
+        crate::logging::BUILD_TIMESTAMP,
         serde_json::to_string(&args).unwrap_or_else(|_| "[]".to_string())
     )
 }

@@ -12,9 +12,7 @@ pub fn read_preferred_ip(temp_dir: &Path) -> Option<Ipv4Addr> {
     let ip = value.get("ip")?.as_str()?.parse::<Ipv4Addr>().ok()?;
     let tested_at = value.get("tested_at")?.as_u64()?;
     let now = unix_seconds();
-    if now < tested_at
-        || now - tested_at > crate::infrastructure::download::constants::CACHE_TTL.as_secs()
-    {
+    if now < tested_at || now - tested_at > crate::download::constants::CACHE_TTL.as_secs() {
         return None;
     }
     Some(ip)
@@ -26,12 +24,7 @@ pub fn spawn_refresh(temp_dir: &Path, force: bool) {
     }
     thread::spawn(move || {
         if let Err(error) = refresh(&temp_dir, force) {
-            crate::infrastructure::logging::event(
-                "osu-direct-ip",
-                "error",
-                None,
-                &error.to_string(),
-            );
+            crate::logging::event("osu-direct-ip", "error", None, &error.to_string());
         }
     });
 }
@@ -54,11 +47,7 @@ pub fn resolver_for(preferred_ip: Ipv4Addr) -> impl ureq::Resolver {
 fn refresh(temp_dir: &Path, force: bool) -> io::Result<()> {
     let root = cache_root(temp_dir);
     std::fs::create_dir_all(&root)?;
-    let lock_path = root.join(
-        &crate::infrastructure::config::current()
-            .paths
-            .PREFERRED_IP_LOCK,
-    );
+    let lock_path = root.join(&crate::config::current().paths.PREFERRED_IP_LOCK);
     let Some(_lock) = acquire_lock(lock_path)? else {
         return Ok(());
     };
@@ -67,7 +56,7 @@ fn refresh(temp_dir: &Path, force: bool) -> io::Result<()> {
         return Ok(());
     }
 
-    crate::infrastructure::logging::event(
+    crate::logging::event(
         "osu-direct-ip",
         "start",
         None,
@@ -76,7 +65,7 @@ fn refresh(temp_dir: &Path, force: bool) -> io::Result<()> {
     let tcp = probe_tcp_candidates();
     let mut finalists = tcp;
     finalists.sort_by_key(|(_, latency)| *latency);
-    finalists.truncate(crate::infrastructure::download::constants::HTTP_CANDIDATES);
+    finalists.truncate(crate::download::constants::HTTP_CANDIDATES);
 
     let winner = probe_http_candidates(finalists)?
         .into_iter()
@@ -84,7 +73,7 @@ fn refresh(temp_dir: &Path, force: bool) -> io::Result<()> {
         .ok_or_else(|| io::Error::other("no usable osu.direct Cloudflare IP"))?;
 
     write_cache(temp_dir, winner.0)?;
-    crate::infrastructure::logging::event(
+    crate::logging::event(
         "osu-direct-ip",
         "done",
         None,
@@ -106,7 +95,7 @@ fn probe_tcp_candidates() -> Vec<(Ipv4Addr, Duration)> {
             let started = std::time::Instant::now();
             let result = TcpStream::connect_timeout(
                 &SocketAddr::new(IpAddr::V4(ip), 443),
-                crate::infrastructure::download::constants::TCP_TIMEOUT,
+                crate::download::constants::TCP_TIMEOUT,
             )
             .map(|_| (ip, started.elapsed()));
             if let Ok(result) = result {
@@ -127,8 +116,8 @@ fn probe_http_candidates(
         thread::spawn(move || {
             let agent = ureq::AgentBuilder::new()
                 .resolver(resolver_for(ip))
-                .timeout_connect(crate::infrastructure::download::constants::HTTP_TIMEOUT)
-                .timeout(crate::infrastructure::download::constants::HTTP_TIMEOUT)
+                .timeout_connect(crate::download::constants::HTTP_TIMEOUT)
+                .timeout(crate::download::constants::HTTP_TIMEOUT)
                 .build();
             let started = std::time::Instant::now();
             let usable = match agent
@@ -151,7 +140,7 @@ fn probe_http_candidates(
 
 fn build_candidates() -> Vec<Ipv4Addr> {
     let seed = unix_seconds() as u32 ^ std::process::id();
-    crate::infrastructure::download::constants::CLOUDFLARE_IPV4_RANGES
+    crate::download::constants::CLOUDFLARE_IPV4_RANGES
         .iter()
         .enumerate()
         .flat_map(|(index, range)| sample_range(range, seed.wrapping_add(index as u32)))
@@ -183,19 +172,13 @@ fn sample_range(cidr: &str, seed: u32) -> Vec<Ipv4Addr> {
 }
 
 fn cache_path(temp_dir: &Path) -> PathBuf {
-    cache_root(temp_dir).join(
-        &crate::infrastructure::config::current()
-            .paths
-            .PREFERRED_IP_CACHE,
-    )
+    cache_root(temp_dir).join(&crate::config::current().paths.PREFERRED_IP_CACHE)
 }
 
 fn write_cache(temp_dir: &Path, ip: Ipv4Addr) -> io::Result<()> {
     let root = cache_root(temp_dir);
     let path = cache_path(temp_dir);
-    let cache_file = &crate::infrastructure::config::current()
-        .paths
-        .PREFERRED_IP_CACHE;
+    let cache_file = &crate::config::current().paths.PREFERRED_IP_CACHE;
     let tmp = root.join(format!("{cache_file}.{}.tmp", std::process::id()));
     let content =
         serde_json::json!({ "ip": ip.to_string(), "tested_at": unix_seconds() }).to_string();
@@ -284,7 +267,7 @@ mod tests {
 
     #[test]
     fn samples_are_ipv4_addresses_inside_ranges() {
-        for (range, sample) in crate::infrastructure::download::constants::CLOUDFLARE_IPV4_RANGES
+        for (range, sample) in crate::download::constants::CLOUDFLARE_IPV4_RANGES
             .iter()
             .zip(std::iter::repeat(0))
         {
@@ -302,12 +285,7 @@ mod tests {
         write_cache(&osz_cache, ip).unwrap();
         assert_eq!(read_preferred_ip(&osz_cache), Some(ip));
         assert!(root
-            .join(
-                crate::infrastructure::config::current()
-                    .paths
-                    .PREFERRED_IP_CACHE
-                    .as_str()
-            )
+            .join(crate::config::current().paths.PREFERRED_IP_CACHE.as_str())
             .is_file());
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -321,23 +299,13 @@ mod tests {
         let osz_cache = root.join("osz-download-cache");
         std::fs::create_dir_all(&osz_cache).unwrap();
         std::fs::write(
-            root.join(
-                crate::infrastructure::config::current()
-                    .paths
-                    .PREFERRED_IP_CACHE
-                    .as_str(),
-            ),
+            root.join(crate::config::current().paths.PREFERRED_IP_CACHE.as_str()),
             "not-json",
         )
         .unwrap();
         assert_eq!(read_preferred_ip(&osz_cache), None);
         std::fs::write(
-            root.join(
-                crate::infrastructure::config::current()
-                    .paths
-                    .PREFERRED_IP_CACHE
-                    .as_str(),
-            ),
+            root.join(crate::config::current().paths.PREFERRED_IP_CACHE.as_str()),
             serde_json::json!({ "ip": "104.16.1.1", "tested_at": 1 }).to_string(),
         )
         .unwrap();

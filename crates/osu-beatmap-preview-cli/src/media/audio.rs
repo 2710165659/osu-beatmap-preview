@@ -1,8 +1,8 @@
 use crate::export::canvas::Img;
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::models::Beatmap;
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::fs::File;
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
@@ -42,14 +42,14 @@ impl AudioSourceJob {
         let audio_filename = beatmap
             .audio_filename()
             .ok_or_else(|| PreviewError::parse("missing AudioFilename required for MP4 audio"))?;
-        crate::infrastructure::logging::event(
+        crate::logging::event(
             "audio-prepare",
             "start",
             None,
             &format!("set_id={set_id} audio={audio_filename}"),
         );
 
-        let osz_path = crate::infrastructure::download::download_beatmapset_archive(
+        let osz_path = crate::download::download_beatmapset_archive(
             &request_bid,
             set_id,
             &cache_dir,
@@ -145,16 +145,13 @@ pub(crate) fn prepare_audio_source(
             .metadata()
             .is_ok_and(|m| m.is_file() && m.len() > 0)
     {
-        crate::infrastructure::logging::event(
+        crate::logging::event(
             "audio-prepare",
             "done",
             None,
             &format!("audio cache hit: {}", target_path.display()),
         );
-        crate::infrastructure::logging::record_cache(
-            crate::infrastructure::logging::CacheKind::Audio,
-            "hit",
-        );
+        crate::logging::record_cache(crate::logging::CacheKind::Audio, "hit");
         return Ok(AudioSource {
             path: target_path,
             lead_in_ms: beatmap.audio_lead_in_ms(),
@@ -164,16 +161,13 @@ pub(crate) fn prepare_audio_source(
     std::fs::create_dir_all(&set_cache)
         .map_err(|e| PreviewError::download(format!("failed to create audio cache dir: {e}")))?;
     extract_audio_entry(osz_path, &normalized, &target_path, deadline)?;
-    crate::infrastructure::logging::event(
+    crate::logging::event(
         "audio-prepare",
         "done",
         None,
         &format!("extracted audio: {}", target_path.display()),
     );
-    crate::infrastructure::logging::record_cache(
-        crate::infrastructure::logging::CacheKind::Audio,
-        "downloaded",
-    );
+    crate::logging::record_cache(crate::logging::CacheKind::Audio, "downloaded");
     Ok(AudioSource {
         path: target_path,
         lead_in_ms: beatmap.audio_lead_in_ms(),
@@ -187,7 +181,7 @@ pub(crate) fn load_background_image(
     deadline: &RequestDeadline,
 ) -> Result<Option<Img>> {
     let Some(filename) = filename else {
-        crate::infrastructure::logging::event(
+        crate::logging::event(
             "background-prepare",
             "skip",
             None,
@@ -202,7 +196,7 @@ pub(crate) fn load_background_image(
     let wanted = match normalize_archive_path(filename) {
         Ok(path) => path,
         Err(error) => {
-            crate::infrastructure::logging::event("background-prepare", "skip", None, &error);
+            crate::logging::event("background-prepare", "skip", None, &error);
             return Ok(None);
         }
     };
@@ -214,7 +208,7 @@ pub(crate) fn load_background_image(
             .is_some_and(|name| name.eq_ignore_ascii_case(&wanted))
     });
     let Some(index) = index else {
-        crate::infrastructure::logging::event(
+        crate::logging::event(
             "background-prepare",
             "skip",
             None,
@@ -226,7 +220,7 @@ pub(crate) fn load_background_image(
         .by_index(index)
         .map_err(|e| PreviewError::download(format!("failed to open background entry: {e}")))?;
     if entry.is_dir() || entry.size() == 0 || entry.size() > MAX_BACKGROUND_IMAGE_BYTES {
-        crate::infrastructure::logging::event(
+        crate::logging::event(
             "background-prepare",
             "skip",
             None,
@@ -241,7 +235,7 @@ pub(crate) fn load_background_image(
         .read_to_end(&mut bytes)
         .map_err(|e| PreviewError::download(format!("failed to extract background image: {e}")))?;
     if bytes.len() as u64 > MAX_BACKGROUND_IMAGE_BYTES {
-        crate::infrastructure::logging::event(
+        crate::logging::event(
             "background-prepare",
             "skip",
             None,
@@ -253,7 +247,7 @@ pub(crate) fn load_background_image(
     let decoded = match image::load_from_memory(&bytes) {
         Ok(image) => image.to_rgba8(),
         Err(error) => {
-            crate::infrastructure::logging::event(
+            crate::logging::event(
                 "background-prepare",
                 "skip",
                 None,
@@ -266,7 +260,7 @@ pub(crate) fn load_background_image(
     if w == 0 || h == 0 {
         return Ok(None);
     }
-    crate::infrastructure::logging::event(
+    crate::logging::event(
         "background-prepare",
         "done",
         None,
@@ -295,7 +289,7 @@ pub(crate) fn encode_audio_segment(
     }
     let decoded = decode_audio(&source.path, deadline)?;
     let target_samples = (frame_count as u64
-        * crate::infrastructure::config::current()
+        * crate::config::current()
             .advance
             .video_audio
             .AUDIO_SAMPLE_RATE as u64)
@@ -305,13 +299,8 @@ pub(crate) fn encode_audio_segment(
     }
 
     let encoder = Encoder::new(EncoderParams {
-        bit_rate: BitRate::Cbr(
-            crate::infrastructure::config::current()
-                .advance
-                .video_audio
-                .AUDIO_BITRATE,
-        ),
-        sample_rate: crate::infrastructure::config::current()
+        bit_rate: BitRate::Cbr(crate::config::current().advance.video_audio.AUDIO_BITRATE),
+        sample_rate: crate::config::current()
             .advance
             .video_audio
             .AUDIO_SAMPLE_RATE,
@@ -407,7 +396,7 @@ fn source_frame_position(
 ) -> f64 {
     let chart_time_ms = chart_start_ms as f64
         + (output_index + encoder_delay_samples) as f64 * 1000.0 * speed
-            / crate::infrastructure::config::current()
+            / crate::config::current()
                 .advance
                 .video_audio
                 .AUDIO_SAMPLE_RATE as f64;
@@ -524,7 +513,7 @@ fn decode_audio(path: &Path, deadline: &RequestDeadline) -> Result<DecodedAudio>
     }
     Ok(DecodedAudio {
         sample_rate: sample_rate.unwrap_or(
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .advance
                 .video_audio
                 .AUDIO_SAMPLE_RATE,
@@ -565,7 +554,7 @@ fn extract_audio_entry(
     if entry.is_dir()
         || entry.size() == 0
         || entry.size()
-            > crate::infrastructure::config::current()
+            > crate::config::current()
                 .advance
                 .video_audio
                 .MAX_EXTRACTED_AUDIO_BYTES
@@ -581,7 +570,7 @@ fn extract_audio_entry(
         .map_err(|e| PreviewError::download(format!("failed to create audio cache file: {e}")))?;
     let copied = std::io::copy(
         &mut entry.by_ref().take(
-            crate::infrastructure::config::current()
+            crate::config::current()
                 .advance
                 .video_audio
                 .MAX_EXTRACTED_AUDIO_BYTES
@@ -598,7 +587,7 @@ fn extract_audio_entry(
         .map_err(|e| PreviewError::download(format!("failed to flush audio cache: {e}")))?;
     if copied == 0
         || copied
-            > crate::infrastructure::config::current()
+            > crate::config::current()
                 .advance
                 .video_audio
                 .MAX_EXTRACTED_AUDIO_BYTES
@@ -739,7 +728,7 @@ mod tests {
 
     #[test]
     fn loads_referenced_background_from_osz_case_insensitively() {
-        let _log_guard = crate::infrastructure::logging::test_guard();
+        let _log_guard = crate::logging::test_guard();
         let unique = format!(
             "osu-preview-background-test-{}-{}",
             std::process::id(),

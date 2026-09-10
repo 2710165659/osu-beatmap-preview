@@ -1,5 +1,5 @@
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
-use osu_beatmap_preview_core::domain::timeout::RequestDeadline;
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -19,16 +19,13 @@ pub fn download_beatmap_file(
         if let Ok(meta) = target_path.metadata() {
             if meta.is_file() && meta.len() > 0 {
                 deadline.check()?;
-                crate::infrastructure::logging::event(
+                crate::logging::event(
                     "download-osu",
                     "done",
                     Some(bid),
                     &format!("cache hit ({:.1} KB)", meta.len() as f64 / 1024.0),
                 );
-                crate::infrastructure::logging::record_cache(
-                    crate::infrastructure::logging::CacheKind::Osu,
-                    "hit",
-                );
+                crate::logging::record_cache(crate::logging::CacheKind::Osu, "hit");
                 return Ok(target_path);
             }
         }
@@ -38,7 +35,7 @@ pub fn download_beatmap_file(
     let agent = ureq::AgentBuilder::new()
         .timeout(deadline.cap(Duration::from_secs(20))?)
         .build();
-    crate::infrastructure::logging::event(
+    crate::logging::event(
         "download-osu",
         "start",
         Some(bid),
@@ -61,7 +58,7 @@ pub fn download_beatmap_file(
                     Ok(count) => count,
                     Err(error) => {
                         deadline.check()?;
-                        crate::infrastructure::logging::event(
+                        crate::logging::event(
                             "download-osu",
                             "error",
                             Some(bid),
@@ -80,7 +77,7 @@ pub fn download_beatmap_file(
             buf
         }
         Err(ureq::Error::Status(404, _)) => {
-            crate::infrastructure::logging::event(
+            crate::logging::event(
                 "download-osu",
                 "error",
                 Some(bid),
@@ -91,24 +88,14 @@ pub fn download_beatmap_file(
             )));
         }
         Err(ureq::Error::Status(code, _)) => {
-            crate::infrastructure::logging::event(
-                "download-osu",
-                "error",
-                Some(bid),
-                &format!("http {code}"),
-            );
+            crate::logging::event("download-osu", "error", Some(bid), &format!("http {code}"));
             return Err(PreviewError::download(format!(
                 "failed to download beatmap {bid}: http {code}"
             )));
         }
         Err(e) => {
             deadline.check()?;
-            crate::infrastructure::logging::event(
-                "download-osu",
-                "error",
-                Some(bid),
-                &e.to_string(),
-            );
+            crate::logging::event("download-osu", "error", Some(bid), &e.to_string());
             return Err(PreviewError::download(format!(
                 "failed to download beatmap {bid}: {e}"
             )));
@@ -119,7 +106,7 @@ pub fn download_beatmap_file(
 
     std::fs::write(&target_path, &data)
         .map_err(|e| PreviewError::download(format!("failed to write beatmap cache: {e}")))?;
-    crate::infrastructure::logging::event(
+    crate::logging::event(
         "download-osu",
         "done",
         Some(bid),
@@ -128,10 +115,7 @@ pub fn download_beatmap_file(
             data.len() as f64 / 1024.0
         ),
     );
-    crate::infrastructure::logging::record_cache(
-        crate::infrastructure::logging::CacheKind::Osu,
-        "downloaded",
-    );
+    crate::logging::record_cache(crate::logging::CacheKind::Osu, "downloaded");
     Ok(target_path)
 }
 
@@ -141,7 +125,7 @@ pub fn resolve_beatmap_set_id(bid: &str, deadline: &RequestDeadline) -> Result<u
     let agent = ureq::AgentBuilder::new()
         .timeout(deadline.cap(Duration::from_secs(20))?)
         .build();
-    crate::infrastructure::logging::event(
+    crate::logging::event(
         "resolve-set-id",
         "start",
         Some(bid),
@@ -156,12 +140,7 @@ pub fn resolve_beatmap_set_id(bid: &str, deadline: &RequestDeadline) -> Result<u
         Ok(response) => response,
         Err(error) => {
             deadline.check()?;
-            crate::infrastructure::logging::event(
-                "resolve-set-id",
-                "error",
-                Some(bid),
-                &error.to_string(),
-            );
+            crate::logging::event("resolve-set-id", "error", Some(bid), &error.to_string());
             return Err(PreviewError::download(format!(
                 "failed to resolve beatmap set for bid {bid}: {error}"
             )));
@@ -170,7 +149,7 @@ pub fn resolve_beatmap_set_id(bid: &str, deadline: &RequestDeadline) -> Result<u
     deadline.check()?;
     let final_url = response.get_url();
     let set_id = beatmap_set_id_from_url(final_url).ok_or_else(|| {
-        crate::infrastructure::logging::event(
+        crate::logging::event(
             "resolve-set-id",
             "error",
             Some(bid),
@@ -181,7 +160,7 @@ pub fn resolve_beatmap_set_id(bid: &str, deadline: &RequestDeadline) -> Result<u
         ))
     })?;
 
-    crate::infrastructure::logging::event(
+    crate::logging::event(
         "resolve-set-id",
         "done",
         Some(bid),

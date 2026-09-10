@@ -10,10 +10,10 @@ use openh264::encoder::{
     QpRange, RateControlMode, UsageType,
 };
 use openh264::formats::{RgbaSliceU8, YUVBuffer};
-use osu_beatmap_preview_core::domain::errors::{PreviewError, Result};
+use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 
 use super::mux::extract_nals_from_annexb;
-use super::{EncodedFrame, FrameEncoder};
+use super::video::{EncodedFrame, FrameEncoder};
 
 pub(crate) struct CpuEncoder {
     encoder: Encoder,
@@ -28,10 +28,7 @@ impl CpuEncoder {
             .complexity(Complexity::Low)
             .rate_control_mode(RateControlMode::Bitrate)
             .bitrate(BitRate::from_bps(
-                crate::infrastructure::config::current()
-                    .advance
-                    .video
-                    .CPU_VIDEO_BITRATE,
+                crate::config::current().advance.video.CPU_VIDEO_BITRATE,
             ))
             .max_frame_rate(FrameRate::from_hz(fps as f32))
             .intra_frame_period(IntraFramePeriod::from_num_frames(fps.saturating_mul(2)))
