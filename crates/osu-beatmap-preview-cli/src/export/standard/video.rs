@@ -21,7 +21,7 @@ use super::context::{
     apply_standard_object_mods, build_render_context, build_visible_indexes_by_snapshot,
     standard_objects, RenderCache,
 };
-use super::objects::render_frame;
+use super::render_frame;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_standard_video(

@@ -13,7 +13,7 @@ use std::path::Path;
 
 use super::context::*;
 use super::draw_time_label;
-use super::objects::render_frame;
+use super::render_frame;
 
 pub(crate) fn render_standard_gif(
     beatmap: &Beatmap,

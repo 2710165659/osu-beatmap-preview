@@ -10,7 +10,7 @@ use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 
 use super::context::*;
 use super::draw_time_label;
-use super::objects::render_frame;
+use super::render_frame;
 
 pub(crate) fn render_standard_png(
     beatmap: &Beatmap,

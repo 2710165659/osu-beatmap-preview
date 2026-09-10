@@ -12,7 +12,7 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
-$bin = Join-Path $PSScriptRoot "target\release\osu-beatmap-preview.exe"
+$bin = Join-Path $PSScriptRoot "target\release\osu-beatmap-preview-cli.exe"
 $outdir = Join-Path $env:TEMP "osu-beatmap-preview\outputs\batch-config"
 
 if (-not (Test-Path -LiteralPath $bin -PathType Leaf)) {

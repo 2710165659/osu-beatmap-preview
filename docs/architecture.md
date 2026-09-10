@@ -4,16 +4,16 @@
 
 ```text
 CLI -> cli 应用层 -> 文件/下载/缓存/配置/媒体适配
-                    `-> core 单帧计算 -> export 时间序列组装 -> PNG/GIF/MP4 编码
+                    `-> core 单帧/静态场景计算与绘制 -> export 时间序列、布局组装 -> PNG/GIF/MP4 编码
 
 Web -> 宿主 fetch 字节 -> wasm -> core RealtimeSession -> renderer WebGPU Canvas
 ```
 
 ## 目录职责
 
-- `crates/osu-beatmap-preview-core`：谱面模型、`.osu` 解析、Mod、转谱、时间轴、CPU 场景与 `FrameScene`。
+- `crates/osu-beatmap-preview-core`：谱面模型、`.osu` 解析、Mod、转谱、时间轴、四模式 CPU 单帧/静态场景绘制、`FrameScene`。
 - `crates/osu-beatmap-preview-renderer`：平台无关的 WGPU 场景绘制、surface 和离屏后端。
-- `crates/osu-beatmap-preview-cli`：CLI/native 适配、文件/下载/缓存/配置/日志、媒体编码和导出编排。
+- `crates/osu-beatmap-preview-cli`：CLI/native 适配、文件/下载/缓存/配置/日志、时间序列与布局组装、媒体编码和 I/O；不再包含模式绘制逻辑。
 - `crates/osu-beatmap-preview-wasm`：将 core 会话和 renderer 接到宿主 WebGPU Canvas 的 WASM API。
 - `crates/osu-beatmap-preview-player`：本地 Web/WASM 示例播放器，资源由宿主加载，不轮询帧接口。
 - `crates/osu-beatmap-preview-gui`：桌面 surface、输入和播放生命周期接口骨架。

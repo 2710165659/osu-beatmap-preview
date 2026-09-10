@@ -9,7 +9,7 @@
 #   - 渲染完成后写入 report.txt，列出每张图的耗时与峰值内存
 
 $ErrorActionPreference = "Continue"
-$bin    = Join-Path $PSScriptRoot "target\release\osu-beatmap-preview.exe"
+$bin    = Join-Path $PSScriptRoot "target\release\osu-beatmap-preview-cli.exe"
 # 输出到 temp 下程序自身的输出目录：%TEMP%\osu-beatmap-preview\outputs\batch-rust
 $outdir = Join-Path $env:TEMP "osu-beatmap-preview\outputs\batch-rust"
 

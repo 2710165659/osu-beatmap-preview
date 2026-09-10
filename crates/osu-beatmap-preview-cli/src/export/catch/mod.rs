@@ -2,7 +2,7 @@
 //! 并输出 PNG 网格和 GIF 预览。RNG 调用顺序严格匹配 Python/stable 实现。
 
 pub(crate) use osu_beatmap_preview_core::render::cpu::modes::catch::{
-    animation, constants, drawing, objects,
+    animation, constants, objects,
 };
 mod png;
 mod video;

@@ -1,213 +1,23 @@
-//! osu!catch PNG 静态图渲染器：纵向多列时间轴谱面图。
-//!
-//! 每列自上而下表示时间推进，水果按 playfield x 坐标横向分布。
-//! 谱面总高度有上限（防止超长 / 高 AR 谱面导致内存爆炸），超出时
-//! 按比例压缩纵向密度。
+//! osu!catch PNG 场景绘制：根据 CLI 传入的布局和渲染对象绘制静态图。
 
-use crate::export::canvas::Img;
-use crate::export::text::{draw_text, text_size};
-use crate::media::image::save_png;
-use osu_beatmap_preview_core::model::mods::ModSettings;
-use osu_beatmap_preview_core::model::{Beatmap, TimingPoint};
-use osu_beatmap_preview_core::processing::parse::round_half_even;
-use osu_beatmap_preview_core::processing::timeline::TimeAxis;
-use osu_beatmap_preview_core::support::error::{PreviewError, Result};
-use osu_beatmap_preview_core::support::timeout::RequestDeadline;
+use crate::processing::timeline::TimeAxis;
+use crate::render::canvas::Img;
+use crate::render::text::{draw_text, text_size};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
 use super::drawing::draw_catch_object;
-use super::objects::{
-    build_catch_render_objects, effective_difficulty, object_order, ObjType, RenderObject,
-};
+use super::objects::{object_order, rhe, ObjType, RenderObject};
 
-#[inline]
-pub(crate) fn rhe(v: f64) -> i64 {
-    round_half_even(v)
-}
-
-// ─── 布局 ───
-
-struct RenderLayout {
-    column_count: i64,
-    total_column_height: i64,
-    visible_playfield_width: i64,
-    image_width: i64,
-    image_height: i64,
-    playfield_scale: f64,
-    object_scale: f64,
-    pixels_per_ms: f64,
-    chart_start_time: i64,
-}
-
-/// AR 决定的纵向密度：AR 时间窗内的下落距离映射为像素。
-fn pixels_per_ms_for_ar(approach_rate: f64, playfield_scale: f64) -> f64 {
-    let time_range = super::objects::catch_time_range(approach_rate);
-    let visible_fall_height = (crate::export::catch::constants::STABLE_CATCHER_Y
-        - crate::export::catch::constants::STABLE_FRUIT_START_Y)
-        * playfield_scale;
-    visible_fall_height / time_range
-}
-
-fn resolve_max_area_height(beatmap_duration: i64) -> i64 {
-    if beatmap_duration < 60_000 {
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .MAX_AREA_HEIGHT_0_TO_1_MINUTES
-    } else if beatmap_duration < 2 * 60_000 {
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .MAX_AREA_HEIGHT_1_TO_2_MINUTES
-    } else if beatmap_duration < 3 * 60_000 {
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .MAX_AREA_HEIGHT_2_TO_3_MINUTES
-    } else if beatmap_duration < 4 * 60_000 {
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .MAX_AREA_HEIGHT_3_TO_4_MINUTES
-    } else if beatmap_duration < 5 * 60_000 {
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .MAX_AREA_HEIGHT_4_TO_5_MINUTES
-    } else {
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .MAX_AREA_HEIGHT_5_TO_6_MINUTES
-    }
-}
-
-fn ceil_div(a: i64, b: i64) -> i64 {
-    (a + b - 1) / b
-}
-
-fn build_layout(
-    beatmap_duration: i64,
-    circle_size: f64,
-    approach_rate: f64,
-    chart_start_time: i64,
-    timing_lines: &[TimingLine],
-) -> Result<RenderLayout> {
-    if beatmap_duration
-        >= crate::config::current()
-            .render
-            .catch
-            .png
-            .style
-            .MAX_SUPPORTED_DURATION_MS
-    {
-        return Err(PreviewError::render(
-            "songs longer than 10 minutes are not supported",
-        ));
-    }
-    let render_scale = crate::export::geometry::output_scale(
-        crate::export::geometry::GameMode::Catch,
-        crate::export::geometry::OutputFormat::Png,
-    );
-    let visible_playfield_width = crate::export::geometry::scale_px(
-        crate::export::catch::constants::PLAYFIELD_DISPLAY_WIDTH as f64,
-        render_scale,
-    );
-    let playfield_scale =
-        visible_playfield_width as f64 / crate::export::catch::constants::PLAYFIELD_WIDTH;
-    let object_scale = super::objects::circle_scale(circle_size);
-
-    // 纵向密度上限：限制谱面总像素高度，防止高 AR + 长曲导致内存爆炸
-    let mut pixels_per_ms = pixels_per_ms_for_ar(approach_rate, playfield_scale);
-    let natural_height = beatmap_duration as f64 * pixels_per_ms;
-    if natural_height
-        > crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .MAX_TOTAL_CHART_HEIGHT as f64
-    {
-        pixels_per_ms *= crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .MAX_TOTAL_CHART_HEIGHT as f64
-            / natural_height;
-    }
-
-    let total_chart_height = rhe(beatmap_duration as f64 * pixels_per_ms).max(1);
-    let max_area_height = resolve_max_area_height(beatmap_duration);
-    let aligned_height =
-        predominant_measure_aligned_height(timing_lines, pixels_per_ms, max_area_height)
-            .unwrap_or(max_area_height);
-    let total_column_height = total_chart_height.min(aligned_height).max(1);
-    let column_count = ceil_div(total_chart_height, total_column_height).max(1);
-    let config = &crate::config::current().render.catch.png;
-    let unit_width = config.sizing.INFO_MARGIN_LEFT
-        + config.sizing.COLUMN_WIDTH
-        + config.sizing.INFO_MARGIN_RIGHT;
-    let image_width = config.sizing.PAGE_MARGIN_LEFT
-        + config.sizing.PAGE_MARGIN_RIGHT
-        + column_count * unit_width
-        + (column_count - 1) * config.sizing.COLUMN_GAP;
-    let image_height = config.sizing.PAGE_MARGIN_TOP
-        + config.sizing.PAGE_MARGIN_BOTTOM
-        + config.sizing.INFO_MARGIN_TOP
-        + total_column_height
-        + config.sizing.INFO_MARGIN_BOTTOM;
-    Ok(RenderLayout {
-        column_count,
-        total_column_height,
-        visible_playfield_width,
-        image_width,
-        image_height,
-        playfield_scale,
-        object_scale,
-        pixels_per_ms,
-        chart_start_time,
-    })
-}
-
-/// 让每列高度尽量成为主要小节间隔的整数倍，使各列的主小节线纵向对齐。
-fn predominant_measure_aligned_height(
-    timing_lines: &[TimingLine],
-    pixels_per_ms: f64,
-    max_area_height: i64,
-) -> Option<i64> {
-    let measures: Vec<i64> = timing_lines
-        .iter()
-        .filter(|line| line.is_measure)
-        .map(|line| line.time)
-        .collect();
-    let mut frequencies: BTreeMap<i64, usize> = BTreeMap::new();
-    for pair in measures.windows(2) {
-        let delta = pair[1] - pair[0];
-        if delta > 100 {
-            *frequencies.entry(delta).or_default() += 1;
-        }
-    }
-    let dominant_delta = frequencies
-        .into_iter()
-        .max_by_key(|(delta, count)| (*count, std::cmp::Reverse(*delta)))?
-        .0;
-    let interval_height = rhe(dominant_delta as f64 * pixels_per_ms).max(1);
-    let interval_count = max_area_height / interval_height;
-    (interval_count > 3).then_some(interval_count * interval_height)
+pub struct CatchPngLayout {
+    pub column_count: i64,
+    pub total_column_height: i64,
+    pub visible_playfield_width: i64,
+    pub image_width: i64,
+    pub image_height: i64,
+    pub playfield_scale: f64,
+    pub object_scale: f64,
+    pub pixels_per_ms: f64,
+    pub chart_start_time: i64,
 }
 
 fn column_left(column_index: i64) -> i64 {
@@ -234,12 +44,12 @@ fn playfield_left(column_index: i64) -> i64 {
 
 fn playfield_side_padding() -> i64 {
     let config = &crate::config::current().render.catch.png;
-    let render_scale = crate::export::geometry::output_scale(
-        crate::export::geometry::GameMode::Catch,
-        crate::export::geometry::OutputFormat::Png,
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Catch,
+        crate::render::geometry::OutputFormat::Png,
     );
-    let playfield_width = crate::export::geometry::scale_px(
-        crate::export::catch::constants::PLAYFIELD_DISPLAY_WIDTH as f64,
+    let playfield_width = crate::render::geometry::scale_px(
+        super::constants::PLAYFIELD_DISPLAY_WIDTH as f64,
         render_scale,
     );
     playfield_side_padding_for(
@@ -259,238 +69,25 @@ fn playfield_side_padding_for(
         .max(0)
 }
 
-// ─── 节拍线 ───
-
 #[derive(Clone, Copy)]
-struct TimingLine {
-    time: i64,
-    is_measure: bool,
-    show_label: bool,
-    bpm: Option<f64>,
+pub struct TimingLine {
+    pub time: i64,
+    pub is_measure: bool,
+    pub show_label: bool,
+    pub bpm: Option<f64>,
 }
 
 /// 红线分段：每段持有固定的 beat_length 与 meter。
-struct RedlineSection {
-    start_time: f64,
-    end_time: f64,
-    beat_length: f64,
-    meter: i32,
+pub struct RedlineSection {
+    pub start_time: f64,
+    pub end_time: f64,
+    pub beat_length: f64,
+    pub meter: i32,
 }
 
 /// 从红线（uninherited timing point）构建分段，再按段内节拍生成节拍线。
-/// 节拍从红线时间起步，避免旧实现「从 0 起步 + 红线重置」的死循环问题。
-fn build_timing_lines(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec<TimingLine> {
-    let red_lines: Vec<&TimingPoint> = timing_points
-        .iter()
-        .filter(|p| p.uninherited && p.beat_length.is_finite() && p.beat_length > 0.0)
-        .collect();
-    if red_lines.is_empty() {
-        return Vec::new();
-    }
 
-    // 切分红线区段（首段从 0 或首条红线之前开始，沿用首条红线参数）
-    let mut sections: Vec<RedlineSection> = Vec::new();
-    for (index, point) in red_lines.iter().enumerate() {
-        let start = if index == 0 {
-            point.time.min(0.0)
-        } else {
-            point.time
-        };
-        let end = if index + 1 < red_lines.len() {
-            red_lines[index + 1].time
-        } else {
-            chart_end_time as f64
-        };
-        if end <= start {
-            continue;
-        }
-        sections.push(RedlineSection {
-            start_time: if index == 0 { point.time } else { start },
-            end_time: end,
-            beat_length: point.beat_length.max(1.0),
-            meter: point.meter.max(1),
-        });
-    }
-
-    let mut lines: Vec<TimingLine> = Vec::new();
-    let mut last_bpm: Option<f64> = None;
-    for section in &sections {
-        let bpm = 60_000.0 / section.beat_length;
-        let show_bpm = last_bpm.is_none_or(|last| (last - bpm).abs() > 0.01);
-        last_bpm = Some(bpm);
-        let mut beat_index: i64 = 0;
-        loop {
-            let time = section.start_time + beat_index as f64 * section.beat_length;
-            if time > section.end_time + 0.001 || time > chart_end_time as f64 {
-                break;
-            }
-            if time >= 0.0 {
-                lines.push(TimingLine {
-                    time: rhe(time),
-                    is_measure: beat_index % section.meter as i64 == 0,
-                    show_label: true,
-                    bpm: (show_bpm && beat_index == 0).then_some(bpm),
-                });
-            }
-            beat_index += 1;
-        }
-    }
-    if let Some(first_visible) = lines.iter_mut().find(|line| line.show_label) {
-        if first_visible.bpm.is_none() {
-            first_visible.bpm = crate::export::timing::bpm_at(timing_points, first_visible.time);
-        }
-    }
-    lines
-}
-
-// ─── 对外接口 ───
-
-pub(crate) fn render_catch_grid(
-    beatmap: &Beatmap,
-    output_path: &Path,
-    mods: Option<&ModSettings>,
-    time_axis: TimeAxis,
-    deadline: &RequestDeadline,
-) -> Result<PathBuf> {
-    deadline.check()?;
-    let hit_objects = match beatmap.hit_objects.as_catch() {
-        Some(v) if !v.is_empty() => v,
-        _ => return Err(PreviewError::render("catch beatmap has no hit objects")),
-    };
-
-    let difficulty = effective_difficulty(beatmap, mods);
-    let mut render_objects = build_catch_render_objects(
-        beatmap,
-        hit_objects,
-        mods,
-        &difficulty,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .style
-            .SHOW_BANANA_ROUTE,
-    )?;
-    deadline.check()?;
-    let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap().max(1);
-
-    // 裁剪开头静音：若第一个音符在 5 秒之后，则从其前 1 秒开始，
-    // 并对齐到红线节拍网格。
-    let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
-    let chart_start_time = if first_note_time >= 5000 {
-        osu_beatmap_preview_core::processing::timeline::snap_to_beat_grid(
-            first_note_time - 1000,
-            &beatmap.timing_points,
-        )
-    } else {
-        0
-    };
-
-    let (effective_chart_end_time, timing_points_for_render): (i64, Vec<TimingPoint>) =
-        if chart_start_time > 0 {
-            for ro in &mut render_objects {
-                ro.start_time = (ro.start_time - chart_start_time).max(0);
-                if let Some(ref mut et) = ro.event_time {
-                    *et = (*et - chart_start_time as f64).max(0.0);
-                }
-            }
-            let tp = beatmap
-                .timing_points
-                .iter()
-                .map(|tp| {
-                    let mut tp = *tp;
-                    tp.time -= chart_start_time as f64;
-                    tp
-                })
-                .collect();
-            ((chart_end_time - chart_start_time).max(0), tp)
-        } else {
-            (chart_end_time, beatmap.timing_points.clone())
-        };
-
-    let timing_lines = build_timing_lines(&timing_points_for_render, effective_chart_end_time);
-    let layout = build_layout(
-        effective_chart_end_time,
-        difficulty.cs,
-        difficulty.ar,
-        chart_start_time,
-        &timing_lines,
-    )?;
-
-    let mut image = Img::new(
-        layout.image_width as u32,
-        layout.image_height as u32,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .style
-            .IMAGE_BACKGROUND,
-    );
-
-    for column_index in 0..layout.column_count {
-        deadline.check()?;
-        draw_column_background(&mut image, &layout, column_index);
-    }
-
-    let mut last_label_time: Option<i64> = None;
-    for timing_line in &timing_lines {
-        deadline.check()?;
-        let mut tl = *timing_line;
-        if tl.show_label {
-            if let Some(prev) = last_label_time {
-                if (tl.time - prev).abs()
-                    < crate::config::current()
-                        .render
-                        .catch
-                        .png
-                        .style
-                        .TIME_LABEL_MIN_INTERVAL_MS
-                {
-                    tl.show_label = false;
-                }
-            }
-            if tl.show_label {
-                last_label_time = Some(tl.time);
-            }
-        }
-        draw_timing_line_png(&mut image, &tl, &layout);
-        if tl.show_label || tl.bpm.is_some() {
-            draw_timing_label_png(&mut image, &tl, &layout, time_axis);
-        }
-    }
-
-    // 路线和引导线放在物件下层，避免遮住水果图形。
-    if crate::config::current()
-        .render
-        .catch
-        .png
-        .style
-        .SHOW_BANANA_ROUTE
-    {
-        draw_banana_routes(&mut image, &render_objects, &layout);
-    }
-    draw_edge_guides(&mut image, &render_objects, &layout);
-
-    // 后发生的对象先画（早出现的盖在上层），同时刻按 类型 排序
-    let mut sorted_objects: Vec<&RenderObject> = render_objects.iter().collect();
-    sorted_objects.sort_by_key(|o| (-o.start_time, object_order(o.object_type)));
-    for (index, catch_object) in sorted_objects.into_iter().enumerate() {
-        if index % 1024 == 0 {
-            deadline.check()?;
-        }
-        draw_catch_object_png(&mut image, catch_object, &layout);
-    }
-
-    // combo 标签放在引导线和物件上层，确保密集段落中仍然清晰可读。
-    draw_edge_combo_labels(&mut image, &render_objects, &layout);
-
-    save_png(&image, output_path, deadline)?;
-    Ok(output_path.to_path_buf())
-}
-
-/// 画单列背景：左右留白从列宽推导，保证自定义倍率和列宽使用同一几何关系。
-fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: i64) {
+fn draw_column_background(image: &mut Img, layout: &CatchPngLayout, column_index: i64) {
     let column_left = column_left(column_index);
     let chart_top = crate::config::current()
         .render
@@ -513,11 +110,11 @@ fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: 
     let side_padding = playfield_side_padding();
     let visible_left = column_left + panel_width + side_padding;
     let visible_right = visible_left + layout.visible_playfield_width;
-    let border_width = crate::export::geometry::scale_stroke_px(
+    let border_width = crate::render::geometry::scale_stroke_px(
         1.0,
-        crate::export::geometry::output_scale(
-            crate::export::geometry::GameMode::Catch,
-            crate::export::geometry::OutputFormat::Png,
+        crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Catch,
+            crate::render::geometry::OutputFormat::Png,
         ),
     );
     let border_left = visible_left - side_padding;
@@ -574,7 +171,7 @@ fn draw_column_background(image: &mut Img, layout: &RenderLayout, column_index: 
 }
 
 /// 时间 → （列号, y 坐标）。时间从列底部向上递增（与游戏内下落方向一致）。
-fn locate_time(time: i64, layout: &RenderLayout) -> (i64, i64) {
+fn locate_time(time: i64, layout: &CatchPngLayout) -> (i64, i64) {
     let absolute_y = time as f64 * layout.pixels_per_ms;
     let column_index = ((absolute_y / layout.total_column_height as f64).floor() as i64)
         .clamp(0, layout.column_count - 1);
@@ -597,7 +194,7 @@ fn locate_time(time: i64, layout: &RenderLayout) -> (i64, i64) {
     (column_index, y)
 }
 
-fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &RenderLayout) {
+fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &CatchPngLayout) {
     let (column_index, y) = locate_time(timing_line.time, layout);
     let left = playfield_left(column_index);
     let right = left + layout.visible_playfield_width;
@@ -629,13 +226,13 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
             + layout.total_column_height,
     );
 
-    let render_scale = crate::export::geometry::output_scale(
-        crate::export::geometry::GameMode::Catch,
-        crate::export::geometry::OutputFormat::Png,
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Catch,
+        crate::render::geometry::OutputFormat::Png,
     );
     let (thickness, color) = if timing_line.is_measure {
         (
-            crate::export::geometry::scale_stroke_px(2.0, render_scale),
+            crate::render::geometry::scale_stroke_px(2.0, render_scale),
             crate::config::current()
                 .render
                 .catch
@@ -645,7 +242,7 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
         )
     } else {
         (
-            crate::export::geometry::scale_stroke_px(1.0, render_scale),
+            crate::render::geometry::scale_stroke_px(1.0, render_scale),
             crate::config::current()
                 .render
                 .catch
@@ -660,7 +257,7 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Rend
 fn draw_timing_label_png(
     image: &mut Img,
     timing_line: &TimingLine,
-    layout: &RenderLayout,
+    layout: &CatchPngLayout,
     time_axis: TimeAxis,
 ) {
     let (column_index, y) = locate_time(timing_line.time, layout);
@@ -698,7 +295,7 @@ fn draw_timing_label_png(
                 .INFO_MARGIN_TOP
             + layout.total_column_height,
     );
-    let label = crate::export::text::format_seconds_tenths(
+    let label = crate::render::text::format_seconds_tenths(
         time_axis.to_display(timing_line.time + layout.chart_start_time),
     );
     let (label_width, label_height) = text_size(
@@ -710,11 +307,11 @@ fn draw_timing_label_png(
             .sizing
             .TIME_LABEL_FONT_SIZE,
     );
-    let label_gap = crate::export::geometry::scale_px(
+    let label_gap = crate::render::geometry::scale_px(
         4.0,
-        crate::export::geometry::output_scale(
-            crate::export::geometry::GameMode::Catch,
-            crate::export::geometry::OutputFormat::Png,
+        crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Catch,
+            crate::render::geometry::OutputFormat::Png,
         ),
     );
     let label_x = (border_right + label_gap).min(
@@ -728,7 +325,7 @@ fn draw_timing_label_png(
                 .PAGE_MARGIN_LEFT,
     );
     let label_y = (y as f64 - label_height as f64 / 2.0).floor() as i64;
-    let bpm_label = timing_line.bpm.map(crate::export::timing::format_bpm);
+    let bpm_label = timing_line.bpm.map(crate::render::timing::format_bpm);
     let bpm_height = bpm_label.as_ref().map_or(0, |text| {
         text_size(
             text,
@@ -830,7 +427,7 @@ fn draw_timing_label_png(
     }
 }
 
-fn draw_catch_object_png(image: &mut Img, catch_object: &RenderObject, layout: &RenderLayout) {
+fn draw_catch_object_png(image: &mut Img, catch_object: &RenderObject, layout: &CatchPngLayout) {
     let (column_index, y) = locate_time(catch_object.start_time, layout);
     let center_x = playfield_left(column_index) as f64 + catch_object.x * layout.playfield_scale;
     let center_y = y as f64;
@@ -850,7 +447,7 @@ type LineSegment = ((f64, f64), (f64, f64));
 fn edge_guide_segments(
     current: &RenderObject,
     next: &RenderObject,
-    layout: &RenderLayout,
+    layout: &CatchPngLayout,
 ) -> Vec<LineSegment> {
     time_axis_segments(
         current.event_time_or_start(),
@@ -866,7 +463,7 @@ fn time_axis_segments(
     start_x: f64,
     end_time: f64,
     end_x: f64,
-    layout: &RenderLayout,
+    layout: &CatchPngLayout,
 ) -> Vec<LineSegment> {
     if end_time <= start_time || layout.pixels_per_ms <= 0.0 {
         return Vec::new();
@@ -917,7 +514,7 @@ fn time_axis_segments(
 }
 
 /// 绘制动态规划实际采用的接盘中心轨迹；未接取的香蕉时刻也保留过渡位置。
-fn draw_banana_routes(image: &mut Img, render_objects: &[RenderObject], layout: &RenderLayout) {
+fn draw_banana_routes(image: &mut Img, render_objects: &[RenderObject], layout: &CatchPngLayout) {
     let mut previous: Option<(usize, f64, f64)> = None;
 
     for current in render_objects {
@@ -951,7 +548,7 @@ fn draw_banana_routes(image: &mut Img, render_objects: &[RenderObject], layout: 
     }
 }
 
-fn draw_edge_guides(image: &mut Img, render_objects: &[RenderObject], layout: &RenderLayout) {
+fn draw_edge_guides(image: &mut Img, render_objects: &[RenderObject], layout: &CatchPngLayout) {
     for (index, current) in render_objects.iter().enumerate() {
         if !current.edge {
             continue;
@@ -1004,7 +601,11 @@ fn edge_combo_numbers(render_objects: &[RenderObject]) -> Vec<(usize, usize)> {
         .collect()
 }
 
-fn draw_edge_combo_labels(image: &mut Img, render_objects: &[RenderObject], layout: &RenderLayout) {
+fn draw_edge_combo_labels(
+    image: &mut Img,
+    render_objects: &[RenderObject],
+    layout: &CatchPngLayout,
+) {
     for (index, combo) in edge_combo_numbers(render_objects) {
         let current = &render_objects[index];
         let Some(next) = render_objects[index + 1..].iter().find(|candidate| {
@@ -1073,5 +674,349 @@ fn draw_edge_combo_labels(image: &mut Img, render_objects: &[RenderObject], layo
     }
 }
 
+pub fn ceil_div(a: i64, b: i64) -> i64 {
+    (a + b - 1) / b
+}
+
+pub fn predominant_measure_aligned_height(
+    timing_lines: &[TimingLine],
+    pixels_per_ms: f64,
+    max_area_height: i64,
+) -> Option<i64> {
+    let measures: Vec<i64> = timing_lines
+        .iter()
+        .filter(|line| line.is_measure)
+        .map(|line| line.time)
+        .collect();
+    let mut frequencies: BTreeMap<i64, usize> = BTreeMap::new();
+    for pair in measures.windows(2) {
+        let delta = pair[1] - pair[0];
+        if delta > 100 {
+            *frequencies.entry(delta).or_default() += 1;
+        }
+    }
+    let dominant_delta = frequencies
+        .into_iter()
+        .max_by_key(|(delta, count)| (*count, std::cmp::Reverse(*delta)))?
+        .0;
+    let interval_height = rhe(dominant_delta as f64 * pixels_per_ms).max(1);
+    let interval_count = max_area_height / interval_height;
+    (interval_count > 3).then_some(interval_count * interval_height)
+}
+
+/// 按 `CatchPngLayout` 与预计算对象绘制整张 catch 静态图。
+pub fn render_catch_png_scene(
+    layout: &CatchPngLayout,
+    render_objects: &[RenderObject],
+    timing_lines: &[TimingLine],
+    time_axis: TimeAxis,
+) -> Img {
+    let mut image = Img::new(
+        layout.image_width as u32,
+        layout.image_height as u32,
+        crate::config::current()
+            .render
+            .catch
+            .png
+            .style
+            .IMAGE_BACKGROUND,
+    );
+
+    for column_index in 0..layout.column_count {
+        draw_column_background(&mut image, layout, column_index);
+    }
+
+    let mut last_label_time: Option<i64> = None;
+    for timing_line in timing_lines {
+        let mut tl = *timing_line;
+        if tl.show_label {
+            if let Some(prev) = last_label_time {
+                if (tl.time - prev).abs()
+                    < crate::config::current()
+                        .render
+                        .catch
+                        .png
+                        .style
+                        .TIME_LABEL_MIN_INTERVAL_MS
+                {
+                    tl.show_label = false;
+                }
+            }
+            if tl.show_label {
+                last_label_time = Some(tl.time);
+            }
+        }
+        draw_timing_line_png(&mut image, &tl, layout);
+        if tl.show_label || tl.bpm.is_some() {
+            draw_timing_label_png(&mut image, &tl, layout, time_axis);
+        }
+    }
+
+    if crate::config::current()
+        .render
+        .catch
+        .png
+        .style
+        .SHOW_BANANA_ROUTE
+    {
+        draw_banana_routes(&mut image, render_objects, layout);
+    }
+    draw_edge_guides(&mut image, render_objects, layout);
+
+    let mut sorted_objects: Vec<&RenderObject> = render_objects.iter().collect();
+    sorted_objects.sort_by_key(|o| (-o.start_time, object_order(o.object_type)));
+    for catch_object in sorted_objects {
+        draw_catch_object_png(&mut image, catch_object, layout);
+    }
+
+    draw_edge_combo_labels(&mut image, render_objects, layout);
+
+    image
+}
+
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+
+    fn test_layout(column_count: i64) -> CatchPngLayout {
+        CatchPngLayout {
+            column_count,
+            total_column_height: 100,
+            visible_playfield_width: 260,
+            image_width: 1_000,
+            image_height: 130,
+            playfield_scale: 0.5,
+            object_scale: 0.5,
+            pixels_per_ms: 1.0,
+            chart_start_time: 0,
+        }
+    }
+
+    fn edge_fruit(x: f64, time: i64) -> RenderObject {
+        RenderObject {
+            object_type: ObjType::Fruit,
+            x,
+            start_time: time,
+            color: crate::render::cpu::modes::catch::constants::LAZER_COMBO_COLORS[0],
+            scale_factor: 1.0,
+            event_time: Some(time as f64),
+            hyper_dash: false,
+            edge: true,
+            banana_shower_id: None,
+            banana_route_x: None,
+        }
+    }
+
+    fn route_banana(x: f64, route_x: f64, time: i64, shower_id: usize) -> RenderObject {
+        let mut object = edge_fruit(x, time);
+        object.object_type = ObjType::Banana;
+        object.edge = false;
+        object.banana_shower_id = Some(shower_id);
+        object.banana_route_x = Some(route_x);
+        object
+    }
+
+    #[test]
+    fn edge_guide_is_split_at_column_boundary() {
+        let current = edge_fruit(0.0, 90);
+        let next = edge_fruit(200.0, 110);
+
+        let segments = edge_guide_segments(&current, &next, &test_layout(2));
+
+        assert_eq!(segments.len(), 2);
+        let chart_top = (crate::config::current()
+            .render
+            .catch
+            .png
+            .sizing
+            .PAGE_MARGIN_TOP
+            + crate::config::current()
+                .render
+                .catch
+                .png
+                .sizing
+                .INFO_MARGIN_TOP) as f64;
+        let chart_bottom = chart_top + 100.0;
+        let ((_, first_start_y), (first_end_x, first_end_y)) = segments[0];
+        let ((second_start_x, second_start_y), (_, second_end_y)) = segments[1];
+        assert_eq!(first_start_y, chart_bottom - 90.0);
+        assert_eq!(first_end_y, chart_top);
+        assert_eq!(second_start_y, chart_bottom);
+        assert_eq!(second_end_y, chart_bottom - 10.0);
+        assert!(second_start_x > first_end_x);
+    }
+
+    #[test]
+    fn edge_guide_draws_configured_pixels_behind_objects() {
+        let layout = test_layout(1);
+        let current = edge_fruit(0.0, 10);
+        let mut next = edge_fruit(200.0, 20);
+        next.edge = false;
+        let mut image = Img::new(400, 130, [7, 7, 7, 255]);
+
+        draw_edge_guides(&mut image, &[current, next], &layout);
+
+        let midpoint_x = playfield_left(0) + 50;
+        let chart_bottom = crate::config::current()
+            .render
+            .catch
+            .png
+            .sizing
+            .PAGE_MARGIN_TOP
+            + crate::config::current()
+                .render
+                .catch
+                .png
+                .sizing
+                .INFO_MARGIN_TOP
+            + layout.total_column_height;
+        assert_eq!(
+            image.get(midpoint_x as u32, (chart_bottom - 15) as u32),
+            crate::config::current()
+                .render
+                .catch
+                .png
+                .style
+                .EDGE_GUIDE_COLOR
+        );
+    }
+
+    #[test]
+    fn banana_route_draws_catcher_center_instead_of_banana_centers() {
+        let layout = test_layout(1);
+        let current = route_banana(0.0, 100.0, 10, 0);
+        let next = route_banana(400.0, 100.0, 20, 0);
+        let background = [7, 7, 7, 255];
+        let mut image = Img::new(400, 130, background);
+
+        draw_banana_routes(&mut image, &[current, next], &layout);
+
+        let route_x = playfield_left(0) + 50;
+        let banana_midpoint_x = playfield_left(0) + 100;
+        let chart_bottom = crate::config::current()
+            .render
+            .catch
+            .png
+            .sizing
+            .PAGE_MARGIN_TOP
+            + crate::config::current()
+                .render
+                .catch
+                .png
+                .sizing
+                .INFO_MARGIN_TOP
+            + layout.total_column_height;
+        assert_eq!(
+            image.get(route_x as u32, (chart_bottom - 15) as u32),
+            crate::render::cpu::modes::catch::constants::BANANA_ROUTE_LINE_COLOR
+        );
+        assert_eq!(
+            image.get(banana_midpoint_x as u32, (chart_bottom - 15) as u32),
+            background
+        );
+    }
+
+    #[test]
+    fn column_height_is_aligned_to_dominant_measure_interval() {
+        let timing_lines: Vec<TimingLine> = (0..10)
+            .map(|index| TimingLine {
+                time: index * 2_000,
+                is_measure: true,
+                show_label: true,
+                bpm: None,
+            })
+            .collect();
+
+        let height = predominant_measure_aligned_height(&timing_lines, 0.5, 5_500).unwrap();
+        assert_eq!(height, 5_000);
+        assert_eq!(height % 1_000, 0);
+    }
+
+    #[test]
+    fn derived_playfield_padding_scales_with_the_column() {
+        for scale in [0.5, 1.0, 1.5, 2.0] {
+            let column_width = crate::render::geometry::scale_px(315.0, scale);
+            let panel_width = crate::render::geometry::scale_px(9.0, scale);
+            let playfield_width = crate::render::geometry::scale_px(260.0, scale);
+            let padding = playfield_side_padding_for(column_width, panel_width, playfield_width);
+
+            assert!((padding as f64 / scale - 23.0).abs() <= 1.0);
+        }
+    }
+
+    #[test]
+    fn aligned_column_count_is_stable_across_output_scales() {
+        let timing_lines: Vec<TimingLine> = (0..10)
+            .map(|index| TimingLine {
+                time: index * 2_000,
+                is_measure: true,
+                show_label: true,
+                bpm: None,
+            })
+            .collect();
+
+        for scale in [0.5, 1.0, 1.5, 2.0] {
+            let pixels_per_ms = 0.5 * scale;
+            let max_area_height = crate::render::geometry::scale_px(5_500.0, scale);
+            let aligned =
+                predominant_measure_aligned_height(&timing_lines, pixels_per_ms, max_area_height)
+                    .unwrap();
+            let total_height = crate::render::geometry::scale_px(9_000.0, scale);
+
+            assert_eq!(ceil_div(total_height, aligned), 2);
+            assert!((aligned as f64 / scale - 5_000.0).abs() <= 1.0);
+        }
+    }
+
+    #[test]
+    fn edge_combo_numbers_ignore_tiny_droplets_and_bananas() {
+        let mut first = edge_fruit(20.0, 10);
+        first.edge = false;
+        let mut tiny = edge_fruit(30.0, 15);
+        tiny.object_type = ObjType::TinyDroplet;
+        tiny.edge = false;
+        let mut droplet = edge_fruit(40.0, 20);
+        droplet.object_type = ObjType::Droplet;
+        let mut banana = edge_fruit(50.0, 25);
+        banana.object_type = ObjType::Banana;
+        banana.edge = false;
+        let last = edge_fruit(60.0, 30);
+
+        let labels = edge_combo_numbers(&[first, tiny, droplet, banana, last]);
+
+        assert_eq!(labels, vec![(2, 2), (4, 3)]);
+    }
+
+    #[test]
+    fn edge_combo_label_is_drawn_next_to_the_edge_object() {
+        let layout = test_layout(1);
+        let current = edge_fruit(100.0, 10);
+        let mut next = edge_fruit(200.0, 20);
+        next.edge = false;
+        let mut image = Img::new(
+            400,
+            130,
+            crate::config::current()
+                .render
+                .catch
+                .png
+                .style
+                .IMAGE_BACKGROUND,
+        );
+
+        draw_edge_combo_labels(&mut image, &[current, next], &layout);
+
+        let has_white_label_pixel = (0..image.h).any(|y| {
+            (0..image.w).any(|x| {
+                image.get(x, y)
+                    == crate::config::current()
+                        .render
+                        .catch
+                        .png
+                        .style
+                        .EDGE_COMBO_LABEL_COLOR
+            })
+        });
+        assert!(has_white_label_pixel);
+    }
+}

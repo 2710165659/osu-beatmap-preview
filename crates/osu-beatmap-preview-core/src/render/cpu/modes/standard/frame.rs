@@ -1,23 +1,38 @@
 //! 音符对象渲染：打击圈、滑条、转盘和接近圈。
 
-use crate::export::canvas::Img;
-use osu_beatmap_preview_core::model::{BreakPeriod, StandardHitObject};
+use crate::model::{BreakPeriod, StandardHitObject};
+use crate::render::canvas::Img;
 
 use super::alpha::*;
 use super::constants::*;
 use super::context::{
     color_id, py_round, stacked_position, to_frame_point, RenderCache, RenderContext,
 };
-use super::draw_centered_text;
 use super::slider::{
     darken, draw_cached_slider_body, draw_ring_aa, draw_slider_ball, draw_slider_body,
     draw_slider_reverse_arrows, draw_slider_ticks, fill_circle_gradient_aa, get_slider_render_data,
     is_full_slider_body, resized_with_alpha, slider_snaked_range, with_alpha,
 };
+use crate::render::text::{draw_text, text_size};
 
 // ——— 帧渲染 ———
 
-pub(crate) fn render_frame(
+/// 在指定内容宽度内以 `(x, y)` 为基准水平居中绘制文字。
+fn draw_centered_text(
+    canvas: &mut Img,
+    text: &str,
+    x: i64,
+    y: i64,
+    size: u32,
+    color: [u8; 4],
+    content_width: i64,
+) {
+    let (text_w, _) = text_size(text, size);
+    let text_x = x + (content_width - text_w as i64) / 2;
+    draw_text(canvas, text_x, y, text, size, color);
+}
+
+pub fn render_frame(
     context: &RenderContext,
     cache: &mut RenderCache,
     snapshot_time: i64,
@@ -27,7 +42,7 @@ pub(crate) fn render_frame(
 ) -> Img {
     let mut frame = background.cloned().unwrap_or_else(|| {
         let color = match context.output_format {
-            crate::export::geometry::OutputFormat::Png => {
+            crate::render::geometry::OutputFormat::Png => {
                 crate::config::current()
                     .render
                     .standard
@@ -35,7 +50,7 @@ pub(crate) fn render_frame(
                     .style
                     .IMAGE_BACKGROUND_COLOR
             }
-            crate::export::geometry::OutputFormat::Gif => {
+            crate::render::geometry::OutputFormat::Gif => {
                 crate::config::current()
                     .render
                     .standard
@@ -43,7 +58,7 @@ pub(crate) fn render_frame(
                     .style
                     .IMAGE_BACKGROUND_COLOR
             }
-            crate::export::geometry::OutputFormat::Mp4 => {
+            crate::render::geometry::OutputFormat::Mp4 => {
                 crate::config::current()
                     .render
                     .standard
@@ -158,11 +173,8 @@ fn draw_slider(
             context.settings.traceable,
         );
     } else {
-        let visible_path = osu_beatmap_preview_core::processing::path::slice_path(
-            &slider_data.frame_path,
-            snaked_start,
-            snaked_end,
-        );
+        let visible_path =
+            crate::processing::path::slice_path(&slider_data.frame_path, snaked_start, snaked_end);
         draw_slider_body(
             frame,
             &visible_path,
@@ -239,8 +251,8 @@ fn draw_spinner(
         return;
     }
     let center = to_frame_point(
-        crate::export::standard::constants::PLAYFIELD_WIDTH / 2.0,
-        crate::export::standard::constants::PLAYFIELD_HEIGHT / 2.0,
+        super::constants::PLAYFIELD_WIDTH / 2.0,
+        super::constants::PLAYFIELD_HEIGHT / 2.0,
         &context.frame_layout,
     );
     let scale = context.spinner_size as f64 / 256.0;
@@ -251,7 +263,7 @@ fn draw_spinner(
         / (hit_object.end_time - hit_object.start_time).max(1) as f64)
         .clamp(0.0, 1.0);
     let disc_r = base_r * (0.8 + 0.6 * progress);
-    let pink = crate::export::standard::constants::ARGON_SPINNER_PINK;
+    let pink = super::constants::ARGON_SPINNER_PINK;
     frame.fill_circle_aa(
         center.0,
         center.1,
@@ -358,7 +370,7 @@ fn build_circle_piece(diameter: i64, color: [u8; 3]) -> Img {
     let d = diameter.max(1);
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
-    let border = d as f64 * crate::export::standard::constants::ARGON_BORDER_RATIO;
+    let border = d as f64 * super::constants::ARGON_BORDER_RATIO;
     // C# Argon：outerFill = accentColour.Darken(4)。
     let dark = darken(color, 4.0);
 
@@ -459,8 +471,8 @@ fn draw_break_overlay(
     let mut layer = Img::new(frame.w, frame.h, [0, 0, 0, 0]);
     let center_x = context.frame_layout.frame_width as f64 / 2.0;
     let center_y = context.frame_layout.frame_height as f64 / 2.0;
-    let render_scale = crate::export::geometry::output_scale(
-        crate::export::geometry::GameMode::Standard,
+    let render_scale = crate::render::geometry::output_scale(
+        crate::render::geometry::GameMode::Standard,
         context.output_format,
     );
 
@@ -477,30 +489,29 @@ fn draw_break_overlay(
 
     let remaining_seconds = ((break_period.end_time - snapshot_time + 999).div_euclid(1000)).max(0);
     let counter_label = remaining_seconds.to_string();
-    let (_, counter_h) = crate::export::text::text_size(
+    let (_, counter_h) = crate::render::text::text_size(
         &counter_label,
-        crate::export::text::scaled_bitmap_font_height(
-            crate::export::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
+        crate::render::text::scaled_bitmap_font_height(
+            super::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
             render_scale,
         ),
     );
     let counter_y =
-        py_round(center_y - crate::export::geometry::scale_px(15.0, render_scale) as f64)
+        py_round(center_y - crate::render::geometry::scale_px(15.0, render_scale) as f64)
             - counter_h as i64;
     let counter_color = [
-        crate::export::standard::constants::BREAK_OVERLAY_COLOR[0],
-        crate::export::standard::constants::BREAK_OVERLAY_COLOR[1],
-        crate::export::standard::constants::BREAK_OVERLAY_COLOR[2],
-        py_round(crate::export::standard::constants::BREAK_OVERLAY_COLOR[3] as f64 * alpha)
-            .clamp(0, 255) as u8,
+        super::constants::BREAK_OVERLAY_COLOR[0],
+        super::constants::BREAK_OVERLAY_COLOR[1],
+        super::constants::BREAK_OVERLAY_COLOR[2],
+        py_round(super::constants::BREAK_OVERLAY_COLOR[3] as f64 * alpha).clamp(0, 255) as u8,
     ];
     draw_centered_text(
         &mut layer,
         &counter_label,
         0,
         counter_y,
-        crate::export::text::scaled_bitmap_font_height(
-            crate::export::standard::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
+        crate::render::text::scaled_bitmap_font_height(
+            super::constants::BREAK_OVERLAY_COUNTER_FONT_SIZE,
             render_scale,
         ),
         counter_color,
@@ -509,28 +520,27 @@ fn draw_break_overlay(
 
     let break_label = format!(
         "Break {} - {}",
-        crate::export::text::format_mmssmmm(context.time_axis.to_display(break_period.start_time)),
-        crate::export::text::format_mmssmmm(context.time_axis.to_display(break_period.end_time))
+        crate::render::text::format_mmssmmm(context.time_axis.to_display(break_period.start_time)),
+        crate::render::text::format_mmssmmm(context.time_axis.to_display(break_period.end_time))
     );
     let info_y = py_round(center_y)
-        + crate::export::geometry::scale_px(
-            crate::export::standard::constants::BREAK_OVERLAY_INFO_TOP_GAP as f64,
+        + crate::render::geometry::scale_px(
+            super::constants::BREAK_OVERLAY_INFO_TOP_GAP as f64,
             render_scale,
         );
     let info_color = [
-        crate::export::standard::constants::BREAK_OVERLAY_INFO_COLOR[0],
-        crate::export::standard::constants::BREAK_OVERLAY_INFO_COLOR[1],
-        crate::export::standard::constants::BREAK_OVERLAY_INFO_COLOR[2],
-        py_round(crate::export::standard::constants::BREAK_OVERLAY_INFO_COLOR[3] as f64 * alpha)
-            .clamp(0, 255) as u8,
+        super::constants::BREAK_OVERLAY_INFO_COLOR[0],
+        super::constants::BREAK_OVERLAY_INFO_COLOR[1],
+        super::constants::BREAK_OVERLAY_INFO_COLOR[2],
+        py_round(super::constants::BREAK_OVERLAY_INFO_COLOR[3] as f64 * alpha).clamp(0, 255) as u8,
     ];
     draw_centered_text(
         &mut layer,
         &break_label,
         0,
         info_y,
-        crate::export::text::scaled_bitmap_font_height(
-            crate::export::standard::constants::BREAK_OVERLAY_INFO_FONT_SIZE,
+        crate::render::text::scaled_bitmap_font_height(
+            super::constants::BREAK_OVERLAY_INFO_FONT_SIZE,
             render_scale,
         ),
         info_color,
@@ -549,10 +559,9 @@ fn draw_break_remaining_bar(
     alpha: f64,
     render_scale: f64,
 ) {
-    let track_width = py_round(
-        layer.w as f64 * crate::export::standard::constants::BREAK_OVERLAY_BAR_WIDTH_RATIO,
-    ) as f64;
-    let track_height = crate::export::standard::constants::BREAK_OVERLAY_BAR_HEIGHT * render_scale;
+    let track_width =
+        py_round(layer.w as f64 * super::constants::BREAK_OVERLAY_BAR_WIDTH_RATIO) as f64;
+    let track_height = super::constants::BREAK_OVERLAY_BAR_HEIGHT * render_scale;
     let track_left = center_x - track_width / 2.0;
     let track_top = center_y - track_height / 2.0;
     layer.fill_rounded_rect(
@@ -621,38 +630,30 @@ fn draw_chevron(
 }
 
 fn break_overlay_alpha(break_period: &BreakPeriod, snapshot_time: i64) -> f64 {
-    if break_period.end_time - break_period.start_time
-        < crate::export::standard::constants::BREAK_MIN_DURATION_MS
-    {
+    if break_period.end_time - break_period.start_time < super::constants::BREAK_MIN_DURATION_MS {
         return 0.0;
     }
     if snapshot_time < break_period.start_time || snapshot_time > break_period.end_time {
         return 0.0;
     }
-    if snapshot_time
-        < break_period.start_time + crate::export::standard::constants::BREAK_FADE_DURATION_MS
-    {
+    if snapshot_time < break_period.start_time + super::constants::BREAK_FADE_DURATION_MS {
         return (snapshot_time - break_period.start_time) as f64
-            / crate::export::standard::constants::BREAK_FADE_DURATION_MS as f64;
+            / super::constants::BREAK_FADE_DURATION_MS as f64;
     }
-    if snapshot_time
-        > break_period.end_time - crate::export::standard::constants::BREAK_FADE_DURATION_MS
-    {
+    if snapshot_time > break_period.end_time - super::constants::BREAK_FADE_DURATION_MS {
         return (break_period.end_time - snapshot_time) as f64
-            / crate::export::standard::constants::BREAK_FADE_DURATION_MS as f64;
+            / super::constants::BREAK_FADE_DURATION_MS as f64;
     }
     1.0
 }
 
 fn break_remaining_bar_ratio(break_period: &BreakPeriod, snapshot_time: i64) -> f64 {
-    let effective_duration = break_period.end_time
-        - crate::export::standard::constants::BREAK_FADE_DURATION_MS
-        - break_period.start_time;
+    let effective_duration =
+        break_period.end_time - super::constants::BREAK_FADE_DURATION_MS - break_period.start_time;
     if effective_duration <= 0 {
         return 0.0;
     }
-    let remaining = break_period.end_time
-        - crate::export::standard::constants::BREAK_FADE_DURATION_MS
-        - snapshot_time;
+    let remaining =
+        break_period.end_time - super::constants::BREAK_FADE_DURATION_MS - snapshot_time;
     (remaining as f64 / effective_duration as f64).clamp(0.0, 1.0)
 }
