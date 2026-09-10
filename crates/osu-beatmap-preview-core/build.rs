@@ -2,7 +2,8 @@ fn main() {
     println!("cargo:rustc-env=VERGEN_BUILD_TIMESTAMP=1970-01-01T00:00:00Z");
 
     let manifest_dir = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let config_path = manifest_dir.join("../..").join("assets/default_config.yml");
+    // render 与 skin 是 core 和 CLI 的共享配置，统一放在工作区外层 assets。
+    let config_path = manifest_dir.join("../../assets/shared_config.yml");
     println!("cargo:rerun-if-changed={}", config_path.display());
     let source = std::fs::read_to_string(config_path).expect("默认配置必须可读");
     let value: serde_json::Value = serde_yaml::from_str(&source).expect("默认配置必须是有效 YAML");

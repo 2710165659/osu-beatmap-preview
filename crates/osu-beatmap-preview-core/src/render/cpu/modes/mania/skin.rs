@@ -1,6 +1,6 @@
 //! osu!mania 皮肤配置加载。
 //!
-//! 配置来自 `default_config.yml` 生成的运行时快照；每个 `KEYS_N` 块都
+//! 配置来自 `shared_config.yml` 生成的运行时快照；每个 `KEYS_N` 块都
 //! 显式保存列宽、列线宽和判定线位置。
 
 /// 单个键数对应的 mania 皮肤配置。

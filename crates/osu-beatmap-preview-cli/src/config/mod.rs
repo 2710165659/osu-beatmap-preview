@@ -1,6 +1,6 @@
 //! 应用配置。
 //!
-//! 内嵌 YAML 是默认配置层。CLI 可从 `CONFIG_DIR` 加载可选文件，
+//! 内嵌 YAML 由共享配置与 CLI 专用配置合并生成。CLI 可从 `CONFIG_DIR` 加载可选文件，
 //! 再叠加请求指定的配置，最后初始化不可变的进程级快照。
 
 use std::collections::BTreeMap;
@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
 pub fn default_config_yaml() -> &'static str {
-    include_str!("../../../../assets/default_config.yml")
+    include_str!(concat!(env!("OUT_DIR"), "/default_config.yml"))
 }
 
 include!(concat!(env!("OUT_DIR"), "/config_schema.rs"));

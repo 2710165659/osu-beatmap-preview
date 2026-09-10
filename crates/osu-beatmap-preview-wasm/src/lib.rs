@@ -138,6 +138,13 @@ impl WebGpuSession {
         format!("{:?}", self.inner.mode()).to_lowercase()
     }
 
+    /// 热切换当前会话的 mod，数组中的每项对应一个独立 token。
+    pub fn set_mods(&mut self, mods: JsValue) -> Result<(), JsValue> {
+        let values = serde_wasm_bindgen::from_value::<Vec<String>>(mods)
+            .map_err(|error| JsValue::from_str(&format!("mod 参数无效：{error}")))?;
+        self.inner.set_mods(values).map_err(js_error)
+    }
+
     pub fn set_background_rgba(
         &mut self,
         width: u32,

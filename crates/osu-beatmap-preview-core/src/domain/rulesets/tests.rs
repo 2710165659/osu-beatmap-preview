@@ -239,7 +239,7 @@ fn snapshot(beatmap: &Beatmap) -> String {
 
 fn fixture_path(filename: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets")
+        .join("assets")
         .join("testdata_conversion")
         .join(filename)
 }

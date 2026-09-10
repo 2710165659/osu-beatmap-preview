@@ -9,18 +9,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let build = BuildBuilder::default().build_timestamp(true).build()?;
     Emitter::default().add_instructions(&build)?.emit()?;
 
-    let project_root =
-        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").ok_or("manifest dir missing")?)
-            .join("../..");
-    let config_path = project_root.join("assets/default_config.yml");
-    println!("cargo:rerun-if-changed={}", config_path.display());
-    let source = fs::read_to_string(config_path)?;
-    let mut generated = String::from("// 由 assets/default_config.yml 自动生成，请勿手动修改。\n");
-    let source_value: Value = serde_yaml::from_str(&source)?;
+    let manifest_dir =
+        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").ok_or("manifest dir missing")?);
+    let shared_config_path = manifest_dir.join("../../assets/shared_config.yml");
+    let cli_config_path = manifest_dir.join("assets/cli_config.yml");
+    for path in [&shared_config_path, &cli_config_path] {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+
+    let shared_source = fs::read_to_string(&shared_config_path)?;
+    let mut source_value: Value = serde_yaml::from_str(&shared_source)?;
+    let cli_source = fs::read_to_string(&cli_config_path)?;
+    let cli_value: Value = serde_yaml::from_str(&cli_source)?;
+    merge_values(&mut source_value, &cli_value)?;
+
+    let mut generated = String::from(
+        "// 由 assets/shared_config.yml 与 crates/osu-beatmap-preview-cli/assets/cli_config.yml 合并自动生成，请勿手动修改。\n",
+    );
     generate_runtime_schema(&mut generated, &source_value)?;
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").ok_or("OUT_DIR missing")?);
     fs::write(out_dir.join("config_schema.rs"), generated)?;
+    fs::write(
+        out_dir.join("default_config.yml"),
+        serde_yaml::to_string(&source_value)?,
+    )?;
     Ok(())
+}
+
+fn merge_values(target: &mut Value, overlay: &Value) -> Result<(), Box<dyn std::error::Error>> {
+    match (target, overlay) {
+        (Value::Mapping(target), Value::Mapping(overlay)) => {
+            for (key, value) in overlay {
+                match target.get_mut(key) {
+                    Some(existing) => merge_values(existing, value)?,
+                    None => {
+                        target.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+            Ok(())
+        }
+        (target, overlay) => {
+            *target = overlay.clone();
+            Ok(())
+        }
+    }
 }
 
 fn generate_runtime_schema(

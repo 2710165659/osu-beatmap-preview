@@ -29,6 +29,12 @@ CPU CLI 使用进程级只读配置。实时会话通过 `RealtimeOptions` 接�
 
 模式几何、`SCALE`、背景和 HUD 读取对应的 `render.<mode>.<format>` 配置。配置文件变更参与稳定配置 hash；CLI 的 `--scale`、`--fps`、Mod 和时间选段不参与目录 hash，由产物文件名表达。renderer 的画布尺寸、MSAA 和 readback 并发数由 Web、GUI 或移动端宿主通过类型化 API 提供，不读取 CLI 配置。
 
+## 配置资源
+
+- `assets/shared_config.yml`：core 与 CLI 共享的配置，包含 `render`、`skin`。core 构建时提取并生成 `CoreConfig` 的默认值；CLI 启动时将其与 CLI 专用配置合并为 `RuntimeConfig`。
+- `crates/osu-beatmap-preview-cli/assets/cli_config.yml`：CLI 专用配置，包含 `paths`、`download`、`timeout`、`advance`，只由 `osu-beatmap-preview-cli` 使用。
+- `crates/osu-beatmap-preview-core/assets/testdata_conversion/`：core 转谱回归测试使用的 fixture，只由 `osu-beatmap-preview-core` 使用。
+
 ## 场景与后端
 
 `FrameScene` 对外字段私有，只公开尺寸与绝对时间。内部场景由有序命令和会话资源组成，支持裁剪、精灵、矩形、圆/环、线段、字形和 Standard 滑条厚线网格。`FrameSceneBuilder` 负责合并场景时平移命令并重新编号资源。

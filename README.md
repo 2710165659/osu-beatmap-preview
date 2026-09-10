@@ -168,7 +168,12 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 
 ## 配置
 
-完整默认配置及字段说明见 [assets/default_config.yml](assets/default_config.yml)。通常只需在自定义配置中写出要覆盖的字段。
+默认配置由两份源文件合并而成：
+
+- [assets/shared_config.yml](assets/shared_config.yml)：共享配置，包含 `render`、`skin`，被 `osu-beatmap-preview-core` 和 `osu-beatmap-preview-cli` 使用。
+- [crates/osu-beatmap-preview-cli/assets/cli_config.yml](crates/osu-beatmap-preview-cli/assets/cli_config.yml)：CLI 专用配置，包含 `paths`、`download`、`timeout`、`advance`，仅由 `osu-beatmap-preview-cli` 使用。
+
+CLI 启动时会把两者合并为内嵌默认配置；自定义配置通常只需写出要覆盖的字段。
 
 配置按以下优先级递归合并：
 

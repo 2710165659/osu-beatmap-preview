@@ -165,7 +165,12 @@ The main rules are:
 
 ## Configuration
 
-See [assets/default_config.yml](../assets/default_config.yml) for the complete default configuration and field documentation. Custom configuration normally needs to include only the fields being overridden.
+The default configuration is merged from two source files:
+
+- [assets/shared_config.yml](../assets/shared_config.yml): shared configuration containing `render` and `skin`, used by both `osu-beatmap-preview-core` and `osu-beatmap-preview-cli`.
+- [crates/osu-beatmap-preview-cli/assets/cli_config.yml](../crates/osu-beatmap-preview-cli/assets/cli_config.yml): CLI-only configuration containing `paths`, `download`, `timeout`, and `advance`, used only by `osu-beatmap-preview-cli`.
+
+At startup the CLI merges both files into the embedded defaults. Custom configuration normally needs to include only the fields being overridden.
 
 Configuration layers are merged recursively in this order:
 

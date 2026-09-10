@@ -1,4 +1,4 @@
-// 由 assets/default_config.yml 自动生成，请勿手动修改。
+// 由 assets/shared_config.yml 自动生成，请勿手动修改。
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]

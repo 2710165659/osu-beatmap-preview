@@ -11,6 +11,7 @@ const speed = $('#speed');
 const current = $('#current');
 const total = $('#total');
 const empty = $('#empty');
+const modControls = $('#mod-controls');
 
 let session = null;
 let bid = '';
@@ -26,6 +27,8 @@ let pendingAudioTime = null;
 let audioEnded = false;
 let ignoreAudioUntil = 0;
 let audioFailureLogged = false;
+let activeMods = [];
+let modSwitching = false;
 // 播放页沿用 osu! 视频预览的默认背景暗化：暗化 70%，保留 30% 亮度，
 // 只处理背景资源，不改变 playfield 和其他平台的渲染配置。
 const BACKGROUND_DIM = 0.7;
@@ -245,11 +248,13 @@ async function loadPreview(event) {
     const [wasm, bytes] = await Promise.all([loadWasm(), fetchBeatmap(bid)]);
     const options = {
       convert: $('#convert').value || undefined,
-      mods: $('#mods').value.split(/[\s,]+/).filter(Boolean),
+      // Mod 只通过播放页的可选控件设置，避免手写 token 与当前模式不匹配。
+      mods: [],
       // 加载页中的 Canvas 处于 hidden 状态，不能从 clientWidth/clientHeight 取尺寸。
       width: 1280,
       height: 720,
     };
+    activeMods = options.mods.slice();
     session = await wasm.WebGpuSession.create(bytes, canvas, options);
     duration = Math.max(1, session.duration_ms_number());
     absoluteStart = session.absolute_start_ms_number();
@@ -273,6 +278,7 @@ async function loadPreview(event) {
     canvas.height = session.height();
     syncAudioToPosition();
     $('#mode').textContent = session.mode().toUpperCase();
+    buildModControls();
     loadPage.hidden = true;
     playPage.hidden = false;
     $('#status').textContent = audioResult.status === 'fulfilled' ? '就绪' : '无音频';
@@ -280,6 +286,57 @@ async function loadPreview(event) {
     render();
   } catch (error) {
     log($('#load-log'), error);
+  }
+}
+
+const modOptions = {
+  standard: ['EZ', 'HR', 'HD', 'TC', 'DT', 'HT'],
+  taiko: ['EZ', 'HR', 'SW', 'CS', 'DT', 'HT'],
+  catch: ['EZ', 'HR', 'DT', 'HT'],
+  mania: ['4K', '5K', '6K', '7K', '8K', '9K', 'DS', 'IN', 'HO', 'DT', 'HT'],
+};
+
+function buildModControls() {
+  modControls.textContent = '';
+  const options = modOptions[session.mode()] || [];
+  for (const token of options) {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = token;
+    input.checked = activeMods.some(value => value.toUpperCase() === token);
+    input.addEventListener('change', updateMods);
+    label.append(input, document.createTextNode(token));
+    modControls.append(label);
+  }
+}
+
+function updateMods() {
+  if (!session || modSwitching) return;
+  const requested = [...modControls.querySelectorAll('input:checked')].map(input => input.value);
+  const previous = activeMods;
+  modSwitching = true;
+  modControls.querySelectorAll('input').forEach(input => { input.disabled = true; });
+  try {
+    session.set_mods(requested);
+    activeMods = requested;
+    duration = Math.max(1, session.duration_ms_number());
+    absoluteStart = session.absolute_start_ms_number();
+    beatmapSpeed = session.beatmap_speed_number();
+    audio.playbackRate = playbackRate();
+    position = Math.min(position, duration);
+    seek.max = String(duration);
+    syncAudioToPosition();
+    render();
+    updateControls();
+  } catch (error) {
+    log($('#play-log'), `Mod 切换失败：${errorText(error)}`);
+    modControls.querySelectorAll('input').forEach(input => {
+      input.checked = previous.some(value => value.toUpperCase() === input.value);
+    });
+  } finally {
+    modControls.querySelectorAll('input').forEach(input => { input.disabled = false; });
+    modSwitching = false;
   }
 }
 

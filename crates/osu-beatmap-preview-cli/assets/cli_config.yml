@@ -1,0 +1,43 @@
+# osu-beatmap-preview-cli 专用默认配置。
+# 仅由 osu-beatmap-preview-cli 加载，并与外层 assets/shared_config.yml 合并。
+# 默认配置文件
+# 通用约定：sizing 中的数字使用逻辑像素并受 SCALE 影响；structure 和 style 不缩放。
+# 名称含 _MS 的时长以毫秒为单位；颜色为 [R, G, B, A]，通道范围为 0～255。
+paths:
+  # ----- 目录配置 -----
+  OUTPUT_DIR: "%TEMP%/osu-beatmap-preview/outputs" # 渲染结果输出目录
+  CACHE_DIR: "%TEMP%/osu-beatmap-preview" # 缓存根目录（存放 osz、osu 及 IP 缓存）
+  CONFIG_DIR: "./" # 外部 config.yml 查找目录
+  LOG_DIR: "%TEMP%/osu-beatmap-preview/logs" # 日志根目录
+  # ----- 缓存类文件（位于 CACHE_DIR 下） -----
+  PREFERRED_IP_CACHE: "osu-direct-preferred-ip.json" # 优选下载 IP 的缓存文件
+  PREFERRED_IP_LOCK: "osu-direct-preferred-ip.json.lock" # 更新优选 IP 缓存时使用的锁文件
+  # ----- 日志类文件（位于 LOG_DIR 下） -----
+  PROGRESS_LOG: "progress.log" # 下载和处理进度日志
+  RENDER_LOG: "render.log" # 渲染日志
+download:
+  osz:
+    MAX_OSZ_BYTES: 52428800 # osz 文件下载的最大字节数，超过该值将被拒绝下载
+    PARALLEL_PARTS: 4 # osz 文件下载的并行分块数
+    USER_AGENT: "osu-beatmap-preview/1.0" # 下载请求使用的 HTTP User-Agent
+    MAX_ACTIVE_ATTEMPTS: 3 # 同一下载任务允许同时进行的最大尝试数
+    DOWNLOAD_HARD_TIMEOUT: 120 # 单次完整下载的硬超时，单位秒
+timeout:
+  PNG_TIMEOUT: 300 # PNG 渲染超时，单位秒，必须大于 0
+  GIF_TIMEOUT: 300 # GIF 渲染超时，单位秒，必须大于 0
+  MP4_TIMEOUT: 300 # MP4 渲染超时，单位秒，必须大于 0
+advance:
+  gif:
+    PAR_CHUNK_SIZE: 8 # GIF 每批并行渲染的最大帧数
+    MAX_PAR_FRAME_BYTES: 67108864 # GIF 并行帧允许占用的最大原始图像字节数
+    PALETTE_COLORS: 127 # GIF 调色板中的不透明颜色数，另保留一个透明色索引
+  video:
+    PAR_CHUNK_SIZE: 8 # MP4 每批并行渲染的最大帧数
+    MAX_PAR_FRAME_BYTES: 67108864 # MP4 并行帧允许占用的最大原始图像字节数
+    VIDEO_BITRATE: 900000 # 硬件编码器目标视频码率，单位 bit/s
+    VIDEO_END_PADDING_MS: 2000 # 最后一个物件后继续渲染的时长
+    CPU_VIDEO_BITRATE: 500000 # CPU 编码器目标视频码率，单位 bit/s
+  video_audio:
+    AUDIO_SAMPLE_RATE: 48000 # 输出音频采样率，单位 Hz
+    AUDIO_BITRATE: 96000 # 输出音频码率，单位 bit/s
+    MAX_EXTRACTED_AUDIO_BYTES: 268435456 # 解码后音频允许占用的最大字节数
