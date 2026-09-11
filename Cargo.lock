@@ -1262,15 +1262,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "osu-beatmap-preview-player"
-version = "1.2.0"
-dependencies = [
- "osu-beatmap-preview-core",
- "ureq",
- "zip",
-]
-
-[[package]]
 name = "osu-beatmap-preview-renderer"
 version = "1.2.0"
 dependencies = [

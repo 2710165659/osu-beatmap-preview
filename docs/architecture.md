@@ -6,7 +6,7 @@
 CLI -> cli 应用层 -> 文件/下载/缓存/配置/媒体适配
                     `-> core 单帧/静态场景计算与绘制 -> export 时间序列、布局组装 -> PNG/GIF/MP4 编码
 
-Web -> 宿主 fetch 字节 -> wasm -> core RealtimeSession -> renderer WebGPU Canvas
+Web -> Node 后端下载并缓存 .osu/.osz -> 浏览器 -> wasm -> core RealtimeSession -> renderer WebGPU Canvas
 ```
 
 ## 目录职责
@@ -14,12 +14,16 @@ Web -> 宿主 fetch 字节 -> wasm -> core RealtimeSession -> renderer WebGPU Ca
 - `crates/osu-beatmap-preview-core`：谱面模型、`.osu` 解析、Mod、转谱、时间轴、四模式 CPU 单帧/静态场景绘制、`FrameScene`。
 - `crates/osu-beatmap-preview-renderer`：平台无关的 WGPU 场景绘制、surface 和离屏后端。
 - `crates/osu-beatmap-preview-cli`：CLI/native 适配、文件/下载/缓存/配置/日志、时间序列与布局组装、媒体编码和 I/O；不再包含模式绘制逻辑。
-- `crates/osu-beatmap-preview-wasm`：将 core 会话和 renderer 接到宿主 WebGPU Canvas 的 WASM API。
-- `crates/osu-beatmap-preview-player`：本地 Web/WASM 示例播放器，资源由宿主加载，不轮询帧接口。
+- `crates/osu-beatmap-preview-wasm`：将 core 会话和 renderer 接到宿主 WebGPU Canvas 的 WASM API，没有 Rust 调用方。
+- `crates/osu-beatmap-preview-web`：Node.js 静态站点与下载后端，负责跨域下载 `.osu`/`.osz`、解出音频与背景并缓存；不属于 Cargo workspace，也不参与任何绘制。
 - `crates/osu-beatmap-preview-gui`：桌面 surface、输入和播放生命周期接口骨架。
 - `crates/osu-beatmap-preview-mobile`：Android/iOS surface、输入和音频时钟接口骨架。
 
-workspace 的默认成员是 `osu-beatmap-preview-cli`。普通 `cargo build --release` 构建 CLI。CLI 不依赖 renderer crate，也不提供实时渲染入口；播放器不进入 CLI Release。
+workspace 的默认成员是 `osu-beatmap-preview-cli`。普通 `cargo build --release` 构建 CLI。CLI 不依赖 renderer crate，也不提供实时渲染入口；Web 包与 GUI/mobile 骨架都不进入 CLI Release。
+
+## Web 后端
+
+浏览器无法跨域直接下载 osu! 的资源，所以 Release 里的 Web 包由一个 Node.js 进程提供静态站点和三类资源接口：`/resource/beatmap`、`/resource/audio`、`/resource/background`。下载策略与 CLI 一致（多镜像竞速、Range 分块、osu.direct 优选 IP、缓存优先），并复用同一份缓存目录布局；解包只用 Node 自带的 zlib，因此后端没有任何第三方依赖。绘制全部发生在浏览器内的 wasm 中，后端不返回像素数据。
 
 ## 请求与配置
 
@@ -51,4 +55,4 @@ GPU 不可用或设备失败时 WGPU API 明确返回错误，不切换到 CPU �
 
 ## 非目标
 
-当前版本不包含正式 GUI/移动端产品 UI、WGPU PNG/GIF、回放解析、外部 texture 编码 API 或 NVENC/AMF 零拷贝；GUI/mobile crate 仅提供适配接口骨架。Web 播放器控制面包含播放/暂停、seek、方向键跳转、音频、`0.5x..=2.0x` 倍速、30/60 FPS 和 1080P/720P/480P 分辨率切换。
+当前版本不包含正式 GUI/移动端产品 UI、WGPU PNG/GIF、回放解析、外部 texture 编码 API 或 NVENC/AMF 零拷贝；GUI/mobile crate 仅提供适配接口骨架。Web 站点的控制面包含播放/暂停、seek、方向键跳转、音频、`0.5x..=2.0x` 倍速、30/60 FPS 和 1080P/720P/480P 分辨率切换。

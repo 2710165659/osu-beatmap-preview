@@ -10,18 +10,19 @@ All notable changes to this project will be documented in this file.
 
 - 新增平台无关的 `osu-beatmap-preview-renderer` crate，提供基于 WGPU 的 `SurfaceRenderer`、`OffscreenRenderer`、流式 readback、取消令牌和分类渲染错误。
 - 新增 `osu-beatmap-preview-wasm` crate，提供 `WebGpuSession`：宿主把 `.osu` 字节和 WebGPU Canvas 交给 WASM，每帧在本地 GPU 绘制，不返回 RGBA 缓冲、不通过 HTTP 轮询帧。
-- 新增本地 Web 调试播放器 `osu-beatmap-preview-player`，支持谱面加载、Mod/转谱、播放/暂停、seek、方向键跳转、音频、`0.5x..=2.0x` 倍速、30/60 FPS 和 1080P/720P/480P 切换；该播放器不属于 Release 产物。
+- 新增 Web 站点与下载后端 `crates/osu-beatmap-preview-web`（Node.js，无第三方依赖）：静态站点在浏览器里用 WebGPU 播放谱面，后端只负责跨域下载并缓存 `.osu` 与 `.osz`、从 OSZ 解出音频和背景；支持 Mod 热切换、转谱、seek、`0.5x..=2.0x` 倍速和 1080P/720P/480P 切换。
 - core 的公开入口固定为 `api`、`model`、`render`、`processing`，新增 `RealtimeSession`、`ResourceBundle`、`RealtimeOptions`、`TimelineInfo`；`FrameScene` 成为跨平台单帧场景描述边界。
 - 新增 GUI 与移动端平台适配骨架 crate，只定义 surface、输入、播放生命周期和音频时钟边界。
-- 新增 CLI 使用说明 `crates/osu-beatmap-preview-cli/README.md` 和 WASM 使用说明 `crates/osu-beatmap-preview-wasm/README.md`；根目录 README 精简为架构概览与文档入口。
+- 新增 CLI 使用说明 `crates/osu-beatmap-preview-cli/README.md`、Web 站点说明 `crates/osu-beatmap-preview-web/README.md` 和 WASM 使用说明 `crates/osu-beatmap-preview-wasm/README.md`；根目录 README 精简为架构概览与文档入口。
 
 ### Changed
 
-- 项目改为 Cargo workspace，不再保留根包，代码迁入 `osu-beatmap-preview-core`、`osu-beatmap-preview-renderer`、`osu-beatmap-preview-cli`、`osu-beatmap-preview-wasm`、`osu-beatmap-preview-player`、`osu-beatmap-preview-gui`、`osu-beatmap-preview-mobile`。
+- 项目改为 Cargo workspace，不再保留根包，代码迁入 `osu-beatmap-preview-core`、`osu-beatmap-preview-renderer`、`osu-beatmap-preview-cli`、`osu-beatmap-preview-wasm`、`osu-beatmap-preview-gui`、`osu-beatmap-preview-mobile`；Web 站点是 Node.js 项目，不参与 Cargo 构建。
 - workspace 默认成员是 `osu-beatmap-preview-cli`，普通 `cargo build --release` 只构建 CLI；CLI 二进制名从 `osu-beatmap-preview` 改为 `osu-beatmap-preview-cli`，`--help` 与 `--version` 的输出同步更名。
 - core/CLI 职责重新划分：四模式的 CPU 单帧与静态场景绘制位于 core，CLI 只负责参数解析、配置、下载、缓存、日志、时间序列与布局组装、媒体编码和文件输出，且不依赖 renderer。
 - 默认配置拆分为 core/CLI 共享的 `assets/shared_config.yml` 和 CLI 专用的 `crates/osu-beatmap-preview-cli/assets/cli_config.yml`；CLI 启动时把两者合并为内嵌默认配置，core 在构建期生成 `CoreConfig` 默认值。
-- 发布产物固定为 CLI 与 WASM 两类：CLI 的 4 个平台资产文件名以 `-cli` 结尾，WASM 以 `osu-beatmap-preview-wasm-web.zip` 发布，包内含 JavaScript 胶水、`.wasm`、类型声明、README 和 LICENSE。
+- 发布产物固定为 CLI 与 Web 包两类：CLI 的 4 个平台资产文件名以 `-cli` 结尾，Web 包以 `osu-beatmap-preview-web.zip` 发布，内含静态站点（含 wasm 产物）、Node.js 下载后端、说明与许可证。
+- Web 后端的下载与缓存策略与 CLI 对齐：多镜像竞速、Range 分块并行、osu.direct 优选 IP 与超时回退，并复用同一份缓存目录布局。
 - 实时预览右上角时间标签改为跟随实际 Canvas/合成尺寸布局，不再受固定初始分辨率影响。
 
 ### Fixed
@@ -36,7 +37,7 @@ All notable changes to this project will be documented in this file.
 ### Compatibility
 
 - CLI 的 PNG/GIF/MP4 行为、配置项和 `--bid`、`--mod`、`--time-points` 等参数继续沿用 1.1.1；主要破坏性变化是二进制名、发布资产名和 workspace 内部 crate 路径。
-- WGPU 绘制与实时播放只由 renderer、WASM 和播放器使用；CLI 保持 CPU 导出路径。
+- WGPU 绘制与实时播放只由 renderer、WASM 和 Web 站点使用；CLI 保持 CPU 导出路径。
 
 ## [1.1.1] - 2026.09.05
 

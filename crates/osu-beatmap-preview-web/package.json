@@ -1,0 +1,15 @@
+{
+  "name": "osu-beatmap-preview-web",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "osu! 谱面预览的静态站点与本地下载后端（Node.js，无运行时依赖）",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "build:wasm": "node scripts/build-wasm.mjs"
+  }
+}

@@ -63,7 +63,7 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
 
-  build-wasm:
+  build-web:
     runs-on: ubuntu-latest
 
     steps:
@@ -87,23 +87,35 @@ jobs:
 
       - name: Generate JavaScript bindings
         run: |
-          wasm-bindgen --target web --out-dir pkg \
+          wasm-bindgen --target web --out-dir crates/osu-beatmap-preview-web/public/pkg \
             target/wasm32-unknown-unknown/release/osu_beatmap_preview_wasm.wasm
 
-      - name: Package web bundle
+      - name: Run web backend tests
+        run: npm test
+        working-directory: crates/osu-beatmap-preview-web
+
+      # Web 包 = 静态站点（含 wasm 产物）+ Node.js 下载后端 + 许可与说明。
+      - name: Stage web package
         run: |
-          cp crates/osu-beatmap-preview-wasm/README.md pkg/README.md
-          cp LICENSE pkg/LICENSE
-          (cd pkg && zip -r ../osu-beatmap-preview-wasm-web.zip .)
+          mkdir -p stage/osu-beatmap-preview-web
+          package=stage/osu-beatmap-preview-web
+          cp server.js package.json README.md "$package"/
+          cp -r src public scripts test "$package"/
+          cp ../../LICENSE "$package"/LICENSE
+        working-directory: crates/osu-beatmap-preview-web
+
+      - name: Zip web package
+        run: zip -r ../osu-beatmap-preview-web.zip osu-beatmap-preview-web
+        working-directory: crates/osu-beatmap-preview-web/stage
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: osu-beatmap-preview-wasm-web.zip
-          path: osu-beatmap-preview-wasm-web.zip
+          name: osu-beatmap-preview-web.zip
+          path: crates/osu-beatmap-preview-web/osu-beatmap-preview-web.zip
 
   release:
-    needs: [build, build-wasm]
+    needs: [build, build-web]
     runs-on: ubuntu-latest
 
     steps:

@@ -15,10 +15,11 @@ available free of charge at the following immutable revisions:
 
 No local modifications are made to these dependencies.
 
-## WGPU renderer and debug-player dependencies
+## WGPU renderer and web package dependencies
 
-The renderer and unpublished debug player use the following crates. They are
-kept out of the CLI crate, which only performs CPU export and media encoding.
+The renderer and the WASM layer used by the web package use the following
+crates. They are kept out of the CLI crate, which only performs CPU export and
+media encoding.
 
 - wgpu 29.0.4: MIT OR Apache-2.0, https://github.com/gfx-rs/wgpu
 - bytemuck 1.25.0: Zlib OR Apache-2.0 OR MIT, https://github.com/Lokathor/bytemuck

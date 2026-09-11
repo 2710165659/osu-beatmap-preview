@@ -6,3 +6,8 @@ dist/
 .env.local
 .codegraph/
 .reasonix/
+
+# Web 站点的本地缓存与构建产物
+crates/osu-beatmap-preview-web/.cache/
+crates/osu-beatmap-preview-web/public/pkg/
+node_modules/

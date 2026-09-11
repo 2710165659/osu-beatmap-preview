@@ -4,7 +4,6 @@ members = [
     "crates/osu-beatmap-preview-renderer",
     "crates/osu-beatmap-preview-cli",
     "crates/osu-beatmap-preview-wasm",
-    "crates/osu-beatmap-preview-player",
     "crates/osu-beatmap-preview-gui",
     "crates/osu-beatmap-preview-mobile",
 ]
