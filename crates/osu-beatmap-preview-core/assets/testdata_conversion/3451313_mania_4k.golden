@@ -1,0 +1,1579 @@
+mode=3
+circle_size=4
+timing_points_count=239
+timing_points:
+TimingPoint { time: 1119.0, beat_length: 285.714285714286, meter: 4, uninherited: true, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 11976.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 12547.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 14833.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 17119.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 21119.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 21690.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 21904.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 21976.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 23333.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 23404.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 24190.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 24261.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 26547.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 26833.0, beat_length: -133.333333333333, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 27690.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 27976.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 28619.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 28690.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 29976.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 30190.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 30261.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 30833.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 31047.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 31119.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 33333.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 33404.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 34761.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 34833.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 36047.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 36119.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 36904.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 36976.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 37761.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 37833.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 38833.0, beat_length: 285.714285714286, meter: 3, uninherited: true, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 43975.0, beat_length: -80.0, meter: 3, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 44261.0, beat_length: -100.0, meter: 3, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 44547.0, beat_length: -200.0, meter: 3, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 45047.0, beat_length: -80.0, meter: 3, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 45118.0, beat_length: -80.0, meter: 3, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 45547.0, beat_length: -80.0, meter: 3, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 45690.0, beat_length: -100.0, meter: 3, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 48261.0, beat_length: 285.714285714286, meter: 4, uninherited: true, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 49403.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 50046.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 50118.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 50403.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 50618.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 50689.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 50975.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 51189.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 51261.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 51689.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 52261.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 52832.0, beat_length: -64.5161290322581, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 53046.0, beat_length: -64.5161290322581, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 53118.0, beat_length: -64.5161290322581, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 53546.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 53761.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 53832.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 54046.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 54118.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 55189.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 55261.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 56332.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 56403.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 58618.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 58689.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 59761.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 59832.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 62046.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 62118.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 63118.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 63332.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 63403.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 69975.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 71975.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 72261.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 72475.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 72546.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 72903.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 72975.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 73332.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 73403.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 73761.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 73832.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 74261.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 74546.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 76261.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 76546.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 77546.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 77832.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 78046.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 78118.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 78261.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 79118.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 79332.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 79403.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 80761.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 80832.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 81618.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 81689.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 85403.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 88261.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 88475.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 88546.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 90761.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 90832.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 92832.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 93618.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 93689.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 94046.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 94118.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 94761.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 94832.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 95189.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 95261.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 96261.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 96475.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 96546.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 96761.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 96832.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97046.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97118.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97332.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97403.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97618.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97689.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97903.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 97975.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 98189.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 98261.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 98403.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 98618.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 98689.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 99689.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 99903.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 99975.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 100189.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 100261.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 100475.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 100546.0, beat_length: -68.9655172413793, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 100689.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 100903.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 100975.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 104261.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 104832.0, beat_length: -66.6666666666667, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 105403.0, beat_length: -64.5161290322581, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 105618.0, beat_length: -64.5161290322581, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 105689.0, beat_length: -64.5161290322581, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 106118.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 106332.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 106403.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 106618.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 106689.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 107761.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 107832.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 108903.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 108975.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 111189.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 111261.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 112332.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 112403.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 114618.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 114689.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 115689.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 115903.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 115975.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 122546.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 124546.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 124832.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 126046.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 126118.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 127118.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 130546.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 131689.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 135689.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 135761.0, beat_length: -200.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 136261.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 136475.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 136546.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 145403.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 153261.0, beat_length: -1000.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 153332.0, beat_length: -1000.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 154546.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 154618.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 155689.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 156903.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 157975.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 159189.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 160261.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 160332.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 160832.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 160903.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 161403.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 161475.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 162546.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 162618.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 162975.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 163118.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 163689.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 168261.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 168832.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 169403.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 169975.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 170546.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 171118.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 171689.0, beat_length: -111.111111111111, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 171761.0, beat_length: -111.111111111111, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 172689.0, beat_length: -500.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 172761.0, beat_length: -500.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 173832.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 174046.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 174118.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 174332.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 174403.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 174618.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 174689.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 174975.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 175189.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 175261.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 175403.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 177475.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 177546.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 178618.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 178689.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 180903.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 180975.0, beat_length: -80.0, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 181975.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 182189.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 182261.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 188832.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 189332.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 189403.0, beat_length: -100.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 190832.0, beat_length: -64.5161290322581, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 191046.0, beat_length: -64.5161290322581, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+TimingPoint { time: 191118.0, beat_length: -74.0740740740741, meter: 4, uninherited: false, kiai_mode: true, omit_first_bar_line: false }
+TimingPoint { time: 195689.0, beat_length: -400.0, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
+hit_objects_count=1334
+hit_objects:
+ManiaHitObject { lane: 0, start_time: 12547, end_time: 12902, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 12976, end_time: 13331, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 13404, end_time: 13759, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 13833, end_time: 14188, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 14261, end_time: 14474, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 14547, end_time: 14760, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 14833, end_time: 15188, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 15261, end_time: 15616, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 15690, end_time: 16045, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 16119, end_time: 16474, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 16547, end_time: 16760, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 16833, end_time: 17046, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 17119, end_time: 17119, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 17190, end_time: 17190, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 17261, end_time: 17261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 17333, end_time: 17333, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 17404, end_time: 17404, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 17547, end_time: 17547, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 17618, end_time: 17618, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 17689, end_time: 17689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 17761, end_time: 17761, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 17832, end_time: 17832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 17976, end_time: 17976, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 18047, end_time: 18047, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 18118, end_time: 18118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 18190, end_time: 18190, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 18261, end_time: 18261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 18404, end_time: 18404, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 18475, end_time: 18475, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 18546, end_time: 18546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 18618, end_time: 18618, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 18689, end_time: 18689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 18833, end_time: 19047, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 19119, end_time: 19333, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 19119, end_time: 19333, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 19404, end_time: 19546, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 19690, end_time: 19975, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 19690, end_time: 19975, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 20119, end_time: 20261, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 20404, end_time: 20546, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 20690, end_time: 20832, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 20976, end_time: 20976, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 21119, end_time: 21261, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 21119, end_time: 21261, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 21404, end_time: 21617, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 21690, end_time: 21904, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 21690, end_time: 21904, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 21975, end_time: 22117, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 22261, end_time: 22261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 22404, end_time: 22404, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 22547, end_time: 22547, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 22547, end_time: 22547, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 22690, end_time: 22975, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 23118, end_time: 23118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 23118, end_time: 23118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 23261, end_time: 23261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 23404, end_time: 23546, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 23690, end_time: 23832, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 23975, end_time: 24189, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 24261, end_time: 24261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 24404, end_time: 24618, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 24690, end_time: 24832, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 24975, end_time: 25260, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 25404, end_time: 25546, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 25690, end_time: 25690, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 25833, end_time: 25833, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 25833, end_time: 25833, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 25833, end_time: 25833, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 25976, end_time: 25976, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 25976, end_time: 25976, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 26118, end_time: 26118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 26261, end_time: 26403, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 26547, end_time: 26689, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 26833, end_time: 27118, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 27261, end_time: 27546, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 27690, end_time: 27832, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 27976, end_time: 28118, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 28261, end_time: 28261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 28404, end_time: 28618, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 28404, end_time: 28618, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 28690, end_time: 28690, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 28833, end_time: 28833, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 28976, end_time: 28976, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 28976, end_time: 28976, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 29118, end_time: 29118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 29118, end_time: 29118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 29261, end_time: 29261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 29404, end_time: 29404, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 29404, end_time: 29404, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 29547, end_time: 29761, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 29833, end_time: 29833, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 29976, end_time: 30118, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 29976, end_time: 30118, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 30261, end_time: 30261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 30261, end_time: 30261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 30404, end_time: 30404, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 30404, end_time: 30404, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 30547, end_time: 30547, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 30690, end_time: 30690, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 30833, end_time: 31047, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 30833, end_time: 31047, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 31119, end_time: 31261, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 31404, end_time: 31404, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 31547, end_time: 31547, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 31690, end_time: 31690, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 31690, end_time: 31690, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 31833, end_time: 32118, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 32261, end_time: 32403, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 32261, end_time: 32403, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 32261, end_time: 32403, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 32547, end_time: 32547, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 32619, end_time: 32619, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 32690, end_time: 32690, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 32833, end_time: 32833, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 32833, end_time: 32833, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 32976, end_time: 32976, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 32976, end_time: 32976, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 33119, end_time: 33333, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 33119, end_time: 33333, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 33404, end_time: 33404, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 33547, end_time: 33689, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 33833, end_time: 33975, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 33833, end_time: 33975, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 34119, end_time: 34404, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 34547, end_time: 34689, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 34833, end_time: 34833, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 34904, end_time: 34904, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 34976, end_time: 34976, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 35119, end_time: 35119, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 35119, end_time: 35119, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 35261, end_time: 35261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 35404, end_time: 35404, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 35404, end_time: 35404, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 35547, end_time: 35547, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 35690, end_time: 35690, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 35690, end_time: 35690, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 35833, end_time: 36118, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 36261, end_time: 36261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 36261, end_time: 36261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 36404, end_time: 36404, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 36547, end_time: 36547, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 36547, end_time: 36547, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 36690, end_time: 36975, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 37119, end_time: 37119, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 37119, end_time: 37119, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 37261, end_time: 37261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 37404, end_time: 37404, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 37547, end_time: 37832, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 37976, end_time: 37976, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 37976, end_time: 37976, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 38119, end_time: 38119, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 38261, end_time: 38261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 38404, end_time: 38404, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 38404, end_time: 38404, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 38547, end_time: 38547, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 38547, end_time: 38547, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 38690, end_time: 38690, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 38833, end_time: 38975, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 39118, end_time: 39260, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 39404, end_time: 39618, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 39690, end_time: 39832, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 39690, end_time: 39832, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 39975, end_time: 40117, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 40261, end_time: 40475, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 40547, end_time: 40689, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 40547, end_time: 40689, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 40833, end_time: 40975, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 41118, end_time: 41332, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 41404, end_time: 41546, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 41690, end_time: 41832, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 41975, end_time: 42117, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 42261, end_time: 42403, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 42261, end_time: 42403, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 42547, end_time: 42689, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 42833, end_time: 43047, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 42833, end_time: 43047, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 43118, end_time: 43260, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 43404, end_time: 43546, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 43690, end_time: 43690, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 43833, end_time: 43833, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 43975, end_time: 44117, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 43975, end_time: 44117, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 44261, end_time: 44403, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 44547, end_time: 44689, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 44547, end_time: 44689, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 44833, end_time: 45047, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 45118, end_time: 45118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 45404, end_time: 45404, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 45547, end_time: 45547, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 45690, end_time: 45903, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 45975, end_time: 46117, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 46261, end_time: 46403, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 46547, end_time: 46760, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 46833, end_time: 46975, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 47118, end_time: 47260, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 47404, end_time: 47618, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 47404, end_time: 47618, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 47690, end_time: 47832, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 47975, end_time: 47975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 47975, end_time: 47975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 48118, end_time: 48118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 48261, end_time: 49326, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 49403, end_time: 49403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 49546, end_time: 49546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 49689, end_time: 49689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 49689, end_time: 49689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 49832, end_time: 50046, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 49832, end_time: 50046, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 50118, end_time: 50118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 50261, end_time: 50261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 50261, end_time: 50261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 50403, end_time: 50617, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 50689, end_time: 50689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 50832, end_time: 50832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 50832, end_time: 50832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 50975, end_time: 51189, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 51261, end_time: 51261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 51403, end_time: 51403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 51403, end_time: 51403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 51546, end_time: 51546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 51546, end_time: 51546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 51689, end_time: 51689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 51784, end_time: 51784, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 51880, end_time: 51880, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 51975, end_time: 51975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 52070, end_time: 52070, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 52165, end_time: 52165, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 52261, end_time: 52261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 52356, end_time: 52356, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 52451, end_time: 52451, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 52546, end_time: 52546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 52641, end_time: 52641, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 52736, end_time: 52736, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 52832, end_time: 53046, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 53118, end_time: 53118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 53261, end_time: 53261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 53261, end_time: 53261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 53403, end_time: 53403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 53403, end_time: 53403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 53475, end_time: 53475, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 53546, end_time: 53760, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 53832, end_time: 54046, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 53832, end_time: 54046, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 54118, end_time: 54118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 54261, end_time: 54475, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 54261, end_time: 54475, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 54546, end_time: 54546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 54689, end_time: 54689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 54689, end_time: 54689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 54832, end_time: 54832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 54832, end_time: 54832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 54975, end_time: 55117, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 55261, end_time: 55403, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 55261, end_time: 55403, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 55546, end_time: 55688, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 55832, end_time: 55832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 55975, end_time: 55975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 56118, end_time: 56332, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 56118, end_time: 56332, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 56118, end_time: 56332, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 56403, end_time: 56403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 56546, end_time: 56688, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 56546, end_time: 56688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 56832, end_time: 56832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 56832, end_time: 56832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 56832, end_time: 56832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 56975, end_time: 56975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 57118, end_time: 57118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 57118, end_time: 57118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 57261, end_time: 57403, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 57546, end_time: 57688, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 57832, end_time: 57974, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 58118, end_time: 58118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 58261, end_time: 58261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 58403, end_time: 58617, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 58689, end_time: 58689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 58832, end_time: 59046, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 58832, end_time: 59046, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 59118, end_time: 59118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 59261, end_time: 59261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 59403, end_time: 59403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 59403, end_time: 59403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 59546, end_time: 59760, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 59832, end_time: 59832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 59975, end_time: 60117, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 59975, end_time: 60117, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 60261, end_time: 60261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 60332, end_time: 60332, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 60403, end_time: 60403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 60546, end_time: 60546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 60546, end_time: 60546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 60689, end_time: 60689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 60832, end_time: 60832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 60832, end_time: 60832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 60975, end_time: 60975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 60975, end_time: 60975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 61118, end_time: 61118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 61118, end_time: 61118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 61261, end_time: 61261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 61261, end_time: 61261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 61403, end_time: 61403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 61475, end_time: 61475, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 61546, end_time: 61546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 61689, end_time: 61689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 61689, end_time: 61689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 61832, end_time: 62046, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 62118, end_time: 62118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 62261, end_time: 62261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 62403, end_time: 62403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 62475, end_time: 62475, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 62546, end_time: 62546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 62689, end_time: 62689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 62832, end_time: 62832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 62975, end_time: 62975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 63118, end_time: 63332, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 63403, end_time: 63617, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 63403, end_time: 63617, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 63689, end_time: 63689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 63832, end_time: 63832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 63975, end_time: 64117, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 64261, end_time: 64261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 64261, end_time: 64261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 64403, end_time: 64403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 64546, end_time: 64546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 64546, end_time: 64546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 64689, end_time: 64689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 64832, end_time: 64832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 64975, end_time: 64975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 65118, end_time: 65118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 65118, end_time: 65118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 65261, end_time: 65475, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 65546, end_time: 65546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 65689, end_time: 65903, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 65689, end_time: 65903, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 65975, end_time: 65975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 66118, end_time: 66118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 66261, end_time: 66261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 66261, end_time: 66261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 66403, end_time: 66403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 66546, end_time: 66546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 66689, end_time: 66689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 66832, end_time: 66832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 66832, end_time: 66832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 66975, end_time: 66975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 67118, end_time: 67118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 67261, end_time: 67261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 67403, end_time: 67617, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 67403, end_time: 67617, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 67689, end_time: 67689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 67832, end_time: 67832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 67975, end_time: 67975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 67975, end_time: 67975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 68118, end_time: 68118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 68118, end_time: 68118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 68261, end_time: 68261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 68261, end_time: 68261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 68403, end_time: 68403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 68403, end_time: 68403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 68546, end_time: 68546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 68546, end_time: 68546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 68689, end_time: 68689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 68689, end_time: 68689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 68832, end_time: 68832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 68832, end_time: 68832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 68975, end_time: 68975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 68975, end_time: 68975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 68975, end_time: 68975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 69118, end_time: 69118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 69118, end_time: 69118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 69261, end_time: 69261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 69261, end_time: 69261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 69403, end_time: 69403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 69403, end_time: 69403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 69475, end_time: 69475, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 69546, end_time: 69546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 69618, end_time: 69618, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 69689, end_time: 69689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 69761, end_time: 69761, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 69832, end_time: 69832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 69903, end_time: 69903, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 69975, end_time: 70260, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 70403, end_time: 70688, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 70832, end_time: 71117, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 71261, end_time: 71546, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 71261, end_time: 71546, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 71261, end_time: 71546, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 71689, end_time: 71831, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 71975, end_time: 72117, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 72261, end_time: 72475, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 72546, end_time: 72546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 72689, end_time: 72903, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 72975, end_time: 72975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 73118, end_time: 73332, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 73403, end_time: 73403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 73546, end_time: 73688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 73832, end_time: 73832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 73832, end_time: 73832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 73975, end_time: 74117, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 74261, end_time: 74403, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 74546, end_time: 74546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 74546, end_time: 74546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 74689, end_time: 74689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 74761, end_time: 74761, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 74832, end_time: 74832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 74975, end_time: 74975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 75118, end_time: 75118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 75118, end_time: 75118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 75118, end_time: 75118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 75189, end_time: 75189, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 75261, end_time: 75261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 75403, end_time: 75403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 75403, end_time: 75403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 75546, end_time: 75546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 75618, end_time: 75618, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 75689, end_time: 75689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 75832, end_time: 75832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 75975, end_time: 75975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 76046, end_time: 76046, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 76118, end_time: 76118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 76261, end_time: 76403, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 76261, end_time: 76403, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 76261, end_time: 76403, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 76546, end_time: 76688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 76832, end_time: 76832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 76832, end_time: 76832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 77118, end_time: 77118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 77118, end_time: 77118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 77546, end_time: 77546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 77546, end_time: 77546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 77832, end_time: 78046, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 78118, end_time: 78118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 78261, end_time: 78261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 78261, end_time: 78261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 78403, end_time: 78403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 78546, end_time: 78546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 78546, end_time: 78546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 78832, end_time: 78974, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 79118, end_time: 79332, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 79403, end_time: 79545, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 79689, end_time: 79689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 79832, end_time: 79832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 79975, end_time: 79975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 79975, end_time: 79975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 80118, end_time: 80403, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 80546, end_time: 80546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 80546, end_time: 80546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 80689, end_time: 80689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 80832, end_time: 80974, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 81118, end_time: 81260, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 81118, end_time: 81260, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 81403, end_time: 81617, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 81689, end_time: 81689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 81832, end_time: 82046, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 81832, end_time: 82046, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 82118, end_time: 82260, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 82403, end_time: 82688, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 82403, end_time: 82688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 82832, end_time: 82974, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 82832, end_time: 82974, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 83118, end_time: 83118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 83118, end_time: 83118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 83118, end_time: 83118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 83261, end_time: 83261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 83403, end_time: 83403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 83403, end_time: 83403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 83546, end_time: 83546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 83689, end_time: 83831, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 83975, end_time: 84117, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 84261, end_time: 84475, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 84261, end_time: 84475, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 84546, end_time: 84546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 84689, end_time: 84974, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 85118, end_time: 85260, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 85118, end_time: 85260, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 85403, end_time: 85545, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 85689, end_time: 85689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 85689, end_time: 85689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 85832, end_time: 86046, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 86118, end_time: 86118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 86261, end_time: 86261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 86261, end_time: 86261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 86403, end_time: 86403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 86546, end_time: 86546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 86689, end_time: 86689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 86832, end_time: 86832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 86832, end_time: 86832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 86975, end_time: 87189, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 87261, end_time: 87261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 87403, end_time: 87545, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 87689, end_time: 87689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 87689, end_time: 87689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 87689, end_time: 87689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 87832, end_time: 87832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 87975, end_time: 87975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 88046, end_time: 88046, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 88118, end_time: 88118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 88189, end_time: 88189, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 88261, end_time: 88475, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 88546, end_time: 88688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 88832, end_time: 88832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 88975, end_time: 88975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 88975, end_time: 88975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 89118, end_time: 89118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 89118, end_time: 89118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 89261, end_time: 89546, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 89689, end_time: 89831, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 89975, end_time: 89975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 89975, end_time: 89975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 90118, end_time: 90118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 90118, end_time: 90118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 90261, end_time: 90261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 90261, end_time: 90261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 90403, end_time: 90403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 90546, end_time: 90760, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 90546, end_time: 90760, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 90546, end_time: 90760, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 90832, end_time: 90832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 90975, end_time: 91117, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 90975, end_time: 91117, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 91261, end_time: 91403, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 91546, end_time: 91760, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 91832, end_time: 91832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 91975, end_time: 91975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 91975, end_time: 91975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 92118, end_time: 92118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 92118, end_time: 92118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 92261, end_time: 92403, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 92546, end_time: 92546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 92546, end_time: 92546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 92689, end_time: 92689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 92689, end_time: 92689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 92832, end_time: 93046, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 93118, end_time: 93332, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 93403, end_time: 93403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 93546, end_time: 93546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 93689, end_time: 93689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 93689, end_time: 93689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 93832, end_time: 94046, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 94118, end_time: 94118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 94261, end_time: 94403, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 94546, end_time: 94760, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 94832, end_time: 94832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 94975, end_time: 95189, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 94975, end_time: 95189, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 95261, end_time: 95261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 95403, end_time: 95545, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 95689, end_time: 95831, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 95975, end_time: 96117, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 96261, end_time: 96475, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 96546, end_time: 96760, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 96546, end_time: 96760, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 96832, end_time: 97046, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 96832, end_time: 97046, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 97118, end_time: 97332, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 97403, end_time: 97403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 97689, end_time: 97689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 97975, end_time: 97975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 98261, end_time: 98261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 98261, end_time: 98261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 98403, end_time: 98617, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 98689, end_time: 98689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 98832, end_time: 98832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 98832, end_time: 98832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 98975, end_time: 98975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 99118, end_time: 99118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 99118, end_time: 99118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 99189, end_time: 99189, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 99261, end_time: 99261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 99403, end_time: 99403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 99403, end_time: 99403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 99546, end_time: 99546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 99618, end_time: 99618, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 99689, end_time: 99903, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 99975, end_time: 100189, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 100261, end_time: 100261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 100546, end_time: 100546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 100546, end_time: 100546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 100689, end_time: 100903, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 100689, end_time: 100903, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 100975, end_time: 100975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 101118, end_time: 101118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 101118, end_time: 101118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 101261, end_time: 101261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 101403, end_time: 101403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 101475, end_time: 101475, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 101546, end_time: 101546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 101689, end_time: 101689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 101689, end_time: 101689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 101832, end_time: 101832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 101903, end_time: 101903, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 101975, end_time: 101975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 102118, end_time: 102118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 102261, end_time: 102261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 102261, end_time: 102261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 102403, end_time: 102403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 102546, end_time: 102546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 102689, end_time: 102689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 102832, end_time: 102832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 102832, end_time: 102832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 102975, end_time: 102975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 103118, end_time: 103118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 103118, end_time: 103118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 103261, end_time: 103261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 103261, end_time: 103261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 103403, end_time: 103403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 103403, end_time: 103403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 103546, end_time: 103546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 103546, end_time: 103546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 103689, end_time: 103689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 103689, end_time: 103689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 103761, end_time: 103761, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 103832, end_time: 103832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 103903, end_time: 103903, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 103975, end_time: 103975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 104046, end_time: 104046, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 104118, end_time: 104118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 104189, end_time: 104189, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 104261, end_time: 104261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 104356, end_time: 104356, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 104451, end_time: 104451, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 104546, end_time: 104546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 104641, end_time: 104641, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 104736, end_time: 104736, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 104832, end_time: 104832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 104927, end_time: 104927, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 105022, end_time: 105022, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 105117, end_time: 105117, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 105212, end_time: 105212, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 105307, end_time: 105307, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 105403, end_time: 105617, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 105403, end_time: 105617, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 105689, end_time: 105689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 105832, end_time: 105832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 105832, end_time: 105832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 105975, end_time: 105975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 105975, end_time: 105975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 106046, end_time: 106046, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 106118, end_time: 106332, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 106118, end_time: 106332, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 106403, end_time: 106617, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 106403, end_time: 106617, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 106689, end_time: 106689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 106832, end_time: 107046, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 106832, end_time: 107046, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 107118, end_time: 107118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 107261, end_time: 107261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 107403, end_time: 107403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 107403, end_time: 107403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 107546, end_time: 107688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 107832, end_time: 107974, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 108118, end_time: 108260, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 108403, end_time: 108403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 108546, end_time: 108546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 108689, end_time: 108903, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 108975, end_time: 108975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 109118, end_time: 109118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 109118, end_time: 109118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 109118, end_time: 109118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 109261, end_time: 109261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 109261, end_time: 109261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 109403, end_time: 109403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 109546, end_time: 109546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 109689, end_time: 109689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 109689, end_time: 109689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 109832, end_time: 109974, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 110118, end_time: 110260, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 110403, end_time: 110545, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 110689, end_time: 110689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 110832, end_time: 110832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 110975, end_time: 111189, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 110975, end_time: 111189, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 111261, end_time: 111261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 111403, end_time: 111617, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 111403, end_time: 111617, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 111689, end_time: 111689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 111761, end_time: 111761, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 111832, end_time: 111832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 111975, end_time: 111975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 111975, end_time: 111975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 112118, end_time: 112332, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 112403, end_time: 112403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 112546, end_time: 112688, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 112546, end_time: 112688, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 112832, end_time: 112832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 112903, end_time: 112903, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 112975, end_time: 112975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 113118, end_time: 113118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 113118, end_time: 113118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 113261, end_time: 113261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 113403, end_time: 113403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 113403, end_time: 113403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 113546, end_time: 113546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 113689, end_time: 113689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 113689, end_time: 113689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 113832, end_time: 113832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 113832, end_time: 113832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 113975, end_time: 113975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 113975, end_time: 113975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 114046, end_time: 114046, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 114118, end_time: 114118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 114261, end_time: 114261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 114261, end_time: 114261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 114403, end_time: 114617, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 114403, end_time: 114617, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 114689, end_time: 114689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 114832, end_time: 114832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 114832, end_time: 114832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 114975, end_time: 114975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 115046, end_time: 115046, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 115118, end_time: 115118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 115261, end_time: 115261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 115403, end_time: 115403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 115546, end_time: 115546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 115689, end_time: 115903, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 115975, end_time: 116189, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 115975, end_time: 116189, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 116261, end_time: 116261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 116403, end_time: 116403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 116546, end_time: 116546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 116546, end_time: 116546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 116689, end_time: 116689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 116832, end_time: 116832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 116975, end_time: 116975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 117118, end_time: 117118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 117118, end_time: 117118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 117261, end_time: 117261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 117403, end_time: 117403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 117546, end_time: 117546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 117689, end_time: 117689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 117689, end_time: 117689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 117832, end_time: 118046, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 118118, end_time: 118118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 118261, end_time: 118475, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 118261, end_time: 118475, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 118546, end_time: 118546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 118689, end_time: 118689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 118832, end_time: 118832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 118832, end_time: 118832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 118975, end_time: 118975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 119118, end_time: 119118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 119261, end_time: 119261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 119261, end_time: 119261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 119261, end_time: 119261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 119403, end_time: 119403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 119403, end_time: 119403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 119546, end_time: 119546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 119689, end_time: 119689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 119832, end_time: 119832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 119975, end_time: 120189, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 119975, end_time: 120189, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 120261, end_time: 120261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 120403, end_time: 120403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 120546, end_time: 120546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 120546, end_time: 120546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 120689, end_time: 120689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 120832, end_time: 120832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 120832, end_time: 120832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 120975, end_time: 120975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 121118, end_time: 121118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 121118, end_time: 121118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 121261, end_time: 121261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 121261, end_time: 121261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 121403, end_time: 121403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 121403, end_time: 121403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 121546, end_time: 121546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 121546, end_time: 121546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 121689, end_time: 121689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 121689, end_time: 121689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 121832, end_time: 121832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 121832, end_time: 121832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 121975, end_time: 121975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 121975, end_time: 121975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 122046, end_time: 122046, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 122118, end_time: 122118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 122189, end_time: 122189, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 122261, end_time: 122261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 122332, end_time: 122332, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 122403, end_time: 122403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 122475, end_time: 122475, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 122546, end_time: 122831, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 122975, end_time: 123260, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 122975, end_time: 123260, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 123403, end_time: 123688, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 123403, end_time: 123688, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 123832, end_time: 124117, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 124261, end_time: 124403, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 124546, end_time: 124688, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 124546, end_time: 124688, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 124832, end_time: 125046, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 125118, end_time: 125403, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 125546, end_time: 125760, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 125832, end_time: 126046, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 126118, end_time: 126118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 126261, end_time: 126403, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 126261, end_time: 126403, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 126546, end_time: 126688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 126546, end_time: 126688, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 126832, end_time: 127045, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 127118, end_time: 127308, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 127403, end_time: 127403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 127499, end_time: 127499, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 127499, end_time: 127499, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 127594, end_time: 127594, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 127689, end_time: 127879, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 127975, end_time: 127975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 127975, end_time: 127975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 128070, end_time: 128070, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 128165, end_time: 128165, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 128261, end_time: 128451, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 128546, end_time: 128546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 128641, end_time: 128641, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 128737, end_time: 128737, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 128737, end_time: 128737, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 128832, end_time: 129022, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 129118, end_time: 129118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 129118, end_time: 129118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 129213, end_time: 129213, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 129308, end_time: 129308, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 129403, end_time: 129593, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 129689, end_time: 129689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 129689, end_time: 129689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 129784, end_time: 129784, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 129880, end_time: 129880, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 129880, end_time: 129880, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 129975, end_time: 130165, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 130261, end_time: 130261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 130261, end_time: 130261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 130356, end_time: 130356, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 130451, end_time: 130451, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 130546, end_time: 130546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 130641, end_time: 130641, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 130737, end_time: 130737, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 130737, end_time: 130737, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 130832, end_time: 130832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 130927, end_time: 130927, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 131023, end_time: 131023, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 131023, end_time: 131023, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 131118, end_time: 131118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 131213, end_time: 131213, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 131309, end_time: 131309, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 131309, end_time: 131309, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 131404, end_time: 131404, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 131499, end_time: 131499, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 131595, end_time: 131595, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 131595, end_time: 131595, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 131689, end_time: 131689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 131784, end_time: 131784, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 131880, end_time: 131880, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 131880, end_time: 131880, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 131975, end_time: 131975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 132070, end_time: 132070, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 132166, end_time: 132166, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 132166, end_time: 132166, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 132261, end_time: 132261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 132356, end_time: 132356, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 132451, end_time: 132451, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 132546, end_time: 132546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 132641, end_time: 132641, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 132737, end_time: 132737, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 132832, end_time: 132832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 132927, end_time: 132927, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 133022, end_time: 133022, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 133118, end_time: 133118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 133118, end_time: 133118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 133213, end_time: 133213, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 133308, end_time: 133308, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 133403, end_time: 133403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 133498, end_time: 133498, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 133593, end_time: 133593, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 133689, end_time: 133689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 133689, end_time: 133689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 133784, end_time: 133784, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 133880, end_time: 133880, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 133975, end_time: 133975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 134070, end_time: 134070, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 134165, end_time: 134165, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 134260, end_time: 134260, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 134355, end_time: 134355, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 134451, end_time: 134451, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 134451, end_time: 134451, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 134546, end_time: 134546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 134641, end_time: 134641, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 134737, end_time: 134737, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 134737, end_time: 134737, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 134832, end_time: 134832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 134927, end_time: 134927, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 135022, end_time: 135022, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 135118, end_time: 135118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 135118, end_time: 135118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 135213, end_time: 135213, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 135308, end_time: 135308, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 135403, end_time: 135403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 135498, end_time: 135498, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 135593, end_time: 135593, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 135689, end_time: 136189, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 135689, end_time: 136189, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 135689, end_time: 136189, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 136261, end_time: 136475, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 136261, end_time: 136475, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 136546, end_time: 136546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 136689, end_time: 136831, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 136975, end_time: 137117, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 137261, end_time: 137261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 137403, end_time: 137617, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 137689, end_time: 137689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 137832, end_time: 137974, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 137832, end_time: 137974, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 137832, end_time: 137974, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 138118, end_time: 138260, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 138403, end_time: 138403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 138546, end_time: 138760, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 138832, end_time: 138832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 138975, end_time: 139117, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 139261, end_time: 139403, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 139261, end_time: 139403, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 139546, end_time: 139546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 139689, end_time: 139903, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 139975, end_time: 139975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 140118, end_time: 140260, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 140332, end_time: 140332, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 140403, end_time: 140403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 140546, end_time: 140546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 140546, end_time: 140546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 140689, end_time: 140689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 140832, end_time: 141046, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 141118, end_time: 141118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 141261, end_time: 141403, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 141261, end_time: 141403, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 141546, end_time: 141688, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 141546, end_time: 141688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 141832, end_time: 141832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 141903, end_time: 141903, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 141975, end_time: 142189, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 142261, end_time: 142261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 142403, end_time: 142403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 142546, end_time: 142546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 142618, end_time: 142618, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 142689, end_time: 142689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 142832, end_time: 142832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 142832, end_time: 142832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 142975, end_time: 142975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 143118, end_time: 143332, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 143118, end_time: 143332, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 143403, end_time: 143545, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 143689, end_time: 143689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 143832, end_time: 143832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 143975, end_time: 143975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 143975, end_time: 143975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 144118, end_time: 144118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 144189, end_time: 144189, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 144261, end_time: 144261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 144403, end_time: 144403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 144546, end_time: 144546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 144546, end_time: 144546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 144689, end_time: 144689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 144832, end_time: 144832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 144832, end_time: 144832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 144975, end_time: 144975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 145118, end_time: 145260, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 145332, end_time: 145332, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 145403, end_time: 145403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 145546, end_time: 145546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 145689, end_time: 145689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 145689, end_time: 145689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 145832, end_time: 145832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 145975, end_time: 145975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 145975, end_time: 145975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 146118, end_time: 146118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 146118, end_time: 146118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 146261, end_time: 146261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 146261, end_time: 146261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 146403, end_time: 146403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 146475, end_time: 146475, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 146546, end_time: 146546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 146689, end_time: 146689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 146832, end_time: 146832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 146832, end_time: 146832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 146975, end_time: 146975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 146975, end_time: 146975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 147118, end_time: 147118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 147118, end_time: 147118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 147261, end_time: 147261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 147403, end_time: 147403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 147403, end_time: 147403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 147546, end_time: 147546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 147618, end_time: 147618, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 147689, end_time: 147689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 147832, end_time: 147832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 147975, end_time: 147975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 147975, end_time: 147975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 148118, end_time: 148118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 148261, end_time: 148261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 148261, end_time: 148261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 148403, end_time: 148403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 148546, end_time: 148546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 148546, end_time: 148546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 148546, end_time: 148546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 148689, end_time: 148689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 148761, end_time: 148761, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 148832, end_time: 148832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 148975, end_time: 148975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 149118, end_time: 149118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 149118, end_time: 149118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 149261, end_time: 149261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 149261, end_time: 149261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 149403, end_time: 149403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 149403, end_time: 149403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 149546, end_time: 149546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 149689, end_time: 149689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 149689, end_time: 149689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 149832, end_time: 149832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 149903, end_time: 149903, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 149975, end_time: 149975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 150118, end_time: 150118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 150261, end_time: 150403, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 150261, end_time: 150403, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 150546, end_time: 150546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 150546, end_time: 150546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 150689, end_time: 150831, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 150975, end_time: 150975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 151118, end_time: 151260, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 151403, end_time: 151403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 151403, end_time: 151403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 151546, end_time: 151688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 151832, end_time: 151832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 151832, end_time: 151832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 151975, end_time: 151975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 151975, end_time: 151975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 152118, end_time: 152118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 152261, end_time: 152261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 152261, end_time: 152261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 152332, end_time: 152332, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 152403, end_time: 152403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 152475, end_time: 152475, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 152546, end_time: 152546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 152618, end_time: 152618, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 152689, end_time: 152689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 152761, end_time: 152761, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 152832, end_time: 152832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 152903, end_time: 152903, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 152975, end_time: 152975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 153046, end_time: 153046, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 153118, end_time: 153118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 153189, end_time: 153189, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 153261, end_time: 154546, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 163689, end_time: 163903, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 163975, end_time: 164117, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 164261, end_time: 164403, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 164546, end_time: 164688, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 164832, end_time: 164974, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 165118, end_time: 165260, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 165118, end_time: 165260, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 165403, end_time: 165545, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 165689, end_time: 165831, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 165689, end_time: 165831, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 165975, end_time: 166117, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 166261, end_time: 166261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 166261, end_time: 166261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 166403, end_time: 166403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 166403, end_time: 166403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 166546, end_time: 166546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 166546, end_time: 166546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 166689, end_time: 166689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 166832, end_time: 166832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 166832, end_time: 166832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 166975, end_time: 166975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 166975, end_time: 166975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 167118, end_time: 167260, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 167403, end_time: 167545, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 167689, end_time: 167831, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 167975, end_time: 168117, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 168261, end_time: 168261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 168356, end_time: 168356, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 168451, end_time: 168451, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 168546, end_time: 168546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 168641, end_time: 168641, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 168737, end_time: 168737, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 168737, end_time: 168737, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 168832, end_time: 168832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 168927, end_time: 168927, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 169022, end_time: 169022, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 169117, end_time: 169117, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 169213, end_time: 169213, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 169213, end_time: 169213, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 169308, end_time: 169308, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 169403, end_time: 169403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 169498, end_time: 169498, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 169594, end_time: 169594, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 169689, end_time: 169689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 169784, end_time: 169784, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 169880, end_time: 169880, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 169880, end_time: 169880, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 169880, end_time: 169880, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 169975, end_time: 169975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 170070, end_time: 170070, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 170165, end_time: 170165, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 170260, end_time: 170260, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 170356, end_time: 170356, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 170356, end_time: 170356, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 170451, end_time: 170451, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 170546, end_time: 170546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 170641, end_time: 170641, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 170737, end_time: 170737, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 170737, end_time: 170737, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 170737, end_time: 170737, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 170832, end_time: 170832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 170927, end_time: 170927, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 171022, end_time: 171022, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 171118, end_time: 171118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 171213, end_time: 171213, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 171308, end_time: 171308, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 171403, end_time: 171403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 171499, end_time: 171499, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 171594, end_time: 171594, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 171689, end_time: 171689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 172689, end_time: 173689, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 172689, end_time: 173689, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 173832, end_time: 174046, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 174118, end_time: 174332, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 174118, end_time: 174332, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 174403, end_time: 174617, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 174689, end_time: 174689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 174761, end_time: 174761, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 174832, end_time: 174832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 174975, end_time: 175189, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 175261, end_time: 175261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 175332, end_time: 175332, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 175403, end_time: 175403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 175546, end_time: 175546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 175689, end_time: 175689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 175832, end_time: 175832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 175975, end_time: 175975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 175975, end_time: 175975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 176118, end_time: 176260, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 176403, end_time: 176545, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 176689, end_time: 176831, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 176975, end_time: 176975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 177118, end_time: 177118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 177261, end_time: 177475, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 177261, end_time: 177475, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 177546, end_time: 177546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 177689, end_time: 177903, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 177689, end_time: 177903, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 177975, end_time: 177975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 178118, end_time: 178118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 178118, end_time: 178118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 178261, end_time: 178261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 178261, end_time: 178261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 178403, end_time: 178617, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 178403, end_time: 178617, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 178689, end_time: 178689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 178832, end_time: 178974, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 178832, end_time: 178974, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 179118, end_time: 179118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 179189, end_time: 179189, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 179261, end_time: 179261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 179403, end_time: 179403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 179403, end_time: 179403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 179546, end_time: 179546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 179546, end_time: 179546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 179689, end_time: 179689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 179689, end_time: 179689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 179832, end_time: 179832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 179975, end_time: 179975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 179975, end_time: 179975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 180118, end_time: 180118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 180261, end_time: 180261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 180261, end_time: 180261, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 180332, end_time: 180332, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 180403, end_time: 180403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 180546, end_time: 180546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 180546, end_time: 180546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 180689, end_time: 180903, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 180975, end_time: 180975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 181118, end_time: 181118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 181118, end_time: 181118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 181261, end_time: 181261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 181403, end_time: 181403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 181475, end_time: 181475, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 181546, end_time: 181546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 181689, end_time: 181689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 181832, end_time: 181832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 181975, end_time: 182189, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 182261, end_time: 182475, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 182261, end_time: 182475, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 182546, end_time: 182546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 182689, end_time: 182689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 182689, end_time: 182689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 182832, end_time: 182974, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 183118, end_time: 183118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 183261, end_time: 183261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 183261, end_time: 183261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 183403, end_time: 183403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 183403, end_time: 183403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 183546, end_time: 183546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 183546, end_time: 183546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 183689, end_time: 183689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 183689, end_time: 183689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 183832, end_time: 183832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 183832, end_time: 183832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 183975, end_time: 183975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 183975, end_time: 183975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 183975, end_time: 183975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 184118, end_time: 184332, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 184403, end_time: 184403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 184546, end_time: 184760, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 184546, end_time: 184760, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 184832, end_time: 184832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 184975, end_time: 184975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 185118, end_time: 185118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 185118, end_time: 185118, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 185261, end_time: 185261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 185403, end_time: 185403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 185546, end_time: 185546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 185546, end_time: 185546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 185689, end_time: 185689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 185689, end_time: 185689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 185832, end_time: 185832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 185832, end_time: 185832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 185975, end_time: 185975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 186046, end_time: 186046, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 186118, end_time: 186118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 186261, end_time: 186403, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 186261, end_time: 186403, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 186546, end_time: 186546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 186546, end_time: 186546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 186689, end_time: 186689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 186689, end_time: 186689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 186832, end_time: 186832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 186832, end_time: 186832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 186975, end_time: 186975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 187118, end_time: 187118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 187118, end_time: 187118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 187261, end_time: 187261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 187261, end_time: 187261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 187403, end_time: 187403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 187403, end_time: 187403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 187403, end_time: 187403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 187546, end_time: 187546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 187689, end_time: 187689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 187689, end_time: 187689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 187832, end_time: 187832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 187832, end_time: 187832, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 187975, end_time: 187975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 187975, end_time: 187975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 188118, end_time: 188118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 188118, end_time: 188118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 188261, end_time: 188261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 188261, end_time: 188261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 188332, end_time: 188332, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 188403, end_time: 188403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 188475, end_time: 188475, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 188546, end_time: 188546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 188618, end_time: 188618, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 188689, end_time: 188689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 188761, end_time: 188761, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 188832, end_time: 188832, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 188975, end_time: 188975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 188975, end_time: 188975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 189118, end_time: 189260, is_long_note: true }
+ManiaHitObject { lane: 0, start_time: 189118, end_time: 189260, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 189403, end_time: 189688, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 189403, end_time: 189688, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 189403, end_time: 189688, is_long_note: true }
+ManiaHitObject { lane: 1, start_time: 189832, end_time: 189832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 189975, end_time: 189975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 189975, end_time: 189975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 190118, end_time: 190118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 190118, end_time: 190118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 190261, end_time: 190261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 190403, end_time: 190403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 190403, end_time: 190403, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 190546, end_time: 190546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 190618, end_time: 190618, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 190689, end_time: 190689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 190761, end_time: 190761, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 190832, end_time: 191046, is_long_note: true }
+ManiaHitObject { lane: 2, start_time: 190832, end_time: 191046, is_long_note: true }
+ManiaHitObject { lane: 3, start_time: 191118, end_time: 191118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 191261, end_time: 191261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 191261, end_time: 191261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 191403, end_time: 191403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 191403, end_time: 191403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 191546, end_time: 191546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 191689, end_time: 191689, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 191689, end_time: 191689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 191832, end_time: 191832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 191975, end_time: 191975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 191975, end_time: 191975, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 192118, end_time: 192118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 192118, end_time: 192118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 192261, end_time: 192261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 192261, end_time: 192261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 192403, end_time: 192403, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 192546, end_time: 192546, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 192546, end_time: 192546, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 192689, end_time: 192689, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 192832, end_time: 192832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 192832, end_time: 192832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 192975, end_time: 192975, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 193118, end_time: 193118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 193118, end_time: 193118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 193261, end_time: 193261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 193403, end_time: 193403, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 193475, end_time: 193475, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 193546, end_time: 193546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 193618, end_time: 193618, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 193689, end_time: 193689, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 193832, end_time: 193832, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 193903, end_time: 193903, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 193975, end_time: 193975, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 194046, end_time: 194046, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 194118, end_time: 194118, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 194189, end_time: 194189, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 194261, end_time: 194261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 194332, end_time: 194332, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 194403, end_time: 194403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 194546, end_time: 194546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 194689, end_time: 194689, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 194761, end_time: 194761, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 194832, end_time: 194832, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 194975, end_time: 194975, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 195047, end_time: 195047, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 195118, end_time: 195118, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 195261, end_time: 195261, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 195261, end_time: 195261, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 195261, end_time: 195261, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 195333, end_time: 195333, is_long_note: false }
+ManiaHitObject { lane: 3, start_time: 195403, end_time: 195403, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 195546, end_time: 195546, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 195546, end_time: 195546, is_long_note: false }
+ManiaHitObject { lane: 0, start_time: 196118, end_time: 196118, is_long_note: false }
+ManiaHitObject { lane: 2, start_time: 196189, end_time: 196189, is_long_note: false }
+ManiaHitObject { lane: 1, start_time: 196261, end_time: 200261, is_long_note: true }

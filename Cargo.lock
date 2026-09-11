@@ -1205,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "osu-beatmap-preview-cli"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "bytes",
  "color_quant",
@@ -1236,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "osu-beatmap-preview-core"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "font8x8",
  "serde",
@@ -1247,7 +1247,7 @@ dependencies = [
 
 [[package]]
 name = "osu-beatmap-preview-gui"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "osu-beatmap-preview-core",
  "osu-beatmap-preview-renderer",
@@ -1255,7 +1255,7 @@ dependencies = [
 
 [[package]]
 name = "osu-beatmap-preview-mobile"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "osu-beatmap-preview-core",
  "osu-beatmap-preview-renderer",
@@ -1263,7 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "osu-beatmap-preview-renderer"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "bytemuck",
  "osu-beatmap-preview-core",
@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "osu-beatmap-preview-wasm"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "js-sys",
  "osu-beatmap-preview-core",

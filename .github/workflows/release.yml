@@ -94,6 +94,11 @@ jobs:
         run: npm test
         working-directory: crates/osu-beatmap-preview-web
 
+      # Web 包的 package.json 版本从根 Cargo.toml 的 [workspace.package].version 同步。
+      - name: Sync web package version
+        run: npm run sync:version
+        working-directory: crates/osu-beatmap-preview-web
+
       # Web 包 = 静态站点（含 wasm 产物）+ Node.js 下载后端 + 许可与说明。
       - name: Stage web package
         run: |

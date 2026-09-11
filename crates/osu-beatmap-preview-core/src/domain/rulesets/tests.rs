@@ -127,6 +127,20 @@ const CASES: &[ConversionCase] = &[
         target_mode: 3,
         mod_tokens: &[],
     },
+    ConversionCase {
+        name: "3451313_mania_1k",
+        osu_file: "3451313.osu",
+        golden_file: "3451313_mania_1k.golden",
+        target_mode: 3,
+        mod_tokens: &["1K"],
+    },
+    ConversionCase {
+        name: "3451313_mania_4k",
+        osu_file: "3451313.osu",
+        golden_file: "3451313_mania_4k.golden",
+        target_mode: 3,
+        mod_tokens: &["4K"],
+    },
 ];
 
 macro_rules! conversion_test {
@@ -154,6 +168,8 @@ conversion_test!(conversion_5051189_mania_default_ds, &CASES[12]);
 conversion_test!(conversion_260177_taiko, &CASES[13]);
 conversion_test!(conversion_260177_catch, &CASES[14]);
 conversion_test!(conversion_260177_mania_default, &CASES[15]);
+conversion_test!(conversion_3451313_mania_1k, &CASES[16]);
+conversion_test!(conversion_3451313_mania_4k, &CASES[17]);
 
 fn assert_conversion_case(case: &ConversionCase) {
     let osu_path = fixture_path(case.osu_file);
@@ -235,6 +251,26 @@ fn snapshot(beatmap: &Beatmap) -> String {
         HitObjects::Standard(_) => panic!("conversion result is still Standard"),
     }
     output
+}
+
+#[test]
+fn conversion_3451313_mania_all_key_counts_succeed() {
+    let osu = read_fixture(&fixture_path("3451313.osu"));
+    let beatmap = crate::domain::parser::parse_beatmap_str_for_tests(&osu)
+        .expect("3451313.osu fixture must parse");
+    for keys in 1..=10 {
+        for tokens in [
+            vec![format!("{keys}K")],
+            vec![format!("{keys}K"), "DS".into()],
+        ] {
+            let settings = parse_mods(&tokens).expect("test mod tokens must be valid");
+            let mods = mods_for_mode(&settings, 3);
+            convert(&beatmap, 3, Some(&mods)).unwrap_or_else(|error| {
+                panic!("conversion failed for 3451313 with {tokens:?}: {error}")
+            });
+        }
+    }
+    convert(&beatmap, 3, None).expect("default mania conversion must succeed");
 }
 
 fn fixture_path(filename: &str) -> PathBuf {

@@ -159,22 +159,21 @@ impl ConversionState<'_> {
         let lo = lo.unwrap_or(self.random_start);
         let hi = hi.unwrap_or(self.total_columns);
 
-        let ok = |c: i32| -> bool {
-            if let Some(ne) = not_equal {
-                if c == ne {
-                    return false;
-                }
-            }
-            patterns.iter().all(|p| !p.has_column(c))
-        };
+        // 排除列与已占用列的判定分开，便于受限范围内无解时回退到全列范围。
+        let allowed = |c: i32| -> bool { not_equal.is_none_or(|ne| c != ne) };
+        let free = |c: i32| -> bool { patterns.iter().all(|p| !p.has_column(c)) };
+        let ok = |c: i32| -> bool { allowed(c) && free(c) };
 
         if lo <= start && start < hi && ok(start) {
             return Ok(start);
         }
         if !(lo..hi).any(&ok) {
-            return Err(PreviewError::new(
-                "not enough columns to complete mania conversion",
-            ));
+            // 上游此处抛出 NotEnoughColumnsException。命中该分支意味着随机数恰好让镜像/不堆叠
+            // 等受限范围先被占满（例如 4K 镜像路径随机到 3 个音符），此时继续按原范围取值
+            // 会陷入死循环。这里回退到全部列的确定性扫描，保证转谱不会整体失败。
+            return (0..self.total_columns).find(|&c| ok(c)).ok_or_else(|| {
+                PreviewError::new("not enough columns to complete mania conversion")
+            });
         }
 
         let mut col = start;
@@ -650,6 +649,7 @@ fn circle_gen_mirrored(
     } else if t_cols == 4 {
         centre_p = 0.0;
         p2 = 1.0 - f64::max((1.0 - p2) * 2.0, 0.8);
+        p3 = 0.0;
     } else if t_cols == 5 {
         centre_p = f64::min(centre_p, 0.03);
         p3 = 0.0;
@@ -749,6 +749,15 @@ fn slider_generate(s: &mut ConversionState, ho: &StandardHitObject) -> Result<Ve
     let spans = i32::max(1, ho.slider_repeats);
     let seg_dur = s.slider_segment_duration(ho);
     let end_time = ho.start_time + seg_dur * spans as i64;
+
+    // 1K 没有可选列，上游在此直接产出单根长条，避免进入随机列查找。
+    if s.total_columns == 1 {
+        let mut pattern = Pattern::new();
+        pattern.add(0, ho.start_time, end_time);
+        s.prev_pattern = pattern;
+        return Ok(s.prev_pattern.objects.clone());
+    }
+
     let mut ctx = SliderCtx {
         start_time: ho.start_time,
         spans,
@@ -881,8 +890,8 @@ fn slider_gen_single_span(
 fn slider_gen_holds(s: &mut ConversionState, ctx: &SliderCtx, count: i32) -> Result<Pattern> {
     let t_cols = s.total_columns;
     let prev = s.prev_pattern.clone();
-    let usable = t_cols - s.random_start - prev.column_count();
-    let count = i32::min(count, t_cols - s.random_start);
+    // 上一模式已占满全部可用列时 usable 为 0，此时只能生成可堆叠的音符。
+    let usable = i32::max(0, t_cols - s.random_start - prev.column_count());
     let mut pattern = Pattern::new();
     let mut col = s.get_random_column(None, None);
     let n1 = i32::min(usable, count);

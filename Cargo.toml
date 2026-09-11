@@ -10,6 +10,13 @@ members = [
 default-members = ["crates/osu-beatmap-preview-cli"]
 resolver = "2"
 
+# 版本与 edition 的唯一来源：各 crate 用 version.workspace = true / edition.workspace = true 继承。
+# Web 站点是 Node.js 项目，package.json 的版本由
+# crates/osu-beatmap-preview-web/scripts/version.mjs 从本文件单向同步。
+[workspace.package]
+version = "1.2.1"
+edition = "2021"
+
 [profile.release]
 opt-level = 3
 lto = "fat"

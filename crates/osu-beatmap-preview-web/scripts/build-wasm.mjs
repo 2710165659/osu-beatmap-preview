@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { syncPackageVersion } from './version.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -16,6 +17,9 @@ const wasmFile = path.join(
   repoRoot,
   'target/wasm32-unknown-unknown/release/osu_beatmap_preview_wasm.wasm',
 );
+
+// package.json 不保存版本，构建时统一从根 Cargo.toml 同步。
+console.log(`package.json 版本已同步为 ${syncPackageVersion()}`);
 
 const lockedVersion = readLockedWasmBindgenVersion();
 if (lockedVersion) {

@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.2.1] - 2026.09.11
+
+### Changed
+
+- 版本号集中到根 `Cargo.toml` 的 `[workspace.package].version`，各 crate 改用 `version.workspace = true` / `edition.workspace = true` 继承；Web 包的 `package.json` 版本改为由 `scripts/version.mjs` 从根 `Cargo.toml` 单向同步（`npm run sync:version`，`npm run build:wasm` 与发布流程会自动执行），不再手工维护。
+
+### Fixed
+
+- 修复 Standard 转 mania 在 1K 以及部分 4K 谱面上报 `not enough columns to complete mania conversion` 的问题：1K 滑条现在按上游直接产出单根长条，4K 镜像路径不再错误清零第三个音符的概率，随机列查找在受限范围内无解时回退到全列确定性扫描（对应上游会抛 `NotEnoughColumnsException` 的路径）。
+- 修复 `slider_gen_holds` 在上一模式占满全部可用列时生成音符数量与上游不一致的问题。
+
+### Tests
+
+- 新增 `3451313` 转谱 fixture 及 1K/4K golden 快照，并新增 1K–10K（含 DS）全键数转谱冒烟测试。
+
+---
+
 ## [1.2.0] - 2026.09.11
 
 ### Added
@@ -28,6 +45,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - 修复实时预览右上角时间标签随分辨率变化而错位的问题。
+- 修复 Standard 转 mania 时 1K 与部分 4K/6K 谱面报 "not enough columns to complete mania conversion" 的问题：1K 滑条现在直接产出单根长条，4K 镜像概率不再被错误清零，随机列查找在受限范围内无解时回退到全列扫描。
 
 ### Performance
 
