@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WebGPU 自检 - osu! Beatmap Preview</title>
+  <style>
+    body { margin: 0; padding: 16px; background: #12131a; color: #e8e9ef; font: 15px/1.6 system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    p.hint { color: #9aa0b4; margin: 0 0 16px; }
+    dt { color: #9aa0b4; margin-top: 12px; font-size: 13px; }
+    dd { margin: 2px 0 0; word-break: break-all; font-family: ui-monospace, monospace; font-size: 13px; }
+    .ok { color: #6ee7a8; }
+    .bad { color: #ff8f8f; }
+    .warn { color: #ffd479; }
+    a { color: #7cc4ff; }
+  </style>
+</head>
+<body>
+<h1>WebGPU 自检</h1>
+<p class="hint">这个页面不加载 wasm，只用浏览器原生 API 检查 WebGPU 是否可用。把结果截图发回即可定位问题。</p>
+<dl id="report"></dl>
+<p class="hint"><a href="/">返回播放器</a></p>
+<script>
+const report = document.getElementById('report');
+
+function add(label, value, kind = '') {
+  const dt = document.createElement('dt');
+  dt.textContent = label;
+  const dd = document.createElement('dd');
+  dd.textContent = value;
+  if (kind) dd.className = kind;
+  report.append(dt, dd);
+}
+
+async function run() {
+  add('User-Agent', navigator.userAgent);
+  add('安全上下文 isSecureContext', String(window.isSecureContext), window.isSecureContext ? 'ok' : 'bad');
+  add('navigator.gpu 是否存在', typeof navigator.gpu === 'object' && navigator.gpu !== null ? '存在' : '不存在',
+    navigator.gpu ? 'ok' : 'bad');
+
+  if (!navigator.gpu) {
+    add('结论', '浏览器没有暴露 WebGPU。请使用 Chrome 121+（Android 12 以上）或 Safari 26+，并确认不是应用内浏览器。', 'bad');
+    return;
+  }
+
+  try {
+    const hardware = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (hardware) {
+      const info = hardware.info ?? {};
+      add('硬件适配器', [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(' / ') || '已取得', 'ok');
+      add('适配器特性数量', String([...(hardware.features ?? [])].length));
+    } else {
+      add('硬件适配器', '浏览器返回 null（没有可用硬件适配器）', 'warn');
+    }
+  } catch (error) {
+    add('硬件适配器', `请求失败：${error.message}`, 'bad');
+  }
+
+  try {
+    const fallback = await navigator.gpu.requestAdapter({ forceFallbackAdapter: true });
+    add('回退适配器（CPU）', fallback ? '可用' : '不可用', fallback ? 'ok' : 'warn');
+  } catch (error) {
+    add('回退适配器（CPU）', `请求失败：${error.message}`, 'bad');
+  }
+
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('webgpu');
+  add('canvas.getContext("webgpu")', context ? '成功' : '失败', context ? 'ok' : 'bad');
+  if (context && navigator.gpu) {
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    add('首选画布格式', format);
+  }
+}
+
+run().catch(error => add('自检异常', error.message, 'bad'));
+</script>
+</body>
+</html>

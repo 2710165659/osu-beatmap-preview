@@ -44,14 +44,30 @@ impl WebGpuSession {
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
             .map_err(js_error)?;
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await
-            .map_err(js_error)?;
+        // 先要硬件适配器。部分移动设备的 GPU 在浏览器黑名单里，只有 CPU 回退适配器，
+        // 而 force_fallback_adapter 为 false 时浏览器会直接返回 null；因此失败后允许
+        // 一次回退请求，让这类设备至少能以软件光栅化运行，而不是整页无法渲染。
+        let mut adapter_options = wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            force_fallback_adapter: false,
+            compatible_surface: Some(&surface),
+        };
+        let adapter = match instance.request_adapter(&adapter_options).await {
+            Ok(adapter) => adapter,
+            Err(hardware_error) => {
+                adapter_options.force_fallback_adapter = true;
+                instance
+                    .request_adapter(&adapter_options)
+                    .await
+                    .map_err(|fallback_error| {
+                        JsValue::from_str(&format!(
+                            "没有可用的 WebGPU 适配器（硬件：{hardware_error}；回退：{fallback_error}）。\
+                             请确认浏览器支持 WebGPU（Android Chrome 121+、iOS Safari 26+），\
+                             并打开 /gpu-check.html 查看具体原因。"
+                        ))
+                    })?
+            }
+        };
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("osu beatmap preview webgpu device"),

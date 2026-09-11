@@ -6,6 +6,9 @@
 // 完成，后端不参与任何一帧的绘制。
 
 import http from 'node:http';
+import https from 'node:https';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +33,7 @@ const resources = new ResourceProvider({ cache, log: options.quiet ? () => {} : 
 
 await warnIfWasmMissing();
 
-const server = http.createServer((request, response) => {
+const requestListener = (request, response) => {
   handle(request, response).catch((error) => {
     log(`请求失败：${request.method} ${request.url} ${error.message}`);
     if (!response.headersSent) {
@@ -39,10 +42,22 @@ const server = http.createServer((request, response) => {
       response.destroy();
     }
   });
-});
+};
+
+// WebGPU 只在安全上下文里可用：localhost 算安全上下文，但局域网 IP 必须走 HTTPS，
+// 否则手机浏览器里 navigator.gpu 是 undefined。--https 时用自签证书起 TLS。
+const scheme = options.https ? 'https' : 'http';
+const server = options.https
+  ? https.createServer(await loadTlsCredentials(), requestListener)
+  : http.createServer(requestListener);
 
 server.listen(options.port, options.host, () => {
-  log(`osu! beatmap preview web: http://${options.host}:${options.port}`);
+  for (const address of listenAddresses(options.host)) {
+    log(`osu! beatmap preview web: ${scheme}://${address}:${options.port}`);
+  }
+  if (options.https) {
+    log('使用的是自签证书，手机首次打开需要在警告页选择继续访问。');
+  }
   log(`静态站点目录：${PUBLIC_DIR}`);
   log(`缓存目录：${cache.root}`);
 });
@@ -51,19 +66,13 @@ async function handle(request, response) {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
   const route = url.pathname;
 
-  if (route === '/' || route === '/index.html' || route === '/app.js' || route === '/style.css') {
-    await sendStatic(response, route === '/' ? '/index.html' : route);
-    return;
-  }
-  if (route.startsWith('/pkg/')) {
-    await sendStatic(response, route);
-    return;
-  }
   if (route.startsWith('/resource/')) {
     await sendResource(request, response, route, url.searchParams.get('bid'));
     return;
   }
-  sendText(response, 404, 'not found');
+  // 其余路径都当作静态文件（含 /pkg/ 下的 wasm 产物与 /gpu-check.html），
+  // 路径归一化会拒绝越界访问。
+  await sendStatic(response, route === '/' ? '/index.html' : route);
 }
 
 async function sendStatic(response, route) {
@@ -149,6 +158,9 @@ function parseArgs(argv) {
     cacheDir: null,
     noCache: false,
     quiet: false,
+    https: false,
+    tlsCert: null,
+    tlsKey: null,
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -178,6 +190,17 @@ function parseArgs(argv) {
       case '--quiet':
         parsed.quiet = true;
         break;
+      case '--https':
+        parsed.https = true;
+        break;
+      case '--tls-cert':
+        parsed.tlsCert = next();
+        parsed.https = true;
+        break;
+      case '--tls-key':
+        parsed.tlsKey = next();
+        parsed.https = true;
+        break;
       case '--help':
       case '-h':
         parsed.help = true;
@@ -190,14 +213,89 @@ function parseArgs(argv) {
 }
 
 function printUsage() {
-  console.log(`用法：node server.js [--host=<ADDR>] [--port=<PORT>] [--cache-dir=<DIR>] [--no-cache] [--quiet]
+  console.log(`用法：node server.js [--host=<ADDR>] [--port=<PORT>] [--cache-dir=<DIR>] [--https] [--tls-cert=<PEM> --tls-key=<PEM>] [--no-cache] [--quiet]
 
-  --host       监听地址，默认 ${DEFAULT_HOST}
+  --host       监听地址，默认 ${DEFAULT_HOST}；手机同网测试用 --host=0.0.0.0
   --port       监听端口，默认 ${DEFAULT_PORT}
   --cache-dir  缓存目录，默认 <安装目录>/.cache，也可用 OSU_PREVIEW_CACHE_DIR 指定
+  --https      启用自签 HTTPS；WebGPU 只在安全上下文可用，局域网访问需要它
+  --tls-cert   HTTPS 证书（PEM），与 --tls-key 一起使用时不再自动生成
+  --tls-key    HTTPS 私钥（PEM）
   --no-cache   忽略已缓存的 .osu 与 .osz，强制重新下载
   --quiet      不打印下载日志
   --help       打印本用法`);
+}
+
+/** 监听所有网卡时，把本机的局域网地址也打印出来，方便手机直接输入。 */
+function listenAddresses(host) {
+  if (host !== '0.0.0.0' && host !== '::') return [host];
+  return ['127.0.0.1', ...localIPv4Addresses()];
+}
+
+function localIPv4Addresses() {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .filter((entry) => entry && entry.family === 'IPv4' && !entry.internal)
+    .map((entry) => entry.address);
+}
+
+/** 取用 --tls-cert/--tls-key，或生成本地自签证书（缓存在 <缓存目录>/.tls）。 */
+async function loadTlsCredentials() {
+  if (options.tlsCert && options.tlsKey) {
+    return {
+      cert: await fsp.readFile(options.tlsCert),
+      key: await fsp.readFile(options.tlsKey),
+    };
+  }
+  if (options.tlsCert || options.tlsKey) {
+    throw new Error('--tls-cert 与 --tls-key 必须同时提供');
+  }
+  return ensureSelfSignedCertificate();
+}
+
+async function ensureSelfSignedCertificate() {
+  const directory = path.join(cache.root, '.tls');
+  const certPath = path.join(directory, 'cert.pem');
+  const keyPath = path.join(directory, 'key.pem');
+  try {
+    return { cert: await fsp.readFile(certPath), key: await fsp.readFile(keyPath) };
+  } catch {
+    // 首次运行或证书被删除时重新生成。
+  }
+  await fsp.mkdir(directory, { recursive: true });
+  const names = [
+    'DNS:localhost',
+    'IP:127.0.0.1',
+    ...localIPv4Addresses().map((address) => `IP:${address}`),
+  ];
+  const result = spawnSync(
+    'openssl',
+    [
+      'req',
+      '-x509',
+      '-newkey',
+      'rsa:2048',
+      '-nodes',
+      '-days',
+      '825',
+      '-keyout',
+      keyPath,
+      '-out',
+      certPath,
+      '-subj',
+      '/CN=osu-beatmap-preview',
+      '-addext',
+      `subjectAltName=${names.join(',')}`,
+    ],
+    { stdio: 'ignore' },
+  );
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      '生成自签证书失败：需要 openssl 在 PATH 中，或用 --tls-cert/--tls-key 指定已有证书',
+    );
+  }
+  log(`已生成自签证书：${certPath}`);
+  return { cert: await fsp.readFile(certPath), key: await fsp.readFile(keyPath) };
 }
 
 function log(message) {
