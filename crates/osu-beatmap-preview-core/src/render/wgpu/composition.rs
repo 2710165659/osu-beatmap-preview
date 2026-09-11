@@ -4,10 +4,14 @@ use std::sync::Arc;
 
 use super::VideoStyle;
 use crate::domain::errors::PreviewError;
+use crate::domain::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::geometry::GameMode;
 use crate::render::scene::{FrameScene, FrameSceneBuilder, SceneRect};
 use crate::render::text::{draw_text, text_size};
+
+const LABEL_REFERENCE_WIDTH: f64 = 1280.0;
+const LABEL_REFERENCE_HEIGHT: f64 = 720.0;
 
 #[allow(clippy::too_many_arguments)]
 pub fn compose_video_scene(
@@ -52,21 +56,19 @@ pub fn compose_video_scene(
         crate::render::text::format_mmss_floor(current_ms),
         crate::render::text::format_mmss_floor(total_ms)
     );
-    let (label_width, label_height) = text_size(&label, style.label_font_size);
+    let label_scale = (width as f64 / LABEL_REFERENCE_WIDTH)
+        .min(height as f64 / LABEL_REFERENCE_HEIGHT)
+        .max(f64::MIN_POSITIVE);
+    let label_font_size = round_half_even(style.label_font_size as f64 * label_scale).max(1) as u32;
+    let label_pad = round_half_even(style.label_pad as f64 * label_scale).max(0);
+    let (label_width, label_height) = text_size(&label, label_font_size);
     let mut image = Img::new(label_width.max(1), label_height.max(1), [0, 0, 0, 0]);
-    draw_text(
-        &mut image,
-        0,
-        0,
-        &label,
-        style.label_font_size,
-        style.label_color,
-    );
+    draw_text(&mut image, 0, 0, &label, label_font_size, style.label_color);
     builder.sprite(
         Arc::new(image),
         SceneRect {
-            x: (width as i64 - label_width as i64 - style.label_pad) as f32,
-            y: style.label_pad as f32,
+            x: (width as i64 - label_width as i64 - label_pad) as f32,
+            y: label_pad as f32,
             width: label_width as f32,
             height: label_height as f32,
         },
@@ -114,8 +116,9 @@ fn fit_playfield(
 
 #[cfg(test)]
 mod tests {
-    use super::fit_playfield;
+    use super::{compose_video_scene, fit_playfield, VideoStyle};
     use crate::render::geometry::GameMode;
+    use crate::render::scene::{DrawCommand, FrameScene, SceneSize};
 
     #[test]
     fn standard和catch按contain居中补边() {
@@ -145,5 +148,38 @@ mod tests {
     fn taiko和mania在补边方向超出画布时报告所需尺寸() {
         assert!(fit_playfield(GameMode::Taiko, 100, 100, 1280, 720).is_err());
         assert!(fit_playfield(GameMode::Mania, 100, 100, 720, 1280).is_err());
+    }
+
+    #[test]
+    fn 时间标签随输出分辨率缩放() {
+        let playfield = FrameScene::clear(
+            SceneSize {
+                width: 530,
+                height: 384,
+            },
+            0,
+            [0, 0, 0, 255],
+        );
+        let label_height = |width, height| {
+            let scene = compose_video_scene(
+                playfield.clone(),
+                0,
+                60_000,
+                width,
+                height,
+                None,
+                VideoStyle::default(),
+                GameMode::Standard,
+            )
+            .unwrap();
+            let DrawCommand::Sprite { destination, .. } = scene.commands.last().unwrap() else {
+                panic!("最后一条命令必须是时间标签精灵");
+            };
+            destination.height
+        };
+
+        assert_eq!(label_height(1280, 720), 18.0);
+        assert_eq!(label_height(1920, 1080), 27.0);
+        assert_eq!(label_height(854, 480), 12.0);
     }
 }
