@@ -7,7 +7,7 @@ use crate::{
 use lexopt::prelude::*;
 use osu_beatmap_preview_core::processing::validation::parse_time_point;
 
-pub const USAGE: &str = "usage: osu-beatmap-preview --bid=<BID> [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>]";
+pub const USAGE: &str = "usage: osu-beatmap-preview-cli --bid=<BID> [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]";
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
@@ -103,7 +103,7 @@ pub fn run(action: CliAction) -> i32 {
             0
         }
         CliAction::Version => {
-            println!("osu-beatmap-preview v{}", env!("CARGO_PKG_VERSION"));
+            println!("osu-beatmap-preview-cli v{}", env!("CARGO_PKG_VERSION"));
             0
         }
         CliAction::Render(request) => {

@@ -19,7 +19,7 @@ Web -> 宿主 fetch 字节 -> wasm -> core RealtimeSession -> renderer WebGPU Ca
 - `crates/osu-beatmap-preview-gui`：桌面 surface、输入和播放生命周期接口骨架。
 - `crates/osu-beatmap-preview-mobile`：Android/iOS surface、输入和音频时钟接口骨架。
 
-workspace 的默认成员是 `osu-beatmap-preview-cli`。普通 `cargo build --release` 构建 CLI。CLI 不依赖 renderer crate，也不提供 `--wgpu` 参数；根目录不再包含业务 crate 或兼容入口，播放器不进入 CLI Release。
+workspace 的默认成员是 `osu-beatmap-preview-cli`。普通 `cargo build --release` 构建 CLI。CLI 不依赖 renderer crate，也不提供实时渲染入口；播放器不进入 CLI Release。
 
 ## 请求与配置
 

@@ -16,22 +16,22 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: osu-beatmap-preview-linux-amd64
+            artifact: osu-beatmap-preview-linux-amd64-cli
             package: osu-beatmap-preview-cli
             binary: osu-beatmap-preview-cli
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: osu-beatmap-preview-windows-amd64.exe
+            artifact: osu-beatmap-preview-windows-amd64-cli.exe
             package: osu-beatmap-preview-cli
             binary: osu-beatmap-preview-cli.exe
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact: osu-beatmap-preview-macos-amd64
+            artifact: osu-beatmap-preview-macos-amd64-cli
             package: osu-beatmap-preview-cli
             binary: osu-beatmap-preview-cli
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: osu-beatmap-preview-macos-arm64
+            artifact: osu-beatmap-preview-macos-arm64-cli
             package: osu-beatmap-preview-cli
             binary: osu-beatmap-preview-cli
     runs-on: ${{ matrix.os }}
@@ -63,8 +63,47 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
 
+  build-wasm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # wasm-bindgen-cli 必须与 Cargo.lock 中的 wasm-bindgen 版本完全一致，
+      # 否则生成的胶水代码会因为版本不匹配而拒绝加载 .wasm。
+      - name: Install wasm-bindgen-cli
+        run: |
+          version="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/[^0-9.]/, ""); print; exit }' Cargo.lock)"
+          echo "installing wasm-bindgen-cli $version"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+
+      - name: Build WASM
+        run: cargo build --release --package osu-beatmap-preview-wasm --target wasm32-unknown-unknown
+
+      - name: Generate JavaScript bindings
+        run: |
+          wasm-bindgen --target web --out-dir pkg \
+            target/wasm32-unknown-unknown/release/osu_beatmap_preview_wasm.wasm
+
+      - name: Package web bundle
+        run: |
+          cp crates/osu-beatmap-preview-wasm/README.md pkg/README.md
+          cp LICENSE pkg/LICENSE
+          (cd pkg && zip -r ../osu-beatmap-preview-wasm-web.zip .)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: osu-beatmap-preview-wasm-web.zip
+          path: osu-beatmap-preview-wasm-web.zip
+
   release:
-    needs: build
+    needs: [build, build-wasm]
     runs-on: ubuntu-latest
 
     steps:

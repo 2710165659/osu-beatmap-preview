@@ -4,26 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [1.2.0] - 2026.09.06
+## [1.2.0] - 2026.09.11
 
 ### Added
 
-- 根 CLI 新增 `--wgpu`：启用 `wgpu-renderer` feature 后，PNG/GIF 保持 CPU 路径，MP4 使用 WGPU 离屏渲染并以 `_wgpu` 结尾命名。
-- 新增公开 `realtime` Rust API，提供可共享会话、绝对/游戏时间场景、紧凑 RGBA8 离屏帧、有背压帧流、取消令牌和分类错误。
-- 新增不发布的 egui/rodio 调试播放器，支持播放/暂停、seek 和 `0.5x..=2.0x` 运行时倍速。
-- 新增四模式 `render.<mode>.wgpu` 画布、MSAA、目标 FPS 和最大在途 readback 配置。
+- 新增平台无关的 `osu-beatmap-preview-renderer` crate，提供基于 WGPU 的 `SurfaceRenderer`、`OffscreenRenderer`、流式 readback、取消令牌和分类渲染错误。
+- 新增 `osu-beatmap-preview-wasm` crate，提供 `WebGpuSession`：宿主把 `.osu` 字节和 WebGPU Canvas 交给 WASM，每帧在本地 GPU 绘制，不返回 RGBA 缓冲、不通过 HTTP 轮询帧。
+- 新增本地 Web 调试播放器 `osu-beatmap-preview-player`，支持谱面加载、Mod/转谱、播放/暂停、seek、方向键跳转、音频、`0.5x..=2.0x` 倍速、30/60 FPS 和 1080P/720P/480P 切换；该播放器不属于 Release 产物。
+- core 的公开入口固定为 `api`、`model`、`render`、`processing`，新增 `RealtimeSession`、`ResourceBundle`、`RealtimeOptions`、`TimelineInfo`；`FrameScene` 成为跨平台单帧场景描述边界。
+- 新增 GUI 与移动端平台适配骨架 crate，只定义 surface、输入、播放生命周期和音频时钟边界。
+- 新增 CLI 使用说明 `crates/osu-beatmap-preview-cli/README.md` 和 WASM 使用说明 `crates/osu-beatmap-preview-wasm/README.md`；根目录 README 精简为架构概览与文档入口。
 
 ### Changed
 
-- 根目录改为 workspace，默认成员仍只有 CPU 包；现有四模式 CPU 实现迁入 `render/cpu/modes`，WGPU 模式与视频代码位于 `render/wgpu`。
-- WGPU 使用原生精灵与几何 pipeline、straight-alpha 合成、实际 MSAA resolve、纹理缓存和最多 `MAX_IN_FLIGHT` 个顺序 readback。
-- Release matrix 在现有四个 CPU 产物之外增加启用 `wgpu-renderer` feature 的四个 WGPU 产物；两者使用同一个根 CLI。
+- 项目改为 Cargo workspace，不再保留根包，代码迁入 `osu-beatmap-preview-core`、`osu-beatmap-preview-renderer`、`osu-beatmap-preview-cli`、`osu-beatmap-preview-wasm`、`osu-beatmap-preview-player`、`osu-beatmap-preview-gui`、`osu-beatmap-preview-mobile`。
+- workspace 默认成员是 `osu-beatmap-preview-cli`，普通 `cargo build --release` 只构建 CLI；CLI 二进制名从 `osu-beatmap-preview` 改为 `osu-beatmap-preview-cli`，`--help` 与 `--version` 的输出同步更名。
+- core/CLI 职责重新划分：四模式的 CPU 单帧与静态场景绘制位于 core，CLI 只负责参数解析、配置、下载、缓存、日志、时间序列与布局组装、媒体编码和文件输出，且不依赖 renderer。
+- 默认配置拆分为 core/CLI 共享的 `assets/shared_config.yml` 和 CLI 专用的 `crates/osu-beatmap-preview-cli/assets/cli_config.yml`；CLI 启动时把两者合并为内嵌默认配置，core 在构建期生成 `CoreConfig` 默认值。
+- 发布产物固定为 CLI 与 WASM 两类：CLI 的 4 个平台资产文件名以 `-cli` 结尾，WASM 以 `osu-beatmap-preview-wasm-web.zip` 发布，包内含 JavaScript 胶水、`.wasm`、类型声明、README 和 LICENSE。
+- 实时预览右上角时间标签改为跟随实际 Canvas/合成尺寸布局，不再受固定初始分辨率影响。
+
+### Fixed
+
+- 修复实时预览右上角时间标签随分辨率变化而错位的问题。
+
+### Performance
+
+- 复用 GIF 帧编码缓冲区，减少逐帧分配。
+- Standard MP4 预先计算每帧可见物件索引，减少逐帧筛选开销。
 
 ### Compatibility
 
-- 原 CPU CLI 的默认依赖图、PNG/GIF/MP4 行为、文件名和配置 hash 规则保持不变。
-- WGPU MP4 在文件名末尾加入 `_wgpu` 缓存标识；GPU 不可用时明确失败，不回退 CPU 绘制。
-- 本版本不包含正式播放器 UI、WGPU PNG/GIF、移动端、回放、texture 编码互操作或 NVENC 零拷贝。
+- CLI 的 PNG/GIF/MP4 行为、配置项和 `--bid`、`--mod`、`--time-points` 等参数继续沿用 1.1.1；主要破坏性变化是二进制名、发布资产名和 workspace 内部 crate 路径。
+- WGPU 绘制与实时播放只由 renderer、WASM 和播放器使用；CLI 保持 CPU 导出路径。
 
 ## [1.1.1] - 2026.09.05
 
