@@ -11,7 +11,7 @@
 - **Mod 支持**：`EZ` `HR` `HD` `DA` `TC` `SW` `CS` `DS` `IN` `HO` 以及 `1K`–`10K` 键数可自由组合；`DT`、`HT` 支持自定义倍速（`1.01`–`2.00x`、`0.50`–`0.99x`），`DA` 还能按 `cs`/`ar`/`od`/`hp` 逐项改难度。重复的、互相冲突的（如 `EZ` 配 `HR`）或当前模式不支持的 Mod 会直接报错，不会静默忽略。
 - **转谱**：Standard 谱面可转到 Taiko、Catch 或 Mania；转 Mania 时 `1K`–`10K`、`DS`、`IN`、`HO` 会参与转谱结果，目标模式与源模式相同时按不转谱处理。
 - **四种模式**：osu!standard、osu!taiko、osu!catch、osu!mania 各有独立的布局、皮肤和配色，都能输出 PNG 概览、GIF 分段预览和带原曲音频的 H.264 MP4。
-- **浏览器实时预览**：Web 包解压后 `node server.js` 就能在浏览器里播放谱面，支持 Mod 热切换、转谱、seek、倍速与分辨率切换；后端只做跨域下载与缓存，每一帧都在本地 WebGPU 中完成。
+- **浏览器实时预览**：Web 包解压后 `node backend/server.js`（或 `npm start`）就能在浏览器里播放谱面，支持 Mod 热切换、转谱、seek、倍速、分辨率（480P/720P/1080P）与 30/60/120 FPS 切换；也能用 `/?bid=<BID>` 直接进入预览。后端只做跨域下载与缓存并向页面报告下载进度，每一帧都在本地 WebGPU 中完成。
 - **高性能、低占用**：帧渲染按配置分块并行，并按单帧字节数动态限制批次，降低大画布的临时内存峰值；GIF 复用帧编码缓冲区，Standard MP4 预计算每帧可见物件索引，滑条 tick、鼓滚 tick 等使用程序化精灵缓存。实测数据见[批量渲染报告](docs/report.md)。
 - **独立、无外部依赖的 CLI**：单个可执行文件内嵌皮肤、字体、H.264 和 AAC 编码器，运行时不需要 FFmpeg、额外动态库或资源文件；Windows 会自动尝试 NVENC / AMF，缺失时回退内置 CPU 编码器（`OSU_PREVIEW_NO_GPU=1` 可强制 CPU）。下载缓存、输出缓存和日志都在本机复用，不同配置使用独立输出目录。
 
@@ -39,7 +39,7 @@ CLI 是主要用法，完整说明在 CLI 文档里；本文件只做项目介�
 | CLI | 4 个平台的单文件可执行程序 | `osu-beatmap-preview-<平台>-<架构>-cli`，导出 PNG/GIF/MP4 |
 | Web 包 | `osu-beatmap-preview-web.zip` | 静态站点（浏览器 WebGPU 实时渲染）+ Node.js 下载后端 |
 
-获取方式见 [Releases](https://github.com/2710165659/osu-beatmap-preview/releases)。CLI 的用法见 [CLI 使用说明](crates/osu-beatmap-preview-cli/README.md)，Web 包解压后 `node server.js` 即可，见 [Web 站点说明](crates/osu-beatmap-preview-web/README.md)。
+获取方式见 [Releases](https://github.com/2710165659/osu-beatmap-preview/releases)。CLI 的用法见 [CLI 使用说明](crates/osu-beatmap-preview-cli/README.md)，Web 包解压后 `node backend/server.js` 即可，见 [Web 站点说明](crates/osu-beatmap-preview-web/README.md)。
 
 ## 架构概览
 
@@ -57,8 +57,8 @@ Web  -> Node 后端下载并缓存 .osu/.osz -> 浏览器 -> wasm -> core Realti
 | `osu-beatmap-preview-core` | 谱面模型、解析、Mod、转谱、时间轴，以及四模式的 CPU 单帧与静态场景绘制，产出不依赖窗口、网络和音频设备的 `FrameScene` |
 | `osu-beatmap-preview-renderer` | 平台无关的 WGPU 绘制；device、queue、surface 和目标 view 由宿主提供 |
 | `osu-beatmap-preview-cli` | 命令行参数、配置、下载、缓存、日志、时间序列与布局组装、媒体编码和文件输出（默认构建目标，Release 产物） |
-| `osu-beatmap-preview-wasm` | 把 core 会话和 renderer 接到浏览器 WebGPU Canvas（Release 产物的一部分） |
-| `osu-beatmap-preview-web` | Node.js 静态站点与下载后端：下载并缓存 `.osu`/`.osz`，把音频和背景交给浏览器（Release 产物，不在 Cargo workspace 内） |
+| `osu-beatmap-preview-wasm` | 把 core 会话和 renderer 接到浏览器 WebGPU Canvas，并导出按 `.osu` 字节汇总谱面信息的 `beatmapInfo`（Release 产物的一部分） |
+| `osu-beatmap-preview-web` | Vue 静态站点与 Node.js 下载后端：下载并缓存 `.osu`/`.osz`，把音频和背景交给浏览器（Release 产物，不在 Cargo workspace 内） |
 | `osu-beatmap-preview-gui`、`osu-beatmap-preview-mobile` | 桌面与移动端的 surface、输入、播放生命周期和音频时钟适配骨架 |
 
 CLI 始终走 CPU 导出，不依赖 renderer，也不提供 WGPU 参数；实时 API 在 GPU 不可用时明确报错，不会静默回退到 CPU。Web 后端只负责跨域下载与缓存，不含任何绘制逻辑，所有帧都由浏览器内的 wasm 完成。crate 之间的边界、配置来源和非目标见[架构说明](docs/architecture.md)。
@@ -79,10 +79,12 @@ workspace 默认成员只有 CLI，产物为 `target/release/osu-beatmap-preview
 cargo test --workspace --all-features --all-targets
 ```
 
-Web 站点需要 Node.js 18+，构建 wasm 产物需要 Rust 工具链和与 `Cargo.lock` 一致的 `wasm-bindgen-cli`：
+Web 站点需要 Node.js 18+ 运行，构建前端需要 Node.js 20.19+，构建 wasm 产物需要 Rust 工具链和与 `Cargo.lock` 一致的 `wasm-bindgen-cli`：
 
 ```bash
 cd crates/osu-beatmap-preview-web
+npm install          # Vue / Vite / Tailwind，仅构建需要
+npm run build        # 把 src/ 编译到 dist/
 npm run build:wasm   # 生成 public/pkg
 npm test             # 后端回归测试
 npm start            # 访问 http://127.0.0.1:8787

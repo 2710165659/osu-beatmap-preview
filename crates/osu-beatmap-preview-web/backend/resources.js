@@ -11,7 +11,7 @@ import { existsNonEmpty, writeFileAtomic } from './cache.js';
 import { parseBeatmapText } from './beatmap-meta.js';
 import { downloadBeatmapFile, readBeatmapText, resolveBeatmapSetId } from './download-osu.js';
 import { downloadBeatmapsetArchive } from './download-osz.js';
-import { mimeFor, REQUEST_DEADLINE } from './config.js';
+import { mimeFor, PROGRESS_TTL, REQUEST_DEADLINE } from './config.js';
 import { extractEntry, findEntry, normalizeArchivePath, readZipIndex } from './zip.js';
 
 export class ResourceProvider {
@@ -20,10 +20,12 @@ export class ResourceProvider {
     this.log = log;
     this.osuInflight = new Map();
     this.mediaInflight = new Map();
+    this.progressEntries = new Map();
   }
 
   /** 下载（或命中缓存）`.osu`，返回本地路径。 */
   async beatmapPath(bid, { fresh = false } = {}) {
+    this.#report(bid, { phase: 'osu', received: 0, total: 0, message: '获取谱面' });
     return this.#singleFlight(this.osuInflight, bid, () =>
       downloadBeatmapFile({ bid, cache: this.cache, log: this.log, fresh }),
     );
@@ -31,7 +33,28 @@ export class ResourceProvider {
 
   /** 返回该 bid 的音频与背景文件信息。 */
   async media(bid, { fresh = false } = {}) {
-    return this.#singleFlight(this.mediaInflight, bid, () => this.#prepareMedia(bid, fresh));
+    try {
+      const media = await this.#singleFlight(this.mediaInflight, bid, () => this.#prepareMedia(bid, fresh));
+      this.#report(bid, { phase: 'ready', message: '' });
+      return media;
+    } catch (error) {
+      this.#report(bid, { phase: 'error', message: error.message });
+      throw error;
+    }
+  }
+
+  /** 加载进度快照，供 `/resource/progress` 轮询。 */
+  progress(bid) {
+    return this.progressEntries.get(bid) ?? { phase: 'idle', received: 0, total: 0, message: '' };
+  }
+
+  /** 记录一次进度；条目按 PROGRESS_TTL 自动淘汰，避免长时间运行后越攒越多。 */
+  #report(bid, patch) {
+    this.progressEntries.set(bid, { ...this.progressEntries.get(bid), ...patch, at: Date.now() });
+    const deadline = Date.now() - PROGRESS_TTL;
+    for (const [key, entry] of this.progressEntries) {
+      if (entry.at < deadline) this.progressEntries.delete(key);
+    }
   }
 
   #singleFlight(registry, key, task) {
@@ -43,6 +66,7 @@ export class ResourceProvider {
   }
 
   async #prepareMedia(bid, fresh) {
+    this.#report(bid, { phase: 'osu', received: 0, total: 0, message: '获取谱面' });
     const beatmapPath = await this.beatmapPath(bid, { fresh });
     const beatmap = parseBeatmapText(await readBeatmapText(beatmapPath));
     if (!beatmap.audioFilename) {
@@ -58,11 +82,18 @@ export class ResourceProvider {
     const audio = mediaTarget(this.cache, bid, 'audio', beatmap.audioFilename);
     const background = mediaTarget(this.cache, bid, 'background', beatmap.backgroundFilename);
     if (!fresh && existsNonEmpty(audio.path) && existsNonEmpty(background.path)) {
+      this.#report(bid, { phase: 'ready', received: 0, total: 0, message: '' });
       return {
         audio: { ...audio, mime: mimeFor(audio.path) },
         background: { ...background, mime: mimeFor(background.path) },
       };
     }
+
+    // OSZ 动辄几十 MiB，是加载里最慢的一步：把字节数透出去给前端的进度条。
+    const onProgress = ({ received, total }) => {
+      this.#report(bid, { phase: 'osz', received, total, message: '下载谱面包' });
+    };
+    this.#report(bid, { phase: 'osz', received: 0, total: 0, message: '下载谱面包' });
 
     let oszPath = await downloadBeatmapsetArchive({
       cache: this.cache,
@@ -71,8 +102,10 @@ export class ResourceProvider {
       log: this.log,
       deadlineAt: Date.now() + REQUEST_DEADLINE,
       fresh,
+      onProgress,
     });
     try {
+      this.#report(bid, { phase: 'extract', received: 0, total: 0, message: '解析资源' });
       await this.#extractMedia(oszPath, audio, background);
     } catch (error) {
       // 缓存里的压缩包可能损坏：丢掉后重新下载一次再试。
@@ -85,7 +118,9 @@ export class ResourceProvider {
         log: this.log,
         deadlineAt: Date.now() + REQUEST_DEADLINE,
         fresh: true,
+        onProgress,
       });
+      this.#report(bid, { phase: 'extract', received: 0, total: 0, message: '解析资源' });
       await this.#extractMedia(oszPath, audio, background);
     }
     return {

@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Web 前端新增加载进度条：后端新增只读接口 `GET /resource/progress?bid=<BID>`，返回加载阶段（`osu`/`osz`/`extract`/`ready`/`error`）与已下载字节、总字节；前端在加载期间每 400 ms 轮询一次，`.osz` 下载时显示确定态进度，总量未知时显示不确定态。
+- Web 站点支持 `/?bid=<BID>` 深链直接进入预览（可选 `&convert=taiko`），加载成功后地址栏会写回这两个参数，点「返回加载」时清除。
+- WASM 新增 `beatmapInfo(bytes)`：按传入的 `.osu` 字节返回谱面内部信息对象，覆盖概览字段、统计（时长、BPM、音符数、timing point 与 break 数、连击色）、难度（AR/CS/HP/OD）以及 `[General]`/`[Metadata]`/`[Difficulty]` 三个区段的全量键值；core 新增对应的 `BeatmapInfo`（`model::BeatmapInfo`）。
+- Web 播放页新增一行谱面信息条，显示名称（`Artist - Title`，优先 Unicode）与难度名，数据取自 `beatmapInfo`。
+- Web 播放页帧率新增 120 FPS 选项（默认仍为 60 FPS）。
+
+### Changed
+
+- Web 包前端改为 Vue 3 单文件组件 + Tailwind CSS v4，由 Vite 从 `src/` 构建到 `dist/`；后端模块从 `src/` 移到 `backend/`，静态站点改由后端托管 `dist/`。发布包内启动方式仍是 `node backend/server.js`（或 `npm start`），最终用户仍然只需要 Node.js，不需要 `npm install`。
+- Web 播放页重排：默认只保留谱面信息、视频和进度条，视频区域最大；画面参数（帧率/清晰度/倍速）、Mod 与运行日志都收进右上角齿轮打开的抽屉，抽屉里不再有播放控制分组。移动端改用动态视口高度（`100dvh`）与深色底色，不再出现底部空白。
+- Web 播放页进度条改为鼠标移动或触摸时显示、静止约 1 秒后淡出；淡出只改透明度，进度条的位置始终占着，所以画面不会因为隐藏而上下位移。指针停在进度条上或焦点在里面时保持可见。
+- Web 播放页左右方向键改为**松开时**跳转 ±5 秒（按下不再立即跳），并新增长按行为：长按右键 3 倍速播放、长按左键每 120 ms 后退 500 ms 持续倒带，两种情况都会在画面上显示角标，切走窗口或退回加载页时自动复位。
+- DA 参数面板改为勾选 DA 后才出现，默认隐藏。
+- Web 后端的 `--flag=value` 与 `--flag value` 两种参数写法都支持，此前按用法里写的 `--cache-dir=<DIR>` 传参会直接报「未知参数」。
+- `osu-beatmap-preview-wasm` 依赖新增 `serde`（core 已依赖同一版本，不引入新的第三方 crate）。
+
+### Fixed
+
+- 修复 Web 播放页在播到结尾后再次点击播放报 `The play() request was interrupted by a call to pause()` 的问题：在结尾处重新播放会先把时钟拨回开头，且被 `pause()`/seek 打断的 `play()` 不再记为音频故障（浏览器自动播放拦截改为提示“点一下画面即可播放声音”）。
+- 修复 Web 播放页音频重试过于频繁的问题：音频被自动播放策略拦下时按 500 ms 间隔重试，不再每帧调用 `play()`。
+
+---
+
 ## [1.2.1] - 2026.09.11
 
 ### Changed

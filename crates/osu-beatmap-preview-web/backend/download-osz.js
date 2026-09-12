@@ -50,6 +50,7 @@ export async function downloadBeatmapsetArchive({
   signal,
   deadlineAt,
   fresh = false,
+  onProgress,
 }) {
   const target = cache.oszPath(setId);
   if (!fresh && (await isValidOsz(target))) {
@@ -73,6 +74,7 @@ export async function downloadBeatmapsetArchive({
     log,
     signal,
     deadlineAt,
+    onProgress,
   });
   const elapsed = Date.now() - startedAt;
 
@@ -106,7 +108,7 @@ function buildCandidates(setId, preferredIp) {
  * 事件循环用一个单槽邮箱把「尝试结束」和「轮询心跳」串起来：心跳负责低速检测
  * 与补位，结束事件负责判定胜负或记录失败。
  */
-async function raceDownload({ cache, candidates, setId, log, signal, deadlineAt }) {
+async function raceDownload({ cache, candidates, setId, log, signal, deadlineAt, onProgress }) {
   const queue = [];
   let waitResolve = null;
   const emit = (event) => {
@@ -138,6 +140,23 @@ async function raceDownload({ cache, candidates, setId, log, signal, deadlineAt 
   let nextId = 0;
   let preferredRefreshTriggered = false;
   const startedAt = Date.now();
+  let reportedBytes = 0;
+  let reportedTotal = 0;
+
+  // 前端只关心「下到多少了」：多个镜像在竞速、单个镜像又分块并行，
+  // 所以取所有活跃尝试里的最大值，并且只前进不后退（尝试失败会让瞬时字节数回退）。
+  const publishProgress = () => {
+    if (!onProgress) return;
+    let received = 0;
+    let total = 0;
+    for (const attempt of active.values()) {
+      received = Math.max(received, attempt.progress.bytes);
+      total = Math.max(total, attempt.progress.total || 0);
+    }
+    reportedBytes = Math.max(reportedBytes, received);
+    reportedTotal = Math.max(reportedTotal, total);
+    onProgress({ received: reportedBytes, total: reportedTotal });
+  };
 
   const startNext = async () => {
     const preferred = await cache.readPreferredIp();
@@ -165,7 +184,7 @@ async function raceDownload({ cache, candidates, setId, log, signal, deadlineAt 
       controller,
       startedAt: Date.now(),
       partPath: `${cache.oszPath(setId)}.${process.pid}.attempt-${id}.part`,
-      progress: { bytes: 0, firstByteAt: 0 },
+      progress: { bytes: 0, firstByteAt: 0, total: 0 },
       monitor: { samples: [], fallbackTriggered: false },
     };
     await fsp.rm(attempt.partPath, { force: true });
@@ -200,11 +219,13 @@ async function raceDownload({ cache, candidates, setId, log, signal, deadlineAt 
     }
 
     const event = await nextEvent(POLL_INTERVAL);
+    publishProgress();
     if (event.type === 'settled') {
       const attempt = active.get(event.id);
       active.delete(event.id);
       if (attempt && event.ok) {
         cancelAll();
+        publishProgress();
         return attempt.partPath;
       }
       if (attempt) {
@@ -326,6 +347,8 @@ async function probeRangeSupport({ candidate, lookup, progress, signal }) {
     throw new Error(`Range 探测返回了意外的 Content-Range：${response.headers['content-range']}`);
   }
   validateDeclaredSize(contentRange.total);
+  // 探测拿到的总长度是进度条的分母。
+  progress.total = contentRange.total;
   const byte = await readAll(response.body, { maxBytes: 1, signal });
   if (byte.length !== 1) {
     throw new Error(`Range 探测返回了 ${byte.length} 字节，期望 1 字节`);
@@ -339,7 +362,10 @@ async function probeRangeSupport({ candidate, lookup, progress, signal }) {
 async function writeResponse(response, partPath, progress, signal) {
   assertNotHtml(response.headers);
   const declared = Number(response.headers['content-length']);
-  if (Number.isFinite(declared)) validateDeclaredSize(declared);
+  if (Number.isFinite(declared)) {
+    validateDeclaredSize(declared);
+    progress.total = declared;
+  }
 
   const handle = await fsp.open(partPath, 'w');
   try {
@@ -444,7 +470,10 @@ async function downloadSingle({ candidate, partPath, lookup, progress, signal })
     throw new Error(`HTTP ${response.status}`);
   }
   const declared = Number(response.headers['content-length']);
-  if (Number.isFinite(declared)) validateDeclaredSize(declared);
+  if (Number.isFinite(declared)) {
+    validateDeclaredSize(declared);
+    progress.total = declared;
+  }
 
   const handle = await fsp.open(partPath, 'w');
   try {

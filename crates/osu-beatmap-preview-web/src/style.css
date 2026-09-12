@@ -1,0 +1,30 @@
+/* Tailwind 是唯一的样式来源，这里只补几处全局约定。 */
+@import "tailwindcss";
+
+/*
+ * 移动端浏览器地址栏会改变可视高度：内容容器固定在视觉视口上，
+ * 优先用动态视口高度（dvh），旧浏览器回退 100vh。
+ */
+.app-viewport {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body {
+  background: #0b0d10;
+  /* 拖动进度条或点击画面时不要触发下拉刷新与橡皮筋滚动。 */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 进度条沿用浏览器原生外观：原生控件在触屏上的拖拽手感最稳定。 */
+input[type="range"] {
+  accent-color: #ff5f45;
+}

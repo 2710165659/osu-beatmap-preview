@@ -13,7 +13,7 @@ import {
   isZipBuffer,
   normalizeArchivePath,
   readZipIndex,
-} from '../src/zip.js';
+} from '../backend/zip.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = fs.readFileSync(path.join(here, 'fixtures/sample.osz'));

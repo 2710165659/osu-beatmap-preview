@@ -2,7 +2,7 @@
 
 #[cfg(target_arch = "wasm32")]
 use osu_beatmap_preview_core::{
-    parse_beatmap_bytes, RealtimeOptions, RealtimeSession, ResourceBundle,
+    parse_beatmap_bytes, BeatmapInfo, RealtimeOptions, RealtimeSession, ResourceBundle,
 };
 #[cfg(target_arch = "wasm32")]
 use osu_beatmap_preview_renderer::{SurfaceConfig, SurfaceRenderer};
@@ -189,6 +189,24 @@ impl WebGpuSession {
         // 画面仍按旧尺寸渲染并贴在左上角，因此需要同步更新 core。
         self.inner.set_render_size(width, height).map_err(js_error)
     }
+}
+
+/// 解析 `.osu` 字节并返回谱面内部信息（全量字段）。
+///
+/// WASM 侧没有网络能力，`bid` 的下载由宿主完成（浏览器取 `/resource/beatmap`、
+/// Node 后端取本地缓存），这里只按传入的谱面字节解析，返回的对象字段与
+/// [`BeatmapInfo`] 一一对应。
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = beatmapInfo)]
+pub fn beatmap_info(bytes: Vec<u8>) -> Result<JsValue, JsValue> {
+    let beatmap = parse_beatmap_bytes(&bytes).map_err(js_error)?;
+    let info = BeatmapInfo::from_beatmap(&beatmap);
+    // 默认序列化会把 map 变成 JS Map、把 None 变成 undefined；这里统一成
+    // 普通对象与 null，宿主可以直接用 `info.title` 取值。
+    let serializer = serde_wasm_bindgen::Serializer::new()
+        .serialize_maps_as_objects(true)
+        .serialize_missing_as_null(true);
+    serde::Serialize::serialize(&info, &serializer).map_err(js_error)
 }
 
 #[cfg(target_arch = "wasm32")]

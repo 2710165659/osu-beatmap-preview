@@ -1279,6 +1279,7 @@ dependencies = [
  "js-sys",
  "osu-beatmap-preview-core",
  "osu-beatmap-preview-renderer",
+ "serde",
  "serde-wasm-bindgen",
  "wasm-bindgen",
  "wasm-bindgen-futures",

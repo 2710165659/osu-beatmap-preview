@@ -3,14 +3,24 @@
   "version": "1.2.1",
   "private": true,
   "type": "module",
-  "description": "osu! 谱面预览的静态站点与本地下载后端（Node.js，无运行时依赖）",
+  "description": "osu! 谱面预览的 Vue 静态站点与本地下载后端（后端无运行时依赖）",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "start": "node server.js",
+    "start": "node backend/server.js",
+    "dev": "vite",
+    "dev:server": "node backend/server.js",
+    "build": "vite build",
     "test": "node --test",
     "build:wasm": "node scripts/build-wasm.mjs",
     "sync:version": "node scripts/sync-version.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^6.0.5",
+    "tailwindcss": "^4.3.3",
+    "vite": "^7.3.0",
+    "vue": "^3.5.42"
   }
 }

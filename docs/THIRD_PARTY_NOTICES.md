@@ -28,6 +28,19 @@ media encoding.
 The corresponding license texts are distributed by each crate and are
 available at the immutable versions recorded in `Cargo.lock`.
 
+## Web frontend bundle
+
+`dist/` in the web package is a Vite build of the Vue frontend and embeds the
+Vue runtime, which is not covered by the crate list above:
+
+- Vue 3.5.x: MIT, https://github.com/vuejs/core
+
+Vite, `@vitejs/plugin-vue`, Tailwind CSS, and `@tailwindcss/vite` are installed
+as dev dependencies and are not part of the shipped bundle; Tailwind CSS 4.3.x
+(MIT, https://github.com/tailwindlabs/tailwindcss) generates the stylesheet in
+`dist/assets`. The exact versions are recorded in
+`crates/osu-beatmap-preview-web/package-lock.json`.
+
 ## Symphonia 0.5.4
 
 Symphonia and the enabled MP3, OGG/Vorbis, WAV, and PCM components are licensed

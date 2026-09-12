@@ -14,8 +14,8 @@ Web -> Node 后端下载并缓存 .osu/.osz -> 浏览器 -> wasm -> core Realtim
 - `crates/osu-beatmap-preview-core`：谱面模型、`.osu` 解析、Mod、转谱、时间轴、四模式 CPU 单帧/静态场景绘制、`FrameScene`。
 - `crates/osu-beatmap-preview-renderer`：平台无关的 WGPU 场景绘制、surface 和离屏后端。
 - `crates/osu-beatmap-preview-cli`：CLI/native 适配、文件/下载/缓存/配置/日志、时间序列与布局组装、媒体编码和 I/O；不再包含模式绘制逻辑。
-- `crates/osu-beatmap-preview-wasm`：将 core 会话和 renderer 接到宿主 WebGPU Canvas 的 WASM API，没有 Rust 调用方。
-- `crates/osu-beatmap-preview-web`：Node.js 静态站点与下载后端，负责跨域下载 `.osu`/`.osz`、解出音频与背景并缓存；不属于 Cargo workspace，也不参与任何绘制。
+- `crates/osu-beatmap-preview-wasm`：将 core 会话和 renderer 接到宿主 WebGPU Canvas 的 WASM API，并导出 `beatmapInfo`（按 `.osu` 字节汇总谱面内部信息），没有 Rust 调用方。
+- `crates/osu-beatmap-preview-web`：Vue 静态站点与 Node.js 下载后端，负责跨域下载 `.osu`/`.osz`、解出音频与背景并缓存、向页面报告加载进度；不属于 Cargo workspace，也不参与任何绘制。
 - `crates/osu-beatmap-preview-gui`：桌面 surface、输入和播放生命周期接口骨架。
 - `crates/osu-beatmap-preview-mobile`：Android/iOS surface、输入和音频时钟接口骨架。
 
@@ -23,7 +23,9 @@ workspace 的默认成员是 `osu-beatmap-preview-cli`。普通 `cargo build --r
 
 ## Web 后端
 
-浏览器无法跨域直接下载 osu! 的资源，所以 Release 里的 Web 包由一个 Node.js 进程提供静态站点和三类资源接口：`/resource/beatmap`、`/resource/audio`、`/resource/background`。下载策略与 CLI 一致（多镜像竞速、Range 分块、osu.direct 优选 IP、缓存优先），并复用同一份缓存目录布局；解包只用 Node 自带的 zlib，因此后端没有任何第三方依赖。绘制全部发生在浏览器内的 wasm 中，后端不返回像素数据。
+浏览器无法跨域直接下载 osu! 的资源，所以 Release 里的 Web 包由一个 Node.js 进程提供静态站点（`dist/`，由 Vite 从 `src/` 构建）和三类资源接口：`/resource/beatmap`、`/resource/audio`、`/resource/background`，外加只读的加载进度快照 `/resource/progress`。下载策略与 CLI 一致（多镜像竞速、Range 分块、osu.direct 优选 IP、缓存优先），并复用同一份缓存目录布局；解包只用 Node 自带的 zlib，因此后端没有任何第三方依赖（Vue/Vite/Tailwind 都只是构建期依赖）。绘制全部发生在浏览器内的 wasm 中，后端不返回像素数据。
+
+谱面的元信息同样由 wasm 解析：浏览器把 `/resource/beatmap` 拿到的 `.osu` 字节交给 `beatmapInfo`，返回 `BeatmapInfo` 的全量字段（概览、统计、难度与 `[General]`/`[Metadata]`/`[Difficulty]` 区段），页面只展示其中一部分。
 
 ## 请求与配置
 

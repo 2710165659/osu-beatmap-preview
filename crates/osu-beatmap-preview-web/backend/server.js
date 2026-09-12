@@ -12,13 +12,16 @@ import { spawnSync } from 'node:child_process';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Cache, resolveCacheDir } from './src/cache.js';
-import { DEFAULT_HOST, DEFAULT_PORT } from './src/config.js';
-import { ResourceProvider } from './src/resources.js';
-import { StaticFiles, parseByteRange } from './src/static.js';
+import { Cache, resolveCacheDir } from './cache.js';
+import { DEFAULT_HOST, DEFAULT_PORT } from './config.js';
+import { ResourceProvider } from './resources.js';
+import { StaticFiles, parseByteRange } from './static.js';
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PUBLIC_DIR = path.join(ROOT, 'public');
+// 站点根目录：本文件在 backend/ 下，缓存与构建产物都相对包根目录定位，
+// 这样 `node backend/server.js` 仍然使用 <安装目录>/.cache 与 <安装目录>/dist。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// 静态站点由 `npm run build`（Vite）输出到 dist/，源码目录不再直接托管。
+const PUBLIC_DIR = path.join(ROOT, 'dist');
 
 const options = parseArgs(process.argv.slice(2));
 if (options.help) {
@@ -31,7 +34,7 @@ await cache.ensure();
 const staticFiles = new StaticFiles(PUBLIC_DIR);
 const resources = new ResourceProvider({ cache, log: options.quiet ? () => {} : log });
 
-await warnIfWasmMissing();
+await warnIfBuildMissing();
 
 const requestListener = (request, response) => {
   handle(request, response).catch((error) => {
@@ -103,6 +106,12 @@ async function sendResource(request, response, route, bid) {
     return;
   }
 
+  // 加载进度：.osz 动辄几十 MiB，前端轮询这个接口画进度条。
+  if (route === '/resource/progress') {
+    sendJson(response, resources.progress(bid));
+    return;
+  }
+
   const media = await resources.media(bid, { fresh: options.noCache });
   const target =
     route === '/resource/audio'
@@ -151,6 +160,17 @@ function sendText(response, status, text) {
   response.end(text);
 }
 
+/** 进度查询是短轮询接口：不能缓存，否则前端永远读到同一份快照。 */
+function sendJson(response, payload) {
+  const body = Buffer.from(JSON.stringify(payload));
+  response.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store',
+  });
+  response.end(body);
+}
+
 function parseArgs(argv) {
   const parsed = {
     host: DEFAULT_HOST,
@@ -164,8 +184,10 @@ function parseArgs(argv) {
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index];
+    // 用法里写的是 `--cache-dir=<DIR>`，所以 `--flag=value` 和 `--flag value` 都要认。
+    const [argument, inlineValue] = splitArgument(argv[index]);
     const next = () => {
+      if (inlineValue !== undefined) return inlineValue;
       const value = argv[index + 1];
       if (value === undefined) throw new Error(`${argument} 需要一个值`);
       index += 1;
@@ -210,6 +232,13 @@ function parseArgs(argv) {
     }
   }
   return parsed;
+}
+
+/** 把 `--name=value` 拆成名字与内联值；没有 `=` 时内联值为 undefined。 */
+function splitArgument(text) {
+  const separator = text.indexOf('=');
+  if (separator < 0) return [text, undefined];
+  return [text.slice(0, separator), text.slice(separator + 1)];
 }
 
 function printUsage() {
@@ -302,11 +331,20 @@ function log(message) {
   console.log(`[${new Date().toISOString()}] ${message}`);
 }
 
-async function warnIfWasmMissing() {
-  const wasm = path.join(PUBLIC_DIR, 'pkg', 'osu_beatmap_preview_wasm.js');
-  try {
-    await fsp.access(wasm);
-  } catch {
-    log('警告：public/pkg 下没有 wasm 产物，页面无法渲染。请先执行 npm run build:wasm。');
+async function warnIfBuildMissing() {
+  const exists = async (target) => {
+    try {
+      await fsp.access(target);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (!(await exists(path.join(PUBLIC_DIR, 'index.html')))) {
+    log('警告：dist/ 下没有构建产物，站点无法打开。请先执行 npm install && npm run build。');
+    return;
+  }
+  if (!(await exists(path.join(PUBLIC_DIR, 'pkg', 'osu_beatmap_preview_wasm.js')))) {
+    log('警告：dist/pkg 下没有 wasm 产物，页面无法渲染。请先执行 npm run build:wasm 再重新构建。');
   }
 }

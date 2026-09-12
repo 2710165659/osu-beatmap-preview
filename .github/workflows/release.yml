@@ -90,6 +90,18 @@ jobs:
           wasm-bindgen --target web --out-dir crates/osu-beatmap-preview-web/public/pkg \
             target/wasm32-unknown-unknown/release/osu_beatmap_preview_wasm.wasm
 
+      # 前端用 Vite 构建，需要 Node 20.19+（Vite 7 的要求）。
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/osu-beatmap-preview-web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: crates/osu-beatmap-preview-web
+
       - name: Run web backend tests
         run: npm test
         working-directory: crates/osu-beatmap-preview-web
@@ -99,13 +111,21 @@ jobs:
         run: npm run sync:version
         working-directory: crates/osu-beatmap-preview-web
 
-      # Web 包 = 静态站点（含 wasm 产物）+ Node.js 下载后端 + 许可与说明。
+      # dist/ 是后端托管的站点，必须在打包前构建。
+      - name: Build web frontend
+        run: npm run build
+        working-directory: crates/osu-beatmap-preview-web
+
+      # Web 包 = 静态站点（dist/，含 wasm 产物）+ 可重建的前端源码 + Node.js 下载后端 + 许可与说明。
+      # public/pkg 已经随 dist/ 打进包，这里只补构建需要的 gpu-check.html，避免放两份 wasm。
       - name: Stage web package
         run: |
           mkdir -p stage/osu-beatmap-preview-web
           package=stage/osu-beatmap-preview-web
-          cp server.js package.json README.md "$package"/
-          cp -r src public scripts test "$package"/
+          cp package.json package-lock.json vite.config.js index.html README.md "$package"/
+          cp -r backend dist src scripts test "$package"/
+          mkdir -p "$package/public"
+          cp public/gpu-check.html "$package/public/"
           cp ../../LICENSE "$package"/LICENSE
         working-directory: crates/osu-beatmap-preview-web
 

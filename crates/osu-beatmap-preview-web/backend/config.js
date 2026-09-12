@@ -35,6 +35,9 @@ export const WRITE_TIMEOUT = 10_000;
 /** 单次 .osu 下载超时（毫秒）。 */
 export const OSU_REQUEST_TIMEOUT = 20_000;
 
+/** 加载进度快照的保留时间（毫秒）：前端轮询结束后自动淘汰。 */
+export const PROGRESS_TTL = 600_000;
+
 /** 优选 IP 缓存有效期（秒）。 */
 export const CACHE_TTL_SECONDS = 86_400;
 /** 优选 IP 探测的 TCP 连接超时（毫秒）。 */

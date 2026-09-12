@@ -18,8 +18,8 @@ pub use api::{
 };
 pub use model::{mods_for_mode, parse_mods, validate_mods, ModSettings};
 pub use model::{
-    Beatmap, BreakPeriod, CatchHitObject, HitObjects, KvSection, ManiaHitObject, StandardHitObject,
-    TaikoHitObject, TimingPoint,
+    Beatmap, BeatmapInfo, BreakPeriod, CatchHitObject, HitObjects, KvSection, ManiaHitObject,
+    StandardHitObject, TaikoHitObject, TimingPoint,
 };
 pub use processing::conversion::{catch_convert, mania_convert, taiko_convert};
 pub use processing::parse::parse_beatmap_bytes;

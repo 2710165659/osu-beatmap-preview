@@ -2,10 +2,10 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseBeatmapText, parseBackgroundFilename } from '../src/beatmap-meta.js';
-import { beatmapSetIdFromUrl } from '../src/download-osu.js';
-import { splitRanges } from '../src/download-osz.js';
-import { parseByteRange, safeRelativePath } from '../src/static.js';
+import { parseBeatmapText, parseBackgroundFilename } from '../backend/beatmap-meta.js';
+import { beatmapSetIdFromUrl } from '../backend/download-osu.js';
+import { splitRanges } from '../backend/download-osz.js';
+import { parseByteRange, safeRelativePath } from '../backend/static.js';
 
 const SAMPLE = `osu file format v14
 

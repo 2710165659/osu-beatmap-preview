@@ -5,6 +5,7 @@
 
 pub mod build_time;
 pub mod errors;
+pub mod info;
 pub mod models;
 pub mod mods;
 pub mod parser;

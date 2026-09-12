@@ -12,6 +12,7 @@ WASM 产物把 core 的实时会话和 renderer 的 WGPU 绘制接到浏览器�
 | 按绝对时间生成单帧场景（`FrameScene`） | 维护播放时钟、暂停、seek、倍速 |
 | 在浏览器 WebGPU Canvas 上绘制并呈现 | 提供 `<canvas>`、控制 UI 和音频播放 |
 | 会话内的 Mod 热切换与画布尺寸变更 | 处理按键、指针等输入事件 |
+| 从 `.osu` 字节汇总谱面内部信息（`beatmapInfo`） | 按 bid 取回 `.osu` 字节并展示信息 |
 
 WASM 不返回 RGBA 缓冲，因此宿主拿不到像素结果；需要图片或视频文件时请使用 [CLI](../osu-beatmap-preview-cli/README.md)。在官方 [Web 包](../osu-beatmap-preview-web/README.md) 里，表右侧的下载职责由 Node.js 后端完成，音频播放、背景解码和播放控制由页面脚本完成。
 
@@ -55,6 +56,7 @@ wasm-bindgen --target web --out-dir pkg \
 
 ```bash
 cd crates/osu-beatmap-preview-web
+npm install && npm run build   # 首次需要，生成 dist/
 npm start
 # 然后访问 http://127.0.0.1:8787
 ```
@@ -97,7 +99,9 @@ npm start
 
 ## JavaScript API
 
-`WebGpuSession` 是唯一的导出类型，所有时间都用毫秒。
+导出一个类型与一个函数，所有时间都用毫秒。
+
+`WebGpuSession`：
 
 | 成员 | 说明 |
 | --- | --- |
@@ -112,6 +116,33 @@ npm start
 | `set_background_rgba(width, height, rgba)` | 传入已解码的背景图 RGBA 数据；不调用时使用模式默认背景 |
 | `resize(width, height)` | 同时更新 surface 与 core 的合成尺寸；只改 Canvas 不会改变渲染尺寸 |
 
+`beatmapInfo(bytes)`：按传入的 `.osu` 字节返回谱面内部信息对象（全量字段）。它不下载文件，也不依赖 WebGPU，可以在创建会话之前调用：
+
+```js
+import init, { beatmapInfo, WebGpuSession } from "./pkg/osu_beatmap_preview_wasm.js";
+
+await init();
+const bytes = new Uint8Array(await (await fetch("/resource/beatmap?bid=738063")).arrayBuffer());
+
+const info = beatmapInfo(bytes);
+info.title;    // 'No title'
+info.version;  // "Lust's Insane"（难度名）
+info.modeName; // 'standard'
+info.bpm;      // 200
+info.ar;       // 9.3
+info.metadata; // [Metadata] 全量键值
+```
+
+| 分组 | 字段 |
+| --- | --- |
+| 概览 | `title`、`titleUnicode`、`artist`、`artistUnicode`、`creator`、`version`、`source`、`tags`、`beatmapId`、`beatmapSetId` |
+| 格式与 `[General]` | `mode`、`modeName`、`formatVersion`、`audioFilename`、`audioLeadInMs`、`stackLeniency`、`backgroundFilename`、`beatDivisor` |
+| 统计 | `hitObjectCount`、`firstObjectMs`、`lastObjectEndMs`、`chartDurationMs`、`bpm`、`timingPointCount`、`breakPeriodCount`、`comboColors` |
+| 难度 | `ar`、`cs`、`hp`、`od` |
+| 全量区段 | `general`、`metadata`、`difficulty`（`.osu` 里对应区段的每个键值） |
+
+缺失的字段是 `null`（不是空字符串），`chartDurationMs` 等派生值在谱面没有音符时同样为 `null`。
+
 `options` 的字段都是可选的：`convert`（`mania`/`ctb`/`taiko`/`standard`/`std`）、`mods`（字符串数组）、`width`、`height`（输出尺寸）。Mod 语法与 CLI 一致，见 [CLI 的 Mod 支持](../osu-beatmap-preview-cli/README.md#mod-支持)。
 
 ## 使用限制
@@ -121,6 +152,7 @@ npm start
 - 不解析回放、不切分 MP4，也不处理音频；倍速与 seek 需要宿主同步音频播放位置。
 - 每帧都直接在 GPU 上绘制，宿主应按目标帧率调用 `render_number`，不要在同一帧重复提交。
 - 背景图需要宿主自行解码成 RGBA 后通过 `set_background_rgba` 传入。
+- `beatmapInfo` 只解析传入的字节，不认识 `bid`：`.osu` 的下载由宿主负责（Web 包里是 Node 后端的 `/resource/beatmap?bid=`）。
 
 ## 相关文档
 
