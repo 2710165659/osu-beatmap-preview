@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Web 后端新增 `--tls-host=<HOST>`（可重复，也可用 `OSU_PREVIEW_TLS_HOSTS` 逗号分隔）：把这些域名/IP 加进自签证书的 SAN。容器里自动探测到的是容器自己的网卡地址，部署到服务器时原来的证书对不上浏览器实际访问的地址，只能靠它补上；签发时的地址列表记录在 `<缓存目录>/.tls/hosts.txt`，地址变了会在下次启动时自动重新生成证书，启动日志也会打印 `证书覆盖的地址：…`。
+- 新增 `Docker/Dockerfile-web`（配套 `Dockerfile-web.dockerignore`）与 `.gitattributes`：多阶段构建（Rust → wasm、Vite → `dist/`、Node 运行时）出可直接部署的镜像，运行时镜像不含 `node_modules`、以 root 运行（避免挂载目录属主导致的 `EACCES`）、缓存固定挂在 `/data`，并自带健康检查。构建命令为 `docker build -f Docker/Dockerfile-web -t osu-beatmap-preview-web .`；镜像约 240 MiB，首次构建需编译 wasm 与前端，之后复用 BuildKit 缓存。
 - Web 前端新增加载进度条：后端新增只读接口 `GET /resource/progress?bid=<BID>`，返回加载阶段（`osu`/`osz`/`extract`/`ready`/`error`）与已下载字节、总字节；前端在加载期间每 400 ms 轮询一次，`.osz` 下载时显示确定态进度，总量未知时显示不确定态。
 - Web 站点支持 `/?bid=<BID>` 深链直接进入预览（可选 `&convert=taiko`），加载成功后地址栏会写回这两个参数，点「返回加载」时清除。
 - WASM 新增 `beatmapInfo(bytes)`：按传入的 `.osu` 字节返回谱面内部信息对象，覆盖概览字段、统计（时长、BPM、音符数、timing point 与 break 数、连击色）、难度（AR/CS/HP/OD）以及 `[General]`/`[Metadata]`/`[Difficulty]` 三个区段的全量键值；core 新增对应的 `BeatmapInfo`（`model::BeatmapInfo`）。
@@ -21,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - Web 播放页进度条改为鼠标移动或触摸时显示、静止约 1 秒后淡出；淡出只改透明度，进度条的位置始终占着，所以画面不会因为隐藏而上下位移。指针停在进度条上或焦点在里面时保持可见。
 - Web 播放页左右方向键改为**松开时**跳转 ±5 秒（按下不再立即跳），并新增长按行为：长按右键 3 倍速播放、长按左键每 120 ms 后退 500 ms 持续倒带，两种情况都会在画面上显示角标，切走窗口或退回加载页时自动复位。
 - DA 参数面板改为勾选 DA 后才出现，默认隐藏。
+- Web 加载页在 `navigator.gpu` 为空时区分两种原因：不是安全上下文（`http://` 加 IP/域名）时直接提示改用 `https://`，而不是笼统地说“浏览器没有 WebGPU”。
 - Web 后端的 `--flag=value` 与 `--flag value` 两种参数写法都支持，此前按用法里写的 `--cache-dir=<DIR>` 传参会直接报「未知参数」。
 - `osu-beatmap-preview-wasm` 依赖新增 `serde`（core 已依赖同一版本，不引入新的第三方 crate）。
 

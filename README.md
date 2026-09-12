@@ -92,6 +92,13 @@ npm start            # 访问 http://127.0.0.1:8787
 
 细节见 [Web 站点说明](crates/osu-beatmap-preview-web/README.md) 与 [WASM 使用说明](crates/osu-beatmap-preview-wasm/README.md)。
 
+Web 服务要部署到服务器时，`Docker/Dockerfile-web` 可以把 wasm、前端和后端一起构建成镜像（宿主机不需要 Node 或 Rust，构建时在仓库根目录执行）：
+
+```bash
+docker build -f Docker/Dockerfile-web -t osu-beatmap-preview-web .
+docker run -d -p 8787:8787 -v osu-preview-cache:/data osu-beatmap-preview-web
+```
+
 ## 许可证
 
 本项目使用 [MIT License](LICENSE)。内嵌 AAC 编码器使用 Fraunhofer FDK-AAC，其许可证不授予专利权，详见[第三方声明](docs/THIRD_PARTY_NOTICES.md)。

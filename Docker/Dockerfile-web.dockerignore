@@ -1,0 +1,29 @@
+# 构建镜像时的上下文过滤。
+#
+# 这个文件放在 Dockerfile-web 旁边并按 <Dockerfile 名>.dockerignore 命名，BuildKit 会
+# 自动用它（上下文仍然是仓库根目录，所以路径都相对仓库根写）。
+# 必须排除本地构建产物与缓存，否则 target/ 会让上下文膨胀到几个 GB，
+# node_modules/ 也会把宿主机的依赖带进镜像。
+
+.git
+.github
+.vscode
+.idea
+.codegraph
+.reasonix
+
+# Rust 与 Node 的构建产物：镜像里全部重新构建。
+**/target
+**/node_modules
+
+# 前端与 wasm 产物在镜像里重新生成，避免把本地那份带进镜像。
+crates/osu-beatmap-preview-web/dist
+crates/osu-beatmap-preview-web/public/pkg
+crates/osu-beatmap-preview-web/.cache
+
+# 与镜像构建无关的文档与本地脚本。
+docs
+batch_render.ps1
+batch_render_config.ps1
+batch_render_video.ps1
+CHANGELOG.md

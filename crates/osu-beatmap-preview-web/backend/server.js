@@ -58,8 +58,13 @@ server.listen(options.port, options.host, () => {
   for (const address of listenAddresses(options.host)) {
     log(`osu! beatmap preview web: ${scheme}://${address}:${options.port}`);
   }
+  // 容器里上面几行打的是容器自己的网卡地址，浏览器用不了；--tls-host 才是实际访问地址。
+  if (options.tlsHosts.length > 0) {
+    const urls = options.tlsHosts.map((host) => `${scheme}://${host}`).join('  ');
+    log(`浏览器访问这些地址：${urls}（容器内端口 ${options.port}，映射到 443 时 URL 不用写端口）`);
+  }
   if (options.https) {
-    log('使用的是自签证书，手机首次打开需要在警告页选择继续访问。');
+    log('使用的是自签证书：浏览器会提示不安全，点“高级 → 继续访问”即可，之后 WebGPU 才能用。');
   }
   log(`静态站点目录：${PUBLIC_DIR}`);
   log(`缓存目录：${cache.root}`);
@@ -181,6 +186,8 @@ function parseArgs(argv) {
     https: false,
     tlsCert: null,
     tlsKey: null,
+    // 自签证书要覆盖的地址：容器里探测到的 IP 是容器自己的，必须能手动补上。
+    tlsHosts: extraTlsHosts(),
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -223,6 +230,11 @@ function parseArgs(argv) {
         parsed.tlsKey = next();
         parsed.https = true;
         break;
+      case '--tls-host':
+        // 可重复：域名写成 DNS，IPv4 写成 IP，用作自签证书的 SAN。
+        parsed.tlsHosts.push(next());
+        parsed.https = true;
+        break;
       case '--help':
       case '-h':
         parsed.help = true;
@@ -242,14 +254,16 @@ function splitArgument(text) {
 }
 
 function printUsage() {
-  console.log(`用法：node server.js [--host=<ADDR>] [--port=<PORT>] [--cache-dir=<DIR>] [--https] [--tls-cert=<PEM> --tls-key=<PEM>] [--no-cache] [--quiet]
+  console.log(`用法：node server.js [--host=<ADDR>] [--port=<PORT>] [--cache-dir=<DIR>] [--https] [--tls-cert=<PEM> --tls-key=<PEM>] [--tls-host=<HOST>] [--no-cache] [--quiet]
 
   --host       监听地址，默认 ${DEFAULT_HOST}；手机同网测试用 --host=0.0.0.0
   --port       监听端口，默认 ${DEFAULT_PORT}
   --cache-dir  缓存目录，默认 <安装目录>/.cache，也可用 OSU_PREVIEW_CACHE_DIR 指定
-  --https      启用自签 HTTPS；WebGPU 只在安全上下文可用，局域网访问需要它
+  --https      启用自签 HTTPS；WebGPU 只在安全上下文可用，局域网/服务器访问需要它
   --tls-cert   HTTPS 证书（PEM），与 --tls-key 一起使用时不再自动生成
   --tls-key    HTTPS 私钥（PEM）
+  --tls-host   自签证书要覆盖的域名或 IP（可重复）；容器里探测到的是容器自己的地址，
+               必须用它补上浏览器实际访问的域名/IP，也可用 OSU_PREVIEW_TLS_HOSTS 指定
   --no-cache   忽略已缓存的 .osu 与 .osz，强制重新下载
   --quiet      不打印下载日志
   --help       打印本用法`);
@@ -266,6 +280,33 @@ function localIPv4Addresses() {
     .flat()
     .filter((entry) => entry && entry.family === 'IPv4' && !entry.internal)
     .map((entry) => entry.address);
+}
+
+/** 环境变量 OSU_PREVIEW_TLS_HOSTS（逗号分隔）里的额外地址。 */
+function extraTlsHosts() {
+  return (process.env.OSU_PREVIEW_TLS_HOSTS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 自签证书的 SAN 列表。
+ *
+ * 容器里探测到的网卡地址是容器自己的（172.17.x.x），浏览器根本不会用它访问，
+ * 所以要能用 --tls-host / OSU_PREVIEW_TLS_HOSTS 补上实际访问的域名或 IP。
+ */
+function tlsSubjectAltNames(extraHosts) {
+  const names = ['DNS:localhost', 'IP:127.0.0.1'];
+  const push = (value) => {
+    const host = value.trim();
+    if (!host) return;
+    const name = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? `IP:${host}` : `DNS:${host}`;
+    if (!names.includes(name)) names.push(name);
+  };
+  for (const address of localIPv4Addresses()) push(address);
+  for (const host of extraHosts) push(host);
+  return names;
 }
 
 /** 取用 --tls-cert/--tls-key，或生成本地自签证书（缓存在 <缓存目录>/.tls）。 */
@@ -286,17 +327,22 @@ async function ensureSelfSignedCertificate() {
   const directory = path.join(cache.root, '.tls');
   const certPath = path.join(directory, 'cert.pem');
   const keyPath = path.join(directory, 'key.pem');
+  // 记录签发时的 SAN：换成别的域名/IP 访问时要重新生成，否则缓存下来的证书对不上。
+  const hostsPath = path.join(directory, 'hosts.txt');
+  const names = tlsSubjectAltNames(options.tlsHosts);
+  const signature = names.join(',');
   try {
-    return { cert: await fsp.readFile(certPath), key: await fsp.readFile(keyPath) };
+    const [cert, key, cached] = await Promise.all([
+      fsp.readFile(certPath),
+      fsp.readFile(keyPath),
+      fsp.readFile(hostsPath, 'utf8'),
+    ]);
+    if (cached.trim() === signature) return { cert, key };
+    log('自签证书的地址列表已变化，重新生成。');
   } catch {
     // 首次运行或证书被删除时重新生成。
   }
   await fsp.mkdir(directory, { recursive: true });
-  const names = [
-    'DNS:localhost',
-    'IP:127.0.0.1',
-    ...localIPv4Addresses().map((address) => `IP:${address}`),
-  ];
   const result = spawnSync(
     'openssl',
     [
@@ -314,7 +360,7 @@ async function ensureSelfSignedCertificate() {
       '-subj',
       '/CN=osu-beatmap-preview',
       '-addext',
-      `subjectAltName=${names.join(',')}`,
+      `subjectAltName=${signature}`,
     ],
     { stdio: 'ignore' },
   );
@@ -323,7 +369,9 @@ async function ensureSelfSignedCertificate() {
       '生成自签证书失败：需要 openssl 在 PATH 中，或用 --tls-cert/--tls-key 指定已有证书',
     );
   }
+  await fsp.writeFile(hostsPath, `${signature}\n`);
   log(`已生成自签证书：${certPath}`);
+  log(`证书覆盖的地址：${signature}`);
   return { cert: await fsp.readFile(certPath), key: await fsp.readFile(keyPath) };
 }
 

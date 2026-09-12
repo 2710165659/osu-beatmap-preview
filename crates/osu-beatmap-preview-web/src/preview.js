@@ -94,6 +94,8 @@ export const state = reactive({
   /** 加载进度：percent 为 null 表示还不知道总量，用不确定态进度条。 */
   progress: { phase: 'idle', percent: null, detail: '' },
   gpuAvailable: typeof navigator !== 'undefined' && Boolean(navigator.gpu),
+  /** 安全上下文（https / localhost）。WebGPU 只在这里可用，用它区分两种失败原因。 */
+  secureContext: typeof window === 'undefined' || window.isSecureContext !== false,
 });
 
 /** 加载阶段的文案；未知阶段一律显示「正在加载」。 */

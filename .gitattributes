@@ -1,0 +1,7 @@
+# Windows 上 core.autocrlf=true，检出会把换行改成 CRLF；Dockerfile 一旦带上 CRLF，
+# RUN 里用 "\" 续行的命令就会失效。这里固定成 LF。
+Dockerfile* text eol=lf
+*.dockerignore text eol=lf
+
+# 容器里执行的 shell 脚本必须是 LF，否则 shebang 会变成 "#!/bin/sh\r"。
+*.sh text eol=lf

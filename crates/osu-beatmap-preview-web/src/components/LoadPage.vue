@@ -70,8 +70,16 @@ import { CONVERT_MODES, loadPreview, progressLabel, state } from '../preview.js'
         v-if="!state.gpuAvailable"
         class="mt-5 rounded-md border border-amber-700/60 bg-amber-950/40 p-3 text-xs leading-relaxed text-amber-300"
       >
-        当前浏览器没有可用的 WebGPU（<code>navigator.gpu</code> 为空），页面无法渲染。
-        局域网访问必须走 HTTPS，可以打开
+        <template v-if="!state.secureContext">
+          当前页面不是安全上下文（<code>http://</code> 加 IP 或域名），浏览器不会暴露
+          <code>navigator.gpu</code>，所以无法渲染。WebGPU 只允许
+          <code>https://</code>、<code>localhost</code> 和 <code>127.0.0.1</code>，
+          请改用 <code>https://</code> 访问本站（自签证书点“继续访问”也可以）。
+        </template>
+        <template v-else>
+          当前浏览器没有可用的 WebGPU（<code>navigator.gpu</code> 为空），页面无法渲染。
+        </template>
+        可以打开
         <a class="underline" href="/gpu-check.html" target="_blank" rel="noreferrer">/gpu-check.html</a>
         查看具体原因。
       </p>

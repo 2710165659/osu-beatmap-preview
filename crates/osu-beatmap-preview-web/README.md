@@ -27,11 +27,124 @@ node backend/server.js
 | `--cache-dir=<DIR>` | 缓存目录，默认 `<安装目录>/.cache`，也可用环境变量 `OSU_PREVIEW_CACHE_DIR` |
 | `--https` | 用自签证书启用 HTTPS；证书在首次启动时生成到 `<缓存目录>/.tls/` |
 | `--tls-cert`、`--tls-key` | 指定已有证书与私钥（PEM），同时提供时不再自动生成 |
+| `--tls-host=<HOST>` | 自签证书要覆盖的域名或 IP，可重复；也可用 `OSU_PREVIEW_TLS_HOSTS`（逗号分隔）。容器里探测到的是容器自己的地址，必须用它补上浏览器实际访问的地址 |
 | `--no-cache` | 忽略已缓存的 `.osu` 与 `.osz`，强制重新下载 |
 | `--quiet` | 不打印下载日志 |
 | `--help` | 打印用法 |
 
 默认只监听本机地址且没有鉴权，请勿直接暴露到公网。
+
+## Docker 部署
+
+`Docker/Dockerfile-web` 会把整个 Web 包从源码构建成镜像（Rust → wasm、Vite → `dist/`、Node 运行时），最终镜像里没有 `node_modules`，宿主机也不需要装 Node 或 Rust。**构建上下文必须是仓库根目录**（wasm 需要整个 Cargo workspace），所以在根目录执行：
+
+```bash
+docker build -f Docker/Dockerfile-web -t osu-beatmap-preview-web .
+docker run -d --name osu-preview --restart unless-stopped \
+  -p 8787:8787 -v osu-preview-cache:/data \
+  osu-beatmap-preview-web
+# 打开 http://<服务器地址>:8787
+```
+
+几个要点：
+
+- 首次构建要编译 wasm 与前端（本机实测约 2 分钟，慢一些的服务器通常 5–15 分钟）；之后 `target/` 与 cargo registry 都留在 BuildKit 缓存里，只改前端通常几十秒。
+- 镜像约 240 MiB（基础镜像是 `node:22-bookworm-slim`），运行时不含 `node_modules`。
+- 容器内固定监听 `0.0.0.0:8787`，端口用 `-p` 映射；`--host` 在容器里必须保持 `0.0.0.0`，否则端口映射进不来。
+- 容器以 **root** 运行：挂载进来的缓存目录属主可能是 root 或别的 uid（宿主目录、`docker` 自动创建的相对路径目录都是 `root:root`），用非 root 用户会在 `mkdir /data/osu-download-cache` 上报 `EACCES: permission denied`。这个服务只在本机/内网自用，用 root 就省掉了挂载目录的属主问题。
+- 下载缓存固定在 `/data`（`OSU_PREVIEW_CACHE_DIR`），命名卷和宿主目录都行，不需要预先 `chown`。注意 `-v ./osu-preview-cache:/data` 在 Linux 上是绑定 `$PWD/osu-preview-cache`，而在 Docker Desktop（Windows/macOS）上会被当成名为 `osu-preview-cache` 的命名卷。
+- 局域网/手机访问需要 HTTPS：推荐在前面放反向代理（Caddy/Nginx）终止 TLS；也可以让容器自己开 HTTPS，镜像里已经装了 `openssl`，证书会生成到 `/data/.tls`。
+- 想换端口或加参数就直接覆盖 `CMD`：
+
+```bash
+docker run -d -p 8443:8443 -v osu-preview-cache:/data osu-beatmap-preview-web \
+  node backend/server.js --host=0.0.0.0 --port=8443 --https
+```
+
+镜像自带健康检查（每 30 秒请求一次 `/`），`docker ps` 里可以直接看到 `healthy`。
+
+### 服务器上必须用 HTTPS，否则页面提示没有 WebGPU
+
+WebGPU 只在**安全上下文**里可用：`https://`、`localhost`、`127.0.0.1` 算，`http://<IP>` 或 `http://<域名>` **不算**。所以在服务器上用 `http://服务器IP` 打开时，`navigator.gpu` 是 `undefined`，页面会提示“当前页面不是安全上下文”——这不是部署出错，浏览器里的渲染也一样（服务端不需要 GPU，渲染全在浏览器）。本机用 `127.0.0.1` 正常、服务器上不正常，就是这个原因。
+
+两条路：
+
+**① 有域名：前面放反向代理拿真证书（推荐）**
+
+```caddyfile
+# Caddyfile
+preview.example.com {
+    reverse_proxy 127.0.0.1:8787
+}
+```
+
+```bash
+docker run -d --name osu-preview --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 -v osu-preview-cache:/data osu-beatmap-preview-web
+docker run -d --name caddy --restart unless-stopped \
+  -p 80:80 -p 443:443 -v $PWD/Caddyfile:/etc/caddy/Caddyfile \
+  caddy:2
+```
+
+Nginx 同理：`proxy_pass http://127.0.0.1:8787;` 再配 `certbot` 签证书。手机浏览器要信任该证书，所以不要用自签。
+
+**② 只有 IP：用容器自带的 `--https` + `--tls-host`**
+
+自签证书会被浏览器标记为不受信任，点“高级 → 继续访问”后仍然是 https，WebGPU 就能用。注意容器里自动探测到的是**容器自己的**网卡地址，必须用 `--tls-host` 补上你实际访问的地址，否则证书会报“名称不匹配”——下面命令里的 `你的服务器IP` 要换成真实值（**别照抄示例，`203.0.113.7` 是文档专用测试地址**）：
+
+```bash
+docker run -d --name osu-preview --restart unless-stopped \
+  -p 443:8443 -v osu-preview-cache:/data \
+  osu-beatmap-preview-web \
+  node backend/server.js --host=0.0.0.0 --port=8443 --https \
+    --tls-host=你的服务器IP
+```
+
+启动日志里会打印 `证书覆盖的地址：…` 和 `浏览器访问这些地址：https://…`，直接照着那行打开即可（`-p 443:8443` 时 URL 不用写端口）。
+
+**②′ 没有域名但想要不报警告的证书：sslip.io + Caddy**
+
+`sslip.io` / `nip.io` 会把你 IP 嵌进域名解析，比如公网 IP 是 `203.0.113.7`，那 `203-0-113-7.sslip.io` 就解析到这台机器。它是一个真实的 DNS 名字，所以 Caddy 能自动向 Let's Encrypt 申请**受信任**的证书，浏览器不会再报警告（需要 80 和 443 都能对外访问）：
+
+```caddyfile
+# Caddyfile
+203-0-113-7.sslip.io {
+    reverse_proxy osu-preview:8787
+}
+```
+
+```bash
+docker network create osu-net 2>/dev/null || true
+docker run -d --name osu-preview --restart unless-stopped --network osu-net \
+  -v osu-preview-cache:/data osu-beatmap-preview-web
+docker run -d --name caddy --restart unless-stopped --network osu-net \
+  -p 80:80 -p 443:443 -v $PWD/Caddyfile:/etc/caddy/Caddyfile caddy:2
+# 浏览器打开 https://203-0-113-7.sslip.io
+```
+
+证书会生成到 `/data/.tls/`（`hosts.txt` 记录签发时的地址列表，换了地址再启动会自动重新生成），启动日志里会打印 `证书覆盖的地址：…`，可以直接核对。
+
+**访问不了时按顺序排查：**
+
+1. 浏览器地址必须是 `https://`：容器在 443 上说的是 TLS，用 `http://` 打开会被直接断连。
+2. 启动日志里的 `证书覆盖的地址` 必须包含你现在用的 IP/域名；不包含就说明 `--tls-host` 没写对，补上后重启（证书会自动重签）。
+3. 在服务器上自检：宿主机执行 `curl -kI https://127.0.0.1/` 返回 `200`，说明服务本身正常，问题在浏览器地址或网络。容器里没装 `curl`，可以直接用镜像自带的检查脚本：`docker exec osu-preview node /app/healthcheck.js`（成功时打印 `ok https://127.0.0.1:8443/`）。
+4. 云服务器要在控制台的**安全组**里放行 443（腾讯云/阿里云默认只开部分端口）。
+5. `docker ps` 显示 `unhealthy` 只代表镜像里的健康检查没探通：旧版镜像把检查地址写死成 `http://127.0.0.1:8787/`，用 `--https --port=8443` 启动时必然 unhealthy（服务本身没问题）。现在的检查会自己读启动参数，换端口/开 HTTPS 都能正确探活。
+
+`gpu-check.html` 会打印 `isSecureContext` 与 `navigator.gpu`，可以直接判断当前是不是踩到了安全上下文限制。
+
+**③ 只有自己用：SSH 端口转发到本机，直接是安全上下文**
+
+不需要任何证书，也不需要对外开放端口：
+
+```bash
+docker run -d --name osu-preview --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 -v osu-preview-cache:/data osu-beatmap-preview-web
+# 本机执行
+ssh -N -L 8787:127.0.0.1:8787 user@服务器
+# 浏览器打开 http://127.0.0.1:8787
+```
 
 ## 手机同网测试
 

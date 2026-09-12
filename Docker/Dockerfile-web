@@ -1,0 +1,111 @@
+# syntax=docker/dockerfile:1
+
+# osu! 谱面预览 Web 包的部署镜像。
+#
+# 构建上下文必须是仓库根目录：wasm 需要整个 Cargo workspace，core 的 build.rs 还要读
+# assets/shared_config.yml，所以不能只把 crates/osu-beatmap-preview-web 当上下文。
+# 排除规则在同目录的 Dockerfile-web.dockerignore 里（BuildKit 会优先用它）。
+#
+# 三段式构建：
+#   1. wasm      —— Rust 编译 wasm 并生成 JS 胶水代码；
+#   2. frontend  —— Vite 把 src/ 编译到 dist/（并把 public/ 拷进去）；
+#   3. runtime   —— 只装运行时需要的东西，后端没有第三方依赖，所以镜像里没有 node_modules。
+#
+# 在仓库根目录构建：
+#   docker build -f Docker/Dockerfile-web -t osu-beatmap-preview-web .
+# 运行：
+#   docker run -d -p 8787:8787 -v osu-preview-cache:/data osu-beatmap-preview-web
+
+# ---------------------------------------------------------------------------
+# 1. Rust -> wasm
+# ---------------------------------------------------------------------------
+FROM rust:1-bookworm AS wasm
+
+WORKDIR /src
+RUN rustup target add wasm32-unknown-unknown
+
+# 先只拷锁文件：wasm-bindgen-cli 的版本必须与 Cargo.lock 里的 wasm-bindgen 完全一致，
+# 否则生成的胶水代码会因为 schema 不匹配拒绝加载 .wasm。这里直接从锁文件读版本，
+# 优先用官方预编译包（秒级），拉不到时退回源码编译。
+COPY Cargo.lock ./Cargo.lock
+RUN set -eux; \
+    version="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/[^0-9.]/, ""); print; exit }' Cargo.lock)"; \
+    test -n "$version"; \
+    echo "wasm-bindgen-cli: $version"; \
+    url="https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${version}/wasm-bindgen-${version}-x86_64-unknown-linux-musl.tar.gz"; \
+    if curl -fsSL -o /tmp/wasm-bindgen.tar.gz "$url"; then \
+      tar -xzf /tmp/wasm-bindgen.tar.gz -C /tmp; \
+      install -m 0755 "/tmp/wasm-bindgen-${version}-x86_64-unknown-linux-musl/wasm-bindgen" /usr/local/bin/wasm-bindgen; \
+      rm -rf /tmp/wasm-bindgen.tar.gz "/tmp/wasm-bindgen-${version}-x86_64-unknown-linux-musl"; \
+    else \
+      cargo install wasm-bindgen-cli --version "$version" --locked; \
+    fi; \
+    wasm-bindgen --version
+
+COPY . .
+
+# target/ 与 cargo 的 registry 用 cache mount：不进镜像层，重建时直接复用。
+# 只有 public/pkg 会被后面的阶段取走，编译中间产物留在缓存里。
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --locked --release --package osu-beatmap-preview-wasm --target wasm32-unknown-unknown \
+ && wasm-bindgen --target web --out-dir crates/osu-beatmap-preview-web/public/pkg \
+      target/wasm32-unknown-unknown/release/osu_beatmap_preview_wasm.wasm
+
+# ---------------------------------------------------------------------------
+# 2. Vite -> dist/
+# ---------------------------------------------------------------------------
+FROM node:22-bookworm-slim AS frontend
+
+WORKDIR /src
+
+# 依赖单独一层：只改前端代码时不必重装依赖。
+COPY crates/osu-beatmap-preview-web/package.json crates/osu-beatmap-preview-web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+
+COPY crates/osu-beatmap-preview-web/ ./
+# .dockerignore 排除了本地那份 public/pkg，这里用刚构建出来的覆盖，避免镜像里出现旧 wasm。
+COPY --from=wasm /src/crates/osu-beatmap-preview-web/public/pkg ./public/pkg
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# 3. 运行时
+# ---------------------------------------------------------------------------
+FROM node:22-bookworm-slim AS runtime
+
+LABEL org.opencontainers.image.title="osu-beatmap-preview-web" \
+      org.opencontainers.image.description="osu! 谱面预览的静态站点与本地下载后端（浏览器 WebGPU 实时渲染）" \
+      org.opencontainers.image.licenses="MIT"
+
+# 下载缓存（.osu / .osz / 解包后的音频与背景）统一放在 /data，方便挂卷持久化。
+ENV OSU_PREVIEW_CACHE_DIR=/data
+WORKDIR /app
+
+# --https 生成自签证书时后端会调用 openssl；用反向代理终止 TLS 时用不到，装上不贵。
+# ca-certificates 是必须的：后端要访问 osu.ppy.sh 与各个镜像站。
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates openssl \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=frontend /src/dist ./dist
+COPY crates/osu-beatmap-preview-web/backend ./backend
+COPY crates/osu-beatmap-preview-web/package.json ./package.json
+COPY Docker/healthcheck.js ./healthcheck.js
+COPY LICENSE ./LICENSE
+
+RUN mkdir -p /data
+VOLUME ["/data"]
+
+EXPOSE 8787
+
+# 端口与协议由 healthcheck.js 从实际启动参数里读，换端口 / 开 HTTPS 也能正常探活。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["node", "./healthcheck.js"]
+
+# 以 root 运行：挂载进来的缓存目录属主可能是 root 或其他 uid（宿主目录、docker 自动创建的
+# 相对路径目录都是 root:root），非 root 用户会在 mkdir /data/osu-download-cache 时报 EACCES。
+# 这个服务只在本机/内网自用，用 root 省掉挂载目录的属主问题。
+USER root
+
+# 容器内必须监听 0.0.0.0，否则宿主机的端口映射进不来。
+CMD ["node", "backend/server.js", "--host=0.0.0.0", "--port=8787"]
