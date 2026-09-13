@@ -67,7 +67,7 @@ export async function downloadBeatmapsetArchive({
   log(`OSZ 下载开始：bid=${bid} set=${setId} 候选=${candidates.length}`);
 
   const startedAt = Date.now();
-  const partPath = await raceDownload({
+  const result = await raceDownload({
     cache,
     candidates,
     setId,
@@ -79,9 +79,9 @@ export async function downloadBeatmapsetArchive({
   const elapsed = Date.now() - startedAt;
 
   await fsp.rm(target, { force: true });
-  await fsp.rename(partPath, target);
+  await fsp.rename(result.path, target);
   const size = (await fsp.stat(target)).size;
-  log(`OSZ 下载完成：${(size / 1024 / 1024).toFixed(1)} MiB，用时 ${elapsed} ms`);
+  log(`OSZ 下载完成：${(size / 1024 / 1024).toFixed(1)} MiB，用时 ${elapsed} ms（${result.mirror}）`);
   return target;
 }
 
@@ -103,7 +103,7 @@ function buildCandidates(setId, preferredIp) {
 }
 
 /**
- * 在候选之间竞速，返回胜出的临时文件路径。
+ * 在候选之间竞速，返回胜出的临时文件路径与镜像名。
  *
  * 事件循环用一个单槽邮箱把「尝试结束」和「轮询心跳」串起来：心跳负责低速检测
  * 与补位，结束事件负责判定胜负或记录失败。
@@ -142,25 +142,46 @@ async function raceDownload({ cache, candidates, setId, log, signal, deadlineAt,
   const startedAt = Date.now();
   let reportedBytes = 0;
   let reportedTotal = 0;
+  // 镜像名单独前进：竞速时领先者会变，但进度条上的标签不该来回闪，
+  // 所以只在真正换了一个「更靠前」的镜像时更新一次。
+  let reportedMirror = '';
 
   // 前端只关心「下到多少了」：多个镜像在竞速、单个镜像又分块并行，
   // 所以取所有活跃尝试里的最大值，并且只前进不后退（尝试失败会让瞬时字节数回退）。
+  // 同时把读者最容易理解的镜像名报出去，让进度条能显示「正在从哪个镜像下」；
+  // 还没拿到首字节时明确说「连接中」——镜像冷启动十几秒没有响应是常态，
+  // 这时候显示「下载中 0%」会让人以为卡死。
   const publishProgress = () => {
     if (!onProgress) return;
     let received = 0;
     let total = 0;
+    let mirror = '';
+    let mirrorBytes = -1;
+    let connected = false;
     for (const attempt of active.values()) {
       received = Math.max(received, attempt.progress.bytes);
       total = Math.max(total, attempt.progress.total || 0);
+      if (attempt.progress.firstByteAt) connected = true;
+      if (attempt.progress.bytes > mirrorBytes) {
+        mirrorBytes = attempt.progress.bytes;
+        mirror = attempt.candidate.name;
+      }
     }
     reportedBytes = Math.max(reportedBytes, received);
     reportedTotal = Math.max(reportedTotal, total);
-    onProgress({ received: reportedBytes, total: reportedTotal });
+    if (mirror) reportedMirror = mirror;
+    // 一开始所有尝试都没拿到字节，镜像名还选不出来：取当前活跃的第一个兜底。
+    const label = reportedMirror || active.values().next().value?.candidate.name || '';
+    onProgress({
+      received: reportedBytes,
+      total: reportedTotal,
+      mirror: label,
+      connected: connected || reportedBytes > 0,
+    });
   };
 
   const startNext = async () => {
-    const preferred = await cache.readPreferredIp();
-    if (
+    const preferred = await cache.readPreferredIp();    if (
       preferred &&
       !candidates.some((candidate) => candidate.preferredIp) &&
       candidates[nextCandidate]?.name === 'osu.direct-dns'
@@ -226,7 +247,7 @@ async function raceDownload({ cache, candidates, setId, log, signal, deadlineAt,
       if (attempt && event.ok) {
         cancelAll();
         publishProgress();
-        return attempt.partPath;
+        return { path: attempt.partPath, mirror: attempt.candidate.name };
       }
       if (attempt) {
         await fsp.rm(attempt.partPath, { force: true });

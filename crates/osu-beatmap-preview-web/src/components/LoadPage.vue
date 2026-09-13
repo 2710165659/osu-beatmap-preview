@@ -1,7 +1,8 @@
 <script setup>
 // 加载页：输入 BID、可选转谱模式，然后交给 preview.js 加载会话。
-// 加载期间显示后端透出的下载进度：OSZ 动辄几十 MiB，没有进度条会以为卡死了。
-import { CONVERT_MODES, loadPreview, progressLabel, state } from '../preview.js';
+// 加载期间显示后端与浏览器两段传输的进度：OSZ 动辄几十 MiB，还要经服务端转发一次，
+// 没有阶段与速率会让人以为卡死了。
+import { CONVERT_MODES, loadPreview, progressDetail, progressLabel, progressPercent, state } from '../preview.js';
 </script>
 
 <template>
@@ -51,18 +52,23 @@ import { CONVERT_MODES, loadPreview, progressLabel, state } from '../preview.js'
       </form>
 
       <div v-if="state.loading" class="mt-5" aria-live="polite">
-        <div class="flex items-baseline justify-between text-xs text-neutral-400">
-          <span>{{ progressLabel }}</span>
-          <span v-if="state.progress.detail" class="font-mono text-[11px] text-neutral-500">
-            {{ state.progress.detail }}
+        <div class="flex items-baseline justify-between gap-3 text-xs text-neutral-400">
+          <span class="truncate">{{ progressLabel }}</span>
+          <span v-if="progressDetail" class="shrink-0 font-mono text-[11px] text-neutral-500">
+            {{ progressDetail }}
           </span>
         </div>
-        <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-800">
-          <div
-            class="h-full rounded-full bg-[#ff5f45] transition-[width] duration-200 ease-out"
-            :class="state.progress.percent === null ? 'w-1/3 animate-pulse' : ''"
-            :style="state.progress.percent === null ? null : { width: `${state.progress.percent}%` }"
-          />
+        <div class="mt-2 flex items-center gap-2">
+          <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-neutral-800">
+            <div
+              class="h-full rounded-full bg-[#ff5f45] transition-[width] duration-200 ease-out"
+              :class="progressPercent === null ? 'w-1/3 animate-pulse' : ''"
+              :style="progressPercent === null ? null : { width: `${progressPercent}%` }"
+            />
+          </div>
+          <span v-if="progressPercent !== null" class="w-9 shrink-0 text-right font-mono text-[11px] text-neutral-400">
+            {{ progressPercent }}%
+          </span>
         </div>
       </div>
 

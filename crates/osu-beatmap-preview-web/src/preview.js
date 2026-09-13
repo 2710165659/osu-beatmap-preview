@@ -112,8 +112,17 @@ export const state = reactive({
   rewinding: false,
   /** WASM 解析出的谱面内部信息（`beatmapInfo` 全量输出）；未加载时为 null。 */
   info: null,
-  /** 加载进度：percent 为 null 表示还不知道总量，用不确定态进度条。 */
-  progress: { phase: 'idle', percent: null, detail: '' },
+  /**
+   * 加载进度。
+   *
+   * `received/total` 是当前阶段的字节数，`total` 为 0 表示还不知道总量（不确定态）；
+   * `speed/eta` 由前端对两次轮询采样算出来，服务端不必关心。阶段语义：
+   * osu 取谱面 → osz 服务端下载 → extract 服务端解包 → transfer 传给浏览器 →
+   * media 浏览器收音频/背景 → ready 进播放页。
+   */
+  progress: { phase: 'idle', received: 0, total: 0, message: '', speed: 0, eta: null },
+  /** 音频与背景是否还在后台准备（进了播放页也可能还没拉完）。 */
+  preparingMedia: false,
   gpuAvailable: typeof navigator !== 'undefined' && Boolean(navigator.gpu),
   /** 安全上下文（https / localhost）。WebGPU 只在这里可用，用它区分两种失败原因。 */
   secureContext: typeof window === 'undefined' || window.isSecureContext !== false,
@@ -122,12 +131,28 @@ export const state = reactive({
 /** 加载阶段的文案；未知阶段一律显示「正在加载」。 */
 const PROGRESS_LABELS = {
   osu: '获取谱面',
-  osz: '下载谱面包',
-  extract: '解析资源',
+  osz: '服务端下载谱面包',
+  extract: '服务端解包音频与背景',
+  transfer: '传输到客户端',
+  media: '下载音频与背景',
   ready: '准备渲染',
 };
+const DEFAULT_PROGRESS_LABEL = '正在加载';
 
-export const progressLabel = computed(() => PROGRESS_LABELS[state.progress.phase] ?? '正在加载');
+/** 标签优先用服务端给的 message（含镜像名等细节），没有才回退到固定文案。 */
+export const progressLabel = computed(
+  () => state.progress.message || PROGRESS_LABELS[state.progress.phase] || DEFAULT_PROGRESS_LABEL,
+);
+
+/** 已知总量时给出百分比，否则交给 UI 显示不确定态。 */
+export const progressPercent = computed(() => {
+  const { received, total } = state.progress;
+  if (!(total > 0)) return null;
+  return Math.min(100, Math.max(0, Math.round((received / total) * 100)));
+});
+
+/** 速率与剩余时间：服务端和浏览器两侧的字节流都用同一套格式。 */
+export const progressDetail = computed(() => formatProgressDetail(state.progress));
 
 /** 当前模式支持的 Mod；加载完成前按 standard 展示，避免控件闪烁。 */
 export const modTokens = computed(() => MOD_OPTIONS[state.modeKey] ?? []);
@@ -170,6 +195,29 @@ let lastAudioStartAttempt = 0;
 let audioObjectUrl = null;
 let modSwitching = false;
 let appliedMods = [];
+/**
+ * 加载令牌：每次 `loadPreview()` 递增。
+ *
+ * 音频与背景在进入播放页之后才继续下载，期间用户可能又加载了别的谱面、或者退回
+ * 加载页；每个 await 之后都要用令牌确认自己还是「当前这次加载」，否则旧请求回来
+ * 会把新会话的状态覆盖掉。
+ */
+let loadToken = 0;
+/** 当前加载的取消句柄：切谱面或退回加载页时中止还在飞的请求。 */
+let loadAbort = null;
+/**
+ * 浏览器正在收的媒体字节数，按资源名（audio / background）分别记录。
+ *
+ * 两个资源是并行下的，各自的阶段推进由它们分别汇报；聚合出「一共收了多少」才能
+ * 让进度条显示成一个整体，而不是在两个数字之间来回跳。
+ */
+const mediaProgress = new Map();
+/** 最近一次进度是前端自己推进的还是服务端轮询来的；用于避免旧阶段盖掉新阶段。 */
+let lastProgressSource = 'local';
+/** 当前阶段的开始时刻与各阶段累计耗时，结束后写进播放日志。 */
+let stageActive = 'idle';
+let stageStartedAt = 0;
+const stageDurations = new Map();
 // 长按右键时的临时倍速；为 null 表示用界面里选的倍速。
 let speedOverride = null;
 const arrowTimers = { left: 0, right: 0 };
@@ -206,6 +254,159 @@ const logPlay = (message) => { state.playLogs.push(`${stamp()} ${errorText(messa
 
 const playbackRate = () => (speedOverride ?? state.speed) * beatmapSpeed;
 const absoluteTime = () => absoluteStart + state.position;
+
+// ---------------------------------------------------------------------------
+// 加载进度的格式化与速率采样
+// ---------------------------------------------------------------------------
+
+/** 字节数：1 MiB 以上用 MiB，否则用 KiB，避免出现「0.0 MiB」。 */
+const formatBytes = (bytes) => {
+  if (!(bytes > 0)) return '0 KiB';
+  const mib = bytes / 1024 / 1024;
+  if (mib >= 1) return `${mib.toFixed(1)} MiB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KiB`;
+};
+
+const formatRate = (bytesPerSecond) => `${formatBytes(bytesPerSecond)}/s`;
+
+/** 剩余时间：只给量级，避免进度条上的数字乱跳。 */
+const formatEta = (seconds) => {
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 1) return '不到 1 秒';
+  if (seconds < 60) return `约 ${Math.round(seconds)} 秒`;
+  return `约 ${Math.ceil(seconds / 60)} 分钟`;
+};
+
+/**
+ * 拼出「已传 / 总量 · 速度 · 剩余」这一段。
+ *
+ * 服务端阶段与浏览器下载阶段共用：两者都只提供字节数与总量，速度由采样算出来。
+ * 总量未知时只报已传字节数，不编造百分比。
+ */
+function formatProgressDetail({ received, total, speed, eta }) {
+  const parts = [];
+  if (total > 0) parts.push(`${formatBytes(received)} / ${formatBytes(total)}`);
+  else if (received > 0) parts.push(`已接收 ${formatBytes(received)}`);
+  if (speed > 0) parts.push(formatRate(speed));
+  const remaining = formatEta(eta);
+  if (remaining && total > received) parts.push(remaining);
+  return parts.join(' · ');
+}
+
+/** 速率采样的窗口长度；太短会让数字乱跳，太长则反应迟钝。 */
+const RATE_WINDOW = 2500;
+/** 低于这个字节数的变化不更新速率，避免 0 字节时把速度显示成 0。 */
+const RATE_MIN_BYTES = 64 * 1024;
+
+/** 滑动窗口采样器：同一阶段内用最近几秒的增量算速度与剩余时间。 */
+function createRateSampler() {
+  let phase = '';
+  let samples = [];
+  return {
+    /** 推入一次样本，返回当前速率（字节/秒）与剩余秒数。 */
+    push({ phase: nextPhase, received, total }) {
+      const now = performance.now();
+      if (nextPhase !== phase) {
+        phase = nextPhase;
+        samples = [];
+      }
+      samples.push({ at: now, received });
+      while (samples.length > 1 && now - samples[0].at > RATE_WINDOW) samples.shift();
+      const oldest = samples[0];
+      const elapsed = now - oldest.at;
+      if (elapsed < 250 || received - oldest.received < RATE_MIN_BYTES) {
+        return { speed: 0, eta: null };
+      }
+      const speed = ((received - oldest.received) * 1000) / elapsed;
+      const remaining = total > received ? (total - received) / speed : 0;
+      return { speed, eta: Number.isFinite(remaining) ? remaining : null };
+    },
+    reset() {
+      phase = '';
+      samples = [];
+    },
+  };
+}
+
+const loadRateSampler = createRateSampler();
+
+/** 重置整个加载进度（每次开始加载或退回加载页时调用）。 */
+function resetProgress(phase = 'idle') {
+  loadRateSampler.reset();
+  mediaProgress.clear();
+  stageActive = phase;
+  stageStartedAt = performance.now();
+  stageDurations.clear();
+  lastProgressSource = 'local';
+  state.progress = { phase, received: 0, total: 0, message: '', speed: 0, eta: null };
+}
+
+/** 把当前阶段的已用时间结账，并开启新阶段。 */
+function switchStage(next) {
+  if (next === stageActive) return;
+  stageDurations.set(stageActive, (stageDurations.get(stageActive) ?? 0) + (performance.now() - stageStartedAt));
+  stageActive = next;
+  stageStartedAt = performance.now();
+}
+
+/** 结束时把最后一段未结账的时间也算进去。 */
+function stageTotals() {
+  const totals = new Map(stageDurations);
+  totals.set(stageActive, (totals.get(stageActive) ?? 0) + (performance.now() - stageStartedAt));
+  return totals;
+}
+
+/**
+ * 记录一个阶段的进度；速度与剩余时间由采样器补齐。
+ *
+ * 只有「前端自己推进」的阶段才带 source='local'：服务端轮询回来的旧阶段不能盖掉
+ * 它。典型场景是前端已经进了播放页开始下音频（media），而轮询仍在下发更早的
+ * transfer——同一份数据在两条链路上流动，谁最新以本地为准。
+ */
+function reportProgress({ phase, received = 0, total = 0, message = '', source = 'server' }) {
+  if (source === 'local') lastProgressSource = 'local';
+  switchStage(phase);
+  const { speed, eta } = loadRateSampler.push({ phase, received, total });
+  state.progress = { phase, received, total, message, speed, eta };
+}
+
+/**
+ * 把各阶段耗时写进播放日志。
+ *
+ * 云端部署时「慢」可能来自镜像、服务端解包或本地带宽，把这几个数字摊开才判断得出
+ * 该优化哪一段。
+ */
+function logStageBreakdown() {
+  const entries = [...stageTotals().entries()].filter(([phase]) => PROGRESS_LABELS[phase]);
+  if (entries.length === 0) return;
+  const text = entries
+    .map(([phase, ms]) => `${PROGRESS_LABELS[phase]} ${(ms / 1000).toFixed(1)}s`)
+    .join(' · ');
+  logPlay(`耗时：${text}`);
+  stageDurations.clear();
+}
+
+/**
+ * 汇报浏览器侧某个资源的接收进度。
+ *
+ * 两个资源并行下载，谁先报都行：这里把它们的字节数加在一起，按 media 阶段上报。
+ */
+function reportMediaProgress({ name, received, total, done = false }) {
+  if (done) mediaProgress.delete(name);
+  else mediaProgress.set(name, { received, total });
+  let receivedTotal = 0;
+  let bytesTotal = 0;
+  for (const entry of mediaProgress.values()) {
+    receivedTotal += entry.received;
+    bytesTotal += entry.total;
+  }
+  if (mediaProgress.size === 0) {
+    // 两个资源都收完了：数量已经确定，交给调用方推进到 ready。
+    reportProgress({ phase: 'media', received: bytesTotal, total: bytesTotal, message: '音频与背景就绪', source: 'local' });
+    return;
+  }
+  reportProgress({ phase: 'media', received: receivedTotal, total: bytesTotal, message: '下载音频与背景', source: 'local' });
+}
 
 // ---------------------------------------------------------------------------
 // 进度条的显示与隐藏
@@ -268,8 +469,8 @@ async function loadWasm() {
   return wasmReady;
 }
 
-async function fetchBeatmap(value) {
-  const response = await fetch(`/resource/beatmap?bid=${encodeURIComponent(value)}`);
+async function fetchBeatmap(value, { signal } = {}) {
+  const response = await fetch(`/resource/beatmap?bid=${encodeURIComponent(value)}`, { signal });
   if (!response.ok) throw new Error(await response.text());
   return new Uint8Array(await response.arrayBuffer());
 }
@@ -295,26 +496,37 @@ function readBeatmapInfo(wasm, bytes) {
 
 let progressTimer = 0;
 
-const formatBytes = (bytes) => {
-  const mib = bytes / 1024 / 1024;
-  if (mib >= 1) return `${mib.toFixed(1)} MiB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KiB`;
-};
-
+/**
+ * 合并服务端上报的进度。
+ *
+ * 服务端只知道「自己下到哪了 / 解包到哪了 / 开始发包了」，浏览器接收字节的进度由
+ * 前端自己统计（media 阶段），因此这里不能反过来覆盖掉本地阶段：谁的信息更靠后
+ * 就以谁为准，`PHASE_ORDER` 就是这个先后关系。
+ */
 function applyProgress(payload) {
   const phase = typeof payload?.phase === 'string' ? payload.phase : 'idle';
-  const received = Math.max(0, Number(payload?.received) || 0);
-  const total = Math.max(0, Number(payload?.total) || 0);
-  state.progress.phase = phase;
-  if (phase === 'osz' && total > 0) {
-    // 下载阶段给到 99% 就够：剩下的解压与建会话不该让进度条一直停在 100%。
-    state.progress.percent = Math.min(99, Math.round((received / total) * 100));
-    state.progress.detail = `${formatBytes(received)} / ${formatBytes(total)}`;
+  if (phase === 'idle' || phase === 'ready' || phase === 'error') {
+    // ready 由前端在真正进入播放页时自己上报，避免服务端提前把进度条推到终点。
+    if (phase === 'error') reportProgress({ phase: 'error', message: String(payload?.message ?? '') });
     return;
   }
-  state.progress.percent = null;
-  state.progress.detail = phase === 'osz' && received > 0 ? formatBytes(received) : '';
+  // 前端已经自己推进过阶段（例如开始下载音频）时，服务端轮询回来的旧阶段一律忽略。
+  if (lastProgressSource === 'local') return;
+  if (phaseOrder(phase) < phaseOrder(state.progress.phase)) return;
+  reportProgress({
+    phase,
+    received: Math.max(0, Number(payload?.received) || 0),
+    total: Math.max(0, Number(payload?.total) || 0),
+    message: typeof payload?.message === 'string' ? payload.message : '',
+  });
 }
+
+/** 阶段先后顺序：越靠后表示加载越接近完成。 */
+const PHASE_ORDER = ['idle', 'osu', 'osz', 'extract', 'transfer', 'media', 'ready', 'error'];
+const phaseOrder = (phase) => {
+  const index = PHASE_ORDER.indexOf(phase);
+  return index < 0 ? 0 : index;
+};
 
 function startProgressPolling(bid) {
   stopProgressPolling();
@@ -356,13 +568,54 @@ function syncUrl() {
   window.history.replaceState(null, '', query ? `${window.location.pathname}?${query}` : window.location.pathname);
 }
 
-async function loadBackground(value) {
-  const response = await fetch(`/resource/background?bid=${encodeURIComponent(value)}`);
+/**
+ * 带字节进度的抓取。
+ *
+ * `fetch` 本身不给进度，只能读响应体流自己累计；`Content-Length` 缺失时总量为 0，
+ * UI 会退化成不确定态，而不是编一个假百分比出来。
+ */
+async function fetchWithProgress(url, { signal, onProgress } = {}) {
+  const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(await response.text());
-  const bitmap = await createImageBitmap(await response.blob());
-  if (backgroundBitmap) backgroundBitmap.close();
-  backgroundBitmap = bitmap;
-  paintBackground();
+  const total = Number(response.headers.get('content-length')) || 0;
+  if (!response.body) {
+    const buffer = new Uint8Array(await response.arrayBuffer());
+    onProgress?.({ received: buffer.byteLength, total });
+    return buffer;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    onProgress?.({ received, total });
+  }
+  const merged = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return merged;
+}
+
+async function loadBackground(value, { signal } = {}) {
+  try {
+    const bytes = await fetchWithProgress(`/resource/background?bid=${encodeURIComponent(value)}`, {
+      signal,
+      onProgress: ({ received, total }) => reportMediaProgress({ name: 'background', received, total }),
+    });
+    const bitmap = await createImageBitmap(new Blob([bytes]));
+    if (backgroundBitmap) backgroundBitmap.close();
+    backgroundBitmap = bitmap;
+    paintBackground();
+  } finally {
+    // 失败也要注销，否则进度条会一直等着一个永远不会到的资源。
+    reportMediaProgress({ name: 'background', done: true });
+  }
 }
 
 /** 把背景按当前画布尺寸解码、暗化后交给 WASM 合成。 */
@@ -383,11 +636,25 @@ function paintBackground() {
   session.set_background_rgba(decoder.width, decoder.height, rgba);
 }
 
-async function loadAudioBlob(value) {
-  const response = await fetch(`/resource/audio?bid=${encodeURIComponent(value)}`);
-  if (!response.ok) throw new Error(await response.text());
-  const blob = await response.blob();
-  if (!blob.size) throw new Error('音频资源为空');
+/**
+ * 下载音频并挂到音频元素上。
+ *
+ * 用 blob URL 而不是直接给 `audio.src` 指向接口：blob 已经在你机器上，
+ * 之后反复 seek 不会每次再向服务器要一遍几 MiB（尤其是播放页的倒带）。
+ * 代价是要先下完才能播，所以调用方把它放在关键路径之外。
+ */
+async function loadAudioBlob(value, { signal } = {}) {
+  let bytes;
+  try {
+    bytes = await fetchWithProgress(`/resource/audio?bid=${encodeURIComponent(value)}`, {
+      signal,
+      onProgress: ({ received, total }) => reportMediaProgress({ name: 'audio', received, total }),
+    });
+  } finally {
+    reportMediaProgress({ name: 'audio', done: true });
+  }
+  if (!bytes.byteLength) throw new Error('音频资源为空');
+  const blob = new Blob([bytes]);
   releaseAudioUrl();
   audioObjectUrl = URL.createObjectURL(blob);
   audio.src = audioObjectUrl;
@@ -686,20 +953,37 @@ function tick(now) {
 // 对外的操作
 // ---------------------------------------------------------------------------
 
+/**
+ * 加载一份谱面并进入播放页。
+ *
+ * 关键路径只保留「取谱面 → 建会话 → 拿背景」：背景是画面的一部分，等它是值得的；
+ * 音频通常几十 MiB，让它和播放并行下载——想听声音的用户等这几秒，想先看画面的
+ * 用户不必等。每个 await 之后都用 loadToken 确认自己还是当前这次加载。
+ */
 export async function loadPreview() {
   if (state.loading) return;
   state.loadLogs = [];
   state.loading = true;
   state.info = null;
   cancelArrowHold();
-  state.progress = { phase: 'osu', percent: null, detail: '' };
+  // 上一次加载可能还在后台拉音频/背景：先取消，避免两套请求互相覆盖状态。
+  loadAbort?.abort();
+  const controller = new AbortController();
+  loadAbort = controller;
+  const token = ++loadToken;
+  const current = () => token === loadToken;
+  resetProgress('osu');
+  state.preparingMedia = false;
   try {
     const bid = state.bid.trim();
     if (!bid) throw new Error('请输入谱面 BID');
     if (!canvasEl) throw new Error('画布尚未就绪，请刷新页面重试');
     state.bid = bid;
-    startProgressPolling(bid);
-    const [wasm, bytes] = await Promise.all([loadWasm(), fetchBeatmap(bid)]);
+    const [wasm, bytes] = await Promise.all([
+      loadWasm(),
+      fetchBeatmap(bid, { signal: controller.signal }),
+    ]);
+    if (!current()) return;
     state.info = readBeatmapInfo(wasm, bytes);
     const resolution = RESOLUTIONS[state.resolution];
     const options = {
@@ -711,6 +995,7 @@ export async function loadPreview() {
       height: resolution.height,
     };
     session = await wasm.WebGpuSession.create(bytes, canvasEl, options);
+    if (!current()) return;
     appliedMods = [];
     state.mods = [];
     state.renderError = '';
@@ -724,40 +1009,62 @@ export async function loadPreview() {
     state.position = 0;
     state.modeKey = session.mode();
     state.mode = state.modeKey.toUpperCase();
-    state.status = '加载背景和音频...';
-    const [backgroundResult, audioResult] = await Promise.allSettled([
-      loadBackground(bid),
-      loadAudioBlob(bid),
-    ]);
-    if (backgroundResult.status === 'rejected') {
-      logPlay(`背景加载失败，将使用黑色背景：${errorText(backgroundResult.reason)}`);
-    }
-    if (audioResult.status === 'rejected') {
-      logPlay(`音频加载失败，将只播放画面：${errorText(audioResult.reason)}`);
-    }
+    state.status = '准备音频与背景...';
+
     canvasEl.width = session.width();
     canvasEl.height = session.height();
     syncAudioToPosition();
+    // 会话已经就绪，先渲染一帧：背景还没到时 composer 会用兜底色，画面不是黑屏。
+    render();
+    // 资源准备通常慢在这里（服务端下载 + 解包），进度阶段由轮询推进到 transfer/media。
+    startProgressPolling(bid);
+    // 音频与背景一起发起，但只等背景：服务端此时已经把两个文件都解出来了。
+    state.preparingMedia = true;
+    const background = loadBackground(bid, { signal: controller.signal });
+    const audioLoad = loadAudioBlob(bid, { signal: controller.signal })
+      .then(() => {
+        if (!current()) return;
+        state.status = '就绪';
+        logStageBreakdown();
+      })
+      .catch((error) => {
+        if (!current()) return;
+        state.status = '无音频';
+        logPlay(`音频加载失败，将只播放画面：${errorText(error)}`);
+        logStageBreakdown();
+      })
+      .finally(() => { if (current()) state.preparingMedia = false; });
+    await background.catch((error) => {
+      if (current()) logPlay(`背景加载失败，将使用黑色背景：${errorText(error)}`);
+    });
+    if (!current()) return;
     state.page = 'play';
     state.sheetOpen = false;
-    state.status = audioResult.status === 'fulfilled' ? '就绪' : '无音频';
     // 等播放页真正显示出来再量尺寸，否则 clientWidth/Height 还是 0。
     await nextTick();
     fitCanvasToViewport();
     showTimeline();
     render();
+    reportProgress({ phase: 'ready', source: 'local' });
     // 加载完成后直接进入播放状态并尝试带声音自动播放：已经在页面上点过「加载
     // 预览」时这次 play() 算用户激活，能直接出声。浏览器若因自动播放策略拒绝，
     // 画面时钟仍由 requestAnimationFrame 继续推进，并由手势监听等待用户激活
-    // （首次点击 / 触摸 / 按键）后重试播放声音。
+    // （首次点击 / 触摸 / 按键）后重试播放声音。音频还没下完时 startAudio() 会
+    // 被 play() 的 pending 状态挡住，等元数据事件到达后由 tick 里的重试接手。
     playState(true);
     addGestureHints();
     syncUrl();
+    void audioLoad;
   } catch (error) {
+    // 取消或已经被新的一次加载取代：错误属于旧请求，不该报给用户。
+    if (!current() || error?.name === 'AbortError') return;
     logLoad(error);
   } finally {
-    stopProgressPolling();
-    state.loading = false;
+    // 被新加载取代或退回了加载页时不能碰 state：那两个入口自己会收拾。
+    if (current()) {
+      stopProgressPolling();
+      state.loading = false;
+    }
   }
 }
 
@@ -982,6 +1289,14 @@ export function backToLoad() {
   cancelArrowHold();
   cancelAnimationFrame(animation);
   removeGestureHints();
+  // 还在后台拉音频/背景的请求要一并中止：否则它们回来时会往已经清空的播放页写状态。
+  loadAbort?.abort();
+  loadAbort = null;
+  loadToken += 1;
+  stopProgressPolling();
+  resetProgress();
+  state.loading = false;
+  state.preparingMedia = false;
   audioResumedAt = 0;
   state.audioBlocked = false;
   audioBlockLogged = false;

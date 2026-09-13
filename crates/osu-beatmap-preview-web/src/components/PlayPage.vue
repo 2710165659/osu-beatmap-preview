@@ -1,11 +1,15 @@
 <script setup>
 // 播放页：顶部只保留返回、模式与状态；中间是视频，底部是常驻进度条。
 // 播放按钮、画面参数与 Mod 全部收进 ControlSheet，默认不占位置。
+import { computed } from 'vue';
 import ControlSheet from './ControlSheet.vue';
 import InfoBar from './InfoBar.vue';
 import PlayerStage from './PlayerStage.vue';
 import TimelineBar from './TimelineBar.vue';
-import { backToLoad, setSheetOpen, showTimeline, state } from '../preview.js';
+import { backToLoad, progressDetail, progressLabel, progressPercent, setSheetOpen, showTimeline, state } from '../preview.js';
+
+// 画面已经能看时音频/背景可能还在下：这时候不该再整页挡住，只在顶部留一条细进度。
+const mediaLoading = computed(() => state.preparingMedia && state.progress.phase === 'media');
 </script>
 
 <template>
@@ -39,6 +43,19 @@ import { backToLoad, setSheetOpen, showTimeline, state } from '../preview.js';
         ⚙
       </button>
     </header>
+
+    <!-- 音频/背景还在后台下载：画面已经能看，所以只占一行，不挡视频。 -->
+    <div v-if="mediaLoading" class="flex shrink-0 items-center gap-2 border-b border-neutral-800 bg-[#111419] px-2 py-1.5 sm:px-3">
+      <span class="shrink-0 text-[11px] text-neutral-400">{{ progressLabel }}</span>
+      <div class="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-neutral-800">
+        <div
+          class="h-full rounded-full bg-[#ff5f45] transition-[width] duration-200 ease-out"
+          :class="progressPercent === null ? 'w-1/3 animate-pulse' : ''"
+          :style="progressPercent === null ? null : { width: `${progressPercent}%` }"
+        />
+      </div>
+      <span v-if="progressDetail" class="shrink-0 font-mono text-[10px] text-neutral-500">{{ progressDetail }}</span>
+    </div>
 
     <InfoBar />
     <PlayerStage />

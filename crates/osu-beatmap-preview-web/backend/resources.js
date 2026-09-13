@@ -43,6 +43,17 @@ export class ResourceProvider {
     }
   }
 
+  /**
+   * 客户端正在读取这份资源。
+   *
+   * `media` 阶段描述的是「服务端把字节发给浏览器」这段时间，浏览器自己的接收进度
+   * 无法从这里观测，只能由前端按 Content-Length 统计；这里负责把阶段推进过去，
+   * 否则前端会一直停在「解析资源」，云端部署时看起来就像卡住了。
+   */
+  reportTransfer(bid, { total = 0, message = '传输到客户端' } = {}) {
+    this.#report(bid, { phase: 'transfer', received: 0, total, message });
+  }
+
   /** 加载进度快照，供 `/resource/progress` 轮询。 */
   progress(bid) {
     return this.progressEntries.get(bid) ?? { phase: 'idle', received: 0, total: 0, message: '' };
@@ -89,11 +100,17 @@ export class ResourceProvider {
       };
     }
 
-    // OSZ 动辄几十 MiB，是加载里最慢的一步：把字节数透出去给前端的进度条。
-    const onProgress = ({ received, total }) => {
-      this.#report(bid, { phase: 'osz', received, total, message: '下载谱面包' });
+    // OSZ 动辄几十 MiB，是加载里最慢的一步：把字节数、镜像名透出去给前端的进度条。
+    const onProgress = ({ received, total, mirror, connected }) => {
+      const stage = connected ? '服务端下载谱面包' : '服务端连接镜像';
+      this.#report(bid, {
+        phase: 'osz',
+        received,
+        total,
+        message: mirror ? `${stage} · ${mirror}` : stage,
+      });
     };
-    this.#report(bid, { phase: 'osz', received: 0, total: 0, message: '下载谱面包' });
+    this.#report(bid, { phase: 'osz', received: 0, total: 0, message: '服务端连接镜像' });
 
     let oszPath = await downloadBeatmapsetArchive({
       cache: this.cache,
@@ -105,7 +122,7 @@ export class ResourceProvider {
       onProgress,
     });
     try {
-      this.#report(bid, { phase: 'extract', received: 0, total: 0, message: '解析资源' });
+      this.#report(bid, { phase: 'extract', received: 0, total: 0, message: '服务端解包音频与背景' });
       await this.#extractMedia(oszPath, audio, background);
     } catch (error) {
       // 缓存里的压缩包可能损坏：丢掉后重新下载一次再试。
@@ -120,7 +137,7 @@ export class ResourceProvider {
         fresh: true,
         onProgress,
       });
-      this.#report(bid, { phase: 'extract', received: 0, total: 0, message: '解析资源' });
+      this.#report(bid, { phase: 'extract', received: 0, total: 0, message: '服务端解包音频与背景' });
       await this.#extractMedia(oszPath, audio, background);
     }
     return {

@@ -129,6 +129,9 @@ async function sendResource(request, response, route, bid) {
     return;
   }
   const body = await fsp.readFile(target.path);
+  // 读盘到响应这段在云端是实打实的耗时（几十 MiB 的发包时间）：先把阶段推到
+  // 「传输到客户端」，再写响应，浏览器的进度条才不会停在「解析资源」上。
+  resources.reportTransfer(bid, { total: body.length });
   // 音频元素需要 byte range 才能在不完整下载时 seek，缺少它 seekable 会一直是 0。
   sendBuffer(response, target.mime, body, request.headers.range);
 }
