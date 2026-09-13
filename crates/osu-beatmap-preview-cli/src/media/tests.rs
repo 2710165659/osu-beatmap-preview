@@ -171,6 +171,27 @@ fn numeric_start_is_relative_to_first_object() {
 }
 
 #[test]
+fn full_range_start_follows_audio_lead_in_like_the_preview() {
+    use osu_beatmap_preview_core::preview_start_ms;
+
+    // 完整区间起点与实时预览（core 会话的 absolute_start_ms）共用同一个规则：
+    // 首个物件前 2000ms，谱面 AudioLeadIn 更大时按它提前。
+    // AudioLeadIn 更大：起点提前到 10000 - 4000。
+    let beatmap = beatmap_with_preview(None, Some("4000"));
+    let range =
+        resolve_video_time_range(&beatmap, 10_000, 100_000, None, Some(600.0), 1.0).unwrap();
+    assert_eq!(range.start, 6_000);
+    assert_eq!(range.start, preview_start_ms(10_000, 4_000));
+
+    // AudioLeadIn 更小：仍用默认的 2000ms。
+    let beatmap = beatmap_with_preview(None, Some("1000"));
+    let range =
+        resolve_video_time_range(&beatmap, 10_000, 100_000, None, Some(600.0), 1.0).unwrap();
+    assert_eq!(range.start, 8_000);
+    assert_eq!(range.start, preview_start_ms(10_000, 1_000));
+}
+
+#[test]
 fn progress_label_uses_current_skin_time_and_full_playable_duration() {
     let time_axis = TimeAxis::new(12_500);
     let total_ms = time_axis.to_display(102_500);

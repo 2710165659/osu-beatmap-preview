@@ -2,14 +2,17 @@
 
 use std::sync::Arc;
 
+use crate::gameplay::GameplayOptions;
 use crate::{config, Beatmap};
 
-/// 会话创建时可以提供的谱面、背景和音频资源。
+/// 会话创建时可以提供的谱面与背景资源。
+///
+/// 音乐不在这里：预览由宿主自己播放（Web 的 `<audio>` 元素），导出由宿主解码后与
+/// 打击音混音，core 只负责「什么时候、多大声」的打击音部分。
 #[derive(Debug, Clone, Default)]
 pub struct ResourceBundle {
     pub beatmap: Option<Beatmap>,
     pub background: Option<ImageData>,
-    pub audio: Option<AudioData>,
 }
 
 impl ResourceBundle {
@@ -27,14 +30,6 @@ pub struct ImageData {
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
-}
-
-/// 宿主提供的音频字节和起始偏移。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AudioData {
-    pub bytes: Arc<[u8]>,
-    pub mime_type: Option<String>,
-    pub start_time_ms: i64,
 }
 
 /// 视频输出尺寸与逻辑缩放。
@@ -70,6 +65,12 @@ pub struct RealtimeOptions {
     pub render: RenderConfig,
     pub video_style: crate::render::wgpu::VideoStyle,
     pub core_config: Arc<config::CoreConfig>,
+    /// 游玩/回放配置。
+    ///
+    /// 目前只保留配置位（默认 `GameplayMode::Preview`，不改变任何现有行为）：
+    /// 判定引擎与画面叠加的实现在后续阶段接入，接口见
+    /// [`crate::gameplay`](crate::gameplay) 与 `docs/architecture.md` 的「后续功能接口」。
+    pub gameplay: GameplayOptions,
 }
 
 impl Default for RealtimeOptions {
@@ -80,6 +81,7 @@ impl Default for RealtimeOptions {
             render: RenderConfig::default(),
             video_style: crate::render::wgpu::VideoStyle::default(),
             core_config: Arc::new(config::CoreConfig::default()),
+            gameplay: GameplayOptions::default(),
         }
     }
 }

@@ -5,6 +5,8 @@ use super::{HitsoundTimeline, SampleLibrary};
 /// 正在播放的一个声音。
 #[derive(Debug, Clone, Copy)]
 struct Voice {
+    /// 声音句柄：显式触发（游玩/回放）时由调用方持有，用于停止循环音。
+    id: u64,
     source_id: usize,
     gain: f64,
     /// 事件在时间轴上的起始毫秒。
@@ -21,10 +23,17 @@ struct Voice {
     loop_len: usize,
 }
 
+/// 循环音的句柄，用于停止 [`HitsoundMixer::start_loop`] 启动的声音。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LoopHandle(u64);
+
 /// 基于时间轴与样本库的离线混音器。
 ///
 /// 混音位置以「谱面毫秒」为单位，与渲染共用同一条时间轴；输出为固定采样率的
 /// 立体声交错 f32，宿主只需把结果送到音频接口或编码器。
+///
+/// 声音有两个来源：时间轴事件（预览/导出）与显式触发（游玩、回放由输入驱动）。
+/// 两者写进同一张声音列表，因此增益、限幅与回收逻辑只有一份。
 #[derive(Debug, Clone)]
 pub struct HitsoundMixer {
     library: SampleLibrary,
@@ -36,6 +45,8 @@ pub struct HitsoundMixer {
     voices: Vec<Voice>,
     /// 下一个尚未开始的事件索引。
     next_event: usize,
+    /// 声音句柄计数。
+    next_voice_id: u64,
 }
 
 impl HitsoundMixer {
@@ -48,6 +59,7 @@ impl HitsoundMixer {
             position_ms: 0.0,
             voices: Vec::new(),
             next_event: 0,
+            next_voice_id: 1,
         }
     }
 
@@ -150,6 +162,96 @@ impl HitsoundMixer {
         self.voices.clear();
     }
 
+    /// 立即触发一个按名字查找的样本（只播一次）。
+    ///
+    /// 供游玩/回放使用：打击音由玩家输入驱动，而不是由时间轴驱动。声音从**当前
+    /// 混音位置**开始；返回 `false` 表示样本库没有这个名字（按静音处理），调用方
+    /// 不需要把它当成错误。
+    pub fn trigger(&mut self, name: &str, gain: f64) -> bool {
+        match self.library.id_of(name) {
+            Some(source_id) => self.trigger_source(source_id, gain),
+            None => false,
+        }
+    }
+
+    /// 立即触发一个已在样本库里的样本 id（只播一次）。
+    pub fn trigger_source(&mut self, source_id: usize, gain: f64) -> bool {
+        let Some((frames, sample_rate)) = self.source_shape(source_id) else {
+            return false;
+        };
+        if frames == 0 {
+            return false;
+        }
+        let start_ms = self.position_ms;
+        let id = self.take_voice_id();
+        self.voices.push(Voice {
+            id,
+            source_id,
+            gain: sanitize_gain(gain),
+            start_ms,
+            end_ms: f64::INFINITY,
+            data_end_ms: start_ms + frames as f64 * 1000.0 / sample_rate,
+            loop_len: 0,
+        });
+        true
+    }
+
+    /// 开始一个循环音（滑条滑行、转盘旋转，或游玩时按住不放的持续音）。
+    ///
+    /// 样本自带循环长度时用它，否则整段样本循环。返回的句柄交给
+    /// [`HitsoundMixer::stop_loop`]；名字不存在或样本为空时返回 `None`。
+    pub fn start_loop(&mut self, name: &str, gain: f64) -> Option<LoopHandle> {
+        let source_id = self.library.id_of(name)?;
+        let (frames, _) = self.source_shape(source_id)?;
+        if frames == 0 {
+            return None;
+        }
+        let loop_len = self
+            .library
+            .get(name)
+            .map(|source| source.loop_len.min(frames))
+            .filter(|loop_len| *loop_len > 0)
+            .unwrap_or(frames);
+        let start_ms = self.position_ms;
+        let id = self.take_voice_id();
+        self.voices.push(Voice {
+            id,
+            source_id,
+            gain: sanitize_gain(gain),
+            start_ms,
+            // 循环音没有自然结束点：一直播到 stop_loop 把 end_ms 设到当前位置。
+            end_ms: f64::INFINITY,
+            data_end_ms: f64::INFINITY,
+            loop_len,
+        });
+        Some(LoopHandle(id))
+    }
+
+    /// 停止由 [`HitsoundMixer::start_loop`] 启动的声音（当前位置立刻静音）。
+    pub fn stop_loop(&mut self, handle: LoopHandle) {
+        let position = self.position_ms;
+        for voice in &mut self.voices {
+            if voice.id == handle.0 {
+                voice.end_ms = position;
+            }
+        }
+    }
+
+    /// 样本 id 的（帧数, 采样率）；id 不存在时返回 `None`。
+    fn source_shape(&self, source_id: usize) -> Option<(usize, f64)> {
+        self.library
+            .sources
+            .get(source_id)
+            .map(|source| (source.frames(), source.sample_rate.max(1) as f64))
+    }
+
+    fn take_voice_id(&mut self) -> u64 {
+        let id = self.next_voice_id;
+        // 句柄只需要在本会话内唯一；绕回时跳过 0，避免和「没有句柄」混淆。
+        self.next_voice_id = self.next_voice_id.wrapping_add(1).max(1);
+        id
+    }
+
     /// 当前仍在播放的声音数量（只给测试用的回收回归）。
     #[cfg(test)]
     fn voice_count(&self) -> usize {
@@ -196,7 +298,9 @@ impl HitsoundMixer {
                 // 缺失或空样本：立刻结束，不占用声音列表。
                 _ => (0, event.start_ms),
             };
+            let id = self.take_voice_id();
             self.voices.push(Voice {
+                id,
                 source_id: event.source_id,
                 gain: event.gain,
                 start_ms: event.start_ms,
@@ -267,6 +371,15 @@ impl HitsoundMixer {
         });
 
         self.position_ms = window_end;
+    }
+}
+
+/// 触发用的增益：非有限值按静音处理，其余夹到与主音量一致的范围内。
+fn sanitize_gain(gain: f64) -> f64 {
+    if gain.is_finite() {
+        gain.clamp(0.0, 8.0)
+    } else {
+        0.0
     }
 }
 
@@ -345,5 +458,45 @@ mod tests {
             (peak - expected).abs() < 1e-6,
             "边界事件被重复播放：peak={peak} expected={expected}"
         );
+    }
+
+    #[test]
+    fn 显式触发的样本从当前位置开始出声() {
+        // 游玩/回放场景：没有时间轴事件，声音完全由输入触发。
+        let mut mixer = click_mixer(0);
+        mixer.set_position(500.0);
+        assert!(mixer.trigger("click", 0.1));
+        assert!(!mixer.trigger("不存在的样本", 0.1));
+        let peak = mixer
+            .render(20)
+            .iter()
+            .fold(0.0_f32, |peak, value| peak.max(value.abs()));
+        let expected = soft_limit(0.1);
+        assert!(
+            (peak - expected).abs() < 1e-6,
+            "peak={peak} expected={expected}"
+        );
+    }
+
+    #[test]
+    fn 循环音可以启动与停止() {
+        let mut mixer = click_mixer(0);
+        let handle = mixer.start_loop("click", 0.1).expect("循环音必须能启动");
+        // 样本只有 10ms，但循环音要一直响到 stop_loop。
+        assert!(mixer.render(50).iter().any(|value| *value != 0.0));
+        assert!(mixer.render(50).iter().any(|value| *value != 0.0));
+        mixer.stop_loop(handle);
+        assert!(
+            mixer.render(50).iter().all(|value| *value == 0.0),
+            "停止后仍然出声"
+        );
+        assert!(mixer.start_loop("不存在的样本", 0.1).is_none());
+    }
+
+    #[test]
+    fn 触发增益非有限值按静音处理() {
+        let mut mixer = click_mixer(0);
+        assert!(mixer.trigger("click", f64::NAN));
+        assert!(mixer.render(50).iter().all(|value| *value == 0.0));
     }
 }

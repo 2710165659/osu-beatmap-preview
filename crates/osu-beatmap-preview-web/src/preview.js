@@ -359,6 +359,13 @@ const logLoad = (message) => { state.loadLogs.push(`${stamp()} ${errorText(messa
 const logPlay = (message) => { state.playLogs.push(`${stamp()} ${errorText(message)}`); };
 
 const playbackRate = () => (speedOverride ?? state.speed) * beatmapSpeed;
+/**
+ * 谱面绝对时间（毫秒）：0 = 音频文件 0 点，也是打击音事件时间轴的坐标系。
+ *
+ * 这里**不叠加 AudioLeadIn**：它只决定预览从多早开始（体现在 `absoluteStart` 里），
+ * 不改变音频与物件时间的对应关系。因此「音频文件的 0 点 == 谱面 0 点」，
+ * `audio.currentTime * 1000` 就是谱面绝对时间，`seekAudioTo` 赋的也是这个值。
+ */
 const absoluteTime = () => absoluteStart + state.position;
 
 // ---------------------------------------------------------------------------

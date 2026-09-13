@@ -21,11 +21,11 @@
 use crate::cache::with_atomic_output_deadline;
 use crate::export::canvas::Img;
 use crate::export::text::{draw_text, text_size};
-use crate::media::audio::{encode_audio_segment, full_video_start_time, AudioSourceJob};
+use crate::media::audio::{encode_audio_segment, AudioSourceJob};
 use bytes::Bytes;
 use osu_beatmap_preview_core::model::Beatmap;
 use osu_beatmap_preview_core::processing::parse::round_half_even;
-use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::processing::timeline::{preview_start_ms, TimeAxis};
 use osu_beatmap_preview_core::processing::validation::TimePoint;
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
@@ -123,7 +123,9 @@ pub(crate) fn resolve_video_time_range(
     duration_time: Option<f64>,
     speed: f64,
 ) -> Result<VideoTimeRange> {
-    let full_start = full_video_start_time(first_object_ms, beatmap.audio_lead_in_ms());
+    // 完整区间与实时预览（core 会话）共用同一个起点函数：默认首个物件前 2000ms，
+    // AudioLeadIn 更大时按它提前。尾部留白是 MP4 的格式差异，仍由这里的配置决定。
+    let full_start = preview_start_ms(first_object_ms, beatmap.audio_lead_in_ms());
     let full_end = last_object_ms
         .checked_add(crate::config::current().advance.video.VIDEO_END_PADDING_MS)
         .ok_or_else(|| PreviewError::new("mp4 time range is outside the supported range"))?;

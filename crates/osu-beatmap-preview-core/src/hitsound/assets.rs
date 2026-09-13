@@ -21,6 +21,14 @@ pub fn asset_count() -> usize {
     HITSOUND_ASSETS.len()
 }
 
+/// 某个样本名是否随二进制分发。
+///
+/// 宿主据此判断「这个候选名要不要去谱面包里找」：内嵌皮肤已经提供的音效不需要，
+/// 谱面自带的自定义音效（`hitSample` 的文件名）则需要。
+pub fn has_embedded_asset(name: &str) -> bool {
+    asset_bytes(name).is_some()
+}
+
 /// 全部内嵌样本名（已排序，因为生成时就按名称排过序）。
 pub fn asset_names() -> impl Iterator<Item = &'static str> {
     HITSOUND_ASSETS.iter().map(|(name, _)| *name)

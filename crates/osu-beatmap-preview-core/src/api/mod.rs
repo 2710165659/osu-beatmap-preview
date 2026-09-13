@@ -7,6 +7,6 @@ pub mod input;
 pub mod output;
 pub mod session;
 
-pub use input::{AudioData, ImageData, RealtimeOptions, RenderConfig, ResourceBundle};
+pub use input::{ImageData, RealtimeOptions, RenderConfig, ResourceBundle};
 pub use output::{RealtimeMode, TimelineInfo};
 pub use session::RealtimeSession;

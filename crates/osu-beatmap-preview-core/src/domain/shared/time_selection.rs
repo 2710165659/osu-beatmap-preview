@@ -3,6 +3,18 @@ use crate::domain::models::{Beatmap, BreakPeriod, TimingPoint};
 
 pub const BREAK_GAP_MS: i64 = 2200;
 
+/// 预览与「完整视频」的起点（谱面绝对时间）。
+///
+/// 规则：第一个物件前 2000ms；谱面的 `AudioLeadIn` 更大时按它提前
+/// （`AudioLeadIn` 是游戏开局的预卷时长，osu! 与实际游玩都按它提前开始）。
+///
+/// 音频文件的 0 点就是谱面时间轴的 0 点，`AudioLeadIn` **只决定从多早开始播放**，
+/// 不改变音频与物件时间的对应关系——因此这里只影响起点，宿主换算
+/// `audio.currentTime` 时不能再叠加 `AudioLeadIn`。
+pub fn preview_start_ms(first_object_ms: i64, audio_lead_in_ms: i64) -> i64 {
+    first_object_ms.saturating_sub(2_000.max(audio_lead_in_ms.max(0)))
+}
+
 /// 在渲染器使用的绝对 `.osu` 时间轴与 osu! 歌曲进度皮肤组件使用的
 /// 游戏时间轴之间转换。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,6 +368,23 @@ mod tests {
         let axis = TimeAxis::new(12_500);
         assert_eq!(axis.to_display(10_500), -2_000);
         assert_eq!(axis.to_display(i64::MIN), i64::MIN);
+    }
+
+    #[test]
+    fn preview_start_follows_default_and_audio_lead_in() {
+        // 默认：首个物件前 2000ms。
+        assert_eq!(preview_start_ms(5_000, 0), 3_000);
+        // lead-in 更短或为负：仍用默认值。
+        assert_eq!(preview_start_ms(5_000, 1_000), 3_000);
+        assert_eq!(preview_start_ms(5_000, -500), 3_000);
+        // lead-in 更长：按它提前。
+        assert_eq!(preview_start_ms(5_000, 4_000), 1_000);
+        // 首物件很早时起点为负：调用方按「谱面时间 < 0 没有音乐」处理。
+        assert_eq!(preview_start_ms(1_000, 3_000), -2_000);
+        assert_eq!(preview_start_ms(196, 0), -1_804);
+        // 极端值不 panic（饱和减法）。
+        assert_eq!(preview_start_ms(i64::MIN, i64::MAX), i64::MIN);
+        assert_eq!(preview_start_ms(i64::MAX, 0), i64::MAX - 2_000);
     }
 
     #[test]

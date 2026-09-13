@@ -1,5 +1,6 @@
 //! 与 CLI、库 API 共用的请求模型及第一阶段格式校验。
 
+use osu_beatmap_preview_core::gameplay::GameplayOptions;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::processing::validation::{self as validate, TimePoint};
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
@@ -11,6 +12,10 @@ pub struct RenderRequest {
     pub view: ViewOptions,
     pub output: OutputOptions,
     pub execution: ExecutionOptions,
+    /// 游玩/回放配置。目前只有 `Preview` 一种可用模式，CLI 也还没有对应参数；
+    /// 保留字段是为了让「用回放导出、在画面上叠分数」这类功能接入时不必再改请求模型
+    /// （接口见 core 的 `gameplay` 模块）。
+    pub gameplay: GameplayOptions,
 }
 
 impl RenderRequest {
@@ -21,6 +26,7 @@ impl RenderRequest {
             view: ViewOptions::default(),
             output: OutputOptions::default(),
             execution: ExecutionOptions::default(),
+            gameplay: GameplayOptions::default(),
         }
     }
 
@@ -65,6 +71,7 @@ impl RenderRequest {
             view: self.view,
             output: self.output,
             execution: self.execution,
+            gameplay: self.gameplay,
         })
     }
 }
@@ -118,6 +125,9 @@ pub(crate) struct ValidatedRequest {
     pub view: ViewOptions,
     pub output: OutputOptions,
     pub execution: ExecutionOptions,
+    /// 游玩/回放配置：目前只有 `Preview`（不改变任何行为），导出侧还没有读取它。
+    #[allow(dead_code)]
+    pub gameplay: GameplayOptions,
 }
 
 #[derive(Debug, Clone)]

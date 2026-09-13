@@ -221,7 +221,7 @@ Cross-Origin-Embedder-Policy: require-corp
 | `GET /gpu-check.html` | WebGPU 自检页 |
 | `GET /resource/beatmap?bid=<BID>` | 该难度的 `.osu` 文本，命中缓存时直接返回本地文件 |
 | `GET /resource/audio?bid=<BID>` | 从 OSZ 中取出的音频，支持 `Range` 请求（进度条 seek 需要） |
-| `GET /resource/background?bid=<BID>` | 从 OSZ 中取出的背景图 |
+| `GET /resource/background?bid=<BID>` | 从 OSZ 中取出的背景图；谱面未声明背景（或压缩包里没有）时返回 `404`，前端退化成纯色背景 |
 | `GET /resource/progress?bid=<BID>` | 加载进度快照（JSON）：`phase`、`received`、`total` |
 
 `bid` 必须是纯数字，否则返回 `400`；下载或解析失败返回 `502` 并附带原因文本，前端会把它显示在日志里。

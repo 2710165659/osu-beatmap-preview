@@ -1,6 +1,7 @@
 use crate::export::canvas::Img;
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
 use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::processing::media::{normalize_entry_path, BeatmapMedia, MediaEntry};
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::fs::File;
@@ -56,8 +57,9 @@ impl AudioSourceJob {
             no_cache,
             &deadline,
         )?;
+        let media = BeatmapMedia::from_beatmap(&beatmap);
         let background = if super::video_style(mode).enable_background_image {
-            load_background_image(beatmap.background_filename.as_deref(), &osz_path, &deadline)?
+            load_background_image(media.background.as_ref(), &osz_path, &deadline)?
         } else {
             None
         };
@@ -125,18 +127,14 @@ pub(crate) fn prepare_audio_source(
     let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
         PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
     })?;
-    let audio_filename = beatmap
-        .audio_filename()
-        .ok_or_else(|| PreviewError::parse("missing AudioFilename required for MP4 audio"))?;
-    let normalized = normalize_archive_path(audio_filename).map_err(PreviewError::parse)?;
-    let extension = Path::new(&normalized)
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("audio")
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect::<String>();
-    let key = fnv1a64(normalized.as_bytes());
+    let Some(audio) = BeatmapMedia::from_beatmap(beatmap).audio else {
+        return Err(PreviewError::parse(
+            "missing or unusable AudioFilename required for MP4 audio",
+        ));
+    };
+    // 缓存文件名 = 条目名哈希 + 扩展名；扩展名由 core 的策略给出，缺失时沿用 `audio`。
+    let extension = audio.extension.as_deref().unwrap_or("audio");
+    let key = fnv1a64(audio.name.as_bytes());
     let set_cache = cache_dir.join(set_id.to_string());
     let target_path = set_cache.join(format!("{key:016x}.{extension}"));
 
@@ -160,7 +158,7 @@ pub(crate) fn prepare_audio_source(
 
     std::fs::create_dir_all(&set_cache)
         .map_err(|e| PreviewError::download(format!("failed to create audio cache dir: {e}")))?;
-    extract_audio_entry(osz_path, &normalized, &target_path, deadline)?;
+    extract_audio_entry(osz_path, &audio.name, &target_path, deadline)?;
     crate::logging::event(
         "audio-prepare",
         "done",
@@ -175,17 +173,20 @@ pub(crate) fn prepare_audio_source(
 }
 
 /// 从 OSZ 中读取并解码谱面背景图；缺少背景图时回退到纯色背景。
+///
+/// 条目名由 core 的媒体策略（[`BeatmapMedia`]）给出，这里只负责打开压缩包、
+/// 按名（不区分大小写）查找并解码。
 pub(crate) fn load_background_image(
-    filename: Option<&str>,
+    background: Option<&MediaEntry>,
     osz_path: &Path,
     deadline: &RequestDeadline,
 ) -> Result<Option<Img>> {
-    let Some(filename) = filename else {
+    let Some(entry) = background else {
         crate::logging::event(
             "background-prepare",
             "skip",
             None,
-            "beatmap has no background event",
+            "beatmap has no usable background event",
         );
         return Ok(None);
     };
@@ -193,19 +194,13 @@ pub(crate) fn load_background_image(
         .map_err(|e| PreviewError::download(format!("failed to open osz archive: {e}")))?;
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| PreviewError::download(format!("invalid osz archive: {e}")))?;
-    let wanted = match normalize_archive_path(filename) {
-        Ok(path) => path,
-        Err(error) => {
-            crate::logging::event("background-prepare", "skip", None, &error);
-            return Ok(None);
-        }
-    };
+    let wanted = entry.name.as_str();
     let index = (0..archive.len()).find(|&index| {
         archive
             .by_index(index)
             .ok()
-            .and_then(|entry| normalize_archive_path(entry.name()).ok())
-            .is_some_and(|name| name.eq_ignore_ascii_case(&wanted))
+            .and_then(|entry| normalize_entry_path(entry.name()))
+            .is_some_and(|name| name.eq_ignore_ascii_case(wanted))
     });
     let Some(index) = index else {
         crate::logging::event(
@@ -486,16 +481,6 @@ fn source_frame_position(
     chart_time_ms * source_sample_rate as f64 / 1000.0
 }
 
-/// osu! 使用 AudioLeadIn 决定游戏多早开始，它不会改变音频文件相对谱面零时刻的偏移。
-pub(crate) fn full_video_start_time(first_object_ms: i64, audio_lead_in_ms: i64) -> i64 {
-    let default_start = first_object_ms - 2_000;
-    if audio_lead_in_ms > 0 {
-        default_start.min(first_object_ms - audio_lead_in_ms)
-    } else {
-        default_start
-    }
-}
-
 fn sample_stereo(decoded: &DecodedAudio, source_frame: f64) -> [i16; 2] {
     if !source_frame.is_finite() || source_frame < 0.0 {
         return [0, 0];
@@ -697,7 +682,9 @@ fn find_audio_entry<R: Read + Seek>(
         let entry = archive
             .by_index(index)
             .map_err(|e| PreviewError::download(format!("failed to inspect osz entry: {e}")))?;
-        if let Ok(name) = normalize_archive_path(entry.name()) {
+        // 条目名与 .osu 声明都要先归一化：反斜杠、多余的 `.` 与空段都不影响匹配，
+        // 规则由 core 的媒体策略统一给出。
+        if let Some(name) = normalize_entry_path(entry.name()) {
             if name.eq_ignore_ascii_case(wanted) {
                 return Ok(index);
             }
@@ -706,28 +693,6 @@ fn find_audio_entry<R: Read + Seek>(
     Err(PreviewError::download(format!(
         "AudioFilename '{wanted}' was not found in the osz archive"
     )))
-}
-
-fn normalize_archive_path(path: &str) -> std::result::Result<String, String> {
-    let replaced = path.trim().replace('\\', "/");
-    if replaced.starts_with('/') {
-        return Err("archive path must be relative".to_string());
-    }
-    let mut segments = Vec::new();
-    for segment in replaced.split('/') {
-        match segment {
-            "" | "." => continue,
-            ".." => return Err("archive path contains a parent-directory component".to_string()),
-            value if value.contains(':') => {
-                return Err("archive path contains an absolute path prefix".to_string())
-            }
-            value => segments.push(value),
-        }
-    }
-    if segments.is_empty() {
-        return Err("archive path is empty".to_string());
-    }
-    Ok(segments.join("/"))
 }
 
 fn fnv1a64(bytes: &[u8]) -> u64 {
@@ -744,17 +709,6 @@ mod tests {
     use super::*;
     use std::io::Cursor;
     use zip::write::SimpleFileOptions;
-
-    #[test]
-    fn archive_paths_are_normalized_and_traversal_is_rejected() {
-        assert_eq!(
-            normalize_archive_path(r"audio\\song.mp3").unwrap(),
-            "audio/song.mp3"
-        );
-        assert!(normalize_archive_path("../song.mp3").is_err());
-        assert!(normalize_archive_path("C:/song.mp3").is_err());
-        assert!(normalize_archive_path("/song.mp3").is_err());
-    }
 
     #[test]
     fn finds_nested_audio_case_insensitively() {
@@ -847,9 +801,13 @@ mod tests {
             "mp4",
             std::time::Duration::from_secs(300),
         );
-        let background = load_background_image(Some(r"backgrounds\bg.png"), &osz, &deadline)
-            .unwrap()
-            .unwrap();
+        let background = load_background_image(
+            MediaEntry::new(r"backgrounds\bg.png").as_ref(),
+            &osz,
+            &deadline,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!((background.w, background.h), (2, 1));
         assert_eq!(background.get(0, 0), [255, 0, 0, 255]);
         assert_eq!(background.get(1, 0), [0, 255, 0, 255]);
@@ -1000,13 +958,5 @@ mod tests {
         assert_eq!(&output[..2], &[0, 0]);
         assert_eq!(&output[2..4], &[100, 100]);
         assert!(output[4] > 100);
-    }
-
-    #[test]
-    fn audio_lead_in_extends_full_video_start_without_shifting_audio() {
-        assert_eq!(full_video_start_time(5_000, 0), 3_000);
-        assert_eq!(full_video_start_time(5_000, 1_000), 3_000);
-        assert_eq!(full_video_start_time(5_000, 4_000), 1_000);
-        assert_eq!(full_video_start_time(5_000, -500), 3_000);
     }
 }

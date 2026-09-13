@@ -254,13 +254,15 @@ export function createHitsoundOutput({ session, context, absoluteStart }) {
 /**
  * 加载全套打击音资源。
  *
- * 字节来自 WASM 内嵌的资源表（`hitsoundAsset`），宿主只负责用 Web Audio 解码成 PCM
- * 再送回 WASM；因此不需要下载音效文件，也不存在「静态副本没同步」的问题。
+ * 字节默认来自 WASM 内嵌的资源表（`hitsoundAsset`），宿主只负责用 Web Audio 解码成
+ * PCM 再送回 WASM；因此不需要下载音效文件，也不存在「静态副本没同步」的问题。
  *
  * @param {object} options
  * @param {HitsoundPlayer} options.player
  * @param {string[]} options.names 需要加载的样本名
- * @param {(name: string) => Uint8Array|null} options.readAsset 按名字取回 ogg 字节
+ * @param {(name: string) => Uint8Array|Promise<Uint8Array|null>|null} options.readAsset
+ *   按名字取回样本字节。允许返回 Promise：后续接入「谱面自带音效」时，非内嵌的样本
+ *   需要回落到后端去 OSZ 里取，读取就变成异步的。
  * @returns {Promise<number>} 成功放入的样本数
  */
 export async function loadHitsoundSamples({ player, names, readAsset, onProgress }) {
@@ -270,7 +272,7 @@ export async function loadHitsoundSamples({ player, names, readAsset, onProgress
   const run = async () => {
     while (queue.length) {
       const name = queue.shift();
-      const bytes = readAsset(name);
+      const bytes = await readAsset(name);
       const buffer = bytes?.length ? await decodeSample(player.context, bytes) : null;
       if (buffer) {
         // 整段循环的音效：滑行音需要首尾衔接，转盘旋转音同理。

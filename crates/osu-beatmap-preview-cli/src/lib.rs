@@ -2,11 +2,8 @@
 //!
 //! 本 crate 同时承载命令行解析、文件/网络资源、缓存、配置、媒体编码和导出实现。
 
-use osu_beatmap_preview_core::{
-    parse_beatmap_bytes, AudioData, Beatmap, ImageData, ResourceBundle, Result,
-};
+use osu_beatmap_preview_core::{parse_beatmap_bytes, Beatmap, ImageData, ResourceBundle, Result};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 pub mod adapters;
 pub(crate) mod application;
@@ -47,11 +44,15 @@ impl ResourceLoader {
     pub fn new(cache_dir: Option<PathBuf>) -> Self {
         Self { cache_dir }
     }
+
+    /// 从本地文件组装资源包。
+    ///
+    /// 只用于「已经把谱面与背景解码好」的宿主（例如自检工具）；音乐不在资源包里，
+    /// 由宿主自己播放或解码，core 不接触音频字节。
     pub fn bundle_from_files(
         &self,
         beatmap_path: impl AsRef<Path>,
         background: Option<(&Path, u32, u32)>,
-        audio: Option<(&Path, Option<String>, i64)>,
     ) -> Result<ResourceBundle> {
         let beatmap = load_beatmap(beatmap_path)?;
         let background = background
@@ -63,19 +64,9 @@ impl ResourceLoader {
                 })
             })
             .transpose()?;
-        let audio = audio
-            .map(|(path, mime_type, start_time_ms)| {
-                Ok(AudioData {
-                    bytes: Arc::from(read_bytes(path)?.into_boxed_slice()),
-                    mime_type,
-                    start_time_ms,
-                })
-            })
-            .transpose()?;
         Ok(ResourceBundle {
             beatmap: Some(beatmap),
             background,
-            audio,
         })
     }
 }

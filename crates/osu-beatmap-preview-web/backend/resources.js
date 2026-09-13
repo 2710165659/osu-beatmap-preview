@@ -83,22 +83,24 @@ export class ResourceProvider {
     if (!beatmap.audioFilename) {
       throw new Error('谱面未指定音频文件');
     }
-    if (!beatmap.backgroundFilename) {
-      throw new Error('谱面未指定背景文件');
-    }
-    const setId =
-      beatmap.beatmapSetId ??
-      (await resolveBeatmapSetId({ bid, log: this.log, signal: undefined, deadlineAt: Date.now() + REQUEST_DEADLINE }));
-
+    // 音频必需；背景可选：没有声明（或路径非法）时前端会退化成纯色背景，
+    // 不能因为缺背景把整张谱面（连同音乐）一起判为加载失败。
     const audio = mediaTarget(this.cache, bid, 'audio', beatmap.audioFilename);
+    if (!audio) {
+      throw new Error(`压缩包资源路径非法：${beatmap.audioFilename}`);
+    }
     const background = mediaTarget(this.cache, bid, 'background', beatmap.backgroundFilename);
-    if (!fresh && existsNonEmpty(audio.path) && existsNonEmpty(background.path)) {
+    if (!fresh && existsNonEmpty(audio.path) && (!background || existsNonEmpty(background.path))) {
       this.#report(bid, { phase: 'ready', received: 0, total: 0, message: '' });
       return {
         audio: { ...audio, mime: mimeFor(audio.path) },
-        background: { ...background, mime: mimeFor(background.path) },
+        background: background ? { ...background, mime: mimeFor(background.path) } : null,
       };
     }
+
+    const setId =
+      beatmap.beatmapSetId ??
+      (await resolveBeatmapSetId({ bid, log: this.log, signal: undefined, deadlineAt: Date.now() + REQUEST_DEADLINE }));
 
     // OSZ 动辄几十 MiB，是加载里最慢的一步：把字节数、镜像名透出去给前端的进度条。
     const onProgress = ({ received, total, mirror, connected }) => {
@@ -121,9 +123,11 @@ export class ResourceProvider {
       fresh,
       onProgress,
     });
+    // 解包会回报「实际可用的背景」：声明了但压缩包里没有时退化成 null。
+    let resolvedBackground = background;
     try {
       this.#report(bid, { phase: 'extract', received: 0, total: 0, message: '服务端解包音频与背景' });
-      await this.#extractMedia(oszPath, audio, background);
+      resolvedBackground = await this.#extractMedia(oszPath, audio, background);
     } catch (error) {
       // 缓存里的压缩包可能损坏：丢掉后重新下载一次再试。
       this.log(`OSZ 解包失败，重新下载：${error.message}`);
@@ -138,30 +142,49 @@ export class ResourceProvider {
         onProgress,
       });
       this.#report(bid, { phase: 'extract', received: 0, total: 0, message: '服务端解包音频与背景' });
-      await this.#extractMedia(oszPath, audio, background);
+      resolvedBackground = await this.#extractMedia(oszPath, audio, background);
     }
     return {
       audio: { ...audio, mime: mimeFor(audio.path) },
-      background: { ...background, mime: mimeFor(background.path) },
+      background: resolvedBackground
+        ? { ...resolvedBackground, mime: mimeFor(resolvedBackground.path) }
+        : null,
     };
   }
 
+  /**
+   * 从 OSZ 里取出音频（必需）与背景（可选）。
+   *
+   * 返回实际可用的背景条目：声明了背景但压缩包里找不到时返回 `null`（只影响背景），
+   * 音频条目缺失则直接抛错——没有音乐时预览没有意义。
+   */
   async #extractMedia(oszPath, audio, background) {
     const buffer = await fsp.readFile(oszPath);
     const entries = readZipIndex(buffer);
     const audioEntry = findEntry(entries, audio.entryName);
     if (!audioEntry) throw new Error(`OSZ 中找不到资源：${audio.entryName}`);
-    const backgroundEntry = findEntry(entries, background.entryName);
-    if (!backgroundEntry) throw new Error(`OSZ 中找不到资源：${background.entryName}`);
     await writeFileAtomic(audio.path, extractEntry(buffer, audioEntry));
+    if (!background) return null;
+    const backgroundEntry = findEntry(entries, background.entryName);
+    if (!backgroundEntry) {
+      this.log(`OSZ 中找不到背景：${background.entryName}，将使用纯色背景`);
+      return null;
+    }
     await writeFileAtomic(background.path, extractEntry(buffer, backgroundEntry));
+    return background;
   }
 }
 
+/**
+ * 计算某个媒体条目的缓存路径。
+ *
+ * 返回 `null` 表示入口不可用（文件名缺失或路径非法）：音频入口缺失是致命错误，
+ * 背景入口缺失只意味着退化成纯色背景，由调用方决定怎么处理。
+ */
 function mediaTarget(cache, bid, stem, entryName) {
   const normalized = normalizeArchivePath(entryName);
   if (!normalized) {
-    throw new Error(`压缩包资源路径非法：${entryName}`);
+    return null;
   }
   const extension = path.extname(normalized).replace(/^\./, '').toLowerCase() || 'bin';
   return {

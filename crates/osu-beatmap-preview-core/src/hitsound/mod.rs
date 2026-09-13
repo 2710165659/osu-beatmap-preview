@@ -7,8 +7,10 @@
 mod assets;
 mod mixer;
 
-pub use assets::{asset_bytes, asset_count, asset_names, HITSOUND_ASSETS};
-pub use mixer::HitsoundMixer;
+pub use assets::{
+    asset_bytes, asset_count, asset_names, has_embedded_asset, HITSOUND_ASSETS,
+};
+pub use mixer::{HitsoundMixer, LoopHandle};
 
 use std::collections::HashMap;
 
@@ -152,6 +154,14 @@ impl SampleLibrary {
 
     pub fn get(&self, name: &str) -> Option<&SampleData> {
         self.index.get(name).map(|&id| &self.sources[id])
+    }
+
+    /// 按名字取回样本 id；名字不在库里时返回 `None`。
+    ///
+    /// 与 [`SampleLibrary::name_of`] 互为反向查询，供宿主把「按名字触发」的调用
+    /// 落到具体样本上（见 [`HitsoundMixer::trigger`]）。
+    pub fn id_of(&self, name: &str) -> Option<usize> {
+        self.index.get(name).copied()
     }
 
     /// 按样本 id 取回名称。

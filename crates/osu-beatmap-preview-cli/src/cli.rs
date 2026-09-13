@@ -5,6 +5,7 @@ use crate::{
     RulesetOptions, SourceOptions, ViewOptions,
 };
 use lexopt::prelude::*;
+use osu_beatmap_preview_core::gameplay::GameplayOptions;
 use osu_beatmap_preview_core::processing::validation::parse_time_point;
 
 pub const USAGE: &str = "usage: osu-beatmap-preview-cli --bid=<BID> [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]";
@@ -40,6 +41,7 @@ pub fn parse_args(
         view: ViewOptions::default(),
         output: OutputOptions::default(),
         execution: ExecutionOptions::default(),
+        gameplay: GameplayOptions::default(),
     };
     let mut bid = None;
     while let Some(argument) = parser.next().map_err(argument_error)? {

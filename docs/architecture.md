@@ -11,7 +11,7 @@ Web -> Node 后端下载并缓存 .osu/.osz -> 浏览器 -> wasm -> core Realtim
 
 ## 目录职责
 
-- `crates/osu-beatmap-preview-core`：谱面模型、`.osu` 解析、Mod、转谱、时间轴、四模式 CPU 单帧/静态场景绘制、`FrameScene`。
+- `crates/osu-beatmap-preview-core`：谱面模型、`.osu` 解析、Mod、转谱、时间轴、四模式 CPU 单帧/静态场景绘制、`FrameScene`、打击音事件时间轴与混音。不接触文件、网络、音频设备，也不解压 OSZ、不解码图像/音频：这些都由宿主完成后把数据传进来。
 - `crates/osu-beatmap-preview-renderer`：平台无关的 WGPU 场景绘制、surface 和离屏后端。
 - `crates/osu-beatmap-preview-cli`：CLI/native 适配、文件/下载/缓存/配置/日志、时间序列与布局组装、媒体编码和 I/O；不再包含模式绘制逻辑。
 - `crates/osu-beatmap-preview-wasm`：将 core 会话和 renderer 接到宿主 WebGPU Canvas 的 WASM API，并导出 `beatmapInfo`（按 `.osu` 字节汇总谱面内部信息），没有 Rust 调用方。
@@ -26,6 +26,64 @@ workspace 的默认成员是 `osu-beatmap-preview-cli`。普通 `cargo build --r
 浏览器无法跨域直接下载 osu! 的资源，所以 Release 里的 Web 包由一个 Node.js 进程提供静态站点（`dist/`，由 Vite 从 `src/` 构建）和三类资源接口：`/resource/beatmap`、`/resource/audio`、`/resource/background`，外加只读的加载进度快照 `/resource/progress`。下载策略与 CLI 一致（多镜像竞速、Range 分块、osu.direct 优选 IP、缓存优先），并复用同一份缓存目录布局；解包只用 Node 自带的 zlib，因此后端没有任何第三方依赖（Vue/Vite/Tailwind 都只是构建期依赖）。绘制全部发生在浏览器内的 wasm 中，后端不返回像素数据。
 
 谱面的元信息同样由 wasm 解析：浏览器把 `/resource/beatmap` 拿到的 `.osu` 字节交给 `beatmapInfo`，返回 `BeatmapInfo` 的全量字段（概览、统计、难度与 `[General]`/`[Metadata]`/`[Difficulty]` 区段），页面只展示其中一部分。
+
+## 媒体资源与 `.osu` / `.osz` 传输路径
+
+外部文件只有 `.osu` 与 `.osz` 两种，都由宿主负责获取；core 只认识「字节」和「已解码的数据」。
+
+```text
+CLI（bid 驱动）
+  bid → https://osu.ppy.sh/osu/<bid>
+      → <CACHE>/osu-download-cache/<bid>.osu          （缓存命中即复用）
+      → core::parse_beatmap_bytes                     （全项目唯一的 .osu 全量解析）
+      → MP4 需要音频时才下载 .osz：
+          <CACHE>/osz-download-cache/<set_id>.osz     （多镜像竞速 + Range 分块 + 优选 IP）
+          zip crate 抽音频条目 → <CACHE>/osz-download-cache/<set_id>/<fnv1a64(条目名)>.<ext>
+          image crate 解背景 → RGBA（内存）            （缺背景/条目缺失 → 纯色背景）
+          symphonia 解音频 → fdk-aac 编码
+
+Web（Node 后端 + 浏览器）
+  GET /resource/beatmap    → <CACHE>/osu-download-cache/<bid>.osu → 原样发给浏览器
+  GET /resource/audio      ┐
+  GET /resource/background ┘→ ResourceProvider.media（单飞：两个请求只下一次 .osz）
+      → 自己的最小 ZIP 读取（backend/zip.js）+ Node 自带 zlib
+      → <CACHE>/media/<bid>/{audio,background}.<ext>   （浏览器专属的媒体缓存）
+  浏览器：
+      .osu  字节 → wasm.beatmapInfo(bytes)（信息面板）
+                → WebGpuSession.create(bytes, canvas, options)（渲染会话）
+      背景  字节 → createImageBitmap → 画布 → getImageData → set_background_rgba（整帧拷贝进 wasm）
+      音频  字节 → Blob → <audio> 元素（**不进 wasm**，音乐由浏览器直接播放）
+      打击音 → 不走网络：wasm 内嵌 ogg → hitsoundAsset 取字节 → Web Audio 解码 → setHitsoundSample(PCM)
+```
+
+要点：
+
+- **条目策略只有一份**：`.osu` 里声明的文件名怎么归一化、需要压缩包里的哪些条目，由 core 的 [`processing::media`](../crates/osu-beatmap-preview-core/src/domain/media.rs)（`normalize_entry_path` / `BeatmapMedia`）定义；CLI 直接调用，Node 后端保持自写实现但被 `test/media-contract.test.js` 用同一张用例表钉住。
+- **音频必需、背景可选**：缺音频（或条目不在压缩包里）是致命错误；缺背景（未声明、路径非法、条目缺失）只退化成纯色背景，Web 端由 `loadBackground` 的失败分支处理。
+- **缓存契约**：`.osu`（按 bid）、`.osz`（按 set id）、优选 IP JSON 与锁（缓存根）两项前端共享；解出来的媒体不共享——CLI 放在 `osz-download-cache/<set_id>/`，Web 放在 `media/<bid>/`。
+- **整包不进浏览器**：后端解出音频与背景再发（通常几 MiB），而不是让浏览器下载几十 MiB 的 `.osz`。
+
+## 音频-画面-打击音的时钟模型
+
+实时预览只有**一个时钟**：`state.position` 是游戏时间，`absoluteTime() = absoluteStart + position` 是谱面绝对时间（0 = 音频文件 0 点），音频元素的 `currentTime * 1000` 就是这个绝对时间。三套坐标的换算只有这一处，宿主不得再叠加 `AudioLeadIn`（它只体现在 `absoluteStart` 里）。
+
+- **起点**：`absoluteStart = preview_start_ms(首个物件, AudioLeadIn)`，即首个物件前 2000ms、`AudioLeadIn` 更大时按它提前；首物件很早时该值为负，此时绝对时间 `< 0` 的前置段没有音频可播（前端停住音频、只让画面时钟走）。CLI 的 MP4 完整区间用同一个函数，因此导出与预览的时间轴一致（MP4 的尾部留白是格式差异，仍由 CLI 配置决定）。
+- **真源**：播放中 `audio.currentTime` 是唯一事实（`syncClockFromAudio` 每帧回写，偏差超过 1500ms 才补一次 seek）；音频还没出声（下载/缓冲/自动播放被拦）时画面按墙钟推进并周期性重试播放。
+- **seek**：赋值 `currentTime` 前先 `pause` 并冻结画面（`audioSeekPending`），等 `seeked` 或超时；拖动期间只保留最后一个目标。
+- **暂停**：先把进度对齐到音频当前位置（80ms 容差），再 `pause`，恢复时才不会跳帧。
+- **倍速**：`audio.playbackRate = 倍速 × 谱面倍速`，画面按同一倍率推进，打击音内核的 `rate` 同步。
+- **打击音**：事件时间轴也用谱面绝对时间；宿主把换算好的位置交给混音器，混音结果写进与 AudioWorklet 共享的环形缓冲，写入前沿始终领先音频线程约 170ms（见 `src/hitsound-stream.js`）。
+- **MP4 导出不走这条实时链路**：用「输出帧号 ↔ 谱面时间」的纯函数在同一 48kHz 下标上混合音乐与打击音。
+
+## 后续功能接口
+
+以下三项功能**尚未实现**，但接口、配置位与数据流已经留好（见 `crates/osu-beatmap-preview-core/src/gameplay.rs`、`src/domain/media.rs` 与 `src/hitsound/mixer.rs`）：
+
+1. **谱面自带音效**：`HitSample::filename` 与 `referenced_names` 已经把自定义文件名收集出来；`BeatmapMedia::from_beatmap` 的 `samples` 给出「内嵌皮肤没有、需要去 OSZ 找」的条目，`has_embedded_asset` 用来区分两者，`SampleLibrary::insert` 负责填充。契约是**样本源优先级：OSZ 内同名条目 > 内嵌皮肤 > 静音**（后写入覆盖先写入即可）。保留的配置位是各模式 `render.<mode>.mp4.style.ENABLE_BEATMAP_HITSOUND`（默认 true）——注意 `crates/osu-beatmap-preview-core/src/generated_config.rs` 是随仓库提交的生成文件（仓库内没有生成脚本），接入时要同时改 `assets/shared_config.yml` 与它。
+2. **OSR 回放与画面联动**：`gameplay::{InputSnapshot, InputSource, JudgementEngine, ScoreSnapshot, GameplayOverlay, OverlayStyle}` 定义输入、判定与 HUD 的契约；OSR 的 LZMA 解码计划放在 core 的可选特性里（默认不启用，CLI 与 wasm 共享一份实现），CLI 侧用 `RenderRequest::gameplay`、Web 侧用 `RealtimeOptions::gameplay` 接入。HUD 画在画布内（实时用场景命令、CLI 用 `Img` 绘制），DOM 只做控制面板。
+3. **Web 游玩**：`GameplayMode::Play` 下打击音改由输入触发；为此 `HitsoundMixer` 已经提供 `trigger` / `start_loop` / `stop_loop` 显式触发 API（预览路径继续走时间轴）。输入偏移（`GameplayOptions::input_offset_ms`）留给延迟补偿。
+
+三项功能共用同一条链：**输入快照 → 判定引擎 → 状态快照 → 画面叠加 + 打击音触发**，因此只接入一次渲染分支。
 
 ## 打击音（hit sound）
 
@@ -66,4 +124,6 @@ GPU 不可用或设备失败时 WGPU API 明确返回错误，不切换到 CPU �
 
 ## 非目标
 
-当前版本不包含正式 GUI/移动端产品 UI、WGPU PNG/GIF、回放解析、外部 texture 编码 API 或 NVENC/AMF 零拷贝；GUI/mobile crate 仅提供适配接口骨架。Web 站点的控制面包含播放/暂停、seek、方向键跳转、音量、`0.5x..=2.0x` 倍速、30/60 FPS 和 1080P/720P/480P 分辨率切换。
+当前版本不包含正式 GUI/移动端产品 UI、WGPU PNG/GIF、外部 texture 编码 API 或 NVENC/AMF 零拷贝；GUI/mobile crate 仅提供适配接口骨架。Web 站点的控制面包含播放/暂停、seek、方向键跳转、音量、`0.5x..=2.0x` 倍速、30/60 FPS 和 1080P/720P/480P 分辨率切换。
+
+回放（OSR）解析与 Web 游玩**只预留接口，不含实现**（见「后续功能接口」）：core 不引入解压/图像解码/音频解码依赖，`.osz` 始终只在宿主侧解开，浏览器也不下载整包。

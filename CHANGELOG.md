@@ -13,6 +13,15 @@ All notable changes to this project will be documented in this file.
 - `assets/shared_config.yml` 各模式的 `mp4` 小节新增 `ENABLE_HITSOUND`（布尔，默认开启）与 `HITSOUND_VOLUME`（百分比，默认 50，与游戏内默认音量等效）。
 - WASM 新增打击音接口：`hitsoundNames`、`hitsoundAsset`、`hitsoundAssetCount`、`hitsoundDefaults`，以及会话上的 `enableHitsound` / `setHitsoundSample` / `rebuildHitsoundTimeline` / `setHitsoundVolume` / `positionHitsound` / `seekHitsound` / `renderHitsound` / `takeHitsoundBuffer` / `resetHitsoundSamples`；画面与声音的时间轴统一由 wasm 维护，宿主只负责解码样本与输出 PCM。
 - Web 播放页新增「打击音」开关与音量滑杆（默认开启、50%），与音乐音量独立调节。
+- core 新增游玩/回放接口骨架（`gameplay::{GameplayMode, InputSnapshot, InputSource, JudgementEngine, ScoreSnapshot, GameplayOverlay, OverlayStyle, GameplayOptions}`）、打击音显式触发 API（`HitsoundMixer::{trigger, start_loop, stop_loop}`、`LoopHandle`）、`SampleLibrary::id_of` 与 `hitsound::has_embedded_asset`，为「谱面自带音效 / OSR 回放联动 / Web 游玩」预留接口（默认全部不生效，接口说明见 `docs/architecture.md` 的「后续功能接口」）。
+- `docs/architecture.md` 新增「媒体资源与 `.osu`/`.osz` 传输路径」与「音频-画面-打击音时钟模型」两节；`crates/osu-beatmap-preview-wasm/README.md` 补充音频时间轴契约（音频文件 0 点 == 谱面 0 点，`AudioLeadIn` 只影响起点）。
+
+### Changed
+
+- 预览与 CLI 的 MP4 现在共用同一个「完整区间起点」函数（`preview_start_ms`）：首个物件前 2000ms，谱面 `AudioLeadIn` 更大时按它提前。此前 Web 预览固定用 2000ms、CLI 才尊重 `AudioLeadIn`，同一张谱面在两边的起点可能不同；受影响的是 `AudioLeadIn > 2000` 的谱面（其 Web 预卷会变长）。
+- 媒体条目策略统一到 core 的 `processing::media`（路径归一化、音频/背景/自带音效条目，以及 `preview_start_ms`）；CLI 删除自己那份重复实现，Node 后端保持自写实现并由新的 `test/media-contract.test.js` 契约测试钉住。
+- 压缩包条目「归一化后什么都不剩」时，Node 后端由返回空串改为返回 `null`，与 core 完全一致。
+- 移除 core 里没有生产调用方的 `AudioData` / `RealtimeSession::set_audio` / `ResourceBundle::audio`，`cli::ResourceLoader::bundle_from_files` 随之去掉音频参数：音乐字节本来就不进 core（Web 用 `<audio>` 播放，导出由宿主解码后与打击音混音）。
 
 ### Fixed
 
@@ -27,6 +36,7 @@ All notable changes to this project will be documented in this file.
 - 修复混音器窗口边界的事件被播放两次的问题：正好落在窗口末尾的事件一度被前后两个窗口各收一次，音量凭空翻倍；现在窗口是 `[start, end)`，边界事件只归下一个窗口。
 - 修复滑条音效参数取错列的问题：`.osu` 中滑条的 `hitSample` 位于第 11 列，此前按第 6 列解析会把曲线数据当成音效参数，导致音效组与音量全错。
 - 修复 `hitSample` 全为 0（最常见情况）时未回退到 timing point 的问题：音效组与音量应随时间点变化，此前会被写成固定的 normal 组与 100 音量。
+- 修复缺少背景声明的谱面（或背景条目不在 OSZ 里）在 Web 端整张加载失败的问题：背景改为可选，缺失时前端退化成纯色背景，音频与画面照常工作（与 CLI 的行为一致）。
 
 ## [1.2.2] - 2026.09.13
 

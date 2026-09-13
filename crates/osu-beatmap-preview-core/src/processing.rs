@@ -17,7 +17,15 @@ pub mod conversion {
 
 pub mod timeline {
     pub use crate::domain::shared::time_selection::{
-        snap_to_beat_grid, GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector, TimeAxis,
+        preview_start_ms, snap_to_beat_grid, GifRenderOptions, PreviewSegmentTiming,
+        PreviewTimeSelector, TimeAxis,
+    };
+}
+
+/// 压缩包条目的选择策略：宿主据此决定从 `.osz` 里取哪些文件。
+pub mod media {
+    pub use crate::domain::media::{
+        entry_extension, normalize_entry_path, BeatmapMedia, MediaEntry, SAMPLE_EXTENSIONS,
     };
 }
 

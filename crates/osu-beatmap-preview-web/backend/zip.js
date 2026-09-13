@@ -190,13 +190,14 @@ export function findEntry(entries, wanted) {
 /**
  * 归一化压缩包内的路径。
  *
- * 与 CLI 的 normalize_archive_path 一致：反斜杠转正斜杠，拒绝绝对路径、
- * `..` 和含冒号的片段，去掉多余的 `.` 与空片段。
+ * 与 CLI 的 `normalize_archive_path`（现由 core 的 `processing::media::normalize_entry_path`
+ * 提供）一致：反斜杠转正斜杠，拒绝绝对路径、`..` 和含冒号的片段，去掉多余的 `.` 与空片段；
+ * 归一化后什么都不剩时返回 `null`（而不是空串），两边的返回值完全等价。
  */
 export function normalizeArchivePath(path) {
   const value = String(path ?? '').trim().replaceAll('\\', '/');
   if (!value || value.startsWith('/')) return null;
   const parts = value.split('/');
   if (parts.some((part) => part === '..' || part.includes(':'))) return null;
-  return parts.filter((part) => part !== '' && part !== '.').join('/');
+  return parts.filter((part) => part !== '' && part !== '.').join('/') || null;
 }

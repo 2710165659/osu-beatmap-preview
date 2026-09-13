@@ -2,14 +2,14 @@
 
 use std::sync::Arc;
 
-use super::input::{AudioData, ImageData, RealtimeOptions, ResourceBundle};
+use super::input::{ImageData, RealtimeOptions, ResourceBundle};
 use super::output::{RealtimeMode, TimelineInfo};
 use crate::config;
 use crate::hitsound::{self, HitsoundMixer, SampleData, SampleLibrary, SAMPLE_RATE};
 use crate::model::mods::{parse_mods, validate_mods, ModSettings};
 use crate::model::{Beatmap, HitObjects};
 use crate::processing::conversion::{catch_convert, mania_convert, taiko_convert};
-use crate::processing::timeline::TimeAxis;
+use crate::processing::timeline::{preview_start_ms, TimeAxis};
 use crate::render::scene::FrameScene;
 use crate::render::Img;
 use crate::support::error::{PreviewError, Result};
@@ -63,7 +63,7 @@ impl RealtimeSession {
         } else {
             1.0
         };
-        let absolute_start_ms = first.saturating_sub(2_000);
+        let absolute_start_ms = preview_start_ms(first, beatmap.audio_lead_in_ms());
         let timeline = TimelineInfo {
             first_object_ms: first,
             last_object_ms: last,
@@ -145,11 +145,12 @@ impl RealtimeSession {
         } else {
             1.0
         };
+        let absolute_start_ms = preview_start_ms(first, beatmap.audio_lead_in_ms());
         self.timeline = TimelineInfo {
             first_object_ms: first,
             last_object_ms: last,
-            absolute_start_ms: first.saturating_sub(2_000),
-            duration_ms: last.saturating_sub(first.saturating_sub(2_000)),
+            absolute_start_ms,
+            duration_ms: last.saturating_sub(absolute_start_ms),
             beatmap_speed: speed,
         };
         self.options.mods = mods;
@@ -177,10 +178,6 @@ impl RealtimeSession {
         self.options.render.width = width;
         self.options.render.height = height;
         Ok(())
-    }
-
-    pub fn set_audio(&mut self, audio: AudioData) {
-        self.resources.audio = Some(audio);
     }
 
     /// 建立打击音混音状态。
@@ -507,6 +504,71 @@ mod tests {
         };
         RealtimeSession::from_bundle(ResourceBundle::new(beatmap), RealtimeOptions::default())
             .expect("测试会话必须可以创建")
+    }
+
+    /// 构造一个首个物件在 `first_ms`、带 `AudioLeadIn` 的会话。
+    fn session_with_lead_in(first_ms: i64, lead_in_ms: i64) -> RealtimeSession {
+        let mut general = KvSection::default();
+        general.insert("Mode", "0".to_string());
+        general.insert("AudioLeadIn", lead_in_ms.to_string());
+        let beatmap = Beatmap {
+            metadata: KvSection::default(),
+            difficulty: KvSection::default(),
+            general,
+            timing_points: vec![TimingPoint {
+                time: 0.0,
+                beat_length: 500.0,
+                meter: 4,
+                uninherited: true,
+                kiai_mode: false,
+                omit_first_bar_line: false,
+                sample_set: 0,
+                sample_index: 0,
+                sample_volume: 100,
+            }],
+            hit_objects: HitObjects::Standard(vec![StandardHitObject {
+                x: 256,
+                y: 192,
+                start_time: first_ms,
+                end_time: first_ms + 500,
+                hit_type: 1,
+                hitsound: 0,
+                samples: vec![HitSample::new(
+                    SampleBank::Normal,
+                    HitAddition::None,
+                    100,
+                    None,
+                )],
+                ..Default::default()
+            }]),
+            break_periods: Vec::new(),
+            background_filename: None,
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        };
+        RealtimeSession::from_bundle(ResourceBundle::new(beatmap), RealtimeOptions::default())
+            .expect("测试会话必须可以创建")
+    }
+
+    #[test]
+    fn 会话起点与预览起点共用同一规则() {
+        // 预览（Web）与完整视频（CLI）必须从同一个起点开始：默认首个物件前 2000ms，
+        // AudioLeadIn 更大时按它提前。
+        let session = session_with_lead_in(5_000, 0);
+        assert_eq!(
+            session.timeline().absolute_start_ms,
+            preview_start_ms(5_000, 0)
+        );
+        assert_eq!(session.timeline().absolute_start_ms, 3_000);
+
+        let session = session_with_lead_in(5_000, 4_000);
+        assert_eq!(
+            session.timeline().absolute_start_ms,
+            preview_start_ms(5_000, 4_000)
+        );
+        assert_eq!(session.timeline().absolute_start_ms, 1_000);
+        // 时长按实际起点算：起点提前，时长相应变长。
+        assert_eq!(session.timeline().duration_ms, 5_500 - 1_000);
     }
 
     #[test]
