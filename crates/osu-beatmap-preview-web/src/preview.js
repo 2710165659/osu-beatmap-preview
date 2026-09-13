@@ -35,6 +35,15 @@ export const MOD_OPTIONS = Object.freeze({
 // 只处理背景资源，不改变 playfield 和其他平台的渲染配置。
 const BACKGROUND_DIM = 0.7;
 
+/**
+ * 默认音量 50%。
+ *
+ * 网页预览通常和其他标签页/应用的声音同时存在，默认拉满容易盖过别的声音，
+ * 所以留半个刻度。用户调过之后不再重置：音频元素在整个播放页生命周期里只有一份，
+ * 换谱面、切 Mod 都会沿用当前音量。
+ */
+const DEFAULT_VOLUME = 0.5;
+
 /** 音频被自动播放策略拦下后重试播放的最小间隔，避免每帧都调用 play()。 */
 const AUDIO_RETRY_INTERVAL = 500;
 
@@ -113,6 +122,8 @@ export const state = reactive({
   fps: 60,
   resolution: '720',
   speed: 1,
+  /** 音频音量（0–1）；0 即静音，与「静音播放中」角标无关。 */
+  volume: DEFAULT_VOLUME,
   /** 界面上勾选的 Mod token；DA 提交时会展开成 DAAR..CS..。 */
   mods: [],
   daAr: 9,
@@ -264,6 +275,8 @@ const timelinePins = new Set();
 // 音频元素不进 DOM：它只负责出声，画面完全由 WASM 绘制。
 const audio = new Audio();
 audio.preload = 'auto';
+// 音量在模块初始化时就落到元素上；之后只在 setVolume 里维护，不需要每次加载重设。
+audio.volume = state.volume;
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -1345,6 +1358,19 @@ function withFrozenClock(mutate) {
 export function setSpeed(value) {
   state.speed = value;
   audio.playbackRate = playbackRate();
+}
+
+/**
+ * 调整音量。
+ *
+ * 音量是即时生效的，不需要像 Mod 那样重建会话或冻结时钟，所以滑动过程中直接写
+ * 音频元素即可。`audio.volume` 只接受 0–1，越界会抛异常，因此先夹紧再赋值。
+ */
+export function setVolume(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return;
+  state.volume = Math.min(1, Math.max(0, number));
+  audio.volume = state.volume;
 }
 
 export function setFps(value) {

@@ -57,4 +57,4 @@ GPU 不可用或设备失败时 WGPU API 明确返回错误，不切换到 CPU �
 
 ## 非目标
 
-当前版本不包含正式 GUI/移动端产品 UI、WGPU PNG/GIF、回放解析、外部 texture 编码 API 或 NVENC/AMF 零拷贝；GUI/mobile crate 仅提供适配接口骨架。Web 站点的控制面包含播放/暂停、seek、方向键跳转、音频、`0.5x..=2.0x` 倍速、30/60 FPS 和 1080P/720P/480P 分辨率切换。
+当前版本不包含正式 GUI/移动端产品 UI、WGPU PNG/GIF、回放解析、外部 texture 编码 API 或 NVENC/AMF 零拷贝；GUI/mobile crate 仅提供适配接口骨架。Web 站点的控制面包含播放/暂停、seek、方向键跳转、音量、`0.5x..=2.0x` 倍速、30/60 FPS 和 1080P/720P/480P 分辨率切换。

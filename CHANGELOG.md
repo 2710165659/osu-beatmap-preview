@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Web 播放页新增音量调节（0–100%，默认 50%），位于齿轮抽屉的「声音」分组，拖动即时生效且换谱面后沿用。
+
+### Fixed
+
+-  修复部分浏览器下因时序问题导致谱面背景异常的bug
+
 ## [1.2.2] - 2026.09.13
 
 ### Added

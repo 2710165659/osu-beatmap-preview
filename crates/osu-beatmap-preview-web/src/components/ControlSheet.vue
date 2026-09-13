@@ -1,8 +1,8 @@
 <script setup>
 // 播放设置抽屉：默认收起，视频区域因此保持最大。
 //
-// 手机上从底部弹出，桌面（lg）变成右下角浮层；四组内容分别是播放控制、
-// 画面参数、Mod 与运行日志。
+// 手机上从底部弹出，桌面（lg）变成右下角浮层；四组内容分别是画面参数、
+// 音量、Mod 与运行日志。
 import { computed } from 'vue';
 import ChipGroup from './ChipGroup.vue';
 import {
@@ -17,6 +17,7 @@ import {
   setResolution,
   setSheetOpen,
   setSpeed,
+  setVolume,
   SPEED_CHOICES,
   state,
   toggleMod,
@@ -26,6 +27,8 @@ const fpsOptions = FPS_CHOICES.map((value) => ({ value, label: `${value} FPS` })
 const speedOptions = SPEED_CHOICES.map((value) => ({ value, label: `${value}x` }));
 const resolutionOptions = Object.entries(RESOLUTIONS).map(([key]) => ({ value: key, label: `${key}P` }));
 const hasLogs = computed(() => state.playLogs.length > 0);
+// 滑杆用 0–100 的整数，显示与值域都按百分比呈现。
+const volumePercent = computed(() => Math.round(state.volume * 100));
 
 const chipClass = (active) => (active
   ? 'border-[#ff5f45] bg-[#ff5f45]/15 text-white'
@@ -56,6 +59,19 @@ const chipClass = (active) => (active
           <span class="text-xs text-neutral-400">倍速</span>
           <ChipGroup :model-value="state.speed" :options="speedOptions" @update:model-value="setSpeed" />
         </div>
+      </section>
+
+      <section class="mb-5 grid gap-3">
+        <h2 class="text-[11px] tracking-[.14em] text-neutral-500 uppercase">声音</h2>
+        <label class="grid grid-cols-[52px_minmax(0,1fr)_44px] items-center gap-2 text-xs text-neutral-300">
+          音量
+          <input
+            type="range" min="0" max="100" step="1" class="h-8 w-full cursor-pointer"
+            :value="volumePercent"
+            @input="setVolume(Number($event.target.value) / 100)"
+          >
+          <output class="text-right font-mono">{{ volumePercent }}%</output>
+        </label>
       </section>
 
       <section class="mb-5">
