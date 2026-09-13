@@ -19,6 +19,14 @@ onMounted(() => attachStage({ viewport: viewport.value, canvas: canvas.value }))
   >
     <canvas ref="canvas" class="block bg-[#12151b]" />
     <div
+      v-if="state.audioBlocked"
+      class="pointer-events-none absolute inset-0 grid place-items-center px-4 text-center"
+    >
+      <span class="rounded-lg bg-black/70 px-3 py-2 text-xs text-white sm:text-sm">
+        🔇 浏览器拦截了自动播放，点一下画面开启声音
+      </span>
+    </div>
+    <div
       v-if="state.fastForwarding || state.rewinding"
       class="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-[11px] text-white"
     >

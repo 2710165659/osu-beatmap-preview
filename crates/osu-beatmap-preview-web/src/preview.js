@@ -35,8 +35,23 @@ export const MOD_OPTIONS = Object.freeze({
 // 只处理背景资源，不改变 playfield 和其他平台的渲染配置。
 const BACKGROUND_DIM = 0.7;
 
-/** 音频被自动播放策略拦下后重试播放的最小间隔，避免每帧都调用 play()。 */
+/** 自动播放被拦下后重试音频的最小间隔，避免每帧都调用 play()。 */
 const AUDIO_RETRY_INTERVAL = 500;
+
+/** 触发播放需要「用户激活」，因此只用指针 / 触摸 / 键盘这类真实输入当作手势。 */
+const GESTURE_EVENTS = ['pointerdown', 'touchstart', 'keydown'];
+
+/** 手势恢复音频后，多短时间内的播放/暂停操作算「只是想把声音打开」。 */
+const GESTURE_RESUME_WINDOW = 400;
+
+/**
+ * 音频元数据的等待上限。
+ *
+ * 极少数环境下媒体元素既不触发 loadedmetadata 也不触发 error（例如拿不到音频输出
+ * 设备、或服务端不支持 Range 时的媒体管线卡死）。没有这个上限，loadPreview 的
+ * Promise.allSettled 会永远挂住，整个播放页都进不去，因此超时后按「无音频」处理。
+ */
+const AUDIO_METADATA_TIMEOUT = 15000;
 
 /** 加载进度的轮询间隔；后端只有在真正下发资源时才知道字节数。 */
 const PROGRESS_INTERVAL = 400;
@@ -83,7 +98,13 @@ export const state = reactive({
   daAr: 9,
   daCs: 4,
   sheetOpen: false,
-  audioFailed: false,
+  /**
+   * 自动播放是否被浏览器拦下。
+   *
+   * 这个值描述的是「此刻音频真的没在响」，而不是「曾经失败过一次」：手势恢复
+   * 成功或音频真正开始播放后必须归位，否则静音提示会一直挂着。
+   */
+  audioBlocked: false,
   /** 进度条是否可见：隐藏时只改透明度，盒子留在原处，画面不会上下跳。 */
   timelineVisible: true,
   /** 长按方向键的状态，用于在画面上给出反馈。 */
@@ -130,7 +151,21 @@ let hasRenderedFrame = false;
 let pendingAudioTime = null;
 let audioEnded = false;
 let ignoreAudioUntil = 0;
-let audioFailureLogged = false;
+/**
+ * 已经在日志里写过一次播放被拦，避免 tick 里的重试把日志刷屏。
+ *
+ * 它只抑制日志，不参与静音角标的状态判定。
+ */
+let audioBlockLogged = false;
+let pendingAudioRequest = null;
+/**
+ * 用户手势恢复音频成功的时刻（performance.now()），0 表示本次手势没有恢复过。
+ *
+ * 恢复发生在 pointerdown 捕获阶段，而紧随其后的 click 会走到「点击画面 = 播放 /
+ * 暂停」上：如果用户只是想把声音打开，那一次点击不该顺带把画面也暂停掉，所以
+ * 点击处理会先消费掉这个标记。
+ */
+let audioResumedAt = 0;
 let lastAudioStartAttempt = 0;
 let audioObjectUrl = null;
 let modSwitching = false;
@@ -358,9 +393,14 @@ async function loadAudioBlob(value) {
   audio.src = audioObjectUrl;
   audio.load();
   await new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('音频元数据加载超时'));
+    }, AUDIO_METADATA_TIMEOUT);
     const ready = () => { cleanup(); resolve(); };
     const failed = () => { cleanup(); reject(new Error(audio.error?.message || '音频无法解码或播放')); };
     const cleanup = () => {
+      window.clearTimeout(timer);
       audio.removeEventListener('loadedmetadata', ready);
       audio.removeEventListener('canplay', ready);
       audio.removeEventListener('error', failed);
@@ -467,29 +507,101 @@ function syncAudioToPosition() {
   }
 }
 
+/** 记录音频「已经出声」：清掉静音状态与提示，之后失败也不会再重复写日志。 */
+function markAudioAudible() {
+  state.audioBlocked = false;
+  audioBlockLogged = false;
+}
+
 /**
  * 请求播放音频。
  *
  * 播到结尾、暂停或 seek 都会让上一次尚未落地的 play() 被 pause() 打断，
  * 此时浏览器会抛 AbortError。这属于正常流程，只有真正播不出来才写日志。
+ *
+ * 返回值告诉手势恢复逻辑这次请求的结果：`{ rejected, blocked }`，
+ * `blocked` 专指被自动播放策略拒绝。
  */
-function startAudio() {
-  if (!audio.src) return;
-  if (absoluteTime() < 0 || audioEnded) return;
+function requestAudioPlay() {
+  if (!audio.src) return Promise.resolve({ rejected: false, blocked: false });
+  // 同一时刻只留一个未落地的 play()：并行请求只会互相打断并抛 AbortError。
+  if (pendingAudioRequest) return pendingAudioRequest;
   lastAudioStartAttempt = performance.now();
   const request = audio.play();
-  if (!request) return;
-  request.catch((error) => {
-    if (!state.playing || error?.name === 'AbortError') return;
-    if (audioFailureLogged) return;
-    audioFailureLogged = true;
-    state.audioFailed = true;
-    if (error?.name === 'NotAllowedError') {
-      logPlay('浏览器拦截了自动播放，点一下画面即可播放声音。');
-      return;
-    }
-    logPlay(`音频播放失败，继续播放画面：${errorText(error)}`);
+  if (!request) return Promise.resolve({ rejected: false, blocked: false });
+  const guarded = request.then(
+    () => ({ rejected: false, blocked: false }),
+    (error) => {
+      // 暂停或被新的 seek 打断属于正常流程：只有画面还在播时才算真正的失败。
+      if (!state.playing || error?.name === 'AbortError') return { rejected: false, blocked: false };
+      const blocked = error?.name === 'NotAllowedError';
+      if (blocked) {
+        // 自动播放策略一旦拒绝就会一直拒绝，所以只写一次日志并提示用户点一下。
+        state.audioBlocked = true;
+        if (!audioBlockLogged) {
+          audioBlockLogged = true;
+          logPlay('浏览器拦截了自动播放，点一下画面或按任意键即可播放声音。');
+        }
+        return { rejected: true, blocked: true };
+      }
+      if (!audioBlockLogged) {
+        audioBlockLogged = true;
+        logPlay(`音频播放失败，继续播放画面：${errorText(error)}`);
+      }
+      return { rejected: true, blocked: false };
+    },
+  );
+  pendingAudioRequest = guarded.finally(() => { pendingAudioRequest = null; });
+  return pendingAudioRequest;
+}
+
+/** 画面时间可用时请求播放音频；seek 到 0 之前或已经播完则不必请求。 */
+function startAudio() {
+  if (absoluteTime() < 0 || audioEnded) return;
+  requestAudioPlay();
+}
+
+/**
+ * 在用户手势里恢复音频。
+ *
+ * 自动播放被拦下后，只有用户激活（指针 / 触摸 / 键盘）里的 play() 才会被放行，
+ * 定时器里的重试永远会被拒。手势恢复成功时记下时刻，让紧随其后的 click 不要
+ * 顺手把画面暂停掉。
+ */
+function resumeAudioFromGesture() {
+  if (!state.playing) return Promise.resolve(false);
+  if (!state.audioBlocked && !audio.paused && !audio.ended) return Promise.resolve(false);
+  return requestAudioPlay().then(({ rejected }) => {
+    // play() 被拒绝也可能只是又被 pause() 打断，真正算数的是音频是否已经在响。
+    if (rejected || audio.paused) return false;
+    markAudioAudible();
+    audioResumedAt = performance.now();
+    return true;
   });
+}
+
+/**
+ * 首次真实输入（指针 / 触摸 / 键盘）时恢复音频。
+ *
+ * 用捕获阶段监听：手势必须在事件处理的最前面把 play() 发出去，才能算「由用户
+ * 激活触发的播放」，后面的 click 也来不及把这次激活用掉。
+ */
+function handleUserGesture() {
+  if (!state.playing || audio.ended) return;
+  if (!state.audioBlocked && !audio.paused) return;
+  resumeAudioFromGesture().then((resumed) => {
+    // 恢复成功就解除监听：音频回到暂停只可能是用户自己按的暂停，
+    // 那时再自动重播会对着干。
+    if (resumed) removeGestureHints();
+  });
+}
+
+function addGestureHints() {
+  for (const type of GESTURE_EVENTS) window.addEventListener(type, handleUserGesture, { capture: true, passive: true });
+}
+
+function removeGestureHints() {
+  for (const type of GESTURE_EVENTS) window.removeEventListener(type, handleUserGesture, { capture: true });
 }
 
 function playState(next) {
@@ -532,10 +644,12 @@ function tick(now) {
 
   if (absoluteTime() < 0 || audio.paused || audioEnded || now < ignoreAudioUntil) {
     state.position = Math.min(state.duration, state.position + delta * playbackRate());
-    // 音频被自动播放策略拦下或还在缓冲时，画面继续走，并定期重试播放。
+    // 音频还在缓冲或等待用户激活时，画面继续走并定期重试。
+    //
+    // 自动播放被拦下时这里的重试一定还是会被拒（定时器里没有用户激活），真正的
+    // 恢复靠 handleUserGesture，这里只负责缓冲结束和 seek 之后的自动续播。
     if (absoluteTime() >= 0 && audio.paused && !audioEnded
       && now - lastAudioStartAttempt >= AUDIO_RETRY_INTERVAL) {
-      syncAudioToPosition();
       startAudio();
     }
   } else {
@@ -601,8 +715,9 @@ export async function loadPreview() {
     state.mods = [];
     state.renderError = '';
     state.rendered = false;
-    state.audioFailed = false;
-    audioFailureLogged = false;
+    state.audioBlocked = false;
+    audioBlockLogged = false;
+    audioResumedAt = 0;
     audioEnded = false;
     lastAudioStartAttempt = 0;
     applySessionMetrics();
@@ -631,9 +746,12 @@ export async function loadPreview() {
     fitCanvasToViewport();
     showTimeline();
     render();
-    // 加载完成后直接进入播放状态。浏览器可能因自动播放策略拒绝音频，
-    // 但画面时钟仍由 requestAnimationFrame 继续推进。
+    // 加载完成后直接进入播放状态并尝试带声音自动播放：已经在页面上点过「加载
+    // 预览」时这次 play() 算用户激活，能直接出声。浏览器若因自动播放策略拒绝，
+    // 画面时钟仍由 requestAnimationFrame 继续推进，并由手势监听等待用户激活
+    // （首次点击 / 触摸 / 按键）后重试播放声音。
     playState(true);
+    addGestureHints();
     syncUrl();
   } catch (error) {
     logLoad(error);
@@ -643,8 +761,21 @@ export async function loadPreview() {
   }
 }
 
+/**
+ * 判断这次播放 / 暂停操作是不是「刚刚被用来开启声音的那一次」，是则消费掉。
+ *
+ * 恢复发生在 pointerdown / keydown 的捕获阶段，紧随其后的 click（点画面）或
+ * keydown（空格）会走到播放 / 暂停：用户此刻想要的是有声音，不该顺带把画面暂停。
+ */
+function consumeResumeGesture() {
+  if (!audioResumedAt || performance.now() - audioResumedAt >= GESTURE_RESUME_WINDOW) return false;
+  audioResumedAt = 0;
+  return true;
+}
+
 export function togglePlay() {
   if (!session) return;
+  if (state.playing && consumeResumeGesture()) return;
   if (state.playing) {
     playState(false);
     return;
@@ -850,6 +981,10 @@ export function backToLoad() {
   playState(false);
   cancelArrowHold();
   cancelAnimationFrame(animation);
+  removeGestureHints();
+  audioResumedAt = 0;
+  state.audioBlocked = false;
+  audioBlockLogged = false;
   releaseAudioUrl();
   audio.removeAttribute('src');
   audio.load();
@@ -869,6 +1004,19 @@ export function backToLoad() {
   // 回到加载页就清掉深链参数，避免刷新时又自动进入上一个预览。
   window.history.replaceState(null, '', window.location.pathname);
 }
+
+/** 音频开始出声：静音状态与手势监听都在这里收尾，保证角标和真实播放状态一致。 */
+audio.addEventListener('playing', () => {
+  markAudioAudible();
+  removeGestureHints();
+});
+
+/** 标签页切回前台时尝试续播：后台标签的音频会被浏览器挂起。 */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !state.playing || audioEnded) return;
+  if (!audio.paused) return;
+  startAudio();
+});
 
 /** 显示页在加载后自动播放：音频事件只用来推进「是不是已经放完」这一状态。 */
 audio.addEventListener('ended', () => {

@@ -23,7 +23,7 @@ import { backToLoad, setSheetOpen, showTimeline, state } from '../preview.js';
         返回加载
       </button>
       <strong class="shrink-0 text-[11px] tracking-[.14em] text-[#ff5f45]">{{ state.mode }}</strong>
-      <span v-if="state.audioFailed" class="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
+      <span v-if="state.audioBlocked" class="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
         静音播放中
       </span>
       <span class="ml-auto truncate text-[11px] text-neutral-400">{{ state.status }}</span>
