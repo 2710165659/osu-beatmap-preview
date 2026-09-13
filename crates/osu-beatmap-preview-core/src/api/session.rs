@@ -5,6 +5,7 @@ use std::sync::Arc;
 use super::input::{AudioData, ImageData, RealtimeOptions, ResourceBundle};
 use super::output::{RealtimeMode, TimelineInfo};
 use crate::config;
+use crate::hitsound::{self, HitsoundMixer, SampleData, SampleLibrary, SAMPLE_RATE};
 use crate::model::mods::{parse_mods, validate_mods, ModSettings};
 use crate::model::{Beatmap, HitObjects};
 use crate::processing::conversion::{catch_convert, mania_convert, taiko_convert};
@@ -25,6 +26,10 @@ pub struct RealtimeSession {
     source: crate::render::wgpu::RealtimeFrameSource,
     // 背景纹理在会话生命周期内保持同一 Arc，避免每帧复制像素并触发 GPU 重新上传。
     background_image: Option<Arc<Img>>,
+    /// 打击音混音状态；由宿主通过 [`RealtimeSession::enable_hitsound`] 打开后才建立。
+    hitsound: Option<HitsoundMixer>,
+    /// [`RealtimeSession::render_hitsound`] 的复用的输出缓冲，避免每帧分配。
+    hitsound_buffer: Vec<f32>,
 }
 
 impl RealtimeSession {
@@ -90,6 +95,8 @@ impl RealtimeSession {
             options,
             source,
             background_image,
+            hitsound: None,
+            hitsound_buffer: Vec::new(),
         })
     }
 
@@ -174,6 +181,147 @@ impl RealtimeSession {
 
     pub fn set_audio(&mut self, audio: AudioData) {
         self.resources.audio = Some(audio);
+    }
+
+    /// 建立打击音混音状态。
+    ///
+    /// 采样率取宿主音频设备的实际采样率，保证混音结果可以直接交给音频接口。
+    /// 调用后样本库为空，宿主需要按 [`RealtimeSession::hitsound_required_names`]
+    /// 逐个放入已解码的 PCM。
+    pub fn enable_hitsound(&mut self, volume: i32, sample_rate: u32) {
+        let library = SampleLibrary::new();
+        let mut mixer = HitsoundMixer::new(
+            library,
+            hitsound::HitsoundTimeline::default(),
+            sample_rate.max(1),
+        );
+        mixer.set_master_gain(hitsound::volume_gain(volume));
+        self.hitsound = Some(mixer);
+    }
+
+    pub fn disable_hitsound(&mut self) {
+        self.hitsound = None;
+    }
+
+    /// 清空已放入的样本并重建时间轴，保留音量与采样率设置。
+    ///
+    /// 切 Mod 或转谱后需要的样本集合会变，宿主用这个方法重新加载，而不必重建会话。
+    pub fn reset_hitsound_samples(&mut self) {
+        let Some(mixer) = self.hitsound.as_mut() else {
+            return;
+        };
+        *mixer.library_mut() = SampleLibrary::new();
+        mixer.rebuild_timeline_events(hitsound::HitsoundTimeline::default());
+        mixer.stop_all();
+    }
+
+    pub fn hitsound_enabled(&self) -> bool {
+        self.hitsound.is_some()
+    }
+
+    /// 需要宿主提供 PCM 的样本名（按当前目标模式与谱面内容计算）。
+    ///
+    /// 打击音找不到对应样本时按静音处理，因此宿主可以只加载它拿得到的文件。
+    pub fn hitsound_required_names(&self) -> Vec<String> {
+        hitsound::referenced_names(&self.beatmap)
+    }
+
+    /// 放入一段已解码的样本 PCM。
+    ///
+    /// 只放进样本库，不重建时间轴：宿主应当把需要的样本全部放完后调用一次
+    /// [`RealtimeSession::rebuild_hitsound_timeline`]，否则每个样本都会遍历一遍整张
+    /// 谱面（样本多时是明显的浪费）。
+    pub fn set_hitsound_sample(
+        &mut self,
+        name: &str,
+        channels: hitsound::Channels,
+        sample_rate: u32,
+        loop_len: usize,
+    ) {
+        let Some(mixer) = self.hitsound.as_mut() else {
+            return;
+        };
+        let data = SampleData {
+            channels,
+            sample_rate: sample_rate.max(1),
+            loop_len,
+        };
+        mixer.library_mut().insert(name, data);
+    }
+
+    /// 用当前样本库重新生成打击音事件时间轴（样本全部放完后调用一次）。
+    pub fn rebuild_hitsound_timeline(&mut self) {
+        if let Some(mixer) = self.hitsound.as_mut() {
+            mixer.rebuild_timeline(&self.beatmap);
+        }
+    }
+
+    pub fn set_hitsound_volume(&mut self, volume: i32) {
+        if let Some(mixer) = self.hitsound.as_mut() {
+            mixer.set_master_gain(hitsound::volume_gain(volume));
+        }
+    }
+
+    /// 把混音位置对齐到指定谱面时间（不清空正在播放的声音）。
+    pub fn position_hitsound(&mut self, chart_time_ms: f64) {
+        if let Some(mixer) = self.hitsound.as_mut() {
+            mixer.set_position(chart_time_ms);
+        }
+    }
+
+    /// 把混音位置对齐并丢弃所有正在播放的声音。
+    pub fn seek_hitsound(&mut self, chart_time_ms: f64) {
+        if let Some(mixer) = self.hitsound.as_mut() {
+            mixer.seek(chart_time_ms);
+        }
+    }
+
+    /// 渲染一段打击音 PCM（交错立体声 f32）到内部缓冲，返回渲染的采样帧数。
+    ///
+    /// 未启用打击音时返回 0 并清空缓冲；缓冲内容通过
+    /// [`RealtimeSession::hitsound_buffer`] 读取（长度为 `帧数 * 2`）。
+    pub fn render_hitsound(&mut self, frames: usize) -> usize {
+        let Some(mixer) = self.hitsound.as_mut() else {
+            self.hitsound_buffer.clear();
+            return 0;
+        };
+        self.hitsound_buffer.clear();
+        self.hitsound_buffer.resize(frames * 2, 0.0);
+        mixer.render_into(&mut self.hitsound_buffer);
+        frames
+    }
+
+    /// 最近一次 [`RealtimeSession::render_hitsound`] 的输出。
+    pub fn hitsound_buffer(&self) -> &[f32] {
+        &self.hitsound_buffer
+    }
+
+    /// 取走混音输出缓冲并把内部缓冲重置为空。
+    ///
+    /// 供宿主一次性取走 PCM：返回 `Vec` 而不是借用，宿主（WASM 胶水层）就能把数据
+    /// 直接交给 `Float32Array`，省掉一次拷贝。
+    pub fn take_hitsound_buffer(&mut self) -> Vec<f32> {
+        std::mem::take(&mut self.hitsound_buffer)
+    }
+
+    pub fn hitsound_sample_rate(&self) -> u32 {
+        self.hitsound
+            .as_ref()
+            .map_or(SAMPLE_RATE, |mixer| mixer.sample_rate())
+    }
+
+    /// 当前混音位置（谱面毫秒）。
+    pub fn hitsound_position_ms(&self) -> f64 {
+        self.hitsound
+            .as_ref()
+            .map_or(0.0, |mixer| mixer.position_ms())
+    }
+
+    /// 会话内是否存在可用样本；没有样本时宿主可以完全不启动音频输出。
+    pub fn hitsound_has_samples(&self) -> bool {
+        self.hitsound
+            .as_ref()
+            .is_some_and(|mixer| !mixer.library().is_empty())
     }
 
     pub fn scene_at_absolute(&self, absolute_time_ms: i64) -> Result<FrameScene> {
@@ -314,4 +462,120 @@ fn background_image(background: &ImageData) -> Result<Arc<Img>> {
         h: background.height,
         data: background.rgba.clone(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{
+        HitAddition, HitObjects, HitSample, KvSection, SampleBank, StandardHitObject, TimingPoint,
+    };
+
+    /// 构造一个包含单个圆圈的实时会话，用于验证打击音接口。
+    fn session() -> RealtimeSession {
+        let mut general = KvSection::default();
+        general.insert("Mode", "0".to_string());
+        let beatmap = Beatmap {
+            metadata: KvSection::default(),
+            difficulty: KvSection::default(),
+            general,
+            timing_points: vec![TimingPoint {
+                time: 0.0,
+                beat_length: 500.0,
+                meter: 4,
+                uninherited: true,
+                kiai_mode: false,
+                omit_first_bar_line: false,
+                sample_set: 0,
+                sample_index: 0,
+                sample_volume: 100,
+            }],
+            hit_objects: HitObjects::Standard(vec![StandardHitObject {
+                x: 256,
+                y: 192,
+                start_time: 0,
+                end_time: 0,
+                hit_type: 1,
+                hitsound: 0,
+                samples: vec![HitSample::new(SampleBank::Normal, HitAddition::None, 100, None)],
+                ..Default::default()
+            }]),
+            break_periods: Vec::new(),
+            background_filename: None,
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        };
+        RealtimeSession::from_bundle(ResourceBundle::new(beatmap), RealtimeOptions::default())
+            .expect("测试会话必须可以创建")
+    }
+
+    #[test]
+    fn 未启用打击音时不产生混音输出() {
+        let mut session = session();
+        assert!(!session.hitsound_enabled());
+        assert_eq!(session.render_hitsound(16), 0);
+        assert!(session.hitsound_buffer().is_empty());
+    }
+
+    #[test]
+    fn 启用后放入样本即可混音() {
+        let mut session = session();
+        // 候选名按优先级列出：带 bank 前缀的名字优先，裸名是回退查找。
+        assert_eq!(
+            session.hitsound_required_names(),
+            vec!["hitnormal".to_string(), "normal-hitnormal".to_string()]
+        );
+        session.enable_hitsound(100, 1000);
+        assert!(session.hitsound_enabled());
+        // 还没有样本：仍然是静音，但不会 panic。
+        assert_eq!(session.render_hitsound(4), 4);
+        assert!(session.hitsound_buffer().iter().all(|value| *value == 0.0));
+        assert!(!session.hitsound_has_samples());
+
+        // 样本采样率 1000Hz（每帧 1ms），事件在谱面时间 0。
+        session.set_hitsound_sample(
+            "normal-hitnormal",
+            hitsound::Channels::Stereo(vec![1.0, 1.0, 1.0, 1.0]),
+            1000,
+            0,
+        );
+        // 只放样本不会重建时间轴：混音位置尚未推进时仍然是静音。
+        assert!(session.hitsound_has_samples());
+        assert_eq!(session.render_hitsound(2), 2);
+        assert!(session.hitsound_buffer().iter().all(|value| *value == 0.0));
+
+        // 样本放完后重建一次时间轴，事件才会生效。
+        session.rebuild_hitsound_timeline();
+        session.seek_hitsound(0.0);
+        assert_eq!(session.render_hitsound(2), 2);
+        assert_eq!(session.hitsound_buffer().len(), 4);
+        assert!(
+            session.hitsound_buffer().iter().all(|value| *value > 0.0),
+            "buffer={:?} position={}",
+            session.hitsound_buffer(),
+            session.hitsound_position_ms()
+        );
+        assert_eq!(session.hitsound_sample_rate(), 1000);
+    }
+
+    #[test]
+    fn seek与音量接口不会panic() {
+        let mut session = session();
+        session.enable_hitsound(50, 1000);
+        session.set_hitsound_sample(
+            "normal-hitnormal",
+            hitsound::Channels::Mono(vec![1.0]),
+            1000,
+            0,
+        );
+        session.seek_hitsound(0.0);
+        session.position_hitsound(0.0);
+        assert_eq!(session.hitsound_position_ms(), 0.0);
+        session.set_hitsound_volume(0);
+        session.disable_hitsound();
+        assert!(!session.hitsound_enabled());
+        // 关闭后所有接口退化静音。
+        session.set_hitsound_volume(100);
+        assert_eq!(session.render_hitsound(4), 0);
+    }
 }

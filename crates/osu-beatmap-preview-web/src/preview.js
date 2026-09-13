@@ -5,6 +5,12 @@
 
 import { computed, nextTick, reactive } from 'vue';
 
+import {
+  createHitsoundContext,
+  createHitsoundOutput,
+  loadHitsoundSamples,
+} from './hitsound.js';
+
 // ---------------------------------------------------------------------------
 // 常量
 // ---------------------------------------------------------------------------
@@ -43,6 +49,22 @@ const BACKGROUND_DIM = 0.7;
  * 换谱面、切 Mod 都会沿用当前音量。
  */
 const DEFAULT_VOLUME = 0.5;
+
+/**
+ * 打击音（hit sound）默认为开，音量 50%，与游戏内默认听感一致。
+ *
+ * 与音乐音量分开：用户可能想只听音乐、或只听打击音，两者的用途不同。
+ */
+const DEFAULT_HITSOUND_ENABLED = true;
+const DEFAULT_HITSOUND_VOLUME = 50;
+
+/**
+ * 音频线程累计读到这么多帧静音（48kHz 下约 0.5 秒）才判定为「主线程没跟上混音」。
+ *
+ * 播放刚开始、seek 落地的那一两个音频块出现少量静音是正常的，阈值取大一些才能把
+ * 真正的欠载和这些瞬态区分开。
+ */
+const HITSOUND_UNDERRUN_ALERT_FRAMES = 24000;
 
 /** 音频被自动播放策略拦下后重试播放的最小间隔，避免每帧都调用 play()。 */
 const AUDIO_RETRY_INTERVAL = 500;
@@ -99,6 +121,14 @@ const REWIND_STEP = 500;
 /** wasm 胶水代码必须和 .wasm 同目录加载，所以按运行时 URL 请求而不是打进 bundle。 */
 const WASM_URL = `${import.meta.env.BASE_URL}pkg/osu_beatmap_preview_wasm.js`;
 
+/**
+ * 打击音播放内核（AudioWorklet）。
+ *
+ * 放在 `public/` 下按运行时 URL 加载：worklet 必须在音频线程里独立加载。
+ * 音效资源本身由 WASM 内嵌（见 `hitsoundAsset`），不再需要静态副本。
+ */
+const HITSOUND_WORKLET_URL = `${import.meta.env.BASE_URL}hitsound-worklet.js`;
+
 // ---------------------------------------------------------------------------
 // 状态
 // ---------------------------------------------------------------------------
@@ -124,6 +154,14 @@ export const state = reactive({
   speed: 1,
   /** 音频音量（0–1）；0 即静音，与「静音播放中」角标无关。 */
   volume: DEFAULT_VOLUME,
+  /** 是否启用打击音（hit sound）。 */
+  hitsound: DEFAULT_HITSOUND_ENABLED,
+  /** 打击音音量百分比（0–100），与 shared_config.yml 的 HITSOUND_VOLUME 同义。 */
+  hitsoundVolume: DEFAULT_HITSOUND_VOLUME,
+  /** 打击音状态文案：用于在侧栏说明当前是「已启用 / 加载中 / 不可用」。 */
+  hitsoundStatus: '',
+  /** 已经加载成功的样本数，仅用于诊断显示。 */
+  hitsoundLoaded: 0,
   /** 界面上勾选的 Mod token；DA 提交时会展开成 DAAR..CS..。 */
   mods: [],
   daAr: 9,
@@ -197,6 +235,13 @@ let canvasEl = null;
 let viewportEl = null;
 let viewportObserver = null;
 let wasmReady = null;
+/**
+ * 已加载的 wasm 模块。
+ *
+ * 打击音资源内嵌在 wasm 里，解码时要按样本名取字节（`hitsoundAsset`），
+ * 所以把它单独存一份，避免每个调用点都重新 `import`。
+ */
+let wasmModule = null;
 let animation = 0;
 let absoluteStart = 0;
 let beatmapSpeed = 1;
@@ -209,9 +254,12 @@ let audioEnded = false;
  * 音频 seek 是否还在飞。
  *
  * 只有一个 seek 允许在飞：期间画面冻结等 `seeked`；手机上一次 seek 要几百毫秒，
- * 并发下发只会互相打断。目标进度不额外记录——音频元素自己的 currentTime 就是事实。
+ * 并发拖动只保留最后一个目标，当前 seek 完成后继续执行；音频元素自己的 currentTime
+ * 仍然是最终事实，避免连续 input 把中间位置反复打断后丢掉最后一次拖动。
  */
 let audioSeekPending = false;
+/** seek 期间最新一次拖动目标；当前 seek 完成后马上应用。 */
+let pendingAudioSeek = null;
 /** seek 结束时是否要顺手把声音接上（seek 会先 pause）。 */
 let audioPlayWhenSeeked = false;
 /**
@@ -240,6 +288,17 @@ let lastAudioStartAttempt = 0;
 let audioObjectUrl = null;
 let modSwitching = false;
 let appliedMods = [];
+/**
+ * 打击音输出。
+ *
+ * 只有「WASM 会话 + AudioWorklet + SharedArrayBuffer」三者都可用时才会建立；
+ * 缺任何一项都退化成「只播音乐与画面」，并把这个原因写进播放日志。
+ */
+let hitsoundPlayer = null;
+/** 打击音加载代数；开关、切谱或重载时递增，阻止旧异步任务覆盖当前播放器。 */
+let hitsoundGeneration = 0;
+/** 欠载提示是否已经写过日志，避免每帧刷屏。 */
+let hitsoundUnderrunLogged = false;
 /**
  * 加载令牌：每次 `loadPreview()` 递增。
  *
@@ -506,10 +565,13 @@ async function loadWasm() {
     wasmReady = import(/* @vite-ignore */ WASM_URL)
       .then(async (module) => {
         await module.default();
+        // 打击音资源随 wasm 分发，宿主只需要从这里取字节。
+        wasmModule = module;
         return module;
       })
       .catch((error) => {
         wasmReady = null;
+        wasmModule = null;
         throw error;
       });
   }
@@ -783,6 +845,255 @@ export function attachStage({ viewport, canvas }) {
 }
 
 // ---------------------------------------------------------------------------
+// 打击音
+// ---------------------------------------------------------------------------
+
+/**
+ * 当前谱面时间（谱面绝对时间，毫秒）。
+ *
+ * 打击音的事件时间轴是「谱面时间」，而画面用的是「游戏时间（0 = 首个物件）」，
+ * 两者相差 `absoluteStart`；换算只在这里做一次。
+ */
+function chartTimeMs() {
+  return absoluteStart + (Number.isFinite(state.position) ? state.position : 0);
+}
+
+/** 释放打击音输出；切谱面、退回加载页、关闭开关都走这里。 */
+function releaseHitsound() {
+  hitsoundGeneration += 1;
+  if (!hitsoundPlayer) return;
+  hitsoundPlayer.setPlaying(false);
+  hitsoundPlayer.close();
+  // AudioContext 由播放器持有，这里一并关闭，避免每次换谱面都留下一个音频线程。
+  hitsoundPlayer.context?.close().catch(() => {});
+  hitsoundPlayer = null;
+}
+
+/**
+ * 音效只能跟随 HTML 音频的真实播放状态。
+ *
+ * 页面进入播放态并不代表音乐已经出声：自动播放可能被拦截，音频也可能仍在
+ * seek 或缓冲。此时若让 AudioWorklet 继续消费环形缓冲，音效会先跑掉，音乐
+ * 开始后两条时间线就不再重合。
+ */
+function syncHitsoundPlayback({ seek = false } = {}) {
+  if (!hitsoundPlayer) return;
+  const shouldPlay = state.playing
+    && !audio.paused
+    && !audioEnded
+    && !audioSeekPending
+    && absoluteTime() >= 0;
+  hitsoundPlayer.setPlaying(shouldPlay);
+  if (shouldPlay && seek) {
+    hitsoundPlayer.seekGameTime(state.position, { seekMixer: true });
+    updateHitsound();
+  }
+}
+
+/**
+ * 按当前设置建立打击音输出并加载样本。
+ *
+ * WASM 只负责「什么时候响、多大声」，这里只做两件事：把解码好的 PCM 送进 WASM，
+ * 以及把音频线程接到 WASM 的混音输出上。任何一步失败都退化成「只有音乐」。
+ *
+ * 采样率必须先用真实的 `AudioContext` 拿到，再交给 WASM 混音，否则输出会被设备
+ * 按错误速率消费，听起来就是走音 + 音画不同步。
+ */
+async function setupHitsound(token, { seekToCurrent = false } = {}) {
+  if (!session || !state.hitsound) return;
+  const generation = hitsoundGeneration;
+  const names = session.hitsoundRequiredNames();
+  if (!names.length) {
+    state.hitsoundStatus = '本谱面没有需要播放的打击音';
+    return;
+  }
+  state.hitsoundStatus = '加载打击音...';
+
+  const context = await createHitsoundContext(HITSOUND_WORKLET_URL);
+  if (!context) {
+    state.hitsoundStatus = '当前浏览器不支持打击音（需要 AudioWorklet 与 SharedArrayBuffer）';
+    logPlay('打击音不可用：AudioWorklet 或 SharedArrayBuffer 缺失，将继续只播放音乐');
+    return;
+  }
+  if (token !== loadToken || generation !== hitsoundGeneration) {
+    await context.close().catch(() => {});
+    return;
+  }
+
+  try {
+    session.enableHitsound(state.hitsoundVolume, context.sampleRate);
+  } catch (error) {
+    await context.close().catch(() => {});
+    state.hitsoundStatus = `打击音启用失败：${errorText(error)}`;
+    return;
+  }
+
+  const player = createHitsoundOutput({ session, context, absoluteStart });
+  if (!player) {
+    session.disableHitsound();
+    await context.close().catch(() => {});
+    state.hitsoundStatus = '当前浏览器不支持打击音（AudioWorklet 节点创建失败）';
+    return;
+  }
+  hitsoundPlayer = player;
+  hitsoundUnderrunLogged = false;
+  player.setRate(playbackRate());
+  // 样本尚未加载完成前禁止 Worklet 消费；否则播放页可能先推进音效时间轴，
+  // 待解码完成后才开始的声音就会与音乐错位。
+  player.setPlaying(false);
+  if (seekToCurrent) player.seekGameTime(state.position, { seekMixer: true });
+
+  const loaded = await loadHitsoundSamples({
+    player,
+    names,
+    readAsset: readHitsoundAsset,
+  });
+  if (token !== loadToken || generation !== hitsoundGeneration) {
+    // 已经切到别的谱面：这里建立的输出属于旧会话，关掉即可。
+    if (hitsoundPlayer === player) {
+      releaseHitsound();
+    } else {
+      player.setPlaying(false);
+      player.close();
+      if (player.context) await player.context.close().catch(() => {});
+    }
+    return;
+  }
+  state.hitsoundLoaded = loaded;
+  if (loaded === 0) {
+    state.hitsoundStatus = '打击音资源不可用，已静音';
+    logPlay('打击音资源全部加载失败，已按静音处理');
+  } else {
+    state.hitsoundStatus = `已加载 ${loaded} 个音效`;
+  }
+  // 解码期间音频可能已经前进；重建时间轴后始终从当前真实位置重新开始预读。
+  player.seekGameTime(state.position, { seekMixer: true });
+  syncHitsoundPlayback({ seek: true });
+  // 初次加载可能在用户激活结束后才创建 AudioContext；保留手势监听，
+  // 让用户下一次点击可以恢复这个独立上下文。
+  if (player.context.state !== 'running') addGestureHints();
+}
+
+/** 取回一个打击音样本的 ogg 字节（由 WASM 内嵌资源直接给出，不走网络）。 */
+function readHitsoundAsset(name) {
+  try {
+    return wasmModule?.hitsoundAsset?.(name) ?? null;
+  } catch (error) {
+    logPlay(`打击音资源读取失败（${name}）：${errorText(error)}`);
+    return null;
+  }
+}
+
+/**
+ * 按新的会话状态重新加载打击音样本。
+ *
+ * 切 Mod / 转谱会改变目标模式，需要的音效集合也随之变化（例如 Standard→Mania、
+ * 或 Taiko 的音量分档）。这里复用同一个音频输出，只替换 WASM 里的样本。
+ */
+async function reloadHitsoundSamples(token) {
+  if (!hitsoundPlayer || !session || !state.hitsound) return;
+  const generation = ++hitsoundGeneration;
+  const names = session.hitsoundRequiredNames();
+  hitsoundPlayer.setPlaying(false);
+  hitsoundPlayer.resetSamples();
+  hitsoundPlayer.seekGameTime(state.position, { seekMixer: true });
+  const loaded = await loadHitsoundSamples({
+    player: hitsoundPlayer,
+    names,
+    readAsset: readHitsoundAsset,
+  });
+  if (token !== loadToken || generation !== hitsoundGeneration) return;
+  state.hitsoundLoaded = loaded;
+  state.hitsoundStatus = loaded > 0 ? `已加载 ${loaded} 个音效` : '打击音资源不可用，已静音';
+  syncHitsoundPlayback({ seek: true });
+}
+
+/**
+ * 推进打击音：把当前位置告诉 WASM，并补齐音频线程要播的缓冲。
+ *
+ * 每帧调用一次。WASM 内部按这个位置推进事件时间轴，因此画面与声音始终用同一份
+ * 位置数据，不存在两处时钟互相追的问题。
+ */
+function updateHitsound() {
+  if (!hitsoundPlayer || !state.playing || !hitsoundPlayer.active) return;
+  const chartTime = chartTimeMs();
+  hitsoundPlayer.ensureBuffered(chartTime);
+  if (hitsoundPlayer.context.state === 'suspended') {
+    // 自动播放策略：等用户手势；这里只发起恢复，失败不影响画面。
+    hitsoundPlayer.context.resume().catch(() => {});
+  }
+  // 音频线程读到静音说明主线程没跟上混音，音效会断续。只提示一次：这条日志是排查
+  // 「打击音时有时无」最直接的线索，但持续刷屏没有意义。
+  if (!hitsoundUnderrunLogged && hitsoundPlayer.underrunFrames >= HITSOUND_UNDERRUN_ALERT_FRAMES) {
+    hitsoundUnderrunLogged = true;
+    logPlay('打击音缓冲跟不上播放，音效可能断续。');
+  }
+}
+
+/** 切换是否启用打击音。 */
+export function setHitsoundEnabled(value) {
+  state.hitsound = Boolean(value);
+  if (!state.hitsound) {
+    session?.disableHitsound();
+    releaseHitsound();
+    state.hitsoundStatus = '已关闭';
+    return;
+  }
+  if (!session) return;
+  try {
+    session.enableHitsound(state.hitsoundVolume, hitsoundSampleRate());
+  } catch (error) {
+    state.hitsound = false;
+    state.hitsoundStatus = `打击音启用失败：${errorText(error)}`;
+    return;
+  }
+  const token = loadToken;
+  void setupHitsound(token, { seekToCurrent: true }).catch((error) => {
+    state.hitsoundStatus = `打击音启用失败：${errorText(error)}`;
+    logPlay(state.hitsoundStatus);
+  });
+}
+
+/**
+ * 更新打击音音量（0–100）。
+ *
+ * 只写 WASM 的混音增益，不重建会话、不重新加载样本，滑动过程中即时生效。
+ */
+export function setHitsoundVolume(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return;
+  state.hitsoundVolume = Math.min(100, Math.max(0, Math.round(number)));
+  try {
+    session?.setHitsoundVolume(state.hitsoundVolume);
+  } catch (error) {
+    logPlay(`打击音音量设置失败：${errorText(error)}`);
+  }
+}
+
+/** 会话音频设备采样率；还没建立输出时用 48kHz（WASM 默认值）。 */
+function hitsoundSampleRate() {
+  return hitsoundPlayer?.sampleRate ?? session?.hitsoundSampleRate() ?? 48000;
+}
+
+/**
+ * 读取共享配置里该模式的打击音默认值。
+ *
+ * 走 WASM 转出的 `hitsoundDefaults`（内部来自 `assets/shared_config.yml`），
+ * 读不到就沿用前端常量，保证页面仍能正常工作。
+ */
+function applyHitsoundDefaults(wasm, mode) {
+  let defaults = null;
+  try {
+    defaults = wasm.hitsoundDefaults?.(mode) ?? null;
+  } catch (error) {
+    logPlay(`打击音默认配置读取失败：${errorText(error)}`);
+  }
+  if (!defaults) return;
+  state.hitsound = Boolean(defaults.enabled);
+  state.hitsoundVolume = Math.min(100, Math.max(0, Math.round(Number(defaults.volume) || 0)));
+}
+
+// ---------------------------------------------------------------------------
 // 渲染与播放
 // ---------------------------------------------------------------------------
 
@@ -838,19 +1149,32 @@ function seekAudioTo(targetMs, { resume = false } = {}) {
   const clamped = Math.min(Math.max(0, targetMs), durationMs);
   // 已经贴近目标：不 seek。正常播放时才不会为了几十毫秒的差距反复卡声音。
   if (Math.abs(audio.currentTime * 1000 - clamped) <= AUDIO_RESYNC_THRESHOLD) {
-    if (resume && audio.paused && state.playing) startAudio();
+    if (resume && state.playing) startAudio();
     return;
   }
-  // 已经有 seek 在飞，或还没拿到元数据：这次的请求作废。tick 每帧都会重新对照
-  // 音频元素的真实位置，漏掉一次不会让两边走散。
-  if (audioSeekPending || !Number.isFinite(audio.duration)) return;
+  // 已经有 seek 在飞时保留最新目标；拖动进度条会连续触发 input，不能把最后一次
+  // 位置丢掉。当前 seek 完成后会递归应用这个目标。
+  if (audioSeekPending) {
+    pendingAudioSeek = { target: clamped, resume };
+    return;
+  }
+  // 还没拿到元数据时无法 seek，等 loadedmetadata 后由现有时钟对齐逻辑重试。
+  if (!Number.isFinite(audio.duration)) return;
   audioSeekPending = true;
   // 先停住再改 currentTime：手机上 seek 要几百毫秒才落地，期间如果继续出声，
   // 听到的还是旧位置，而画面已经冻在新位置——那就是「声音和画面对不上」。
   audio.pause();
   audio.currentTime = clamped / 1000;
+  hitsoundPlayer?.setPlaying(false);
   waitForAudioSeek().then(() => {
+    const queued = pendingAudioSeek;
+    pendingAudioSeek = null;
     audioSeekPending = false;
+    if (queued) {
+      seekAudioTo(queued.target, { resume: queued.resume });
+      audioPlayWhenSeeked = false;
+      return;
+    }
     // 期间可能已经被暂停（切分辨率、退回加载页），那就不要擅自出声。
     if ((resume || audioPlayWhenSeeked) && state.playing) startAudio();
     audioPlayWhenSeeked = false;
@@ -876,6 +1200,7 @@ function waitForAudioSeek(timeout = AUDIO_SEEK_TIMEOUT) {
 /** 重新加载音频资源后清掉 seek 状态。 */
 function resetAudioClock() {
   audioSeekPending = false;
+  pendingAudioSeek = null;
   audioPlayWhenSeeked = false;
 }
 
@@ -905,6 +1230,23 @@ function markAudioAudible() {
 }
 
 /**
+ * 恢复打击音的独立 AudioContext。
+ *
+ * HTMLAudioElement 与 AudioContext 的自动播放权限相互独立：前者已经出声时，
+ * Worklet 仍可能停在 suspended。这里统一做一次幂等恢复，失败只代表还需要下一次
+ * 用户手势，不影响音乐播放。
+ */
+function resumeHitsoundContext() {
+  const context = hitsoundPlayer?.context;
+  if (!context || context.state === 'running' || typeof context.resume !== 'function') {
+    return Promise.resolve(true);
+  }
+  return context.resume()
+    .then(() => context.state === 'running')
+    .catch(() => false);
+}
+
+/**
  * 请求播放音频。
  *
  * 播到结尾、暂停或 seek 都会让上一次尚未落地的 play() 被 pause() 打断，
@@ -918,7 +1260,12 @@ function requestAudioPlay() {
   // 同一时刻只留一个未落地的 play()：并行请求只会互相打断并抛 AbortError。
   if (pendingAudioRequest) return pendingAudioRequest;
   lastAudioStartAttempt = performance.now();
-  const request = audio.play();
+  let request;
+  try {
+    request = audio.play();
+  } catch (error) {
+    return Promise.resolve({ rejected: true, blocked: false, error });
+  }
   if (!request) return Promise.resolve({ rejected: false, blocked: false });
   const guarded = request.then(
     () => ({ rejected: false, blocked: false }),
@@ -950,8 +1297,16 @@ function requestAudioPlay() {
 
 /** 画面时间可用时请求播放音频；seek 到 0 之前或已经播完则不必请求。 */
 function startAudio() {
-  if (absoluteTime() < 0 || audioEnded) return;
-  requestAudioPlay();
+  if (absoluteTime() < 0 || audioEnded) return Promise.resolve(false);
+  return Promise.all([requestAudioPlay(), resumeHitsoundContext()]).then(([{ rejected }, hitsoundRunning]) => {
+    // 某些浏览器已经把 play() Promise resolve，但不会再派发新的 playing 事件；
+    // 这里显式接通音效，避免初次加载时音效一直停在等待状态。
+    if (!rejected && hitsoundRunning && !audio.paused && state.playing) {
+      syncHitsoundPlayback({ seek: true });
+      return true;
+    }
+    return false;
+  });
 }
 
 /**
@@ -963,11 +1318,13 @@ function startAudio() {
  */
 function resumeAudioFromGesture() {
   if (!state.playing) return Promise.resolve(false);
-  if (!state.audioBlocked && !audio.paused && !audio.ended) return Promise.resolve(false);
-  return requestAudioPlay().then(({ rejected }) => {
+  // 即使音乐已经在播放，也必须在用户手势里恢复独立 AudioContext；否则只有
+  // 再次切换开关才会创建一个恰好处于 running 的上下文，音效就会显得微弱或消失。
+  return Promise.all([requestAudioPlay(), resumeHitsoundContext()]).then(([{ rejected }, hitsoundRunning]) => {
     // play() 被拒绝也可能只是又被 pause() 打断，真正算数的是音频是否已经在响。
-    if (rejected || audio.paused) return false;
+    if (rejected || audio.paused || !hitsoundRunning) return false;
     markAudioAudible();
+    syncHitsoundPlayback({ seek: true });
     audioResumedAt = performance.now();
     return true;
   });
@@ -981,7 +1338,8 @@ function resumeAudioFromGesture() {
  */
 function handleUserGesture() {
   if (!state.playing || audio.ended) return;
-  if (!state.audioBlocked && !audio.paused) return;
+  // AudioContext 的恢复与 HTML 音频播放是两条独立权限链；即使 HTML 音频已经在播，
+  // 也要消费这次手势来恢复 Worklet。
   resumeAudioFromGesture().then((resumed) => {
     // 恢复成功就解除监听：音频回到暂停只可能是用户自己按的暂停，
     // 那时再自动重播会对着干。
@@ -1021,18 +1379,24 @@ function playState(next) {
   hasRenderedFrame = false;
   cancelAnimationFrame(animation);
   audio.playbackRate = playbackRate();
+  // 打击音跟着播放状态走：暂停时停止消费环形缓冲，位置保持不变，恢复时不会补播
+  // 暂停期间「本该响」的声音。
   if (next) {
     syncAudioToPosition();
     // 恢复播放时也对齐一次：暂停期间画面可能因为标签页/主线程节流而落后于音频，
     // 不对齐的话恢复瞬间会先跳一下再被音频时钟拉回来。
     alignPositionToAudio();
     startAudio();
+    // 重新开始时把打击音位置也对到当前位置（暂停期间的 seek 可能已经改过它）。
+    syncHitsoundPlayback({ seek: true });
+    updateHitsound();
     animation = requestAnimationFrame(tick);
   } else {
     // 先把进度钉在音频当下所在的位置再暂停，恢复时才不会跳回上一帧。
     const before = state.position;
     alignPositionToAudio();
     audio.pause();
+    syncHitsoundPlayback();
     // 定格的那一帧要和音频停下的位置一致，否则暂停画面本身就是旧的一帧。
     if (before !== state.position) render();
   }
@@ -1076,6 +1440,13 @@ function tick(now) {
   } else {
     syncClockFromAudio();
   }
+
+  // 打击音与画面共用上面刚算出的 `state.position`：WASM 按这个位置推进事件时间轴，
+  // 因此不存在两处时钟互相追的问题。
+  // 音频状态变化不一定同步派发事件（例如后台恢复或 seek 超时），每帧再做一次
+  // 幂等校正，确保 Worklet 不会在音乐暂停时继续消费，也不会恢复后一直保持静音。
+  syncHitsoundPlayback();
+  updateHitsound();
 
   // 始终按显示刷新率推进时钟，但只按所选帧率提交渲染。用目标帧间隔
   // 累加而不是直接用 `now` 覆盖，避免 144Hz 等显示器上 60FPS 被降到 48FPS。
@@ -1127,6 +1498,8 @@ export async function loadPreview() {
     if (!bid) throw new Error('请输入谱面 BID');
     if (!canvasEl) throw new Error('画布尚未就绪，请刷新页面重试');
     state.bid = bid;
+    // 上一次会话的打击音输出属于旧谱面：先释放，避免残留的音频线程继续出声。
+    releaseHitsound();
     const [wasm, bytes] = await Promise.all([
       loadWasm(),
       fetchBeatmap(bid, { signal: controller.signal }),
@@ -1155,6 +1528,11 @@ export async function loadPreview() {
     lastAudioStartAttempt = 0;
     applySessionMetrics();
     state.position = 0;
+    // 默认开关与音量来自 `assets/shared_config.yml`（由 WASM 转出），
+    // 保证网页端与 CLI 用同一份默认值，而不是两边各写一个常量。
+    applyHitsoundDefaults(wasm, session.mode());
+    state.hitsoundLoaded = 0;
+    state.hitsoundStatus = state.hitsound ? '准备打击音...' : '已关闭';
     state.modeKey = session.mode();
     state.mode = state.modeKey.toUpperCase();
     state.status = '准备音频与背景...';
@@ -1164,6 +1542,14 @@ export async function loadPreview() {
     syncAudioToPosition();
     // 会话已经就绪，先渲染一帧：背景还没到时 composer 会用兜底色，画面不是黑屏。
     render();
+    // 打击音资源是本地静态文件，和音频/背景并行准备；失败只记日志，不影响播放。
+    const hitsoundLoad = state.hitsound
+      ? setupHitsound(token).catch((error) => {
+        if (!current()) return;
+        state.hitsoundStatus = `打击音准备失败：${errorText(error)}`;
+        logPlay(state.hitsoundStatus);
+      })
+      : Promise.resolve();
     // 资源准备通常慢在这里（服务端下载 + 解包），进度阶段由轮询推进到 transfer/media。
     startProgressPolling(bid);
     // 音频与背景一起发起，但只等背景：服务端此时已经把两个文件都解出来了。
@@ -1203,6 +1589,7 @@ export async function loadPreview() {
     addGestureHints();
     syncUrl();
     void audioLoad;
+    void hitsoundLoad;
   } catch (error) {
     // 取消或已经被新的一次加载取代：错误属于旧请求，不该报给用户。
     if (!current() || error?.name === 'AbortError') return;
@@ -1246,11 +1633,32 @@ export function seekTo(nextPosition) {
   const resume = state.playing;
   if (resume) playState(false);
   state.position = Math.min(state.duration, Math.max(0, nextPosition));
+  // 进度条拖动即使发生在暂停状态，也必须同步重置 WASM 音效游标；否则恢复播放时
+  // 音频已经到了新位置，音效流却仍从旧位置预读，表现为拖动后音效完全消失或错位。
+  hitsoundPlayer?.setPlaying(false);
+  hitsoundPlayer?.seekGameTime(state.position, { seekMixer: true });
   // resume：seek 会让音频元素短暂暂停（见 seekAudioTo），完成后要自己恢复出声，
   // 否则用户跳一次进度条就变成了静音播放。
   syncAudioToPosition({ resume });
   render();
-  if (resume) playState(true);
+  if (resume) {
+    // 不要在 audio seek 尚未完成时再次调用 playState(true)：那会让播放请求从旧
+    // 位置启动，随后又被 seek 打断，音效环形缓冲也会跟着丢失。保留播放状态并让
+    // tick 等待 seek 完成，seekAudioTo 的完成回调负责恢复音频，startAudio() 会
+    // 在 Promise resolve 后重新接通音效。
+    state.playing = true;
+    lastTick = 0;
+    lastRenderTime = 0;
+    hasRenderedFrame = false;
+    hitsoundPlayer?.setPlaying(false);
+    // 目标落在当前音频附近时 seekAudioTo 会直接返回，不会触发 seeked 回调；
+    // 但上面的 playState(false) 已经暂停了音频，所以这里必须显式恢复。
+    if (!audioSeekPending) {
+      void startAudio();
+      syncHitsoundPlayback({ seek: true });
+    }
+    animation = requestAnimationFrame(tick);
+  }
 }
 
 export const seekBy = (offset) => seekTo(state.position + offset);
@@ -1358,6 +1766,8 @@ function withFrozenClock(mutate) {
 export function setSpeed(value) {
   state.speed = value;
   audio.playbackRate = playbackRate();
+  // 倍速同样作用于打击音：内核按这个倍率消费缓冲，与音乐保持一致。
+  hitsoundPlayer?.setRate(playbackRate());
 }
 
 /**
@@ -1456,6 +1866,11 @@ function applyMods() {
     state.position = Math.min(state.position, state.duration);
     syncAudioToPosition();
     render();
+    // 转谱/改键数后需要的音效集合可能变了：重新加载样本，复用同一个音频输出。
+    void reloadHitsoundSamples(loadToken).catch((error) => {
+      state.hitsoundStatus = `打击音重载失败：${errorText(error)}`;
+      logPlay(state.hitsoundStatus);
+    });
   } catch (error) {
     logPlay(`Mod 切换失败：${errorText(error)}`);
     state.mods = appliedMods.slice();
@@ -1473,6 +1888,10 @@ export function backToLoad() {
   cancelArrowHold();
   cancelAnimationFrame(animation);
   removeGestureHints();
+  // 打击音输出属于当前会话：连同它的 AudioContext 一起释放，音频线程不会残留。
+  releaseHitsound();
+  state.hitsoundLoaded = 0;
+  state.hitsoundStatus = '';
   // 还在后台拉音频/背景的请求要一并中止：否则它们回来时会往已经清空的播放页写状态。
   loadAbort?.abort();
   loadAbort = null;
@@ -1507,7 +1926,15 @@ export function backToLoad() {
 /** 音频开始出声：静音状态与手势监听都在这里收尾，保证角标和真实播放状态一致。 */
 audio.addEventListener('playing', () => {
   markAudioAudible();
-  removeGestureHints();
+  // 音乐开始播放不代表独立的打击音上下文也已恢复。上下文仍挂起时必须保留
+  // 手势监听，否则用户只能通过反复切换开关触发重新创建才能听到声音。
+  if (!hitsoundPlayer || hitsoundPlayer.context.state === 'running') removeGestureHints();
+  // 以音频真正开始出声的时刻为准，重新建立音效缓冲锚点。
+  syncHitsoundPlayback({ seek: true });
+});
+
+audio.addEventListener('pause', () => {
+  syncHitsoundPlayback();
 });
 
 /** 标签页切回前台时尝试续播：后台标签的音频会被浏览器挂起。 */
@@ -1521,6 +1948,7 @@ document.addEventListener('visibilitychange', () => {
 audio.addEventListener('ended', () => {
   // 音频可能比谱面短，结束后继续用 requestAnimationFrame 驱动画面时钟。
   audioEnded = true;
+  syncHitsoundPlayback();
 });
 
 /**

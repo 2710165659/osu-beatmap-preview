@@ -110,6 +110,7 @@ pub(crate) fn render_standard_video(
         output_path,
         fps,
         audio_job,
+        beatmap.clone(),
         background,
         time_axis,
         deadline,

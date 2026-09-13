@@ -1,0 +1,349 @@
+//! 打击音混音器：把时间轴上的事件混合成 PCM。
+
+use super::{HitsoundTimeline, SampleLibrary};
+
+/// 正在播放的一个声音。
+#[derive(Debug, Clone, Copy)]
+struct Voice {
+    source_id: usize,
+    gain: f64,
+    /// 事件在时间轴上的起始毫秒。
+    start_ms: f64,
+    /// 事件结束毫秒；无限表示按样本自身长度播放。
+    end_ms: f64,
+    /// 样本数据播完的毫秒时刻（循环音为无限，因为它会一直绕回开头）。
+    ///
+    /// 非循环音的 `end_ms` 是无限（时长 0 表示只播一次样本），只用 `end_ms` 判断
+    /// 是否回收会让声音列表随播放不断增长——每个输出帧都要遍历整张列表，长谱面会
+    /// 把混音拖到实时以下（Web 端表现为打击音整体消失）。
+    data_end_ms: f64,
+    /// 循环音在样本内的循环长度（采样帧）；0 表示不循环。
+    loop_len: usize,
+}
+
+/// 基于时间轴与样本库的离线混音器。
+///
+/// 混音位置以「谱面毫秒」为单位，与渲染共用同一条时间轴；输出为固定采样率的
+/// 立体声交错 f32，宿主只需把结果送到音频接口或编码器。
+#[derive(Debug, Clone)]
+pub struct HitsoundMixer {
+    library: SampleLibrary,
+    timeline: HitsoundTimeline,
+    sample_rate: u32,
+    master_gain: f64,
+    /// 当前混音位置（谱面毫秒）。
+    position_ms: f64,
+    voices: Vec<Voice>,
+    /// 下一个尚未开始的事件索引。
+    next_event: usize,
+}
+
+impl HitsoundMixer {
+    pub fn new(library: SampleLibrary, timeline: HitsoundTimeline, sample_rate: u32) -> Self {
+        Self {
+            library,
+            timeline,
+            sample_rate: sample_rate.max(1),
+            master_gain: 1.0,
+            position_ms: 0.0,
+            voices: Vec::new(),
+            next_event: 0,
+        }
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn master_gain(&self) -> f64 {
+        self.master_gain
+    }
+
+    /// 设置主音量（线性增益）。非有限值按静音处理。
+    pub fn set_master_gain(&mut self, gain: f64) {
+        self.master_gain = if gain.is_finite() {
+            gain.clamp(0.0, 8.0)
+        } else {
+            0.0
+        };
+    }
+
+    pub fn timeline(&self) -> &HitsoundTimeline {
+        &self.timeline
+    }
+
+    pub fn library(&self) -> &SampleLibrary {
+        &self.library
+    }
+
+    /// 可变访问样本库。
+    ///
+    /// 放入多个样本时应先全部放完，再调用一次 [`HitsoundMixer::rebuild_timeline`]：
+    /// 时间轴重建会遍历整张谱面，逐样本重建在样本多时是明显的浪费。
+    pub fn library_mut(&mut self) -> &mut SampleLibrary {
+        &mut self.library
+    }
+
+    /// 按音频事件顺序重建时间轴事件游标（保留当前播放位置）。
+    pub fn rebuild_timeline_events(&mut self, timeline: HitsoundTimeline) {
+        self.timeline = timeline;
+        self.next_event = self
+            .timeline
+            .events
+            .partition_point(|event| event.start_ms < self.position_ms);
+        self.voices.clear();
+    }
+
+    /// 用当前样本库重新生成事件时间轴。
+    ///
+    /// 会清空正在播放的声音：宿主应在加载样本的阶段调用，而不是播放中途。
+    pub fn rebuild_timeline(&mut self, beatmap: &crate::domain::models::Beatmap) {
+        let timeline = super::build_timeline(beatmap, &self.library);
+        self.rebuild_timeline_events(timeline);
+    }
+
+    pub fn position_ms(&self) -> f64 {
+        self.position_ms
+    }
+
+    /// 跳转到指定位置：丢弃所有正在播放的声音，并重新定位事件游标。
+    ///
+    /// 播放中途 seek 时已经越过的事件不会再补播，避免瞬间堆积大量声音。
+    pub fn seek(&mut self, position_ms: f64) {
+        self.voices.clear();
+        self.set_position(position_ms);
+    }
+
+    /// 只移动播放位置与事件游标，已开始的声音继续播放。
+    ///
+    /// 用于流式渲染时「把混音位置对齐到宿主提供的起点」：宿主负责决定要不要
+    /// 清空声音（真正的 seek 应调用 [`HitsoundMixer::seek`]）。
+    pub fn set_position(&mut self, position_ms: f64) {
+        self.position_ms = if position_ms.is_finite() {
+            position_ms.max(0.0)
+        } else {
+            0.0
+        };
+        self.next_event = self
+            .timeline
+            .events
+            .partition_point(|event| event.start_ms < self.position_ms);
+    }
+
+    /// 单调推进事件游标（不改变播放位置）。
+    ///
+    /// 流式渲染允许宿主从头重放同一个窗口（例如音频设备重排缓冲区），此时位置可能
+    /// 回退；这个方法保证已经排入的事件不会被重复触发。
+    pub fn advance_cursor_to(&mut self, position_ms: f64) {
+        if !position_ms.is_finite() {
+            return;
+        }
+        let index = self
+            .timeline
+            .events
+            .partition_point(|event| event.start_ms < position_ms);
+        self.next_event = self.next_event.max(index);
+    }
+
+    /// 清空所有正在播放的声音，但保留当前位置。
+    pub fn stop_all(&mut self) {
+        self.voices.clear();
+    }
+
+    /// 当前仍在播放的声音数量（只给测试用的回收回归）。
+    #[cfg(test)]
+    fn voice_count(&self) -> usize {
+        self.voices.len()
+    }
+
+    /// 从当前混音位置渲染 `frames` 个立体声采样帧，返回交错的双声道数据，并前进位置。
+    pub fn render(&mut self, frames: usize) -> Vec<f32> {
+        let mut output = vec![0.0_f32; frames * 2];
+        self.render_into(&mut output);
+        output
+    }
+
+    /// 把 `frames * 2` 个交错采样写入 `output`（长度不足时只写能写下的部分）。
+    pub fn render_into(&mut self, output: &mut [f32]) {
+        let frames = output.len() / 2;
+        if frames == 0 {
+            self.position_ms += frames as f64 * 1000.0 / self.sample_rate as f64;
+            return;
+        }
+
+        let window_start = self.position_ms;
+        let ms_per_frame = 1000.0 / self.sample_rate as f64;
+        let window_end = window_start + frames as f64 * ms_per_frame;
+
+        // 收集本窗口内新开始的事件。
+        //
+        // 窗口是 `[start, end)`：正好落在 `window_end` 的事件留给下一个窗口。相邻窗口
+        // 首尾相接，所以它不会丢；反过来（在 `<=` 时收进来）会因为宿主每个窗口都用
+        // 窗口起点重新对齐事件游标，让同一个事件被收进两个声音、音量凭空翻倍。
+        while self.next_event < self.timeline.events.len() {
+            let event = self.timeline.events[self.next_event];
+            if event.start_ms >= window_end {
+                break;
+            }
+            self.next_event += 1;
+            let (loop_len, data_end_ms) = match self.library.sources.get(event.source_id) {
+                Some(source) if event.looping => (source.loop_len, f64::INFINITY),
+                Some(source) if source.frames() > 0 => (
+                    0,
+                    event.start_ms
+                        + source.frames() as f64 * 1000.0 / source.sample_rate.max(1) as f64,
+                ),
+                // 缺失或空样本：立刻结束，不占用声音列表。
+                _ => (0, event.start_ms),
+            };
+            self.voices.push(Voice {
+                source_id: event.source_id,
+                gain: event.gain,
+                start_ms: event.start_ms,
+                end_ms: if event.duration_ms > 0.0 {
+                    event.start_ms + event.duration_ms
+                } else {
+                    f64::INFINITY
+                },
+                data_end_ms,
+                loop_len,
+            });
+        }
+
+        let master = self.master_gain;
+        for (index, pair) in output.chunks_exact_mut(2).enumerate() {
+            let frame_time = window_start + index as f64 * ms_per_frame;
+            let mut left = 0.0_f32;
+            let mut right = 0.0_f32;
+
+            for voice in &self.voices {
+                if frame_time < voice.start_ms || frame_time >= voice.end_ms {
+                    continue;
+                }
+                let Some(source) = self.library.sources.get(voice.source_id) else {
+                    continue;
+                };
+                let frames_in_source = source.frames();
+                if frames_in_source == 0 {
+                    continue;
+                }
+                let rate = source.sample_rate.max(1) as f64;
+                let loop_len = voice.loop_len.min(frames_in_source);
+                let playable = if loop_len > 0 {
+                    loop_len
+                } else {
+                    frames_in_source
+                };
+
+                // 直接按时间反推样本位置：与画面共用同一时间轴，避免累计漂移。
+                let mut position = (frame_time - voice.start_ms) * rate / 1000.0;
+                if position < 0.0 {
+                    continue;
+                }
+                if loop_len > 0 {
+                    position = position.rem_euclid(playable as f64);
+                } else if position >= playable as f64 {
+                    continue;
+                }
+
+                let (sample_left, sample_right) = source.frame(position as usize);
+                let gain = (voice.gain * master) as f32;
+                left += sample_left * gain;
+                right += sample_right * gain;
+            }
+
+            pair[0] = soft_limit(left);
+            pair[1] = soft_limit(right);
+        }
+
+        // 播放完的声音在下一窗口便宜地回收。
+        //
+        // 本窗口才开始的声音先留着（它们的数据可能正好跨到下一个窗口），其余按「数据
+        // 播完的时刻」判断：循环音看 `end_ms`（滑条/转盘的持续时长），普通打击音看
+        // `data_end_ms`。不做这一步，时长 0 的事件（`end_ms` 是无限）会永远留在列表里，
+        // 每个输出帧都要遍历一遍，长谱面会把混音拖到实时以下。
+        self.voices.retain(|voice| {
+            voice.start_ms >= window_start || voice.end_ms.min(voice.data_end_ms) > window_end
+        });
+
+        self.position_ms = window_end;
+    }
+}
+
+/// 软限幅：小信号近似线性，大信号平滑压缩到 ±1 以内。
+///
+/// osu! 允许打击音叠加，直接求和会削波；这里用有理函数近似 `tanh`，
+/// 比逐样本调用 `tanh` 便宜得多，且两端行为一致。
+#[inline]
+pub(super) fn soft_limit(value: f32) -> f32 {
+    if !value.is_finite() {
+        return 0.0;
+    }
+    let x = value.clamp(-4.0, 4.0);
+    x * (27.0 + x * x) / (27.0 + 9.0 * x * x)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hitsound::{PlayEvent, SampleData};
+
+    /// 构造一个「每 100ms 一个事件、样本 10ms」的样本库与时间轴。
+    ///
+    /// 事件间隔与窗口长度相同，因此每个事件都正好落在窗口边界上——这正是两条回归
+    /// 最容易被踩到的位置。
+    fn click_mixer(events: usize) -> HitsoundMixer {
+        let mut library = SampleLibrary::new();
+        // 1kHz 采样率，10 帧 = 10ms；样本值 1.0，增益 0.1，仍在软限幅的线性区。
+        library.insert("click", SampleData::stereo(vec![1.0; 20], 1000));
+        let timeline = HitsoundTimeline {
+            events: (0..events)
+                .map(|index| PlayEvent {
+                    start_ms: index as f64 * 100.0,
+                    duration_ms: 0.0,
+                    source_id: 0,
+                    gain: 0.1,
+                    looping: false,
+                })
+                .collect(),
+        };
+        HitsoundMixer::new(library, timeline, 1000)
+    }
+
+    #[test]
+    fn 播完的声音会被回收() {
+        // 回归：时长 0 的事件 `end_ms` 是无限，只按它判断会让声音列表随播放无限增长；
+        // 每个输出帧都要遍历整张列表，长谱面会把混音拖到实时以下（Web 端表现为打击音
+        // 整体消失）。
+        let mut mixer = click_mixer(200);
+        for window in 0..200 {
+            // 与宿主一致：每个窗口用窗口起点重新对齐事件游标。
+            mixer.set_position((window * 100) as f64);
+            mixer.render(100);
+        }
+        assert!(
+            mixer.voice_count() <= 2,
+            "声音列表没有回收：{} 个声音仍挂着",
+            mixer.voice_count()
+        );
+    }
+
+    #[test]
+    fn 落在窗口边界的事件只播一次() {
+        // 窗口是 `[start, end)`：正好在窗口末尾开始的事件必须留给下一个窗口。宿主每个
+        // 窗口都会用窗口起点重新对齐游标，边界事件若被收进两个窗口，音量会凭空翻倍。
+        let mut mixer = click_mixer(11);
+        let mut peak = 0.0_f32;
+        for window in 0..20 {
+            mixer.set_position((window * 100) as f64);
+            for value in mixer.render(100) {
+                peak = peak.max(value.abs());
+            }
+        }
+        let expected = soft_limit(0.1);
+        assert!(
+            (peak - expected).abs() < 1e-6,
+            "边界事件被重复播放：peak={peak} expected={expected}"
+        );
+    }
+}

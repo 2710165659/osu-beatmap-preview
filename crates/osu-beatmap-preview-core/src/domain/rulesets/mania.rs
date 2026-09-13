@@ -53,6 +53,7 @@ impl Pattern {
             start_time,
             end_time,
             is_long_note: end_time > start_time,
+            samples: Vec::new(),
         });
     }
 
@@ -801,7 +802,7 @@ fn slider_split_patterns(
     }
 
     let mut out = intermediate.objects;
-    out.extend(end_pattern.objects.iter().copied());
+    out.extend(end_pattern.objects.iter().cloned());
     s.prev_pattern = end_pattern;
     out
 }

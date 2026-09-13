@@ -609,6 +609,7 @@ pub fn apply_taiko_object_mods(
                 end_time: hit_object.end_time,
                 hit_type: hit_object.hit_type,
                 hitsound,
+                samples: hit_object.samples.clone(),
             }
         })
         .collect()
@@ -659,6 +660,9 @@ pub fn spacing_timing_points_for_png(timing_points: &[TimingPoint]) -> Vec<Timin
                     uninherited: false,
                     kiai_mode: point.kiai_mode,
                     omit_first_bar_line: point.omit_first_bar_line,
+                    sample_set: 0,
+                    sample_index: 0,
+                    sample_volume: 100,
                 }
             }
         })
@@ -685,6 +689,9 @@ mod tests {
             uninherited: true,
             kiai_mode: false,
             omit_first_bar_line: false,
+            sample_set: 0,
+            sample_index: 0,
+            sample_volume: 100,
         }
     }
 

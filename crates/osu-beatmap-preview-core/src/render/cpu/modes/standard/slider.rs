@@ -291,6 +291,37 @@ pub fn get_slider_render_data(
     data
 }
 
+/// 计算滑条 tick 的出现时间（毫秒，绝对谱面时间）。
+///
+/// 打击音只需要时间序列，不需要路径几何，因此用一条最短路径复用
+/// [`generate_slider_ticks`]，保证画面 tick 与声音 tick 使用同一套 osu! 规则。
+pub fn slider_tick_times(
+    world_length: f64,
+    start_time: i64,
+    end_time: i64,
+    repeats: i32,
+    beat_length: f64,
+    slider_velocity: f64,
+    tick_rate: f64,
+    slider_multiplier: f64,
+) -> Vec<f64> {
+    let dummy_path = build_path(&[(0.0, 0.0), (1.0, 0.0)]);
+    generate_slider_ticks(
+        &dummy_path,
+        world_length,
+        start_time,
+        end_time,
+        repeats,
+        (beat_length, slider_velocity),
+        tick_rate,
+        slider_multiplier,
+        0.0,
+    )
+    .into_iter()
+    .map(|tick| tick.time)
+    .collect()
+}
+
 /// 按 osu! SliderEventGenerator 规则生成可视化 tick。
 #[allow(clippy::too_many_arguments)]
 fn generate_slider_ticks(

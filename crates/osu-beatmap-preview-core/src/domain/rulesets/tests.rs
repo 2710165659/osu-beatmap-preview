@@ -225,22 +225,50 @@ fn snapshot(beatmap: &Beatmap) -> String {
     ));
     output.push_str("timing_points:\n");
     for point in &beatmap.timing_points {
-        output.push_str(&format!("{point:?}\n"));
+        // 采样组/音量字段只服务打击音，正确性由 hitsound 模块的测试覆盖。
+        // time 用 Debug 输出以保留 f64 的小数点形式。
+        output.push_str(&format!(
+            "TimingPoint {{ time: {:?}, beat_length: {:?}, meter: {}, uninherited: {}, kiai_mode: {}, omit_first_bar_line: {} }}\n",
+            point.time,
+            point.beat_length,
+            point.meter,
+            point.uninherited,
+            point.kiai_mode,
+            point.omit_first_bar_line
+        ));
     }
     output.push_str(&format!(
         "hit_objects_count={}\n",
         beatmap.hit_objects.len()
     ));
     output.push_str("hit_objects:\n");
+    // 只快照渲染与转谱会用到的字段：采样表是本次新增的打击音数据，
+    // 它的正确性由 hitsound 模块自己的测试覆盖，不进入转谱 golden。
     match &beatmap.hit_objects {
         HitObjects::Taiko(objects) => {
             for object in objects {
-                output.push_str(&format!("{object:?}\n"));
+                output.push_str(&format!(
+                    "TaikoHitObject {{ start_time: {}, end_time: {}, hit_type: {}, hitsound: {} }}\n",
+                    object.start_time, object.end_time, object.hit_type, object.hitsound
+                ));
             }
         }
         HitObjects::Catch(objects) => {
             for object in objects {
-                output.push_str(&format!("{object:?}\n"));
+                output.push_str(&format!(
+                    "CatchHitObject {{ x: {}, y: {}, start_time: {}, end_time: {}, hit_type: {}, new_combo: {}, combo_offset: {}, slider_type: {:?}, slider_points: {:?}, slider_repeats: {}, slider_pixel_length: {:?} }}\n",
+                    object.x,
+                    object.y,
+                    object.start_time,
+                    object.end_time,
+                    object.hit_type,
+                    object.new_combo,
+                    object.combo_offset,
+                    object.slider_type,
+                    object.slider_points,
+                    object.slider_repeats,
+                    object.slider_pixel_length
+                ));
             }
         }
         HitObjects::Mania(objects) => {

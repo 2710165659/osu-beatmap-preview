@@ -189,6 +189,156 @@ impl WebGpuSession {
         // 画面仍按旧尺寸渲染并贴在左上角，因此需要同步更新 core。
         self.inner.set_render_size(width, height).map_err(js_error)
     }
+
+    // ── 打击音（hit sound） ──────────────────────────────────────────────
+    //
+    // 音频的整条时间轴都在 WASM 内：宿主只负责「解码样本 → 送进来」和
+    // 「按音频时钟取混音结果 → 送出去」。这样画面与声音共用同一份位置计算，
+    // 倍速、seek、暂停都只有一处实现。
+
+    /// 打开打击音并指定音量百分比（0～100）。
+    ///
+    /// `sampleRate` 必须等于宿主音频设备的采样率，混音结果可以直接使用。
+    /// 打开后样本库为空，需要按 [`WebGpuSession::hitsound_required_names`] 逐个
+    /// 调用 [`WebGpuSession::set_hitsound_sample`]。
+    #[wasm_bindgen(js_name = enableHitsound)]
+    pub fn enable_hitsound(&mut self, volume_percent: i32, sample_rate: u32) -> Result<(), JsValue> {
+        if sample_rate == 0 {
+            return Err(JsValue::from_str("音频采样率必须为正数"));
+        }
+        self.inner
+            .enable_hitsound(volume_percent.clamp(0, 100), sample_rate);
+        Ok(())
+    }
+
+    /// 关闭打击音；关闭后所有混音接口返回静音。
+    #[wasm_bindgen(js_name = disableHitsound)]
+    pub fn disable_hitsound(&mut self) {
+        self.inner.disable_hitsound();
+    }
+
+    /// 清空已加载的样本并重建时间轴（保留音量与采样率）。
+    ///
+    /// 切 Mod 或转谱后需要的样本集合会变，宿主重新调用
+    /// [`WebGpuSession::set_hitsound_sample`] 即可，不必重建会话。
+    #[wasm_bindgen(js_name = resetHitsoundSamples)]
+    pub fn reset_hitsound_samples(&mut self) {
+        self.inner.reset_hitsound_samples();
+    }
+
+    #[wasm_bindgen(js_name = hitsoundEnabled)]
+    pub fn hitsound_enabled(&self) -> bool {
+        self.inner.hitsound_enabled()
+    }
+
+    /// 当前谱面需要宿主提供 PCM 的样本名（按优先级排列，含裸名回退）。
+    ///
+    /// 宿主只需下载/解码它认得出来的名字；缺失的样本在混音时按静音处理。
+    #[wasm_bindgen(js_name = hitsoundRequiredNames)]
+    pub fn hitsound_required_names(&self) -> Vec<String> {
+        self.inner.hitsound_required_names()
+    }
+
+    /// 当前采样率下是否已有可用样本；没有样本时宿主不必启动音频输出。
+    #[wasm_bindgen(js_name = hitsoundHasSamples)]
+    pub fn hitsound_has_samples(&self) -> bool {
+        self.inner.hitsound_has_samples()
+    }
+
+    #[wasm_bindgen(js_name = hitsoundSampleRate)]
+    pub fn hitsound_sample_rate(&self) -> u32 {
+        self.inner.hitsound_sample_rate()
+    }
+
+    /// 放入一段已解码的样本 PCM。
+    ///
+    /// 只放进样本库；全部放完后必须调用一次
+    /// [`WebGpuSession::rebuild_hitsound_timeline`]（否则事件时间轴还是空的）。
+    /// 一次批量加载只需重建一次，避免逐个样本遍历整张谱面。
+    #[wasm_bindgen(js_name = setHitsoundSample)]
+    pub fn set_hitsound_sample(
+        &mut self,
+        name: &str,
+        channels: u32,
+        sample_rate: u32,
+        loop_length: u32,
+        samples: Vec<f32>,
+    ) -> Result<(), JsValue> {
+        if name.is_empty() {
+            return Err(JsValue::from_str("样本名不能为空"));
+        }
+        if sample_rate == 0 {
+            return Err(JsValue::from_str("样本采样率必须为正数"));
+        }
+        if !matches!(channels, 1 | 2) {
+            return Err(JsValue::from_str("样本声道数只能是 1 或 2"));
+        }
+        // 循环长度以采样帧为单位；交错立体声的数组长度是帧数的两倍。
+        let frame_count = if channels == 1 {
+            samples.len()
+        } else {
+            samples.len() / 2
+        };
+        let loop_length = loop_length.min(frame_count as u32) as usize;
+        let data = if channels == 1 {
+            osu_beatmap_preview_core::Channels::Mono(samples)
+        } else {
+            osu_beatmap_preview_core::Channels::Stereo(samples)
+        };
+        self.inner
+            .set_hitsound_sample(name, data, sample_rate, loop_length);
+        Ok(())
+    }
+
+    /// 用已放入的样本重建打击音事件时间轴（样本全部放完后调用一次）。
+    #[wasm_bindgen(js_name = rebuildHitsoundTimeline)]
+    pub fn rebuild_hitsound_timeline(&mut self) {
+        self.inner.rebuild_hitsound_timeline();
+    }
+
+    /// 更新打击音音量百分比（0～100）。
+    #[wasm_bindgen(js_name = setHitsoundVolume)]
+    pub fn set_hitsound_volume(&mut self, volume_percent: i32) {
+        self.inner.set_hitsound_volume(volume_percent.clamp(0, 100));
+    }
+
+    /// 把混音位置对齐到谱面时间（毫秒），不清空正在播放的声音。
+    ///
+    /// 用于宿主音频时钟与 WASM 位置对齐；真正的 seek 请用
+    /// [`WebGpuSession::seekHitsound`]。
+    #[wasm_bindgen(js_name = positionHitsound)]
+    pub fn position_hitsound(&mut self, chart_time_ms: f64) {
+        self.inner.position_hitsound(chart_time_ms);
+    }
+
+    /// 跳到指定谱面时间并丢弃正在播放的声音。
+    #[wasm_bindgen(js_name = seekHitsound)]
+    pub fn seek_hitsound(&mut self, chart_time_ms: f64) {
+        self.inner.seek_hitsound(chart_time_ms);
+    }
+
+    #[wasm_bindgen(js_name = hitsoundPositionMs)]
+    pub fn hitsound_position_ms(&self) -> f64 {
+        self.inner.hitsound_position_ms()
+    }
+
+    /// 从当前混音位置渲染 `frames` 个立体声采样帧到内部缓冲。
+    ///
+    /// 返回随后可读取的帧数（未启用打击音时为 0）。
+    #[wasm_bindgen(js_name = renderHitsound)]
+    pub fn render_hitsound(&mut self, frames: u32) -> u32 {
+        self.inner.render_hitsound(frames as usize) as u32
+    }
+
+    /// 取回最近一次 [`WebGpuSession::render_hitsound`] 的混音结果。
+    ///
+    /// 返回交错立体声 f32 的副本（长度为帧数 × 2），长度就是上一次渲染请求的帧数。
+    /// 用返回值而不是裸指针：wasm-bindgen 会为 `Vec<f32>` 生成能感知内存增长的
+    /// 拷贝，宿主拿到的是普通 `Float32Array`，不需要自己维护 `WebAssembly.Memory` 视图。
+    #[wasm_bindgen(js_name = takeHitsoundBuffer)]
+    pub fn take_hitsound_buffer(&mut self) -> Vec<f32> {
+        self.inner.take_hitsound_buffer()
+    }
 }
 
 /// 解析 `.osu` 字节并返回谱面内部信息（全量字段）。
@@ -207,6 +357,84 @@ pub fn beatmap_info(bytes: Vec<u8>) -> Result<JsValue, JsValue> {
         .serialize_maps_as_objects(true)
         .serialize_missing_as_null(true);
     serde::Serialize::serialize(&info, &serializer).map_err(js_error)
+}
+
+/// 按传入的 `.osu` 字节返回打击音需要的样本名（按优先级排列，含裸名回退）。
+///
+/// 宿主据此决定要解码哪些音效；名字取不到资源时直接忽略即可，混音阶段按静音处理。
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = hitsoundNames)]
+pub fn hitsound_names(bytes: Vec<u8>) -> Result<Vec<String>, JsValue> {
+    let beatmap = parse_beatmap_bytes(&bytes).map_err(js_error)?;
+    Ok(osu_beatmap_preview_core::hitsound_referenced_names(&beatmap))
+}
+
+/// 取回某个打击音样本的 ogg 字节。
+///
+/// **资源随 wasm 一起分发**（由 core 的 build.rs 内嵌），宿主不需要再向站点请求
+/// 音效文件，也就不存在「静态副本没同步导致全部 404」的问题。返回空数组表示没有
+/// 对应资源（裸名回退、或本套皮肤不提供的音效），宿主跳过即可。
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = hitsoundAsset)]
+pub fn hitsound_asset(name: &str) -> Vec<u8> {
+    osu_beatmap_preview_core::hitsound::asset_bytes(name)
+        .map(<[u8]>::to_vec)
+        .unwrap_or_default()
+}
+
+/// 内嵌打击音资源数量，便于宿主自检。
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = hitsoundAssetCount)]
+pub fn hitsound_asset_count() -> u32 {
+    osu_beatmap_preview_core::hitsound::asset_count() as u32
+}
+
+/// 返回某个模式在 `assets/shared_config.yml` 里的打击音默认设置。
+///
+/// CLI 直接读同一份配置，网页端通过这里取值，避免两边各写一份默认值而走偏。
+/// `mode` 接受 `standard` / `taiko` / `catch` / `mania`（也接受 `std` 与 `ctb`）。
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = hitsoundDefaults)]
+pub fn hitsound_defaults(mode: &str) -> Result<JsValue, JsValue> {
+    // WASM 里没有外置配置文件，用内嵌的共享配置默认值——它由
+    // `assets/shared_config.yml` 在构建时生成，CLI 也读同一份来源。
+    let config = osu_beatmap_preview_core::config::CoreConfig::default();
+    // 各模式的 style 类型不同，因此这里统一取出 (是否启用, 音量) 两个值。
+    let (enabled, volume) = match mode.trim().to_ascii_lowercase().as_str() {
+        "standard" | "std" => (
+            config.render.standard.mp4.style.ENABLE_HITSOUND,
+            config.render.standard.mp4.style.HITSOUND_VOLUME,
+        ),
+        "taiko" => (
+            config.render.taiko.mp4.style.ENABLE_HITSOUND,
+            config.render.taiko.mp4.style.HITSOUND_VOLUME,
+        ),
+        "catch" | "ctb" => (
+            config.render.catch.mp4.style.ENABLE_HITSOUND,
+            config.render.catch.mp4.style.HITSOUND_VOLUME,
+        ),
+        "mania" => (
+            config.render.mania.mp4.style.ENABLE_HITSOUND,
+            config.render.mania.mp4.style.HITSOUND_VOLUME,
+        ),
+        _ => {
+            return Err(JsValue::from_str(&format!(
+                "未知模式 '{mode}'，可选 standard/taiko/catch/mania"
+            )))
+        }
+    };
+    let object = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &object,
+        &JsValue::from_str("enabled"),
+        &JsValue::from_bool(enabled),
+    )?;
+    js_sys::Reflect::set(
+        &object,
+        &JsValue::from_str("volume"),
+        &JsValue::from_f64(volume as f64),
+    )?;
+    Ok(object.into())
 }
 
 #[cfg(target_arch = "wasm32")]

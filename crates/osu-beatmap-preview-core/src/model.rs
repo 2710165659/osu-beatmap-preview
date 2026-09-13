@@ -5,8 +5,8 @@
 
 pub mod beatmap {
     pub use crate::domain::models::{
-        Beatmap, BreakPeriod, CatchHitObject, HitObjects, KvSection, ManiaHitObject,
-        StandardHitObject, TaikoHitObject, TimingPoint,
+        Beatmap, BreakPeriod, CatchHitObject, HitAddition, HitObjects, HitSample, KvSection,
+        ManiaHitObject, SampleBank, StandardHitObject, TaikoHitObject, TimingPoint,
     };
 }
 
@@ -19,8 +19,8 @@ pub mod info {
 }
 
 pub use beatmap::{
-    Beatmap, BreakPeriod, CatchHitObject, HitObjects, KvSection, ManiaHitObject, StandardHitObject,
-    TaikoHitObject, TimingPoint,
+    Beatmap, BreakPeriod, CatchHitObject, HitAddition, HitObjects, HitSample, KvSection,
+    ManiaHitObject, SampleBank, StandardHitObject, TaikoHitObject, TimingPoint,
 };
 pub use info::BeatmapInfo;
 pub use mods::{mods_for_mode, parse_mods, validate_mods, ModSettings};

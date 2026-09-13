@@ -2,7 +2,7 @@
 // 播放设置抽屉：默认收起，视频区域因此保持最大。
 //
 // 手机上从底部弹出，桌面（lg）变成右下角浮层；四组内容分别是画面参数、
-// 音量、Mod 与运行日志。
+// 声音（音乐音量与打击音）、Mod 与运行日志。
 import { computed } from 'vue';
 import ChipGroup from './ChipGroup.vue';
 import {
@@ -14,6 +14,8 @@ import {
   RESOLUTIONS,
   setDaValue,
   setFps,
+  setHitsoundEnabled,
+  setHitsoundVolume,
   setResolution,
   setSheetOpen,
   setSpeed,
@@ -29,6 +31,7 @@ const resolutionOptions = Object.entries(RESOLUTIONS).map(([key]) => ({ value: k
 const hasLogs = computed(() => state.playLogs.length > 0);
 // 滑杆用 0–100 的整数，显示与值域都按百分比呈现。
 const volumePercent = computed(() => Math.round(state.volume * 100));
+const hitsoundPercent = computed(() => Math.round(state.hitsoundVolume));
 
 const chipClass = (active) => (active
   ? 'border-[#ff5f45] bg-[#ff5f45]/15 text-white'
@@ -72,6 +75,29 @@ const chipClass = (active) => (active
           >
           <output class="text-right font-mono">{{ volumePercent }}%</output>
         </label>
+
+        <!-- 打击音与音乐音量相互独立：两者用途不同，用户可能只想听其中一个。 -->
+        <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
+          <span class="text-xs text-neutral-400">打击音</span>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="h-8 shrink-0 rounded-md border px-2.5 text-xs transition"
+              :class="chipClass(state.hitsound)"
+              @click="setHitsoundEnabled(!state.hitsound)"
+            >
+              {{ state.hitsound ? '开' : '关' }}
+            </button>
+            <input
+              type="range" min="0" max="100" step="1" class="h-8 w-full cursor-pointer disabled:opacity-40"
+              :disabled="!state.hitsound"
+              :value="hitsoundPercent"
+              @input="setHitsoundVolume(Number($event.target.value))"
+            >
+            <output class="w-11 shrink-0 text-right font-mono">{{ hitsoundPercent }}%</output>
+          </div>
+        </div>
+        <p v-if="state.hitsoundStatus" class="m-0 text-[11px] text-neutral-500">{{ state.hitsoundStatus }}</p>
       </section>
 
       <section class="mb-5">

@@ -116,6 +116,8 @@ pub struct RenderStandardMp4SizingConfig {
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderStandardMp4StyleConfig {
     pub FPS: i64,
+    pub ENABLE_HITSOUND: bool,
+    pub HITSOUND_VOLUME: i64,
     pub ENABLE_BACKGROUND_IMAGE: bool,
     pub BACKGROUND_DIM: f64,
     pub LABEL_COLOR: [u8; 4],
@@ -280,6 +282,8 @@ pub struct RenderTaikoMp4StyleConfig {
     pub TRACK_ACCENT_COLOR: [u8; 4],
     pub SHOW_MEASURE_LINES: bool,
     pub FPS: f64,
+    pub ENABLE_HITSOUND: bool,
+    pub HITSOUND_VOLUME: i64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -429,6 +433,8 @@ pub struct RenderCatchMp4StyleConfig {
     pub BLACK_OPAQUE: [u8; 4],
     pub PLAYFIELD_BACKGROUND: [u8; 4],
     pub FPS: f64,
+    pub ENABLE_HITSOUND: bool,
+    pub HITSOUND_VOLUME: i64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -592,6 +598,8 @@ pub struct RenderManiaMp4StyleConfig {
     pub LABEL_COLOR: [u8; 4],
     pub BLACK_OPAQUE: [u8; 4],
     pub FPS: i64,
+    pub ENABLE_HITSOUND: bool,
+    pub HITSOUND_VOLUME: i64,
     pub IMAGE_BACKGROUND: [u8; 4],
     pub SV_TEXT_COLOR: [u8; 4],
     pub SHOW_SV_LABEL: bool,

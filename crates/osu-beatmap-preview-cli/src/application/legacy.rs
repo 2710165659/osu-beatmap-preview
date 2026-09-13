@@ -837,12 +837,14 @@ mod tests {
                 start_time: 25_000,
                 end_time: 26_000,
                 is_long_note: true,
+                samples: Vec::new(),
             },
             ManiaHitObject {
                 lane: 0,
                 start_time: 12_500,
                 end_time: 12_500,
                 is_long_note: false,
+                samples: Vec::new(),
             },
         ]);
 

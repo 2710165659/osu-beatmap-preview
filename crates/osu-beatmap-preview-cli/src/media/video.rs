@@ -87,8 +87,27 @@ pub(crate) fn video_style(mode: crate::export::geometry::GameMode) -> VideoStyle
     }
 }
 
-/// 并行渲染分块大小（与 GIF 一致：一次约 8 帧）。
-/// 限制异常大游戏区域带来的临时 RGBA 帧内存。
+/// 读取指定模式的 MP4 打击音开关与音量。
+pub(crate) fn hitsound_settings(
+    mode: crate::export::geometry::GameMode,
+) -> crate::media::audio::HitsoundSettings {
+    use crate::media::audio::HitsoundSettings;
+    let layout = &crate::config::current().render;
+    macro_rules! make {
+        ($section:expr) => {
+            HitsoundSettings {
+                enabled: $section.style.ENABLE_HITSOUND,
+                volume: $section.style.HITSOUND_VOLUME as i32,
+            }
+        };
+    }
+    match mode {
+        crate::export::geometry::GameMode::Standard => make!(layout.standard.mp4),
+        crate::export::geometry::GameMode::Taiko => make!(layout.taiko.mp4),
+        crate::export::geometry::GameMode::Catch => make!(layout.catch.mp4),
+        crate::export::geometry::GameMode::Mania => make!(layout.mania.mp4),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct VideoTimeRange {
@@ -233,6 +252,7 @@ pub(crate) fn save_mp4_streamed(
     output_path: &Path,
     fps: u32,
     audio_job: AudioSourceJob,
+    beatmap: Beatmap,
     background: Option<Img>,
     time_axis: TimeAxis,
     deadline: &RequestDeadline,
@@ -256,12 +276,15 @@ pub(crate) fn save_mp4_streamed(
     }
 
     let audio_deadline = deadline.clone();
+    let hitsound = hitsound_settings(mode);
     let mut audio_task = JoinedAudioTask::new(
         std::thread::spawn(move || {
             audio_deadline.check()?;
             let source = audio_job.wait()?;
             let encoded = encode_audio_segment(
                 &source,
+                &beatmap,
+                Some(hitsound),
                 chart_start_ms,
                 frame_count,
                 fps,

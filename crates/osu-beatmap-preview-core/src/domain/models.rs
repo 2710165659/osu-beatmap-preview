@@ -1,5 +1,116 @@
 use std::collections::BTreeMap;
 
+/// 默认音效组（`.osu` 里自定义音效组的缺省值）。
+pub const SAMPLE_SET_NORMAL: i32 = 1;
+/// soft 音效组。
+pub const SAMPLE_SET_SOFT: i32 = 2;
+/// drum 音效组。
+pub const SAMPLE_SET_DRUM: i32 = 3;
+
+/// 音效组。`Custom` 对应 `.osu` 中通过文件名指定的自定义音效。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SampleBank {
+    /// 未在物件中指定音效组，应用所在 timing point 的音效组。
+    Auto,
+    #[default]
+    Normal,
+    Soft,
+    Drum,
+    Custom,
+}
+
+impl SampleBank {
+    pub fn from_set_id(set_id: i32) -> Self {
+        match set_id {
+            SAMPLE_SET_SOFT => SampleBank::Soft,
+            SAMPLE_SET_DRUM => SampleBank::Drum,
+            SAMPLE_SET_NORMAL => SampleBank::Normal,
+            // 0 与非法值都按默认音效组处理，和 osu! stable 的解析一致。
+            _ => SampleBank::Normal,
+        }
+    }
+
+    /// 返回文件名中的音效组前缀，自定义音效不参与前缀拼接。
+    pub fn prefix(self) -> Option<&'static str> {
+        match self {
+            SampleBank::Auto => None,
+            SampleBank::Normal => Some("normal"),
+            SampleBank::Soft => Some("soft"),
+            SampleBank::Drum => Some("drum"),
+            SampleBank::Custom => None,
+        }
+    }
+}
+
+/// 打击音加成类型（`.osu` 打击音位掩码中的 1/2/4 位）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HitAddition {
+    #[default]
+    None,
+    Whistle,
+    Finish,
+    Clap,
+}
+
+impl HitAddition {
+    pub fn from_hitsound(hitsound: i32) -> Self {
+        if hitsound & 2 != 0 {
+            HitAddition::Whistle
+        } else if hitsound & 4 != 0 {
+            HitAddition::Finish
+        } else if hitsound & 8 != 0 {
+            HitAddition::Clap
+        } else {
+            HitAddition::None
+        }
+    }
+
+    /// 返回 hitsound 位掩码中全部置位的加成音。
+    pub fn all_from_hitsound(hitsound: i32) -> impl Iterator<Item = Self> {
+        [
+            (2, HitAddition::Whistle),
+            (4, HitAddition::Finish),
+            (8, HitAddition::Clap),
+        ]
+        .into_iter()
+        .filter(move |(bit, _)| hitsound & bit != 0)
+        .map(|(_, addition)| addition)
+    }
+
+    /// 返回文件名中的加成后缀；普通打击音没有后缀。
+    pub fn suffix(self) -> &'static str {
+        match self {
+            HitAddition::None => "hitnormal",
+            HitAddition::Whistle => "hitwhistle",
+            HitAddition::Finish => "hitfinish",
+            HitAddition::Clap => "hitclap",
+        }
+    }
+}
+
+/// 一个待播放的打击音。
+///
+/// `volume` 为 0～100 的谱面音量；`filename` 非空表示谱面自带的音效文件，
+/// 此时忽略音效组（与 osu! 的 `HitSampleInfo` 语义一致）。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HitSample {
+    pub bank: SampleBank,
+    pub addition: HitAddition,
+    pub volume: i32,
+    pub filename: Option<String>,
+}
+
+impl HitSample {
+    pub fn new(bank: SampleBank, addition: HitAddition, volume: i32, filename: Option<String>) -> Self {
+        Self {
+            bank,
+            addition,
+            volume,
+            filename,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TimingPoint {
     pub time: f64,
@@ -9,6 +120,12 @@ pub struct TimingPoint {
     pub kiai_mode: bool,
     /// effects 位 3：省略该红线区段的第一条小节线。
     pub omit_first_bar_line: bool,
+    /// `[TimingPoints]` 第 4 列的音效组；0 表示沿用谱面默认值。
+    pub sample_set: i32,
+    /// `[TimingPoints]` 第 5 列的自定义音效索引（预览不使用具体文件，仅保留原值）。
+    pub sample_index: i32,
+    /// `[TimingPoints]` 第 6 列的音效音量，0 表示静音。
+    pub sample_volume: i32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -33,6 +150,10 @@ pub struct StandardHitObject {
     pub slider_pixel_length: f64,
     pub slider_edge_hitsounds: Vec<i32>,
     pub stack_height: i32,
+    /// 物件头部的打击音；空表示使用谱面默认音效组。
+    pub samples: Vec<HitSample>,
+    /// 滑条重复/尾部节点各自的打击音，按 edgeSets 顺序排列（不含滑条头）。
+    pub slider_edge_samples: Vec<Vec<HitSample>>,
 }
 
 impl Default for StandardHitObject {
@@ -52,39 +173,60 @@ impl Default for StandardHitObject {
             slider_pixel_length: 0.0,
             slider_edge_hitsounds: Vec::new(),
             stack_height: 0,
+            samples: Vec::new(),
+            slider_edge_samples: Vec::new(),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Default)]
 pub struct TaikoHitObject {
     pub start_time: i64,
     pub end_time: i64,
     pub hit_type: i32,
     pub hitsound: i32,
+    /// 物件头部的打击音；空表示使用谱面默认音效组。
+    pub samples: Vec<HitSample>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CatchHitObject {
     pub x: i32,
     pub y: i32,
     pub start_time: i64,
     pub end_time: i64,
     pub hit_type: i32,
+    pub hitsound: i32,
     pub new_combo: bool,
     pub combo_offset: i32,
     pub slider_type: Option<String>,
     pub slider_points: Vec<(i32, i32)>,
     pub slider_repeats: i32,
     pub slider_pixel_length: f64,
+    /// 物件头部的打击音；空表示使用谱面默认音效组。
+    pub samples: Vec<HitSample>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Default)]
 pub struct ManiaHitObject {
     pub lane: i32,
     pub start_time: i64,
     pub end_time: i64,
     pub is_long_note: bool,
+    pub samples: Vec<HitSample>,
+}
+
+impl std::fmt::Debug for ManiaHitObject {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // 保持既有转谱 golden 输出稳定；样本只供音频时间轴使用，不改变画面快照。
+        formatter
+            .debug_struct("ManiaHitObject")
+            .field("lane", &self.lane)
+            .field("start_time", &self.start_time)
+            .field("end_time", &self.end_time)
+            .field("is_long_note", &self.is_long_note)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]

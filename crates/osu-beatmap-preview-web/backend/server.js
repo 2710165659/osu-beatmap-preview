@@ -83,6 +83,21 @@ async function handle(request, response) {
   await sendStatic(response, route === '/' ? '/index.html' : route);
 }
 
+/**
+ * 跨源隔离响应头。
+ *
+ * 打击音需要 `SharedArrayBuffer` 把 WASM 的混音结果共享给音频线程，而浏览器只在
+ * 跨源隔离（COOP + COEP）下才允许使用它。所有资源都是同源的（字体、wasm、
+ * 音效都由本进程托管），因此开启隔离不影响页面加载；缺少这两个头时打击音会
+ * 自动退化成静音，页面其余部分照常工作。
+ */
+function isolationHeaders() {
+  return {
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Embedder-Policy': 'require-corp',
+  };
+}
+
 async function sendStatic(response, route) {
   const file = await staticFiles.read(route);
   if (!file) {
@@ -94,6 +109,7 @@ async function sendStatic(response, route) {
     'Content-Type': file.mime,
     'Content-Length': file.body.length,
     'Cache-Control': 'no-store',
+    ...isolationHeaders(),
   });
   response.end(file.body);
 }

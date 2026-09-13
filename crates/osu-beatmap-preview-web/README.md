@@ -191,6 +191,23 @@ crates/osu-beatmap-preview-web/
 - **默认视图**：只保留一行谱面信息、视频和进度条，视频区域最大。进度条在鼠标移动或触摸时显示，停下约 1 秒后淡出；淡出只改透明度，进度条原来的位置始终占着，所以画面不会上下位移。画面参数（30/60/120 FPS、480P/720P/1080P、0.5x–2x 倍速）、音量（0–100%，默认 50%）、Mod 与运行日志都收在右上角齿轮打开的抽屉里。
 - **谱面信息**：名称与难度取自 WASM 的 `beatmapInfo`（见下）。
 - **操作**：点击画面播放/暂停，空格同样；`Esc` 关闭抽屉。左右方向键短按在**松开时**跳转 ±5 秒（按下不跳），长按右键进入 3 倍速播放、长按左键持续向前倒带，两种情况都会在画面上显示角标。
+- **打击音（hit sound）**：默认开启、音量 50%，与音乐音量分开调节（抽屉里的「打击音」一组）。音效按模式选用：Standard / Catch / Mania 用 argon pro (2022)，Taiko 用 osu! "classic" (2013)；谱面音效组与音量按 osu! 规则从 timing point 读取，滑条 tick、滑行音、转盘旋转音、果汁流小果都会还原。**音效字节内嵌在 wasm 里**（`hitsoundAsset`），页面不需要请求音效文件；浏览器只负责用 Web Audio 解码成 PCM，之后由 WASM 按音频硬件时钟推进时间轴并混音，因此画面与声音共用同一条时间轴；某个样本读不出来时按静音处理，不影响播放。
+
+  音效的送出一条链路：WASM 按 `state.position` 混出 PCM → `src/hitsound-stream.js` 写入与音频线程共享的环形缓冲（两端统一使用相对帧数，写入位置始终领先音频线程约 170ms）→ `public/hitsound-worklet.js` 按硬件时钟消费。预读窗口按「音频线程已读位置」而不是只按画面时钟计算：音频线程由音频硬件时钟驱动、稳定地领先画面时钟几十毫秒，只按画面时钟预读会让它一路追到写入前沿、读到的全是静音（表现为打击音时有时无）。锚点、坐标系、预读窗口与 seek 对齐的回归测试在 `test/hitsound-stream.test.js`。
+
+### 打击音与跨源隔离
+
+打击音需要 `SharedArrayBuffer` 把 WASM 的混音结果交给音频线程，而浏览器只在跨源隔离下
+允许使用它，因此后端与开发服务器都会发送：
+
+```text
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+站点自身的字体、贴图、wasm 与打击音音效全部同源，开启隔离不影响页面加载。如果你的部署
+在前面又套了一层反向代理，需要把这两个响应头一起透传；缺少时打击音会自动退化成静音
+（抽屉里会显示原因），页面其余部分照常工作。
 
 ## 后端接口
 
@@ -199,7 +216,8 @@ crates/osu-beatmap-preview-web/
 | 路由 | 说明 |
 | --- | --- |
 | `GET /`、`/assets/<哈希>` | `dist/` 下的静态站点页面、脚本与样式 |
-| `GET /pkg/<文件>` | wasm 产物（`.js`、`.wasm`、`.d.ts`） |
+| `GET /pkg/<文件>` | wasm 产物（`.js`、`.wasm`、`.d.ts`），打击音音效也内嵌在 `.wasm` 里 |
+| `GET /hitsound-worklet.js` | 打击音播放内核（AudioWorklet） |
 | `GET /gpu-check.html` | WebGPU 自检页 |
 | `GET /resource/beatmap?bid=<BID>` | 该难度的 `.osu` 文本，命中缓存时直接返回本地文件 |
 | `GET /resource/audio?bid=<BID>` | 从 OSZ 中取出的音频，支持 `Range` 请求（进度条 seek 需要） |

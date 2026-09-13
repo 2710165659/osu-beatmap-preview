@@ -39,12 +39,14 @@ pub fn catch_convert(
             start_time: ho.start_time,
             end_time: ho.end_time,
             hit_type: ho.hit_type,
+            hitsound: ho.hitsound,
             new_combo: ho.new_combo,
             combo_offset: ho.combo_offset,
             slider_type: ho.slider_type.clone(),
             slider_points: ho.slider_points.clone(),
             slider_repeats: ho.slider_repeats,
             slider_pixel_length: ho.slider_pixel_length,
+            samples: ho.samples.clone(),
         })
         .collect();
     catch_objects.sort_by_key(|ho| (ho.start_time, ho.end_time));

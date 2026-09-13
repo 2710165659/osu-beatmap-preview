@@ -33,6 +33,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         out_dir.join("default_config.yml"),
         serde_yaml::to_string(&source_value)?,
     )?;
+
+    generate_hitsound_assets(manifest_dir, &out_dir)?;
+    Ok(())
+}
+
+/// 把 `assets/hitsound/*.ogg` 内嵌进 CLI 二进制。
+///
+/// 打击音资源不打进 WASM（浏览器宿主自行提供 PCM），因此这里用 `include_bytes!`
+/// 直接引用绝对路径，保证单文件可执行程序不依赖外部资源目录。
+fn generate_hitsound_assets(
+    manifest_dir: PathBuf,
+    out_dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let hitsound_dir = manifest_dir.join("../../assets/hitsound");
+    println!("cargo:rerun-if-changed={}", hitsound_dir.display());
+
+    let mut entries: Vec<(String, PathBuf)> = Vec::new();
+    if hitsound_dir.is_dir() {
+        for entry in fs::read_dir(&hitsound_dir)? {
+            let path = entry?.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("ogg") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            println!("cargo:rerun-if-changed={}", path.display());
+            entries.push((stem.to_string(), path));
+        }
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut generated = String::from(
+        "// 由 build.rs 自动生成的内嵌打击音样本表，请勿手动修改。\n\n\
+         /// 内嵌打击音样本；名称为不带扩展名的文件名。\n\
+         pub(crate) static HITSOUND_ASSETS: &[(&str, &[u8])] = &[\n",
+    );
+    for (name, path) in &entries {
+        generated.push_str(&format!(
+            "    ({:?}, include_bytes!({:?})),\n",
+            name,
+            path.to_string_lossy()
+        ));
+    }
+    generated.push_str("];\n");
+    fs::write(out_dir.join("hitsound_assets.rs"), generated)?;
     Ok(())
 }
 

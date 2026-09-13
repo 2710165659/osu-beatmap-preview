@@ -15,6 +15,13 @@ export default defineConfig({
     proxy: {
       '/resource': { target: backend, changeOrigin: true },
     },
+    // 打击音通过 SharedArrayBuffer 把 WASM 的混音结果共享给音频线程，浏览器只在
+    // 跨源隔离下允许使用它。生产环境的响应头由 backend/server.js 提供，这里让
+    // `npm run dev` 的开发服务器保持一致，否则开发时打击音会静音。
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
   },
   build: {
     // dist/ 是后端唯一托管的目录，构建前先清空，避免残留旧资源。

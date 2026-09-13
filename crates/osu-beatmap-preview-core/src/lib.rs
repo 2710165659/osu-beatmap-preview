@@ -7,6 +7,7 @@
 pub mod api;
 pub mod config;
 pub mod domain;
+pub mod hitsound;
 pub mod model;
 pub mod processing;
 pub mod render;
@@ -15,6 +16,11 @@ pub mod support;
 pub use api::{
     AudioData, ImageData, RealtimeMode, RealtimeOptions, RealtimeSession, RenderConfig,
     ResourceBundle, TimelineInfo,
+};
+pub use hitsound::{
+    build_timeline as build_hitsound_timeline, referenced_names as hitsound_referenced_names,
+    volume_gain as hitsound_volume_gain, Channels, HitsoundMixer, HitsoundTimeline,
+    PlayEvent as HitsoundEvent, SampleData, SampleLibrary,
 };
 pub use model::{mods_for_mode, parse_mods, validate_mods, ModSettings};
 pub use model::{

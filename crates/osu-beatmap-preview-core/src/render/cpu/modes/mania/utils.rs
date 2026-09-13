@@ -100,7 +100,7 @@ pub fn apply_inverse_mod(
     }
     let mut by_lane: BTreeMap<i32, Vec<ManiaHitObject>> = BTreeMap::new();
     for ho in hit_objects {
-        by_lane.entry(ho.lane).or_default().push(*ho);
+        by_lane.entry(ho.lane).or_default().push(ho.clone());
     }
 
     let mut result: Vec<ManiaHitObject> = Vec::new();
@@ -119,6 +119,7 @@ pub fn apply_inverse_mod(
                 start_time: current.start_time,
                 end_time,
                 is_long_note: end_time > current.start_time,
+                samples: current.samples.clone(),
             });
         }
     }
@@ -135,6 +136,7 @@ pub fn apply_hold_off_mod(hit_objects: &[ManiaHitObject]) -> Vec<ManiaHitObject>
             start_time: ho.start_time,
             end_time: ho.start_time,
             is_long_note: false,
+            samples: ho.samples.clone(),
         })
         .collect();
     result.sort_by_key(|ho| (ho.start_time, ho.end_time, ho.lane));

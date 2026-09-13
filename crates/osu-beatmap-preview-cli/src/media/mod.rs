@@ -4,6 +4,7 @@
 mod amf;
 pub(crate) mod audio;
 mod cpu;
+pub(crate) mod hitsound;
 pub(crate) mod image;
 mod mux;
 #[cfg(windows)]

@@ -348,7 +348,7 @@ pub fn prepare_hit_objects(
             let start_multiplier = multiplier_lookup.at(hit_object.start_time as f64);
             let end_multiplier = multiplier_lookup.at(hit_object.end_time as f64);
             PreparedTaikoHitObject {
-                hit_object: *hit_object,
+                hit_object: hit_object.clone(),
                 start_multiplier,
                 end_multiplier,
                 min_multiplier: start_multiplier.min(end_multiplier),
@@ -1094,6 +1094,7 @@ mod tests {
                 end_time: 1000,
                 hit_type: DRUMROLL_FLAG,
                 hitsound: 0,
+                samples: Vec::new(),
             },
             start_multiplier: 1.0,
             end_multiplier: 1.0,
@@ -1157,6 +1158,7 @@ mod tests {
                 end_time: 1000,
                 hit_type: DRUMROLL_FLAG,
                 hitsound: HIT_SOUNDS_STRONG,
+                samples: Vec::new(),
             },
             start_multiplier: 1.0,
             end_multiplier: 1.0,

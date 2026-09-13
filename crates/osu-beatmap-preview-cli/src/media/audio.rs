@@ -275,6 +275,8 @@ pub(crate) fn load_background_image(
 
 pub(crate) fn encode_audio_segment(
     source: &AudioSource,
+    beatmap: &Beatmap,
+    hitsound: Option<HitsoundSettings>,
     chart_start_ms: i64,
     frame_count: usize,
     fps: u32,
@@ -288,22 +290,29 @@ pub(crate) fn encode_audio_segment(
         ));
     }
     let decoded = decode_audio(&source.path, deadline)?;
-    let target_samples = (frame_count as u64
-        * crate::config::current()
-            .advance
-            .video_audio
-            .AUDIO_SAMPLE_RATE as u64)
-        .div_ceil(fps as u64);
+    let sample_rate = crate::config::current()
+        .advance
+        .video_audio
+        .AUDIO_SAMPLE_RATE;
+    let target_samples = (frame_count as u64 * sample_rate as u64).div_ceil(fps as u64);
     if target_samples == 0 {
         return Err(PreviewError::render("audio segment is empty"));
     }
+    // 打击音与音乐共用同一个 48kHz 时间轴：整个片段一次性混好，按输出帧号取样，
+    // 因此不需要在编码循环里做任何时间换算，也不会出现累计漂移。
+    let hitsound = render_hitsound_segment(
+        beatmap,
+        hitsound,
+        chart_start_ms,
+        frame_count,
+        fps,
+        speed,
+        sample_rate,
+    )?;
 
     let encoder = Encoder::new(EncoderParams {
         bit_rate: BitRate::Cbr(crate::config::current().advance.video_audio.AUDIO_BITRATE),
-        sample_rate: crate::config::current()
-            .advance
-            .video_audio
-            .AUDIO_SAMPLE_RATE,
+        sample_rate,
         transport: Transport::Raw,
         channels: ChannelMode::Stereo,
         audio_object_type: AudioObjectType::Mpeg4LowComplexity,
@@ -333,6 +342,7 @@ pub(crate) fn encode_audio_segment(
             chart_start_ms,
             speed,
             encoder_delay_samples,
+            hitsound.as_deref(),
         );
         let encoded = encoder
             .encode(&input, &mut output)
@@ -359,6 +369,57 @@ pub(crate) fn encode_audio_segment(
     Ok(EncodedAudio { frames })
 }
 
+/// MP4 导出使用的打击音开关与音量（来自各模式 `mp4.style` 配置）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct HitsoundSettings {
+    pub enabled: bool,
+    /// 音量百分比（0～100）。
+    pub volume: i32,
+}
+
+/// 按视频输出时间轴混出整段打击音。
+///
+/// 返回 `None` 表示本次导出没有启用打击音（配置关闭或没有任何可用样本）。
+/// 缓冲区下标即输出帧下标，倍速由调用方换算成谱面时间（`source_frame_position`
+/// 与打击音共用同一换算），因此这里不需要 `speed`。
+fn render_hitsound_segment(
+    beatmap: &Beatmap,
+    settings: Option<HitsoundSettings>,
+    chart_start_ms: i64,
+    frame_count: usize,
+    fps: u32,
+    _speed: f64,
+    sample_rate: u32,
+) -> Result<Option<Vec<f32>>> {
+    let Some(settings) = settings.filter(|settings| settings.enabled) else {
+        return Ok(None);
+    };
+    let library = super::hitsound::build_library(beatmap);
+    if library.is_empty() {
+        return Ok(None);
+    }
+    let timeline = osu_beatmap_preview_core::hitsound::build_timeline(beatmap, &library);
+    if timeline.is_empty() {
+        return Ok(None);
+    }
+
+    // 混音位置与输出帧一一对应，因此这里按 1x 时长准备缓冲区，
+    // 倍速只体现在「每帧对应的谱面时间」上。
+    let frames = (frame_count as u64 * sample_rate as u64).div_ceil(fps as u64);
+    if frames == 0 {
+        return Ok(None);
+    }
+    let frames = frames.min(u32::MAX as u64) as usize;
+    let mut mixer =
+        osu_beatmap_preview_core::hitsound::HitsoundMixer::new(library, timeline, sample_rate);
+    mixer.set_master_gain(osu_beatmap_preview_core::hitsound::volume_gain(
+        settings.volume.clamp(0, 100),
+    ));
+    mixer.seek(chart_start_ms as f64);
+    Ok(Some(mixer.render(frames)))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn fill_audio_frame(
     output: &mut [i16],
     output_frame_start: usize,
@@ -367,6 +428,7 @@ fn fill_audio_frame(
     chart_start_ms: i64,
     speed: f64,
     encoder_delay_samples: usize,
+    hitsound: Option<&[f32]>,
 ) {
     for (frame_offset, stereo) in output.chunks_exact_mut(2).enumerate() {
         let output_index = output_frame_start + frame_offset;
@@ -382,9 +444,30 @@ fn fill_audio_frame(
             speed,
         );
         let [left, right] = sample_stereo(decoded, source_frame);
-        stereo[0] = left;
-        stereo[1] = right;
+        // 打击音与音乐在同一输出下标处相加：两者都按同一时间轴换算，
+        // 所以即使倍速播放也保持同步。
+        let (hit_left, hit_right) = match hitsound {
+            Some(buffer) => {
+                let index = output_index + encoder_delay_samples;
+                (
+                    buffer.get(index * 2).copied().unwrap_or(0.0),
+                    buffer.get(index * 2 + 1).copied().unwrap_or(0.0),
+                )
+            }
+            None => (0.0, 0.0),
+        };
+        stereo[0] = mix_i16(left, hit_left);
+        stereo[1] = mix_i16(right, hit_right);
     }
+}
+
+/// 把线性 PCM 与 f32 打击音相加并夹紧到 i16。
+fn mix_i16(music: i16, hitsound: f32) -> i16 {
+    if hitsound == 0.0 {
+        return music;
+    }
+    let mixed = music as f32 + hitsound * i16::MAX as f32;
+    mixed.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
 }
 
 fn source_frame_position(
@@ -774,16 +857,120 @@ mod tests {
     }
 
     #[test]
+    fn 打击音混音对真实谱面产生非零样本() {
+        // 回归：这条链路一旦断掉（样本没内嵌、时间轴为空、位置换算错），
+        // 导出的 MP4 就会完全没有打击音，而单元测试以外很难发现。
+        let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,2000,1,0,0:0:0:0:\n";
+        let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
+            .expect("fixture 必须可解析");
+
+        let library = crate::media::hitsound::build_library(&beatmap);
+        assert!(!library.is_empty(), "内嵌资源没有解码出任何样本");
+
+        let settings = Some(HitsoundSettings {
+            enabled: true,
+            volume: 100,
+        });
+        // `frame_count` 是视频帧数：48 帧 @48fps = 1 秒音频。
+        // 起点取 900ms，让第一个打击音（谱面时间 1000ms）落在缓冲**中间**——
+        // 放在窗口边界上测不出问题（边界事件由混音器自己的测试覆盖）。
+        let sample_rate = crate::config::current()
+            .advance
+            .video_audio
+            .AUDIO_SAMPLE_RATE;
+        let video_frames = 48_u32;
+        let fps = 48_u32;
+        let chart_start_ms = 900;
+        let expected_samples = (video_frames as u64 * sample_rate as u64).div_ceil(fps as u64);
+        let mixed = render_hitsound_segment(
+            &beatmap,
+            settings,
+            chart_start_ms,
+            video_frames as usize,
+            fps,
+            1.0,
+            sample_rate,
+        )
+        .expect("混音不应失败")
+        .expect("启用且样本充足时必须产生混音缓冲");
+        assert_eq!(mixed.len(), expected_samples as usize * 2);
+        let peak = mixed.iter().fold(0.0_f32, |acc, value| acc.max(value.abs()));
+        assert!(peak > 0.01, "打击音缓冲全为零（peak={peak}）");
+
+        // 关闭开关时不产生缓冲。
+        let disabled = render_hitsound_segment(
+            &beatmap,
+            Some(HitsoundSettings {
+                enabled: false,
+                volume: 100,
+            }),
+            chart_start_ms,
+            video_frames as usize,
+            fps,
+            1.0,
+            sample_rate,
+        )
+        .expect("关闭开关不应失败");
+        assert!(disabled.is_none());
+    }
+
+    #[test]
+    fn 打击音落在预期的谱面时间上() {
+        // 回归：混音窗口分组、时间轴位置、缓冲区下标三者一旦错位，导出的 MP4 就会
+        // 要么没有打击音、要么错位；这里逐个检查每个打击音的能量峰出现在预期位置。
+        let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,2000,1,0,0:0:0:0:\n";
+        let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
+            .expect("fixture 必须可解析");
+        let sample_rate = 48_000_u32;
+        let frames = sample_rate as usize * 3;
+        let mixed = render_hitsound_segment(
+            &beatmap,
+            Some(HitsoundSettings {
+                enabled: true,
+                volume: 100,
+            }),
+            0,
+            frames,
+            sample_rate,
+            1.0,
+            sample_rate,
+        )
+        .expect("混音不应失败")
+        .expect("必须产生混音缓冲");
+        assert_eq!(mixed.len(), frames * 2);
+
+        // 每 10ms 统计一次能量，记录「由静转动」的位置作为起音点。
+        let window = sample_rate as usize / 100;
+        let mut onsets: Vec<f64> = Vec::new();
+        let mut previous_loud = false;
+        for (index, chunk) in mixed.chunks(window * 2).enumerate() {
+            let peak = chunk.iter().fold(0.0_f32, |acc, value| acc.max(value.abs()));
+            let loud = peak > 0.01;
+            if loud && !previous_loud {
+                onsets.push(index as f64 * window as f64 * 1000.0 / sample_rate as f64);
+            }
+            previous_loud = loud;
+        }
+        assert_eq!(onsets.len(), 2, "预期两个打击音，实际 {onsets:?}");
+        for (onset, expected) in onsets.iter().zip([1000.0_f64, 2000.0]) {
+            assert!(
+                (onset - expected).abs() < 20.0,
+                "打击音落在 {onset}ms，预期 {expected}ms"
+            );
+        }
+    }
+
+    #[test]
     fn timeline_sampling_honours_lead_in_and_speed() {
         let decoded = DecodedAudio {
             sample_rate: 1_000,
             stereo_samples: (0..2_000_i16).flat_map(|v| [v, v]).collect(),
         };
         let mut output = [0_i16; 6];
-        fill_audio_frame(&mut output, 0, 3, &decoded, -500, 2.0, 0);
+        fill_audio_frame(&mut output, 0, 3, &decoded, -500, 2.0, 0, None);
         assert_eq!(output, [0, 0, 0, 0, 0, 0]);
 
-        fill_audio_frame(&mut output, 0, 3, &decoded, 1_000, 2.0, 0);
+        fill_audio_frame(&mut output, 0, 3, &decoded, 1_000, 2.0, 0, None);
         assert_eq!(output[0], 1_000);
         assert_eq!(source_frame_position(0, 0, 1_000, 1_000, 1.0), 1_000.0);
         assert_eq!(source_frame_position(48_000, 0, 1_000, 1_000, 1.5), 2_500.0);
@@ -808,7 +995,7 @@ mod tests {
         };
         let mut output = [0_i16; 8];
 
-        fill_audio_frame(&mut output, 23_999, 24_003, &decoded, -500, 1.0, 0);
+        fill_audio_frame(&mut output, 23_999, 24_003, &decoded, -500, 1.0, 0, None);
 
         assert_eq!(&output[..2], &[0, 0]);
         assert_eq!(&output[2..4], &[100, 100]);

@@ -87,6 +87,7 @@ pub(crate) fn render_catch_video(
         output_path,
         fps,
         audio_job,
+        beatmap.clone(),
         background,
         time_axis,
         deadline,

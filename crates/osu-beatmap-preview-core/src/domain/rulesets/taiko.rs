@@ -86,6 +86,7 @@ fn taiko_convert_hit_object(
             end_time: hit_object.end_time,
             hit_type: SWELL_FLAG,
             hitsound: hit_object.hitsound,
+            samples: hit_object.samples.clone(),
         }];
     }
 
@@ -94,6 +95,7 @@ fn taiko_convert_hit_object(
         end_time: hit_object.start_time,
         hit_type: 0,
         hitsound: hit_object.hitsound,
+        samples: hit_object.samples.clone(),
     }]
 }
 
@@ -118,6 +120,7 @@ fn taiko_convert_slider(
                 end_time: current_time as i64,
                 hit_type: 0,
                 hitsound: all_hitsounds[sample_index],
+                samples: hit_object.samples.clone(),
             });
             sample_index = (sample_index + 1) % all_hitsounds.len();
 
@@ -135,7 +138,94 @@ fn taiko_convert_slider(
         end_time: hit_object.start_time + vals.taiko_duration,
         hit_type: DRUMROLL_FLAG,
         hitsound: hit_object.hitsound,
+        samples: hit_object.samples.clone(),
     }]
+}
+
+/// 滑条转 taiko 的几何量（时长与 tick 间距），供转换与打击音共用。
+pub struct TaikoSliderGeometry {
+    pub taiko_duration: i64,
+    pub tick_spacing: f64,
+}
+
+/// standard 物件按 taiko 规则发声时的一次打击。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TaikoHitsoundEvent {
+    /// 打击时间（绝对谱面毫秒）。
+    pub time_ms: f64,
+    /// 转换后的打击音位掩码：位 3（8）表示蓝音符（rim），其余为红音符（center）。
+    pub hitsound: i32,
+}
+
+/// 按 taiko 转谱规则把 standard 物件展开为打击音事件。
+///
+/// 只处理「是否发声、何时发声、是红还是蓝」，与预览的时间轴共用同一套
+/// tick 间距与滑条时长计算，因此画面与声音不会出现分歧。
+pub fn taiko_hitsound_events(
+    beatmap: &Beatmap,
+    object: &StandardHitObject,
+) -> Vec<TaikoHitsoundEvent> {
+    let hitsound = object.hitsound;
+
+    if object.hit_type & 2 != 0 {
+        // 复用转谱实现保证「何时发声、是红还是蓝」与画面完全一致：鼓滚（间距过大的滑条）
+        // 在转谱里只产生一个 DRUMROLL 对象，因此这里也只会发一次声。
+        let mut cursor = TimingCursor::new(&beatmap.timing_points);
+        cursor.advance_to(object.start_time);
+        let mut converted = taiko_convert_slider(object, beatmap, &cursor);
+        converted.sort_by_key(|hit| hit.start_time);
+        return converted
+            .into_iter()
+            .map(|hit| TaikoHitsoundEvent {
+                time_ms: hit.start_time as f64,
+                hitsound: hit.hitsound,
+            })
+            .collect();
+    }
+
+    vec![TaikoHitsoundEvent {
+        time_ms: object.start_time as f64,
+        hitsound,
+    }]
+}
+
+pub fn taiko_slider_geometry(
+    hit_object: &StandardHitObject,
+    beatmap: &Beatmap,
+    beat_length: f64,
+    slider_velocity: f64,
+) -> TaikoSliderGeometry {
+    let spans = i32::max(1, hit_object.slider_repeats);
+
+    let mut distance = hit_object.slider_pixel_length;
+    distance *= VELOCITY_MULTIPLIER;
+    distance *= spans as f64;
+
+    let timing_beat_length = beat_length;
+    let mut beat_length = precision_adjusted_beat_length(timing_beat_length, slider_velocity);
+
+    let slider_multiplier = taiko_slider_multiplier(beatmap);
+    let slider_tick_rate = taiko_slider_tick_rate(beatmap);
+    let slider_scoring_point_distance =
+        OSU_BASE_SCORING_DISTANCE * (slider_multiplier * VELOCITY_MULTIPLIER) / slider_tick_rate;
+
+    let taiko_velocity = slider_scoring_point_distance * slider_tick_rate;
+    let taiko_duration = (distance / taiko_velocity * beat_length) as i64;
+
+    if beatmap.format_version() >= 8 {
+        beat_length = timing_beat_length;
+    }
+
+    // 与 stable 一致：tick 间距取 beat/tickRate 与 每段时长 的较小值。
+    let tick_spacing = f64::min(
+        beat_length / slider_tick_rate,
+        taiko_duration as f64 / spans as f64,
+    );
+
+    TaikoSliderGeometry {
+        taiko_duration,
+        tick_spacing,
+    }
 }
 
 fn slider_conversion_values(
@@ -159,20 +249,16 @@ fn slider_conversion_values(
         OSU_BASE_SCORING_DISTANCE * (slider_multiplier * VELOCITY_MULTIPLIER) / slider_tick_rate;
 
     let taiko_velocity = slider_scoring_point_distance * slider_tick_rate;
-    let taiko_duration = (distance / taiko_velocity * beat_length) as i64;
+    let geometry = taiko_slider_geometry(hit_object, beatmap, timing_beat_length, slider_velocity);
+    let taiko_duration = geometry.taiko_duration;
 
     if beatmap.format_version() >= 8 {
         beat_length = timing_beat_length;
     }
 
-    let tick_spacing = f64::min(
-        beat_length / slider_tick_rate,
-        taiko_duration as f64 / spans as f64,
-    );
-
     SliderConversionValues {
         taiko_duration,
-        tick_spacing,
+        tick_spacing: geometry.tick_spacing,
         distance,
         timing_beat_length,
         beat_length,
@@ -215,6 +301,9 @@ fn taiko_convert_timing_points(
                     uninherited: false,
                     kiai_mode: point.kiai_mode,
                     omit_first_bar_line: point.omit_first_bar_line,
+                    sample_set: 0,
+                    sample_index: 0,
+                    sample_volume: 100,
                 }
             }
         })
@@ -242,6 +331,9 @@ fn taiko_convert_timing_points(
             uninherited: false,
             kiai_mode: cursor.kiai,
             omit_first_bar_line: false,
+            sample_set: 0,
+            sample_index: 0,
+            sample_volume: 100,
         });
         last_scroll_speed = next_scroll_speed;
     }

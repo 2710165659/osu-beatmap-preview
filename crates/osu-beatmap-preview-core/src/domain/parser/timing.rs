@@ -25,6 +25,20 @@ pub fn parse_timing_points(lines: &[&str]) -> Option<Vec<TimingPoint>> {
         } else {
             0
         };
+        // 第 4～6 列依次是采样组、采样索引与采样音量；缺失时按 osu! 默认值处理。
+        let sample_set = parts
+            .get(3)
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(0);
+        let sample_index = parts
+            .get(4)
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(0)
+            .max(0);
+        let sample_volume = parts
+            .get(5)
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(100);
         points.push(TimingPoint {
             time: parts[0].parse().ok()?,
             beat_length: parts[1].parse().ok()?,
@@ -32,6 +46,9 @@ pub fn parse_timing_points(lines: &[&str]) -> Option<Vec<TimingPoint>> {
             uninherited,
             kiai_mode: effects & 1 != 0,
             omit_first_bar_line: effects & 8 != 0,
+            sample_set,
+            sample_index,
+            sample_volume,
         });
     }
     // 稳定排序可保留相同时间红线/绿线在文件中的顺序。

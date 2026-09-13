@@ -10,7 +10,8 @@ WASM 产物把 core 的实时会话和 renderer 的 WGPU 绘制接到浏览器�
 | --- | --- |
 | 解析 `.osu` 字节、Mod、转谱和时间轴 | 获取 `.osu` / OSZ / 背景 / 音频并解码 |
 | 按绝对时间生成单帧场景（`FrameScene`） | 维护播放时钟、暂停、seek、倍速 |
-| 在浏览器 WebGPU Canvas 上绘制并呈现 | 提供 `<canvas>`、控制 UI 和音频播放 |
+| 在浏览器 WebGPU Canvas 上绘制并呈现 | 提供 `<canvas>`、控制 UI 和音频输出 |
+| 打击音的事件时间轴、倍速换算与混音（PCM） | 下载并解码打击音样本、按音频硬件时钟输出 PCM |
 | 会话内的 Mod 热切换与画布尺寸变更 | 处理按键、指针等输入事件 |
 | 从 `.osu` 字节汇总谱面内部信息（`beatmapInfo`） | 按 bid 取回 `.osu` 字节并展示信息 |
 
@@ -99,7 +100,7 @@ npm start
 
 ## JavaScript API
 
-导出一个类型与一个函数，所有时间都用毫秒。
+导出一个类型与三个函数，所有时间都用毫秒。
 
 `WebGpuSession`：
 
@@ -115,6 +116,58 @@ npm start
 | `set_mods(mods)` | 热切换 Mod，数组每项是一个独立 token；切换后 `absolute_start_ms_number()` 可能变化，需要重新读取 |
 | `set_background_rgba(width, height, rgba)` | 传入已解码的背景图 RGBA 数据；不调用时使用模式默认背景 |
 | `resize(width, height)` | 同时更新 surface 与 core 的合成尺寸；只改 Canvas 不会改变渲染尺寸 |
+
+### 打击音（hit sound）
+
+音频时间轴（什么时候播放哪个样本、多大声、倍速与 seek 怎么换算）全部在 WASM 内，
+宿主只做两件事：把解码好的 PCM 送进来，把混音结果按音频硬件时钟送出去。因此画面与
+声音始终使用同一份位置数据，不需要两处时钟互相对齐。
+
+| 成员 | 说明 |
+| --- | --- |
+| `enableHitsound(volumePercent, sampleRate)` | 打开打击音。`sampleRate` 必须是宿主音频设备的采样率（`AudioContext.sampleRate`），否则输出会被按错误速率消费 |
+| `disableHitsound()` | 关闭打击音，之后所有混音接口返回静音 |
+| `hitsoundEnabled()` | 是否已打开 |
+| `hitsoundRequiredNames()` | 当前谱面需要宿主提供 PCM 的样本名（按优先级，含裸名回退） |
+| `hitsoundHasSamples()` | 是否已经放入过可用样本 |
+| `hitsoundSampleRate()` | 当前混音采样率 |
+| `setHitsoundSample(name, channels, sampleRate, loopLength, samples)` | 放入一段已解码的 PCM。`channels` 为 1 或 2，`loopLength` 是循环长度（采样帧，0 表示不循环），滑条滑行音与转盘旋转音需要传样本总帧数 |
+| `rebuildHitsoundTimeline()` | 样本**全部放完后调用一次**；逐个样本调用会反复遍历整张谱面 |
+| `setHitsoundVolume(volumePercent)` | 更新音量（0–100），按 osu! 的 `10^((v - 100) / 25)` 曲线换算 |
+| `positionHitsound(chartTimeMs)` | 把混音位置对齐到谱面绝对时间，不清空正在播放的声音 |
+| `seekHitsound(chartTimeMs)` | 跳到指定位置并丢弃正在播放的声音 |
+| `hitsoundPositionMs()` | 当前混音位置（谱面毫秒） |
+| `renderHitsound(frames)` | 从当前位置渲染 `frames` 个立体声采样帧，返回可读取的帧数（未启用时为 0） |
+| `takeHitsoundBuffer()` | 取回上一批混音结果，返回交错立体声 `Float32Array`（长度 = 帧数 × 2） |
+| `resetHitsoundSamples()` | 清空样本并重建时间轴（切 Mod/转谱后重新加载时使用），保留音量与采样率 |
+
+推荐的使用顺序（官方 Web 页面的做法），音效字节来自 WASM 内嵌资源，不需要下载：
+
+```js
+const session = await WebGpuSession.create(bytes, canvas, options);
+const names = session.hitsoundRequiredNames();        // 需要哪些音效
+session.enableHitsound(50, audioContext.sampleRate);   // 音频设备采样率
+for (const name of names) {
+  const bytes = hitsoundAsset(name);                   // 内嵌在 wasm 里，空数组表示没有
+  if (!bytes.length) continue;
+  const buffer = await decodeOgg(bytes);               // 宿主只用 Web Audio 解码
+  session.setHitsoundSample(name, channels, buffer.sampleRate, loopFrames, pcm);
+}
+session.rebuildHitsoundTimeline();                     // 全部放完后重建一次
+session.setPlaying(true);                              // 由宿主驱动
+session.positionHitsound(chartTimeMs);                 // 每帧对齐位置
+const frames = session.renderHitsound(4096);           // 取一段混音结果
+const pcm = session.takeHitsoundBuffer();              // 交错立体声 Float32Array
+```
+
+`hitsoundNames(bytes)`：按 `.osu` 字节返回打击音需要的样本名，可在会话创建前调用。
+
+`hitsoundAsset(name)`：按样本名返回内嵌的 ogg 字节（空数组表示没有对应资源）。
+
+`hitsoundAssetCount()`：内嵌资源数量（36），便于宿主自检。
+
+`hitsoundDefaults(mode)`：返回该模式在 `assets/shared_config.yml` 里的打击音默认值
+（`{ enabled, volume }`）。CLI 读同一份配置，网页端用它保证默认值一致。
 
 `beatmapInfo(bytes)`：按传入的 `.osu` 字节返回谱面内部信息对象（全量字段）。它不下载文件，也不依赖 WebGPU，可以在创建会话之前调用：
 
@@ -149,10 +202,11 @@ info.metadata; // [Metadata] 全量键值
 
 - 只支持 WebGPU 后端；浏览器或设备不支持时 `create` 直接返回错误，不会回退到 WebGL 或 CPU 绘制。
 - 本 crate 只在 `wasm32` 目标下导出上述类型；为其他目标编译时是空库，请在宿主页面使用 wasm 产物。
-- 不解析回放、不切分 MP4，也不处理音频；倍速与 seek 需要宿主同步音频播放位置。
+- 不解析回放、不切分 MP4；倍速与 seek 由宿主把「当前游戏时间」告诉 WASM（`positionHitsound` / `seekHitsound`），音频事件时间轴与混音都在 WASM 内。
+- 打击音资源内嵌在 wasm 里（36 个 ogg，约 240 KiB，压缩后 wasm 约 1.2 MiB），宿主只需用 Web Audio 解码；还需要 `SharedArrayBuffer`（跨源隔离）才能把混音结果交给音频线程，环境不具备时页面应退化成「只播音乐」，而不是报错。
 - 每帧都直接在 GPU 上绘制，宿主应按目标帧率调用 `render_number`，不要在同一帧重复提交。
 - 背景图需要宿主自行解码成 RGBA 后通过 `set_background_rgba` 传入。
-- `beatmapInfo` 只解析传入的字节，不认识 `bid`：`.osu` 的下载由宿主负责（Web 包里是 Node 后端的 `/resource/beatmap?bid=`）。
+- `beatmapInfo` / `hitsoundNames` 只解析传入的字节，不认识 `bid`：`.osu` 的下载由宿主负责（Web 包里是 Node 后端的 `/resource/beatmap?bid=`）。
 
 ## 相关文档
 

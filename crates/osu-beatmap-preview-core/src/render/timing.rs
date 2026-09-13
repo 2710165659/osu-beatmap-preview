@@ -42,6 +42,9 @@ mod tests {
             uninherited: true,
             kiai_mode: false,
             omit_first_bar_line: false,
+            sample_set: 0,
+            sample_index: 0,
+            sample_volume: 100,
         }
     }
 
