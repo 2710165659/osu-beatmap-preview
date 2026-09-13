@@ -4,33 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [Unreleased]
+## [1.2.2] - 2026.09.13
 
 ### Added
 
-- Web 后端新增 `--tls-host=<HOST>`（可重复，也可用 `OSU_PREVIEW_TLS_HOSTS` 逗号分隔）：把这些域名/IP 加进自签证书的 SAN。容器里自动探测到的是容器自己的网卡地址，部署到服务器时原来的证书对不上浏览器实际访问的地址，只能靠它补上；签发时的地址列表记录在 `<缓存目录>/.tls/hosts.txt`，地址变了会在下次启动时自动重新生成证书，启动日志也会打印 `证书覆盖的地址：…`。
-- 新增 `Docker/Dockerfile-web`（配套 `Dockerfile-web.dockerignore`）与 `.gitattributes`：多阶段构建（Rust → wasm、Vite → `dist/`、Node 运行时）出可直接部署的镜像，运行时镜像不含 `node_modules`、以 root 运行（避免挂载目录属主导致的 `EACCES`）、缓存固定挂在 `/data`，并自带健康检查。构建命令为 `docker build -f Docker/Dockerfile-web -t osu-beatmap-preview-web .`；镜像约 240 MiB，首次构建需编译 wasm 与前端，之后复用 BuildKit 缓存。
-- Web 前端新增加载进度条：后端新增只读接口 `GET /resource/progress?bid=<BID>`，返回加载阶段（`osu`/`osz`/`extract`/`ready`/`error`）与已下载字节、总字节；前端在加载期间每 400 ms 轮询一次，`.osz` 下载时显示确定态进度，总量未知时显示不确定态。
-- Web 站点支持 `/?bid=<BID>` 深链直接进入预览（可选 `&convert=taiko`），加载成功后地址栏会写回这两个参数，点「返回加载」时清除。
-- WASM 新增 `beatmapInfo(bytes)`：按传入的 `.osu` 字节返回谱面内部信息对象，覆盖概览字段、统计（时长、BPM、音符数、timing point 与 break 数、连击色）、难度（AR/CS/HP/OD）以及 `[General]`/`[Metadata]`/`[Difficulty]` 三个区段的全量键值；core 新增对应的 `BeatmapInfo`（`model::BeatmapInfo`）。
-- Web 播放页新增一行谱面信息条，显示名称（`Artist - Title`，优先 Unicode）与难度名，数据取自 `beatmapInfo`。
-- Web 播放页帧率新增 120 FPS 选项（默认仍为 60 FPS）。
+- Web 后端新增 `--tls-host=<HOST>`（可重复，也可用 `OSU_PREVIEW_TLS_HOSTS` 指定），用于把容器/服务器实际访问的域名或 IP 加进自签证书的 SAN。
+- 新增 `Docker/Dockerfile-web` 与 `.gitattributes`，可构建包含 wasm 与前端产物的可部署镜像。
+- Web 站点支持 `/?bid=<BID>` 深链直接进入预览，可选 `&convert=<模式>`。
+- WASM 新增 `beatmapInfo(bytes)`，返回谱面概览、统计与难度等内部信息；core 新增对应的 `BeatmapInfo`。
+- Web 播放页新增谱面信息条（名称与难度名），帧率新增 120 FPS 选项。
+- Web 加载进度改为按阶段展示：`/resource/progress` 上报连接镜像、下载谱面包、解包、传输、就绪等阶段与字节数，前端显示实时速率与预计剩余时间；音频与背景后台下载期间在播放页顶部显示细进度条。
+- Web 播放页日志新增各阶段耗时汇总，便于判断云端部署时慢在哪一段。
 
 ### Changed
 
-- Web 包前端改为 Vue 3 单文件组件 + Tailwind CSS v4，由 Vite 从 `src/` 构建到 `dist/`；后端模块从 `src/` 移到 `backend/`，静态站点改由后端托管 `dist/`。发布包内启动方式仍是 `node backend/server.js`（或 `npm start`），最终用户仍然只需要 Node.js，不需要 `npm install`。
-- Web 播放页重排：默认只保留谱面信息、视频和进度条，视频区域最大；画面参数（帧率/清晰度/倍速）、Mod 与运行日志都收进右上角齿轮打开的抽屉，抽屉里不再有播放控制分组。移动端改用动态视口高度（`100dvh`）与深色底色，不再出现底部空白。
-- Web 播放页进度条改为鼠标移动或触摸时显示、静止约 1 秒后淡出；淡出只改透明度，进度条的位置始终占着，所以画面不会因为隐藏而上下位移。指针停在进度条上或焦点在里面时保持可见。
-- Web 播放页左右方向键改为**松开时**跳转 ±5 秒（按下不再立即跳），并新增长按行为：长按右键 3 倍速播放、长按左键每 120 ms 后退 500 ms 持续倒带，两种情况都会在画面上显示角标，切走窗口或退回加载页时自动复位。
-- DA 参数面板改为勾选 DA 后才出现，默认隐藏。
-- Web 加载页在 `navigator.gpu` 为空时区分两种原因：不是安全上下文（`http://` 加 IP/域名）时直接提示改用 `https://`，而不是笼统地说“浏览器没有 WebGPU”。
-- Web 后端的 `--flag=value` 与 `--flag value` 两种参数写法都支持，此前按用法里写的 `--cache-dir=<DIR>` 传参会直接报「未知参数」。
-- `osu-beatmap-preview-wasm` 依赖新增 `serde`（core 已依赖同一版本，不引入新的第三方 crate）。
+- Web 包前端改为 Vue 3 单文件组件 + Tailwind CSS v4，由 Vite 构建到 `dist/`，后端模块移到 `backend/`；启动方式仍是 `node backend/server.js`，最终用户仍只需要 Node.js。
+- Web 播放页重排：画面参数、Mod 与日志收进齿轮抽屉，移动端改用 `100dvh` 动态视口高度。
+- Web 播放页进度条改为活动时显示、静止约 1 秒后淡出；左右方向键改为松开时跳转 ±5 秒，并支持长按快进与倒带。
+- DA 参数面板改为勾选 DA 后才出现；`navigator.gpu` 为空时区分“非安全上下文”与“浏览器不支持 WebGPU”。
+- Web 后端同时支持 `--flag=value` 与 `--flag value` 两种参数写法。
 
 ### Fixed
 
-- 修复 Web 播放页在播到结尾后再次点击播放报 `The play() request was interrupted by a call to pause()` 的问题：在结尾处重新播放会先把时钟拨回开头，且被 `pause()`/seek 打断的 `play()` 不再记为音频故障（浏览器自动播放拦截改为提示“点一下画面即可播放声音”）。
-- 修复 Web 播放页音频重试过于频繁的问题：音频被自动播放策略拦下时按 500 ms 间隔重试，不再每帧调用 `play()`。
+- 修复 Web 播放页播到结尾后再次播放报 `play() request was interrupted by a call to pause()` 的问题。
+- 修复 Web 播放页“静音播放中”角标不消失的问题：改为按音频实际是否出声判定，并在首次点击/触摸/按键时于用户手势里恢复声音。
+- 修复 Web 播放页音频重试策略：仅在缓冲与 seek 之后续播，按 500 ms 节流，不再每帧调用 `play()`。
+- 修复移动端音画不同步的问题：`currentTime` 的赋值是异步 seek，此前设完就当完成；现在改为等待 `seeked` 事件、期间冻结画面时钟，并在暂停/恢复与切换帧率、分辨率时对齐音频。
+- 修复暂停后再次播放时画面前进几帧即冻结、只剩音频的问题：去掉会与音频位置走散的“已落实进度”快照，改以音频自身的 `currentTime` 为唯一时钟基准。
+- 修复 Web 加载页阶段文案不准确的问题：解包时不再显示“下载谱面包”，未拿到首字节时显示“服务端连接镜像”。
+
+### Performance
+
+- Web 加载的关键路径解耦：会话就绪即可进入播放页，音频与背景改为后台并行下载，不再等音频元数据。
+- Web 播放页减少无谓的音频 seek：仅在确实需要挪动时 seek，且同一时刻只允许一个 seek 在飞。
 
 ---
 

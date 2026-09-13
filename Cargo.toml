@@ -14,7 +14,7 @@ resolver = "2"
 # Web 站点是 Node.js 项目，package.json 的版本由
 # crates/osu-beatmap-preview-web/scripts/version.mjs 从本文件单向同步。
 [workspace.package]
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 
 [profile.release]

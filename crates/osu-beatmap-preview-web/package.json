@@ -1,6 +1,6 @@
 {
   "name": "osu-beatmap-preview-web",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "type": "module",
   "description": "osu! 谱面预览的 Vue 静态站点与本地下载后端（后端无运行时依赖）",
