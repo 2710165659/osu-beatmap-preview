@@ -61,7 +61,7 @@ SliderTickRate:1
 256,192,4000,8,0,6000
 `;
 
-/** 最小 taiko 谱面：红音符与蓝音符各一个，音量 90 落在 drum 档。 */
+/** 最小 taiko 谱面：红音符、蓝音符、大音符（finish 位）各一个，采样组 = 3（drum）。 */
 const taiko_beatmap = `osu file format v14
 
 [General]
@@ -83,10 +83,14 @@ CircleSize:5
 [HitObjects]
 256,192,1000,1,0
 256,192,1500,1,8
+256,192,2000,1,4
 `;
 
-/** 低音量的 taiko 谱面：音量 50 落在 soft 档。 */
-const taiko_soft_beatmap = taiko_beatmap.replace(',4,3,0,90,1,0', ',4,3,0,50,1,0');
+/** 只改音量（90 → 50）、采样组仍然 = 3：legacy 规则下音量不再决定音效组。 */
+const taiko_quiet_beatmap = taiko_beatmap.replace(',4,3,0,90,1,0', ',4,3,0,50,1,0');
+
+/** 采样组 = 2（soft）的 taiko 谱面：同样三个音符。 */
+const taiko_soft_beatmap = taiko_beatmap.replace(',4,3,0,90,1,0', ',4,2,0,90,1,0');
 
 test('wasm 产物存在且导出所需函数', async (t) => {
   const module = await loadModule();
@@ -159,19 +163,26 @@ test('standard 谱面按 timing point 的音效组展开样本名', async (t) =>
   }
 });
 
-test('taiko 谱面按采样音量选择音效组', async (t) => {
+test('taiko 谱面按 timing point 的采样组展开样本名', async (t) => {
   const module = await loadModule();
   if (!module) {
     t.skip('缺少 wasm 产物');
     return;
   }
-  const loud = module.hitsoundNames(new TextEncoder().encode(taiko_beatmap));
-  // 采样音量 90 → drum 档。
-  assert.ok(loud.includes('taiko-drum-hitnormal'), `缺少红音符音效：${loud}`);
-  assert.ok(loud.includes('taiko-drum-hitclap'), `缺少蓝音符音效：${loud}`);
+  // legacy（classic 皮肤）规则：音效组来自物件 / timing point 的采样组，不看音量。
+  const drum = module.hitsoundNames(new TextEncoder().encode(taiko_beatmap));
+  assert.ok(drum.includes('taiko-drum-hitnormal'), `缺少红音符音效：${drum}`);
+  assert.ok(drum.includes('taiko-drum-hitclap'), `缺少蓝音符音效：${drum}`);
+  // finish 位 = 大音符，额外叠一层 hitfinish。
+  assert.ok(drum.includes('taiko-drum-hitfinish'), `缺少大音符音效：${drum}`);
 
-  const quiet = module.hitsoundNames(new TextEncoder().encode(taiko_soft_beatmap));
-  // 采样音量 50 → soft 档。
-  assert.ok(quiet.includes('taiko-soft-hitnormal'), `缺少低音量红音符音效：${quiet}`);
-  assert.ok(quiet.includes('taiko-soft-hitclap'), `缺少低音量蓝音符音效：${quiet}`);
+  // 只改音量不改采样组：仍然是 drum 组（这是旧「按音量分档」逻辑的回归点）。
+  const quiet = module.hitsoundNames(new TextEncoder().encode(taiko_quiet_beatmap));
+  assert.ok(quiet.includes('taiko-drum-hitnormal'), `音量不应改变音效组：${quiet}`);
+  assert.ok(!quiet.includes('taiko-soft-hitnormal'), `音量不应改变音效组：${quiet}`);
+
+  // 采样组 = 2 → soft。
+  const soft = module.hitsoundNames(new TextEncoder().encode(taiko_soft_beatmap));
+  assert.ok(soft.includes('taiko-soft-hitnormal'), `缺少 soft 红音符音效：${soft}`);
+  assert.ok(soft.includes('taiko-soft-hitclap'), `缺少 soft 蓝音符音效：${soft}`);
 });

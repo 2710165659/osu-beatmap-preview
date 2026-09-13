@@ -37,6 +37,8 @@ All notable changes to this project will be documented in this file.
 - 修复滑条音效参数取错列的问题：`.osu` 中滑条的 `hitSample` 位于第 11 列，此前按第 6 列解析会把曲线数据当成音效参数，导致音效组与音量全错。
 - 修复 `hitSample` 全为 0（最常见情况）时未回退到 timing point 的问题：音效组与音量应随时间点变化，此前会被写成固定的 normal 组与 100 音量。
 - 修复缺少背景声明的谱面（或背景条目不在 OSZ 里）在 Web 端整张加载失败的问题：背景改为可选，缺失时前端退化成纯色背景，音频与画面照常工作（与 CLI 的行为一致）。
+- 修复 taiko 打击音走错皮肤逻辑的问题：此前按采样点音量分档选音效组（`>=90` drum / `>=60` normal / 其余 soft），那是 osu! Argon 皮肤（`VolumeAwareHitSampleInfo`）的规则；改用 legacy（classic 皮肤）逻辑：音效组取自物件 `hitSample`、缺省时用所在 timing point，鼓边按 `clap|whistle` 判定（此前只看 `clap` 位，whistle 蓝音符会当红音符），strong（`finish` 位）追加 `hitfinish`/`hitwhistle`，连打按 `DrumRoll.CreateNestedHitObjects()` 的 tick 逐个发声、大连打按 `TaikoAutoGenerator` 的节奏交替敲击鼓心/鼓边（此前每个物件只发一次声）。音效资源不变，仍用内嵌的 classic 套件。
+- 修复 Web 端单声道打击音（taiko 的 `taiko-*-hit*.ogg` 全是单声道）被拉长一倍、低一个八度的问题：宿主此前先把单声道交错成双声道、却仍按 `channels = 1` 交给 wasm，混音器把数组当成长度翻倍的单声道样本，每个采样帧播两次（听感上「和原音不符、开二倍速才正常」）；现在单声道按纯单声道、立体声按交错 L/R 分别交给内核，并补了格式转换的回归测试。
 
 ## [1.2.2] - 2026.09.13
 

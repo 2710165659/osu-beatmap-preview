@@ -8,7 +8,7 @@
 // 位置的说法统一如下：`gameMilliseconds` 是游戏时间轴上的毫秒（0 = 首个物件），
 // WASM 的打击音位置用「谱面绝对时间」，两者相差 `absoluteStart`，由调用方传入。
 
-import { interleaveMono, interleaveStereo } from './hitsound-core.js';
+import { samplePcmForWasm } from './hitsound-core.js';
 import { createHitsoundStream } from './hitsound-stream.js';
 
 /**
@@ -25,11 +25,7 @@ const SAMPLE_DECODE_CONCURRENCY = 4;
  * 返回是否成功放入；放入失败只影响这一个音效，不影响其它样本。
  */
 function pushSample(session, name, buffer, loopLength) {
-  const channels = Math.min(2, buffer.numberOfChannels);
-  const mono = channels === 1;
-  const samples = mono
-    ? interleaveMono(buffer.getChannelData(0))
-    : interleaveStereo(buffer.getChannelData(0), buffer.getChannelData(1));
+  const { channels, samples } = samplePcmForWasm(buffer);
   if (!samples.length) return false;
   session.setHitsoundSample(name, channels, buffer.sampleRate, loopLength, samples);
   return true;

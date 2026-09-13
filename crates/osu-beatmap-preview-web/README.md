@@ -291,6 +291,8 @@ rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.128 --locked
 ```
 
+改了 core / renderer / wasm 之后要跑 `npm run build:wasm` **再跑一次 `npm run build`**（后端只托管 `dist/`），并且**刷新浏览器页面**：wasm 模块在页面加载时只导入一次，切换谱面或重新开始预览都不会重新加载它，不刷新就会继续用旧逻辑。静态响应都是 `no-store`，普通刷新（F5）即可。
+
 发布包里已经带好 `dist/` 与 `public/pkg`，最终用户只需要 Node.js，不需要 Rust，也不需要 `npm install`。
 
 ## 相关文档

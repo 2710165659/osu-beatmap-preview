@@ -17,15 +17,22 @@ export function createRingConfig(sampleRate, seconds = 2) {
   return { sampleRate: rate, length, mask: length - 1 };
 }
 
-/** 单声道 PCM 交错化成双声道：内核统一按立体声读取。 */
-export function interleaveMono(channel) {
-  const output = new Float32Array(channel.length * 2);
-  for (let index = 0; index < channel.length; index++) {
-    const value = channel[index];
-    output[index * 2] = value;
-    output[index * 2 + 1] = value;
+/**
+ * 把 AudioBuffer 转成 WASM 需要的 PCM 与声道数。
+ *
+ * WASM 侧的约定是：`channels == 1` 时数组是纯单声道（长度 = 采样帧数），`channels == 2`
+ * 时是交错立体声（长度 = 采样帧数 × 2）。曾经把单声道先交错成双声道、却仍按
+ * `channels = 1` 交进去，混音器会把它当成「长度翻倍的单声道样本」，鼓声被拉长一倍、
+ * 低一个八度——这就是 Web 端 taiko（单声道样本）听上去「和原音不符、开二倍速才正常」
+ * 的根因。
+ */
+export function samplePcmForWasm(buffer) {
+  const channels = Math.min(2, buffer.numberOfChannels);
+  if (channels <= 1) {
+    return { channels: 1, samples: buffer.getChannelData(0) };
   }
-  return output;
+  const samples = interleaveStereo(buffer.getChannelData(0), buffer.getChannelData(1));
+  return { channels: 2, samples };
 }
 
 /** 立体声 PCM 交错化成 [L, R, L, R, ...]。 */

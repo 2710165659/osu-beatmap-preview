@@ -87,7 +87,7 @@ Web（Node 后端 + 浏览器）
 
 ## 打击音（hit sound）
 
-打击音的「什么时候播放哪个样本、多大声」集中在 core 的 `hitsound` 模块里：它按四模式的 osu! 规则（Standard 的滑条 tick/滑行音、Taiko 按采样点音量重选 bank、Catch 的果汁流小果、Mania 的长条）把谱面展开成事件时间轴，并提供一个与音频设备无关的离线混音器。样本 PCM 由宿主提供，core 不接触文件、网络或音频设备。
+打击音的「什么时候播放哪个样本、多大声」集中在 core 的 `hitsound` 模块里：它按四模式的 osu! 规则（Standard 的滑条 tick/滑行音、Taiko 走 legacy（classic 皮肤）路径——音效组取自物件 `hitSample` 与所在 timing point、鼓边按 `clap|whistle` 判定、strong 追加 `finish`/`whistle`、连打逐 tick、大连打按 autoplay 节奏交替敲击，Catch 的果汁流小果、Mania 的长条）把谱面展开成事件时间轴，并提供一个与音频设备无关的离线混音器。样本 PCM 由宿主提供，core 不接触文件、网络或音频设备。
 
 - CLI：`build.rs` 把 `assets/hitsound/*.ogg` 内嵌进可执行文件，导出 MP4 时用 symphonia 解码被引用到的样本，再按视频输出时间轴整段混音后交给 AAC 编码器；音乐与打击音共用同一个 48kHz 输出下标，因此倍速播放也保持同步。任何样本读取失败都退化为静音，不影响导出。
 - Web：core 构建时把同一批 ogg 内嵌进 wasm（`hitsound::asset_bytes`），页面按名字取字节、用 Web Audio 解码成 PCM 再交给 wasm；wasm 在音频线程的时钟下推进时间轴并混音，画面与声音使用同一条时间轴（见 [WASM 使用说明](../crates/osu-beatmap-preview-wasm/README.md)）。宿主只负责解码与输出，不需要下载音效文件。

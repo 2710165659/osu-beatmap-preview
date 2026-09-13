@@ -10,9 +10,9 @@ import {
   bufferedFrames,
   createRingConfig,
   framesToMs,
-  interleaveMono,
   interleaveStereo,
   msToFrames,
+  samplePcmForWasm,
 } from '../src/hitsound-core.js';
 
 test('环形长度取 2 的整数次幂并覆盖目标时长', () => {
@@ -29,9 +29,39 @@ test('非法采样率回退到 48000', () => {
   assert.equal(createRingConfig(-1).sampleRate, 48000);
 });
 
-test('单声道交错成双声道且左右一致', () => {
-  const stereo = interleaveMono(Float32Array.from([0.25, -0.5]));
-  assert.deepEqual(Array.from(stereo), [0.25, 0.25, -0.5, -0.5]);
+test('单声道样本按纯单声道交给内核', () => {
+  // 回归：曾经把单声道先交错成双声道、却仍按 `channels = 1` 交进去，混音器会把数组
+  // 当成长度翻倍的单声道样本（每个采样帧播两次），声音被拉长一倍、低一个八度——
+  // Web 端 taiko（样本全是单声道）听上去「和原音不符、开二倍速才正常」的根因。
+  const buffer = {
+    numberOfChannels: 1,
+    getChannelData: () => Float32Array.from([0.25, -0.5, 0.75]),
+  };
+  const { channels, samples } = samplePcmForWasm(buffer);
+  assert.equal(channels, 1);
+  assert.equal(samples.length, 3, 'mono 数组长度必须等于采样帧数');
+  assert.deepEqual(Array.from(samples), [0.25, -0.5, 0.75]);
+});
+
+test('立体声样本交错成 L R 交给内核', () => {
+  const buffer = {
+    numberOfChannels: 2,
+    getChannelData: (index) =>
+      index === 0 ? Float32Array.from([1, 2]) : Float32Array.from([-1, -2]),
+  };
+  const { channels, samples } = samplePcmForWasm(buffer);
+  assert.equal(channels, 2);
+  assert.deepEqual(Array.from(samples), [1, -1, 2, -2]);
+});
+
+test('多声道样本只取前两个声道', () => {
+  const buffer = {
+    numberOfChannels: 6,
+    getChannelData: (index) => Float32Array.from([index, index + 1]),
+  };
+  const { channels, samples } = samplePcmForWasm(buffer);
+  assert.equal(channels, 2);
+  assert.deepEqual(Array.from(samples), [0, 1, 1, 2]);
 });
 
 test('立体声交错按 L R 顺序排列', () => {
