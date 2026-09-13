@@ -43,6 +43,11 @@ struct ResourceKey {
 }
 
 impl ResourceKey {
+    /// 键的身份是「场景内编号 + 图像堆地址」。
+    ///
+    /// 地址只在图像本体存活期间唯一，所以缓存条目必须一并持有图像（见
+    /// `CachedTexture`）：只有同一块地址不可能被别的图像复用时，跨帧的键命中
+    /// 才等价于「同一张图」。
     fn new(id: ResourceId, image: &Arc<Img>) -> Self {
         Self {
             id,
@@ -51,9 +56,25 @@ impl ResourceKey {
     }
 }
 
+/// 已上传的场景纹理。
+///
+/// `image` 不是冗余字段，而是键成立的前提：编号在帧之间会重复（早期帧没有谱面
+/// 背景时时间标签就是 0 号资源，背景到达后同样是 0 号），如果这里不持有图像本体，
+/// 上一帧释放掉的临时图会把堆地址让给新图，键相同就会命中旧纹理。曾经的表现是
+/// 谱面背景被画成上一帧的时间标签（拉伸整屏、模糊），并且一直错到光栅器重建
+/// （切分辨率）为止。
 struct CachedTexture {
     _texture: wgpu::Texture,
     bind_group: wgpu::BindGroup,
+    image: Arc<Img>,
+}
+
+/// 缓存命中条件：键一致且指向同一个图像实例。
+///
+/// 键里已经带了地址，正常情况下两者同时成立；这里再比对一次实例，是为了万一
+/// 身份规则被破坏时退回重传，而不是把旧纹理贴到新图上。
+fn is_cache_hit(cached: Option<&Arc<Img>>, image: &Arc<Img>) -> bool {
+    cached.is_some_and(|cached| Arc::ptr_eq(cached, image))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -426,7 +447,7 @@ impl SceneRasterizer {
                 )));
             }
             let key = ResourceKey::new(id, image);
-            if self.textures.contains_key(&key) {
+            if is_cache_hit(self.textures.get(&key).map(|cached| &cached.image), image) {
                 continue;
             }
             let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -475,6 +496,7 @@ impl SceneRasterizer {
                 CachedTexture {
                     _texture: texture,
                     bind_group,
+                    image: Arc::clone(image),
                 },
             );
         }
@@ -1373,5 +1395,28 @@ mod tests {
             ResourceKey::new(ResourceId(1), &first),
             ResourceKey::new(ResourceId(1), &first)
         );
+    }
+
+    #[test]
+    fn 缓存命中要求同一个图像实例() {
+        let cached = Arc::new(Img::new(1, 1, [0, 0, 0, 0]));
+        let same = Arc::clone(&cached);
+        let other = Arc::new(Img::new(1, 1, [0, 0, 0, 0]));
+        assert!(is_cache_hit(Some(&cached), &same));
+        assert!(!is_cache_hit(Some(&cached), &other));
+        assert!(!is_cache_hit(None, &same));
+    }
+
+    #[test]
+    fn 缓存持有图像后同号新图不会复用旧地址() {
+        // 模拟早期帧的 0 号资源（时间标签）被缓存，缓存条目连同纹理持有它。
+        let label = Arc::new(Img::new(4, 2, [0, 0, 0, 0]));
+        let label_key = ResourceKey::new(ResourceId(0), &label);
+        let cached = Arc::clone(&label);
+        drop(label);
+        // 之后到达的 0 号资源（谱面背景）必须落在别的地址上，否则会命中旧纹理。
+        let background = Arc::new(Img::new(8, 4, [0, 0, 0, 0]));
+        assert_ne!(label_key, ResourceKey::new(ResourceId(0), &background));
+        assert_eq!(label_key, ResourceKey::new(ResourceId(0), &cached));
     }
 }
