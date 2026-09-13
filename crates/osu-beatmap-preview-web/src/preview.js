@@ -35,8 +35,28 @@ export const MOD_OPTIONS = Object.freeze({
 // 只处理背景资源，不改变 playfield 和其他平台的渲染配置。
 const BACKGROUND_DIM = 0.7;
 
-/** 自动播放被拦下后重试音频的最小间隔，避免每帧都调用 play()。 */
+/** 音频被自动播放策略拦下后重试播放的最小间隔，避免每帧都调用 play()。 */
 const AUDIO_RETRY_INTERVAL = 500;
+
+/** 手机浏览器上 seek 要几秒才落地，超时后放行，靠对齐逻辑兜底。 */
+const AUDIO_SEEK_TIMEOUT = 2000;
+/**
+ * 音频与画面差距超过这个值才判定为「需要重新 seek」。
+ *
+ * 移动端一次 seek 会重新缓冲并卡一下声音，所以微小差距宁可让画面等音频
+ * （见 tick 里的对齐），也不要频繁动 seek——反复 seek 正是音画不同步的根源。
+ */
+const AUDIO_RESYNC_THRESHOLD = 120;
+/** 画面时钟最多等音频这么久，超过就退回按墙钟推进。 */
+const AUDIO_RESYNC_MAX_WAIT = 1500;
+/**
+ * 暂停时允许把画面进度对齐到音频的最大偏移。
+ *
+ * 取 80ms（约 5 帧 @60FPS）是有意的：自动播放被拦下时，用户点画面会先在手势里
+ * 恢复播放、紧接着这次点击又把它暂停，音频在这几十毫秒里已经往前走了一点。对齐
+ * 窗口放到几百毫秒，就会把这几十毫秒的「向前跳」画出来——那正是用户看到的跳帧。
+ */
+const PAUSE_ALIGN_TOLERANCE = 80;
 
 /** 触发播放需要「用户激活」，因此只用指针 / 触摸 / 键盘这类真实输入当作手势。 */
 const GESTURE_EVENTS = ['pointerdown', 'touchstart', 'keydown'];
@@ -173,9 +193,23 @@ let targetFps = 60;
 let lastTick = 0;
 let lastRenderTime = 0;
 let hasRenderedFrame = false;
-let pendingAudioTime = null;
 let audioEnded = false;
-let ignoreAudioUntil = 0;
+/**
+ * 音频时钟状态。
+ *
+ * `lastSeekedMs` 记录「已经落实到音频元素上的进度」：同步到同一个进度时不必再次
+ * seek。移动端 seek 会重新缓冲，重复 seek 就是音画不同步的根源。
+ */
+let audioSeekPending = false;
+let lastSeekedMs = Number.NaN;
+let audioPlayWhenSeeked = false;
+/**
+ * 正在重建会话或改画布尺寸。
+ *
+ * 这些操作在移动端会阻塞主线程几百毫秒到数秒（GPU 资源重建 + 重新上传背景），
+ * 期间画面时钟不能继续按墙钟往前跑，否则操作结束后画面已经跑到音频前面。
+ */
+let renderPending = false;
 /**
  * 已经在日志里写过一次播放被拦，避免 tick 里的重试把日志刷屏。
  *
@@ -658,6 +692,7 @@ async function loadAudioBlob(value, { signal } = {}) {
   releaseAudioUrl();
   audioObjectUrl = URL.createObjectURL(blob);
   audio.src = audioObjectUrl;
+  resetAudioClock();
   audio.load();
   await new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => {
@@ -754,24 +789,113 @@ function render() {
 /**
  * 把进度换算成音频时间。
  *
- * HTMLMediaElement 的 currentTime 是异步 seek，短时间内不能用旧值覆盖新进度，
- * 因此设置 ignoreAudioUntil 让时钟短暂地走 rAF 而不是音频。
+ * 这里是移动端音画不同步的关键：`currentTime` 的赋值是异步 seek，手机上真正落地
+ * 可能要好几秒，期间音频还在从旧位置出声。所以
+ *   1. 只在「确实需要挪动」时才 seek（重复同步同一进度不做任何事）；
+ *   2. seek 期间冻结画面时钟（audioSeekPending），让画面等音频而不是反过来；
+ *   3. seek 完成后由 tick 里的对齐逻辑接管（见 applyAudioClock）。
+ *
+ * 目标进度统一记在 `lastSeekedMs` 上（见 seekAudioTo）：还没拿到元数据时先不下发，
+ * 等 loadedmetadata 或 tick 再补——这样不会出现「先记着待办、又被别的路径清掉」的状态。
  */
-function syncAudioToPosition() {
+function syncAudioToPosition({ resume = false } = {}) {
   const time = absoluteTime();
   audioEnded = false;
-  ignoreAudioUntil = performance.now() + 250;
   if (time < 0) {
+    // 谱面开始前的静音段：直接停在 0，等真正进入正片再开始播。
     audio.pause();
-    pendingAudioTime = 0;
-    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) audio.currentTime = 0;
+    if (Number.isFinite(audio.duration)) {
+      audio.currentTime = 0;
+      lastSeekedMs = absoluteStart;
+    }
     return;
   }
-  pendingAudioTime = time / 1000;
-  if (Number.isFinite(audio.duration)) {
-    audio.currentTime = Math.min(pendingAudioTime, audio.duration);
-    pendingAudioTime = null;
+  seekAudioTo(Math.min(time, Number.isFinite(audio.duration) ? audio.duration * 1000 : time), { resume });
+}
+
+/** 目标进度是否还没有落实到音频元素上（元数据没到，或 seek 还在飞）。 */
+function audioOutOfSync() {
+  if (!Number.isFinite(lastSeekedMs)) return false;
+  if (audioSeekPending) return false;
+  return Math.abs(lastSeekedMs - absoluteTime()) > AUDIO_RESYNC_THRESHOLD;
+}
+
+/**
+ * 请求音频 seek 到指定进度。
+ *
+ * 用 seeked 事件而不是「设完就当完成」：手机上一次 seek 会重新缓冲，只有事件到了
+ * 才知道新位置真的生效；期间画面冻结，结束后按需要对上播放状态。
+ *
+ * 已经在目标附近时什么都不做——播放、恢复、切 mod 都会调用到这里，真去 seek 的话
+ * 手机上每按一次「启用/禁用」都会卡一下声音。
+ */
+function seekAudioTo(targetMs, { resume = false } = {}) {
+  const durationMs = Number.isFinite(audio.duration) ? audio.duration * 1000 : targetMs;
+  const clamped = Math.min(Math.max(0, targetMs), durationMs);
+  if (Number.isFinite(lastSeekedMs) && Math.abs(lastSeekedMs - clamped) <= AUDIO_RESYNC_THRESHOLD) return;
+  // 已经有 seek 在飞：只记下最新目标，等它落地后再补一次。
+  // 倒带时每 120ms 就跳一步，直接丢弃这些请求会让音频停在旧位置。
+  lastSeekedMs = clamped;
+  if (audioSeekPending) return;
+  // 元数据还没到就先不下发：记在 lastSeekedMs 上，loadedmetadata 或 tick 会补。
+  if (!Number.isFinite(audio.duration)) return;
+  audioSeekPending = true;
+  // 先停住再改 currentTime：手机上 seek 要几百毫秒才落地，期间如果继续出声，
+  // 听到的还是旧位置，而画面已经冻在新位置——那就是「声音和画面对不上」。
+  audio.pause();
+  audio.currentTime = clamped / 1000;
+  return waitForAudioSeek().then(() => {
+    audioSeekPending = false;
+    // seek 期间被暂停的音频要恢复，但只在「本来就在播」的前提下。
+    const shouldPlay = (resume || audioPlayWhenSeeked) && state.playing;
+    audioPlayWhenSeeked = false;
+    if (shouldPlay) startAudio();
+    // 等待期间又来了新的目标（连续拖动进度条、倒带）：补一次 seek。
+    if (Math.abs(lastSeekedMs - clamped) > AUDIO_RESYNC_THRESHOLD) {
+      void seekAudioTo(lastSeekedMs, { resume: shouldPlay });
+    }
+  });
+}
+
+/** 等到 seek 真正落地（或超时放行）。 */
+function waitForAudioSeek(timeout = AUDIO_SEEK_TIMEOUT) {
+  return new Promise((resolve) => {
+    const done = () => {
+      window.clearTimeout(timer);
+      audio.removeEventListener('seeked', done);
+      resolve();
+    };
+    const timer = window.setTimeout(done, timeout);
+    audio.addEventListener('seeked', done, { once: true });
+  });
+}
+
+/** 重新加载音频资源后，之前记录的 seek 位置失效。 */
+function resetAudioClock() {
+  lastSeekedMs = Number.NaN;
+  audioSeekPending = false;
+  audioPlayWhenSeeked = false;
+}
+
+/**
+ * 用音频时钟校正画面进度。
+ *
+ * 与音频差得不多时让画面贴住音频；差得太多说明两边已经走散，宁可重新 seek 一次
+ * 也不要长期错位——但重新 seek 会冻结画面，所以小范围漂移交给音频自己追。
+ */
+function applyAudioClock() {
+  const audioPosition = audio.currentTime * 1000 - absoluteStart;
+  if (!Number.isFinite(audioPosition)) return;
+  const drift = audioPosition - state.position;
+  if (Math.abs(drift) <= AUDIO_RESYNC_THRESHOLD) {
+    state.position = Math.min(state.duration, Math.max(0, audioPosition));
+    return;
   }
+  // 差距不大时保持当前进度、等音频追上来，避免为了几十毫秒反复 seek。
+  if (Math.abs(drift) < AUDIO_RESYNC_MAX_WAIT) return;
+  // 这里要发起新的 seek，画面会一直冻到 seeked 事件到达；期间不再重复触发，
+  // 否则一个 seek 还没落地就又发一个，手机上一次也完不成。
+  if (!audioSeekPending) seekAudioTo(absoluteTime(), { resume: true });
 }
 
 /** 记录音频「已经出声」：清掉静音状态与提示，之后失败也不会再重复写日志。 */
@@ -799,8 +923,10 @@ function requestAudioPlay() {
   const guarded = request.then(
     () => ({ rejected: false, blocked: false }),
     (error) => {
-      // 暂停或被新的 seek 打断属于正常流程：只有画面还在播时才算真正的失败。
-      if (!state.playing || error?.name === 'AbortError') return { rejected: false, blocked: false };
+      // 暂停、seek 或新的 seek 打断 play() 都属于正常流程：只有画面还在播时才算真正的失败。
+      if (!state.playing || error?.name === 'AbortError' || audioSeekPending) {
+        return { rejected: false, blocked: false };
+      }
       const blocked = error?.name === 'NotAllowedError';
       if (blocked) {
         // 自动播放策略一旦拒绝就会一直拒绝，所以只写一次日志并提示用户点一下。
@@ -871,6 +997,23 @@ function removeGestureHints() {
   for (const type of GESTURE_EVENTS) window.removeEventListener(type, handleUserGesture, { capture: true });
 }
 
+/**
+ * 把画面进度对齐到音频当前所在的位置。
+ *
+ * 暂停时必须做这一步：`state.position` 是上一次 rAF 时更新的，而 `audio.pause()`
+ * 是立即生效的，两者最多差一个渲染帧；如果暂停时不对齐，恢复播放时时钟一交回
+ * 音频，画面就会往回跳一帧（就是「暂停再播放跳帧」）。
+ *
+ * 只用「离当前进度 80ms 以内」的读数：seek 途中或两边已经错位时，音频的瞬时值
+ * 不可信（比如刚拖完进度条、或手势恢复后又被这次点击暂停），宁可不动。
+ */
+function alignPositionToAudio() {
+  if (audioSeekPending || !Number.isFinite(audio.duration)) return;
+  const audioPosition = audio.currentTime * 1000 - absoluteStart;
+  if (!Number.isFinite(audioPosition) || Math.abs(audioPosition - state.position) > PAUSE_ALIGN_TOLERANCE) return;
+  state.position = Math.min(state.duration, Math.max(0, audioPosition));
+}
+
 function playState(next) {
   state.playing = next;
   lastTick = 0;
@@ -880,10 +1023,18 @@ function playState(next) {
   audio.playbackRate = playbackRate();
   if (next) {
     syncAudioToPosition();
+    // 恢复播放时也对齐一次：暂停期间画面可能因为标签页/主线程节流而落后于音频，
+    // 不对齐的话恢复瞬间会先跳一下再被音频时钟拉回来。
+    alignPositionToAudio();
     startAudio();
     animation = requestAnimationFrame(tick);
   } else {
+    // 先把进度钉在音频当下所在的位置再暂停，恢复时才不会跳回上一帧。
+    const before = state.position;
+    alignPositionToAudio();
     audio.pause();
+    // 定格的那一帧要和音频停下的位置一致，否则暂停画面本身就是旧的一帧。
+    if (before !== state.position) render();
   }
 }
 
@@ -897,8 +1048,6 @@ function finishPlayback() {
 function restartPlayback() {
   state.position = 0;
   audioEnded = false;
-  ignoreAudioUntil = 0;
-  pendingAudioTime = 0;
   syncAudioToPosition();
   render();
 }
@@ -909,7 +1058,12 @@ function tick(now) {
   const delta = now - lastTick;
   lastTick = now;
 
-  if (absoluteTime() < 0 || audio.paused || audioEnded || now < ignoreAudioUntil) {
+  // 音频 seek 还没落地（移动端要几秒）、还没拿到元数据、或正在重建渲染资源：
+  // 画面停在原地等，否则等这一下结束时两边已经错开，正好是「跳进度条 / 切 mod /
+  // 切帧率之后不同步」的来源。
+  if (audioSeekPending || audioOutOfSync() || renderPending) {
+    state.position = Math.min(state.duration, Math.max(0, state.position));
+  } else if (absoluteTime() < 0 || audio.paused || audioEnded) {
     state.position = Math.min(state.duration, state.position + delta * playbackRate());
     // 音频还在缓冲或等待用户激活时，画面继续走并定期重试。
     //
@@ -920,13 +1074,7 @@ function tick(now) {
       startAudio();
     }
   } else {
-    const audioPosition = audio.currentTime * 1000 - absoluteStart;
-    // seek 或浏览器缓冲期间 currentTime 可能暂时回到旧值；只接受接近当前进度的时钟。
-    if (Number.isFinite(audioPosition) && Math.abs(audioPosition - state.position) < 1500) {
-      state.position = Math.min(state.duration, Math.max(0, audioPosition));
-    } else {
-      state.position = Math.min(state.duration, state.position + delta * playbackRate());
-    }
+    applyAudioClock();
   }
 
   // 始终按显示刷新率推进时钟，但只按所选帧率提交渲染。用目标帧间隔
@@ -1098,7 +1246,9 @@ export function seekTo(nextPosition) {
   const resume = state.playing;
   if (resume) playState(false);
   state.position = Math.min(state.duration, Math.max(0, nextPosition));
-  syncAudioToPosition();
+  // resume：seek 会让音频元素短暂暂停（见 seekAudioTo），完成后要自己恢复出声，
+  // 否则用户跳一次进度条就变成了静音播放。
+  syncAudioToPosition({ resume });
   render();
   if (resume) playState(true);
 }
@@ -1185,6 +1335,26 @@ function stopRewind() {
   rewindResume = false;
 }
 
+/**
+ * 在改渲染参数期间冻结时钟。
+ *
+ * 切帧率 / 分辨率都会让移动端主线程卡住几百毫秒（GPU 资源重建、背景重新上传），
+ * 而音频不会停下来——不冻结的话操作结束后画面已经跑到音频前面，接着就是一次
+ * 补 seek 和一次声音卡顿。所以这里统一「停画面 → 改参数 → 重新对齐时钟 → 恢复」。
+ */
+function withFrozenClock(mutate) {
+  const resume = state.playing;
+  if (resume) playState(false);
+  renderPending = true;
+  try {
+    mutate();
+  } finally {
+    renderPending = false;
+    // 恢复播放会让 clock 重新对齐（画布尺寸、mod 都可能改变时间轴）。
+    if (resume) playState(true);
+  }
+}
+
 export function setSpeed(value) {
   state.speed = value;
   audio.playbackRate = playbackRate();
@@ -1193,9 +1363,12 @@ export function setSpeed(value) {
 export function setFps(value) {
   state.fps = value;
   targetFps = value;
-  lastRenderTime = 0;
-  hasRenderedFrame = false;
-  if (state.page === 'play') render();
+  if (state.page !== 'play') return;
+  withFrozenClock(() => {
+    lastRenderTime = 0;
+    hasRenderedFrame = false;
+    render();
+  });
 }
 
 export function setResolution(key) {
@@ -1207,23 +1380,21 @@ export function setResolution(key) {
     const size = RESOLUTIONS[candidate];
     return size.width === session.width() && size.height === session.height();
   }) ?? '720';
-  const resume = state.playing;
-  if (resume) playState(false);
-  try {
-    // session.resize 同时更新 WASM surface 和 core 的合成尺寸，否则场景会
-    // 继续按旧宽高绘制并贴在新画布的左上角。
-    session.resize(width, height);
-    canvasEl.width = width;
-    canvasEl.height = height;
-    fitCanvasToViewport();
-    paintBackground();
-    render();
-  } catch (error) {
-    state.resolution = previous;
-    logPlay(`分辨率切换失败：${errorText(error)}`);
-  } finally {
-    if (resume) playState(true);
-  }
+  withFrozenClock(() => {
+    try {
+      // session.resize 同时更新 WASM surface 和 core 的合成尺寸，否则场景会
+      // 继续按旧宽高绘制并贴在新画布的左上角。
+      session.resize(width, height);
+      canvasEl.width = width;
+      canvasEl.height = height;
+      fitCanvasToViewport();
+      paintBackground();
+      render();
+    } catch (error) {
+      state.resolution = previous;
+      logPlay(`分辨率切换失败：${errorText(error)}`);
+    }
+  });
 }
 
 // DA 需要参数；界面暴露 AR/CS 两个滑杆，勾选 DA 后生成 DAAR<value>CS<value>。
@@ -1339,11 +1510,14 @@ audio.addEventListener('ended', () => {
   audioEnded = true;
 });
 
+/**
+ * 元数据到位后把之前记下的目标进度落实下去。
+ *
+ * 只补「已经记过目标但还没下发」的情况，避免在别的 seek 还在飞时插队。
+ */
 audio.addEventListener('loadedmetadata', () => {
-  if (pendingAudioTime !== null && Number.isFinite(audio.duration)) {
-    audio.currentTime = Math.min(pendingAudioTime, audio.duration);
-    pendingAudioTime = null;
-  }
+  if (!session || audioSeekPending || !Number.isFinite(lastSeekedMs)) return;
+  syncAudioToPosition();
 });
 
 audio.addEventListener('error', () => {
