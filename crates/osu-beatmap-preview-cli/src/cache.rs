@@ -70,9 +70,11 @@ pub fn output_cache_hit(
         return None;
     }
 
-    // 输出文件必须晚于程序构建时间。
+    // 输出文件必须晚于程序构建时间：改了内嵌默认配置（例如打击音音量、音频码率）重建后，
+    // 旧输出必须重新渲染，否则会一直提供旧声音。core 的 `build_time()` 为可复现构建被钉在
+    // Unix epoch，这里改用「当前可执行文件的修改时间」（≈ 链接时间）。
     let out_mtime = out_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-    if out_mtime < osu_beatmap_preview_core::support::build::build_time() {
+    if out_mtime < program_build_time() {
         return None;
     }
 
@@ -92,6 +94,16 @@ pub fn output_cache_hit(
     }
 
     Some(output_path.to_path_buf())
+}
+
+/// 「程序构建时间」= 当前可执行文件的修改时间（链接时间）。
+///
+/// 取不到时回退到 Unix epoch（等价于不做这项检查），避免因为平台差异把所有缓存判失效。
+fn program_build_time() -> SystemTime {
+    std::env::current_exe()
+        .and_then(|path| path.metadata())
+        .and_then(|meta| meta.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
 // ── 原子输出 ──
@@ -348,6 +360,37 @@ mod tests {
         assert!(!output_is_complete(&path, "mp4"));
         assert!(output_is_complete(&path, "unknown"));
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn 输出缓存要求输出晚于程序构建时间() {
+        // 回归：这项检查此前读的是 core 的构建时间，而它被钉在 1970（可复现构建），
+        // 于是「改了内嵌默认配置 + 重建」之后仍会命中旧 MP4，听到的还是旧声音。
+        let dir = test_dir();
+        let beatmap_path = unique_path(&dir, "map.osu");
+        std::fs::write(&beatmap_path, b"osu file format v14\n").unwrap();
+        let output_path = unique_path(&dir, "cached.mp4");
+        std::fs::write(&output_path, complete_mp4_bytes()).unwrap();
+
+        // 刚写出的输出晚于本测试程序的链接时间 → 命中缓存。
+        assert!(output_cache_hit(&output_path, &beatmap_path, "mp4", 0, false).is_some());
+
+        // 把输出时间拨回十年前 → 必须重新渲染。
+        let ancient = SystemTime::now() - Duration::from_secs(10 * 365 * 24 * 3600);
+        std::fs::File::options()
+            .write(true)
+            .open(&output_path)
+            .unwrap()
+            .set_modified(ancient)
+            .unwrap();
+        assert!(output_cache_hit(&output_path, &beatmap_path, "mp4", 0, false).is_none());
+
+        // `no_cache` 时永远不命中。
+        std::fs::write(&output_path, complete_mp4_bytes()).unwrap();
+        assert!(output_cache_hit(&output_path, &beatmap_path, "mp4", 0, true).is_none());
+
+        let _ = std::fs::remove_file(&output_path);
+        let _ = std::fs::remove_file(&beatmap_path);
     }
 
     #[test]

@@ -39,5 +39,5 @@ advance:
     CPU_VIDEO_BITRATE: 500000 # CPU 编码器目标视频码率，单位 bit/s
   video_audio:
     AUDIO_SAMPLE_RATE: 48000 # 输出音频采样率，单位 Hz
-    AUDIO_BITRATE: 96000 # 输出音频码率，单位 bit/s
+    AUDIO_BITRATE: 160000 # 输出音频码率，单位 bit/s（96k 对 48kHz 立体声偏紧：密集鼓点的瞬态会被抹平）
     MAX_EXTRACTED_AUDIO_BYTES: 268435456 # 解码后音频允许占用的最大字节数

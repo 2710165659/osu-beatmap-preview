@@ -127,13 +127,13 @@ test('打击音默认值来自共享配置', async (t) => {
     t.skip('缺少 wasm 产物');
     return;
   }
-  // `assets/shared_config.yml` 四个模式的 mp4 默认值都是开启 + 50%。
+  // `assets/shared_config.yml` 四个模式的 mp4 默认值都是开启 + 100%（与 osu! 默认 effect 音量等效）。
   for (const mode of ['standard', 'taiko', 'catch', 'mania']) {
     const defaults = module.hitsoundDefaults(mode);
     assert.equal(defaults.enabled, true, `${mode} 默认应开启打击音`);
-    assert.equal(defaults.volume, 50, `${mode} 默认音量应为 50`);
+    assert.equal(defaults.volume, 100, `${mode} 默认音量应为 100`);
   }
-  assert.equal(module.hitsoundDefaults('ctb').volume, 50);
+  assert.equal(module.hitsoundDefaults('ctb').volume, 100);
   assert.throws(() => module.hitsoundDefaults('nope'));
 });
 

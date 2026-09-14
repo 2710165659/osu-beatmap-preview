@@ -127,6 +127,30 @@ impl SampleData {
             }
         }
     }
+
+    /// 采样帧 `position`（可为小数）的左右声道，按相邻帧线性插值。
+    ///
+    /// 混音器的输出采样率通常与样本采样率不同（内嵌样本是 44.1kHz，MP4 导出是 48kHz），
+    /// 取最近帧（零阶保持）会把高频镜像当成有效信号，鼓声听起来发毛、发刺；音乐路径本来
+    /// 就做线性插值，osu!（BASS）也会重采样，这里保持一致。
+    pub fn frame_at(&self, position: f64) -> (f32, f32) {
+        let base = position.floor();
+        if !base.is_finite() || base < 0.0 {
+            return (0.0, 0.0);
+        }
+        let index = base as usize;
+        let fraction = (position - base) as f32;
+        let first = self.frame(index);
+        if fraction <= 0.0 {
+            return first;
+        }
+        // 越界时 `frame` 返回静音，插值自然变成淡出。
+        let second = self.frame(index + 1);
+        (
+            first.0 + (second.0 - first.0) * fraction,
+            first.1 + (second.1 - first.1) * fraction,
+        )
+    }
 }
 
 /// 已解码的打击音样本库。
@@ -1210,6 +1234,25 @@ mod tests {
         // 越界音量按边界处理，不会 panic。
         assert!((volume_gain(-20) - volume_gain(0)).abs() < 1e-12);
         assert!((volume_gain(500) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn 采样帧按小数位置线性插值() {
+        // 回归：混音器此前按 `position as usize` 取最近帧，44.1kHz 样本进 48kHz 输出会
+        // 引入混叠（鼓声发毛）；音乐路径本来就是线性插值，这里保持一致。
+        let sample = SampleData::mono(vec![0.0, 1.0, 0.0, -1.0], 1000);
+        assert_eq!(sample.frame_at(0.0), (0.0, 0.0));
+        assert_eq!(sample.frame_at(1.0), (1.0, 1.0));
+        let (value, _) = sample.frame_at(0.5);
+        assert!((value - 0.5).abs() < 1e-6, "value={value}");
+        let (value, _) = sample.frame_at(2.75);
+        assert!((value + 0.75).abs() < 1e-6, "value={value}");
+        // 末帧之后插值到静音，不会 panic。
+        let (value, _) = sample.frame_at(3.5);
+        assert!((value + 0.5).abs() < 1e-6, "value={value}");
+        // 非法位置按静音处理。
+        assert_eq!(sample.frame_at(-0.5), (0.0, 0.0));
+        assert_eq!(sample.frame_at(f64::NAN), (0.0, 0.0));
     }
 
     #[test]

@@ -92,7 +92,7 @@ Web（Node 后端 + 浏览器）
 - CLI：`build.rs` 把 `assets/hitsound/*.ogg` 内嵌进可执行文件，导出 MP4 时用 symphonia 解码被引用到的样本，再按视频输出时间轴整段混音后交给 AAC 编码器；音乐与打击音共用同一个 48kHz 输出下标（`chart_start + i * 1000 * speed / sample_rate`），倍速通过把混音器的内部采样率取 `sample_rate / speed` 实现，因此时间与音高都和音乐、Web 端一致；视频区间起点可能为负（首个物件前的预卷），混音位置同样允许为负。混音按 1 秒窗口分块渲染，避免把整段事件压在声音列表里。任何样本读取失败都退化为静音，不影响导出。
 - Web：core 构建时把同一批 ogg 内嵌进 wasm（`hitsound::asset_bytes`），页面按名字取字节、用 Web Audio 解码成 PCM 再交给 wasm；wasm 在音频线程的时钟下推进时间轴并混音，画面与声音使用同一条时间轴（见 [WASM 使用说明](../crates/osu-beatmap-preview-wasm/README.md)）。宿主只负责解码与输出，不需要下载音效文件。
 
-开关与音量来自各模式 `render.<mode>.mp4.style` 的 `ENABLE_HITSOUND` 与 `HITSOUND_VOLUME`（0～100，按 `10^((v - 100) / 25)` 换算为线性增益）。
+开关与音量来自各模式 `render.<mode>.mp4.style` 的 `ENABLE_HITSOUND` 与 `HITSOUND_VOLUME`（0～100）：与 osu! 一样按 `v / 100` 换算为线性增益（`SkinnableSound` 的映射），地图里每条 timing point / 物件的音量再叠乘其上。
 
 ## 请求与配置
 

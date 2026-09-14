@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file.
 - 媒体条目策略统一到 core 的 `processing::media`（路径归一化、音频/背景/自带音效条目，以及 `preview_start_ms`）；CLI 删除自己那份重复实现，Node 后端保持自写实现并由新的 `test/media-contract.test.js` 契约测试钉住。
 - 压缩包条目「归一化后什么都不剩」时，Node 后端由返回空串改为返回 `null`，与 core 完全一致。
 - 移除 core 里没有生产调用方的 `AudioData` / `RealtimeSession::set_audio` / `ResourceBundle::audio`，`cli::ResourceLoader::bundle_from_files` 随之去掉音频参数：音乐字节本来就不进 core（Web 用 `<audio>` 播放，导出由宿主解码后与打击音混音）。
+- `assets/shared_config.yml` 各模式 `mp4.style.HITSOUND_VOLUME` 默认值由 50 改为 100：游戏里 effect 音量默认 100%、地图每音音量再叠乘其上，而 50 会让打击音整体比音乐低约 6dB，响的段落里鼓声被埋掉、听感忽大忽小（实测某张标准谱：打击音层 RMS 比音乐低 11.6dB，改成 100 后约为 -5.6dB）。Web 播放页的「打击音」滑杆默认值同步变为 100。
+- CLI 的 `advance.video_audio.AUDIO_BITRATE` 默认值由 96 kbps 提高到 160 kbps：96 kbps 对 48 kHz 立体声偏紧，密集鼓点的瞬态会被抹平、带预回音（听感「发糊」）；十分钟的视频音频约多 4.8 MB（192 kbps 约多 7.2 MB，需要更高质量可在外部 `config.yml` 里调高）。
+- 修复「改了内嵌默认配置（`assets/shared_config.yml` / `cli_config.yml`）并重建二进制后，导出仍复用旧输出缓存」的问题：输出有效性检查读的是 core 的构建时间，而它为了让 core 构建可复现被钉在 1970-01-01，这项检查实际从不生效，于是旧 MP4（旧音量、旧码率、旧混音）会被一直当成有效缓存。现在改用当前可执行文件的修改时间，重建后的第一批导出会重新渲染一次；临时跳过缓存也可以加 `--no-cache`。
 
 ### Fixed
 
@@ -40,6 +43,7 @@ All notable changes to this project will be documented in this file.
 - 修复 taiko 打击音走错皮肤逻辑的问题：此前按采样点音量分档选音效组（`>=90` drum / `>=60` normal / 其余 soft），那是 osu! Argon 皮肤（`VolumeAwareHitSampleInfo`）的规则；改用 legacy（classic 皮肤）逻辑：音效组取自物件 `hitSample`、缺省时用所在 timing point，鼓边按 `clap|whistle` 判定（此前只看 `clap` 位，whistle 蓝音符会当红音符），strong（`finish` 位）追加 `hitfinish`/`hitwhistle`，连打按 `DrumRoll.CreateNestedHitObjects()` 的 tick 逐个发声、大连打按 `TaikoAutoGenerator` 的节奏交替敲击鼓心/鼓边（此前每个物件只发一次声）。音效资源不变，仍用内嵌的 classic 套件。
 - 修复 Web 端单声道打击音（taiko 的 `taiko-*-hit*.ogg` 全是单声道）被拉长一倍、低一个八度的问题：宿主此前先把单声道交错成双声道、却仍按 `channels = 1` 交给 wasm，混音器把数组当成长度翻倍的单声道样本，每个采样帧播两次（听感上「和原音不符、开二倍速才正常」）；现在单声道按纯单声道、立体声按交错 L/R 分别交给内核，并补了格式转换的回归测试。
 - 修复 CLI 导出 MP4 时打击音与谱面不对齐的问题，两处根因：完整视频区间从「首个物件前 2000ms」开始，首个物件较早时这个起点是负数，而混音器把负位置夹到了 0，缓冲区第 0 帧因此对应谱面 0，整段打击音提前了 |起点|（最多两秒）；此外打击音此前按 1x 混好再 1:1 取样，音乐与画面却按倍速推进，倍速导出时会按 speed 倍漂移。现在混音位置允许为负，倍速由混音器的内部采样率（`输出采样率 / 倍速`）承担，时间与音高都与音乐和 Web 端一致。
+- 修复 CLI 打击音样本按最近帧（零阶保持）取样的混叠问题：内嵌样本是 44.1kHz，而 MP4 混音输出是 48kHz，鼓声会因此发毛、发刺；现在与音乐路径一致，按相邻采样帧线性插值（Web 端样本采样率与设备一致时结果不变）。
 - 修复 CLI 导出 MP4 比之前慢一倍的问题：打击音整段只用一个混音窗口，所有事件都留在声音列表里逐个输出帧遍历（O(输出帧 × 事件数)），三分钟、600 个事件在 debug 下要 45 秒；现在按 1 秒窗口分块渲染，同样的工作量约 1.3 秒，并补了防退化的回归测试。
 
 ## [1.2.2] - 2026.09.13

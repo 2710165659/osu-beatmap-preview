@@ -354,7 +354,7 @@ impl HitsoundMixer {
                     continue;
                 }
 
-                let (sample_left, sample_right) = source.frame(position as usize);
+                let (sample_left, sample_right) = source.frame_at(position);
                 let gain = (voice.gain * master) as f32;
                 left += sample_left * gain;
                 right += sample_right * gain;
@@ -519,5 +519,34 @@ mod tests {
             output[500 * 2].abs() > 0.0,
             "事件应当出现在缓冲区第 500 帧"
         );
+    }
+
+    #[test]
+    fn 样本采样率与混音采样率不同时按小数位置插值() {
+        // 内嵌样本是 44.1kHz、MP4 导出是 48kHz，取最近帧会把高频镜像当信号；
+        // 这里用 2:1 的采样率差把插值关系钉死：位置依次是 0、0.5、1.0、1.5、2.0。
+        let mut library = SampleLibrary::new();
+        library.insert("ramp", SampleData::mono(vec![0.0, 0.2, 0.0], 1000));
+        let timeline = HitsoundTimeline {
+            events: vec![PlayEvent {
+                start_ms: 0.0,
+                duration_ms: 0.0,
+                source_id: 0,
+                gain: 1.0,
+                looping: false,
+            }],
+        };
+        let mut mixer = HitsoundMixer::new(library, timeline, 2000);
+        let output = mixer.render(5);
+        let left: Vec<f32> = output.chunks_exact(2).map(|pair| pair[0]).collect();
+        // 样本值 [0.0, 0.2, 0.0]，位置 0/0.5/1.0/1.5/2.0 → 0.0/0.1/0.2/0.1/0.0。
+        for (index, expected) in [0.0, 0.1, 0.2, 0.1, 0.0].into_iter().enumerate() {
+            assert!(
+                (left[index] - soft_limit(expected)).abs() < 1e-5,
+                "第 {index} 帧 = {}，预期 {}",
+                left[index],
+                soft_limit(expected)
+            );
+        }
     }
 }
