@@ -51,7 +51,10 @@ const BACKGROUND_DIM = 0.7;
 const DEFAULT_VOLUME = 0.5;
 
 /**
- * 打击音（hit sound）默认为开，音量 50%，与游戏内默认听感一致。
+ * 打击音（hit sound）默认为开，音量 50%。
+ *
+ * 50% 与网页的音乐默认音量 [`DEFAULT_VOLUME`] 取同一刻度；CLI 输出视频走
+ * `shared_config.yml` 的 100%，那是另一套（音乐也满音量）的场景。
  *
  * 与音乐音量分开：用户可能想只听音乐、或只听打击音，两者的用途不同。
  */
@@ -156,7 +159,13 @@ export const state = reactive({
   volume: DEFAULT_VOLUME,
   /** 是否启用打击音（hit sound）。 */
   hitsound: DEFAULT_HITSOUND_ENABLED,
-  /** 打击音音量百分比（0–100），与 shared_config.yml 的 HITSOUND_VOLUME 同义。 */
+  /**
+   * 打击音音量百分比（0–100）。
+   *
+   * 取值与 `shared_config.yml` 的 `HITSOUND_VOLUME` 同义，但默认值不同：那份配置
+   * 给 CLI 输出视频用（音乐与打击音都是 100%），网页的音乐默认只有 50%，
+   * 打击音跟随网页这个刻度。用户调过之后不再重置。
+   */
   hitsoundVolume: DEFAULT_HITSOUND_VOLUME,
   /** 打击音状态文案：用于在侧栏说明当前是「已启用 / 加载中 / 不可用」。 */
   hitsoundStatus: '',
@@ -1083,10 +1092,14 @@ function hitsoundSampleRate() {
 }
 
 /**
- * 读取共享配置里该模式的打击音默认值。
+ * 读取共享配置里该模式「是否启用打击音」的默认值。
  *
  * 走 WASM 转出的 `hitsoundDefaults`（内部来自 `assets/shared_config.yml`），
  * 读不到就沿用前端常量，保证页面仍能正常工作。
+ *
+ * 音量**不**取配置里的值：CLI 输出视频时背景音乐与打击音都是满音量（100%），
+ * 而网页的音乐默认是 [`DEFAULT_VOLUME`]（50%），打击音跟着取同一个刻度听感才平衡，
+ * 因此这里保持 [`DEFAULT_HITSOUND_VOLUME`]，只同步开关。
  */
 function applyHitsoundDefaults(wasm, mode) {
   let defaults = null;
@@ -1097,7 +1110,6 @@ function applyHitsoundDefaults(wasm, mode) {
   }
   if (!defaults) return;
   state.hitsound = Boolean(defaults.enabled);
-  state.hitsoundVolume = Math.min(100, Math.max(0, Math.round(Number(defaults.volume) || 0)));
 }
 
 // ---------------------------------------------------------------------------
@@ -1535,8 +1547,8 @@ export async function loadPreview() {
     lastAudioStartAttempt = 0;
     applySessionMetrics();
     state.position = 0;
-    // 默认开关与音量来自 `assets/shared_config.yml`（由 WASM 转出），
-    // 保证网页端与 CLI 用同一份默认值，而不是两边各写一个常量。
+    // 打击音开关来自 `assets/shared_config.yml`（由 WASM 转出），与 CLI 同一份默认值；
+    // 音量固定用网页自己的默认值，理由见 applyHitsoundDefaults 的注释。
     applyHitsoundDefaults(wasm, session.mode());
     state.hitsoundLoaded = 0;
     state.hitsoundStatus = state.hitsound ? '准备打击音...' : '已关闭';

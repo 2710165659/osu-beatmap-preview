@@ -657,25 +657,8 @@ pub fn draw_slider_reverse_arrows(
         let angle_deg = -slider_data.reverse_angles[i].to_degrees();
         let angle_key = py_round(angle_deg);
 
-        // 绘制 repeat-edge-piece（白色半圆 + 水平 alpha 渐变）
-        let edge_key = (angle_key,); // 不依赖颜色，纯白色
-        cache.reverse_edges.entry(edge_key).or_insert_with(|| {
-            let edge_base = build_reverse_edge_piece(context.frame_circle_diameter);
-            edge_base.rotate_expand(angle_deg)
-        });
-        let edge_rotated = &cache.reverse_edges[&edge_key];
-        let edge_id = color_id(ID_REVERSE_EDGE + (angle_key + 720) as u64, [255, 255, 255]);
-        let edge = with_alpha(
-            &mut cache.resized_alpha,
-            edge_rotated,
-            edge_id,
-            effective_alpha,
-        );
-        let ex = py_round(center.0 - edge.w as f64 / 2.0);
-        let ey = py_round(center.1 - edge.h as f64 / 2.0);
-        frame.alpha_composite(edge, ex, ey);
-
-        // 绘制 << 箭头（覆盖在 edge piece 之上）
+        // 只画 `»` 折返箭头：不叠加半透明弧光/渐变边缘，避免在深色背景与
+        // 滑条尾部叠出一圈发灰的脏晕。
         let rotated_key = (angle_key, color);
         cache.reverse_arrows.entry(rotated_key).or_insert_with(|| {
             let base = build_reverse_arrow(context.frame_circle_diameter, color);
@@ -742,39 +725,6 @@ pub fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
     img
 }
 
-/// 程序化 Argon 折返边缘纹理（对照 repeat-edge-piece.png）。
-/// 白色左半圆 + 水平 alpha 渐变：从左边缘 A=127 线性衰减到右边缘 A=0。
-/// 200×200 原始纹理的像素分析确认：alpha 只取决于 x 位置，半圆边界由弧形自然裁剪。
-pub fn build_reverse_edge_piece(diameter: i64) -> Img {
-    let d = diameter.max(1);
-    let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
-    let cx = d as f64 / 2.0;
-    let cy = d as f64 / 2.0;
-    let r = d as f64 / 2.0;
-
-    for y in 0..d {
-        for x in 0..d {
-            let fx = x as f64 + 0.5;
-            let fy = y as f64 + 0.5;
-            // 左半圆边界：点在圆内 且 x <= cx
-            let dx = fx - cx;
-            let dy = fy - cy;
-            if dx * dx + dy * dy > r * r {
-                continue;
-            }
-            if fx > cx {
-                continue;
-            }
-            // 水平 alpha 渐变：从左边缘 A=127 线性衰减到右边缘 A=0
-            let t = fx / r; // 0.0 (左) -> 1.0 (圆心/右边缘)
-            let a = (127.0 * (1.0 - t)).clamp(0.0, 255.0) as u8;
-            if a > 0 {
-                img.blend_px(x, y, [255, 255, 255, a]);
-            }
-        }
-    }
-    img
-}
 
 // ——— 辅助函数 ———
 

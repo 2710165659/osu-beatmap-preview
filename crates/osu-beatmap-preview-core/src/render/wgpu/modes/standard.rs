@@ -14,8 +14,8 @@ use crate::render::cpu::modes::standard::context::{
     stacked_position, standard_objects, to_frame_point, RenderCache, RenderContext,
 };
 use crate::render::cpu::modes::standard::slider::{
-    alpha_to_byte, build_reverse_arrow, build_reverse_edge_piece, darken, get_slider_render_data,
-    slider_snaked_range, SliderRenderData,
+    alpha_to_byte, build_reverse_arrow, darken, get_slider_render_data, slider_snaked_range,
+    SliderRenderData,
 };
 use crate::render::geometry::{GameMode, OutputFormat};
 use crate::render::scene::{FrameScene, FrameSceneBuilder, SceneRect};
@@ -25,8 +25,7 @@ use crate::render::wgpu::RealtimeFrameSource;
 struct PreparedSlider {
     data: Arc<SliderRenderData>,
     full_path: Arc<[[f32; 2]]>,
-    // 与 CPU 路径相同，边缘和箭头分别缓存并在绘制时按层合成。
-    reverse_edges: Vec<Arc<Img>>,
+    // 与 CPU 路径一致：折返点只画 `»` 箭头，不带渐变边缘。
     reverse_arrows: Vec<Arc<Img>>,
 }
 
@@ -53,25 +52,23 @@ pub fn prepare_realtime(
         .map(|(index, object)| {
             (object.hit_type & 2 != 0).then(|| {
                 let data = get_slider_render_data(&mut cache, &context, index);
-                let (reverse_edges, reverse_arrows): (Vec<_>, Vec<_>) = data
+                let reverse_arrows = data
                     .reverse_angles
                     .iter()
                     .map(|&angle| {
                         let angle_deg = -angle.to_degrees();
-                        let edge = build_reverse_edge_piece(context.frame_circle_diameter)
-                            .rotate_expand(angle_deg);
-                        let arrow = build_reverse_arrow(
-                            context.frame_circle_diameter,
-                            context.combo_info[index].color,
+                        Arc::new(
+                            build_reverse_arrow(
+                                context.frame_circle_diameter,
+                                context.combo_info[index].color,
+                            )
+                            .rotate_expand(angle_deg),
                         )
-                        .rotate_expand(angle_deg);
-                        (Arc::new(edge), Arc::new(arrow))
                     })
-                    .unzip();
+                    .collect();
                 PreparedSlider {
                     full_path: path_vertices(&data.frame_path.points),
                     data,
-                    reverse_edges,
                     reverse_arrows,
                 }
             })
@@ -333,19 +330,7 @@ fn draw_reverse_arrows(
         if opacity <= 0.0 {
             continue;
         }
-        let edge = &slider.reverse_edges[index];
         let arrow = &slider.reverse_arrows[index];
-        // CPU 路径按两个独立精灵以折返点为中心合成，保留边缘在箭头下方的层级。
-        scene.sprite(
-            Arc::clone(edge),
-            rect(
-                py_round(center.0 - edge.w as f64 / 2.0) as f64,
-                py_round(center.1 - edge.h as f64 / 2.0) as f64,
-                edge.w as f64,
-                edge.h as f64,
-            ),
-            opacity as f32,
-        );
         scene.sprite(
             Arc::clone(arrow),
             rect(

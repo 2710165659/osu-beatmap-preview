@@ -6,7 +6,6 @@ pub mod cache {
     pub const ID_FOLLOW: u64 = 103;
     pub const ID_SLIDER_TICK: u64 = 104;
     pub const ID_ARROW_BASE: u64 = 4096;
-    pub const ID_REVERSE_EDGE: u64 = 8192;
 }
 
 pub mod rules {
