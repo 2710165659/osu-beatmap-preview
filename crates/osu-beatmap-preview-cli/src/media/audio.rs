@@ -375,15 +375,18 @@ pub(crate) struct HitsoundSettings {
 /// 按视频输出时间轴混出整段打击音。
 ///
 /// 返回 `None` 表示本次导出没有启用打击音（配置关闭或没有任何可用样本）。
-/// 缓冲区下标即输出帧下标，倍速由调用方换算成谱面时间（`source_frame_position`
-/// 与打击音共用同一换算），因此这里不需要 `speed`。
+///
+/// 缓冲区下标即输出帧下标，与音乐（`source_frame_position`）共用同一时间换算：
+/// 第 i 帧对应的谱面时间是 `chart_start_ms + i * 1000 * speed / sample_rate`。
+/// 倍速通过「混音器的内部采样率取 `sample_rate / speed`」实现，音高随之变化，
+/// 与 Web 端音频线程的倍速播放一致。
 fn render_hitsound_segment(
     beatmap: &Beatmap,
     settings: Option<HitsoundSettings>,
     chart_start_ms: i64,
     frame_count: usize,
     fps: u32,
-    _speed: f64,
+    speed: f64,
     sample_rate: u32,
 ) -> Result<Option<Vec<f32>>> {
     let Some(settings) = settings.filter(|settings| settings.enabled) else {
@@ -398,20 +401,32 @@ fn render_hitsound_segment(
         return Ok(None);
     }
 
-    // 混音位置与输出帧一一对应，因此这里按 1x 时长准备缓冲区，
-    // 倍速只体现在「每帧对应的谱面时间」上。
     let frames = (frame_count as u64 * sample_rate as u64).div_ceil(fps as u64);
     if frames == 0 {
         return Ok(None);
     }
     let frames = frames.min(u32::MAX as u64) as usize;
+    // 混音器采样率必须取整：奇数倍速会有最多半帧的换算误差（整段漂移几毫秒，
+    // 打击音听不出来），而 0.75 / 1.5 / 2.0 这些常见倍速都是整除的。
+    let mixer_rate = ((sample_rate as f64 / speed).round() as u32).max(1);
     let mut mixer =
-        osu_beatmap_preview_core::hitsound::HitsoundMixer::new(library, timeline, sample_rate);
+        osu_beatmap_preview_core::hitsound::HitsoundMixer::new(library, timeline, mixer_rate);
     mixer.set_master_gain(osu_beatmap_preview_core::hitsound::volume_gain(
         settings.volume.clamp(0, 100),
     ));
+    // 视频区间起点可能为负（首个物件前 2000ms 的预卷）：混音位置允许为负，
+    // 缓冲区第 0 帧必须对应该起点，否则整段打击音会提前 |起点|。
     mixer.seek(chart_start_ms as f64);
-    Ok(Some(mixer.render(frames)))
+
+    // 分块渲染：混音器每个窗口只保留本窗口内还在响的声音，一次渲染整段会把所有事件
+    // 都压在 voices 里、逐输出帧遍历一遍（O(输出帧 × 事件数)），三分钟的谱面就能让
+    // 音频线程比视频编码还慢。窗口取 1 秒。
+    let mut buffer = vec![0.0_f32; frames * 2];
+    let window_frames = sample_rate.max(1) as usize;
+    for chunk in buffer.chunks_mut(window_frames * 2) {
+        mixer.render_into(chunk);
+    }
+    Ok(Some(buffer))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -872,6 +887,63 @@ mod tests {
         assert!(disabled.is_none());
     }
 
+    /// 每 10ms 统计一次能量，返回「由静转动」的起音点（缓冲区时间，毫秒）。
+    fn onsets_ms(mixed: &[f32], sample_rate: u32) -> Vec<f64> {
+        let window = sample_rate as usize / 100;
+        let mut onsets = Vec::new();
+        let mut previous_loud = false;
+        for (index, chunk) in mixed.chunks(window * 2).enumerate() {
+            let peak = chunk
+                .iter()
+                .fold(0.0_f32, |acc, value| acc.max(value.abs()));
+            let loud = peak > 0.01;
+            if loud && !previous_loud {
+                onsets.push(index as f64 * window as f64 * 1000.0 / sample_rate as f64);
+            }
+            previous_loud = loud;
+        }
+        onsets
+    }
+
+    #[test]
+    fn 长谱面打击音混音不会退化成平方复杂度() {
+        // 回归：整段只用一个混音窗口时，所有事件都会压在 voices 里、逐输出帧遍历一遍
+        // （O(输出帧 × 事件数)）：release 下「60 秒 + 1200 个事件」要 6.6 秒，三分钟的
+        // 普通谱面要 10 秒上下，导出总耗时因此翻倍。分块渲染后同样的工作量约 0.45 秒。
+        // 下面的上限留了二十倍余量，既容得下慢机器，又能拦住「退回单窗口」的改动。
+        let mut source = String::from("osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n");
+        for index in 0..1_200 {
+            source.push_str(&format!("256,192,{},1,0,0:0:0:0:\n", index * 50));
+        }
+        let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
+            .expect("fixture 必须可解析");
+        let sample_rate = 48_000_u32;
+        // 60 秒输出、每 50ms 一个音符。
+        let frames = sample_rate as usize * 60;
+
+        let started = std::time::Instant::now();
+        let mixed = render_hitsound_segment(
+            &beatmap,
+            Some(HitsoundSettings {
+                enabled: true,
+                volume: 100,
+            }),
+            0,
+            frames,
+            sample_rate,
+            1.0,
+            sample_rate,
+        )
+        .expect("混音不应失败")
+        .expect("必须产生混音缓冲");
+        let elapsed = started.elapsed();
+        assert_eq!(mixed.len(), frames * 2);
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "60 秒 / 1200 个事件的打击音混音耗时 {elapsed:?}，混音窗口可能又退化成了整段"
+        );
+    }
+
     #[test]
     fn 打击音落在预期的谱面时间上() {
         // 回归：混音窗口分组、时间轴位置、缓冲区下标三者一旦错位，导出的 MP4 就会
@@ -897,24 +969,85 @@ mod tests {
         .expect("必须产生混音缓冲");
         assert_eq!(mixed.len(), frames * 2);
 
-        // 每 10ms 统计一次能量，记录「由静转动」的位置作为起音点。
-        let window = sample_rate as usize / 100;
-        let mut onsets: Vec<f64> = Vec::new();
-        let mut previous_loud = false;
-        for (index, chunk) in mixed.chunks(window * 2).enumerate() {
-            let peak = chunk.iter().fold(0.0_f32, |acc, value| acc.max(value.abs()));
-            let loud = peak > 0.01;
-            if loud && !previous_loud {
-                onsets.push(index as f64 * window as f64 * 1000.0 / sample_rate as f64);
-            }
-            previous_loud = loud;
-        }
+        let onsets = onsets_ms(&mixed, sample_rate);
         assert_eq!(onsets.len(), 2, "预期两个打击音，实际 {onsets:?}");
         for (onset, expected) in onsets.iter().zip([1000.0_f64, 2000.0]) {
             assert!(
                 (onset - expected).abs() < 20.0,
                 "打击音落在 {onset}ms，预期 {expected}ms"
             );
+        }
+    }
+
+    #[test]
+    fn 负起点的视频区间里打击音不提前() {
+        // 回归：完整视频的起点是「首个物件前 2000ms」，首个物件很早时它就是负数。
+        // 此前混音器把负位置夹到 0，缓冲区第 0 帧对应谱面 0，整段打击音提前了 |起点|。
+        let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,3000,1,0,0:0:0:0:\n";
+        let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
+            .expect("fixture 必须可解析");
+        let sample_rate = 48_000_u32;
+        let frames = sample_rate as usize * 5;
+        let mixed = render_hitsound_segment(
+            &beatmap,
+            Some(HitsoundSettings {
+                enabled: true,
+                volume: 100,
+            }),
+            -1_000,
+            frames,
+            sample_rate,
+            1.0,
+            sample_rate,
+        )
+        .expect("混音不应失败")
+        .expect("必须产生混音缓冲");
+
+        // 缓冲区时间 = 谱面时间 - chart_start：1000ms 的音符落在 2000ms 处。
+        let onsets = onsets_ms(&mixed, sample_rate);
+        assert_eq!(onsets.len(), 2, "预期两个打击音，实际 {onsets:?}");
+        for (onset, expected) in onsets.iter().zip([2000.0_f64, 4000.0]) {
+            assert!(
+                (onset - expected).abs() < 20.0,
+                "打击音落在 {onset}ms，预期 {expected}ms"
+            );
+        }
+    }
+
+    #[test]
+    fn 倍速导出时打击音随谱面一起压缩() {
+        // 回归：打击音此前按 1x 混好再 1:1 取样，倍速下会与音乐/画面按 speed 倍漂移。
+        let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,3000,1,0,0:0:0:0:\n";
+        let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
+            .expect("fixture 必须可解析");
+        let sample_rate = 48_000_u32;
+        let cases = [(2.0, [500.0, 1500.0]), (0.5, [2000.0, 6000.0])];
+        for (speed, expected) in cases {
+            // 缓冲区取 7 秒输出时长：0.5x 时最后一个音符落在 6000ms 处。
+            let frames = sample_rate as usize * 7;
+            let mixed = render_hitsound_segment(
+                &beatmap,
+                Some(HitsoundSettings {
+                    enabled: true,
+                    volume: 100,
+                }),
+                0,
+                frames,
+                sample_rate,
+                speed,
+                sample_rate,
+            )
+            .expect("混音不应失败")
+            .expect("必须产生混音缓冲");
+            assert_eq!(mixed.len(), frames * 2);
+            let onsets = onsets_ms(&mixed, sample_rate);
+            assert_eq!(onsets.len(), 2, "{speed}x 预期两个打击音，实际 {onsets:?}");
+            for (onset, expected) in onsets.iter().zip(expected) {
+                assert!(
+                    (onset - expected).abs() < 20.0,
+                    "{speed}x：打击音落在 {onset}ms，预期 {expected}ms"
+                );
+            }
         }
     }
 

@@ -130,9 +130,13 @@ impl HitsoundMixer {
     ///
     /// 用于流式渲染时「把混音位置对齐到宿主提供的起点」：宿主负责决定要不要
     /// 清空声音（真正的 seek 应调用 [`HitsoundMixer::seek`]）。
+    ///
+    /// 位置单位是谱面绝对时间，**允许为负**：离线导出可能从「首个物件前的预卷」开始
+    /// （视频区间起点为负），此时缓冲区第 0 帧必须对应那个负时刻，否则整段打击音
+    /// 会相对音乐与画面提前 |起点|。只有非有限值才回退到 0。
     pub fn set_position(&mut self, position_ms: f64) {
         self.position_ms = if position_ms.is_finite() {
-            position_ms.max(0.0)
+            position_ms
         } else {
             0.0
         };
@@ -498,5 +502,22 @@ mod tests {
         let mut mixer = click_mixer(0);
         assert!(mixer.trigger("click", f64::NAN));
         assert!(mixer.render(50).iter().all(|value| *value == 0.0));
+    }
+
+    #[test]
+    fn 负位置把起点之前的预卷算进输出() {
+        // 离线导出可能从负的谱面时间开始（首个物件前的预卷）：位置为负时缓冲区第 0 帧
+        // 对应那个负时刻，0 之后的事件必须相应推后，否则整段打击音会提前。
+        let mut mixer = click_mixer(1);
+        mixer.seek(-500.0);
+        let output = mixer.render(1000);
+        assert!(
+            output[..500 * 2].iter().all(|value| *value == 0.0),
+            "预卷期间不应有声音"
+        );
+        assert!(
+            output[500 * 2].abs() > 0.0,
+            "事件应当出现在缓冲区第 500 帧"
+        );
     }
 }
