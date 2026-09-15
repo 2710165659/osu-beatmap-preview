@@ -3,8 +3,8 @@
 osu! 谱面预览 Web 站点的一键构建与启动。
 
 依次执行：安装前端依赖（仅在缺 node_modules 时）→ 构建 wasm（public/pkg）→
-构建前端（dist/）→ 前台启动 backend/server.js。脚本会先切到自身所在目录，
-因此在任意位置调用都能跑在 crates\osu-beatmap-preview-web 下。
+构建前端（dist/）→ 前台启动 backend/server.js。脚本内部所有路径都基于脚本自身
+所在目录解析，但不会切换调用者的工作目录。
 
 用法：
   .\run_web.ps1                        构建全部并启动（默认 http://127.0.0.1:8787）
@@ -27,8 +27,8 @@ osu! 谱面预览 Web 站点的一键构建与启动。
 # `Invoke-Native` 里看退出码。
 $ErrorActionPreference = 'Continue'
 
-# 切到脚本所在目录，双击或在任意目录调用都能正常工作。
-Set-Location -LiteralPath $PSScriptRoot
+# 方案 A：记录项目根目录，但不切换调用者的工作目录。
+$projectRoot = $PSScriptRoot
 
 # node / npm / cargo 的输出是 UTF-8（后端日志也是中文），控制台默认代码页不是 65001 时
 # PowerShell 会按默认代码页解码，中文全是乱码。这里显式指定按 UTF-8 解码。
@@ -67,6 +67,22 @@ function Invoke-Native {
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "$Command 退出码 $LASTEXITCODE"
+    }
+}
+
+# 在项目根目录下执行一条外部命令，执行完立刻切回调用者原来的工作目录。
+# npm / cargo 这类工具需要在项目目录里跑才能找到 package.json、Cargo.toml，
+# 用 Push/Pop 保证对调用者的 pwd 无副作用。
+function Invoke-InProject {
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [string[]]$Arguments = @()
+    )
+    Push-Location -LiteralPath $projectRoot
+    try {
+        Invoke-Native -Command $Command -Arguments $Arguments
+    } finally {
+        Pop-Location
     }
 }
 
@@ -159,17 +175,20 @@ try {
 
     # -----------------------------------------------------------------------
     # 1. 前端依赖：只在缺 node_modules 时装，避免每次构建都等 npm。
+    #    路径一律基于 $projectRoot，与调用者的工作目录无关。
     # -----------------------------------------------------------------------
-    if (-not (Test-Path -LiteralPath 'node_modules')) {
+    $nodeModulesPath = Join-Path $projectRoot 'node_modules'
+    $packageLockPath = Join-Path $projectRoot 'package-lock.json'
+    if (-not (Test-Path -LiteralPath $nodeModulesPath)) {
         if ($noInstall) {
             throw 'node_modules 不存在，但指定了 -NoInstall。请先去掉该参数运行一次。'
         }
-        if (Test-Path -LiteralPath 'package-lock.json') {
+        if (Test-Path -LiteralPath $packageLockPath) {
             Write-Host '=== 安装前端依赖（npm ci）...'
-            Invoke-Native -Command $npmCommand -Arguments @('ci', '--no-audit', '--no-fund')
+            Invoke-InProject -Command $npmCommand -Arguments @('ci', '--no-audit', '--no-fund')
         } else {
             Write-Host '=== 安装前端依赖（npm install）...'
-            Invoke-Native -Command $npmCommand -Arguments @('install', '--no-audit', '--no-fund')
+            Invoke-InProject -Command $npmCommand -Arguments @('install', '--no-audit', '--no-fund')
         }
     }
 
@@ -180,7 +199,7 @@ try {
         Write-Host '=== 跳过 wasm 构建（-NoWasm），使用现有的 public\pkg。'
     } else {
         Write-Host '=== 构建 wasm（cargo --release + wasm-bindgen）...'
-        Invoke-Native -Command $npmCommand -Arguments @('run', 'build:wasm')
+        Invoke-InProject -Command $npmCommand -Arguments @('run', 'build:wasm')
     }
 
     # -----------------------------------------------------------------------
@@ -190,22 +209,25 @@ try {
         Write-Host '=== 跳过前端构建（-NoBuild），使用现有的 dist\。'
     } else {
         Write-Host '=== 构建前端（vite build）...'
-        Invoke-Native -Command $npmCommand -Arguments @('run', 'build')
+        Invoke-InProject -Command $npmCommand -Arguments @('run', 'build')
     }
 
     # -----------------------------------------------------------------------
     # 4. 启动后端（前台运行，日志直接打在这个窗口，Ctrl+C 停止）
+    #    server.js 用绝对路径调用，工作目录保持调用者原来的，无需切目录。
     # -----------------------------------------------------------------------
     if ($noServe) {
         Write-Host '=== 构建完成，已按要求不启动服务。'
         exit 0
     }
-    if (-not (Test-Path -LiteralPath 'dist\index.html')) {
+    $serverEntry = Join-Path $projectRoot 'backend\server.js'
+    $distIndex = Join-Path $projectRoot 'dist\index.html'
+    if (-not (Test-Path -LiteralPath $distIndex)) {
         throw '没有找到 dist\index.html：前端构建被 -NoBuild 跳过了，但 dist\ 里没有可用产物。'
     }
     Write-Host '=== 启动服务器（Ctrl+C 停止）...'
     Write-Host '    提示：浏览器里已经开着页面时，重建后请刷新页面（wasm 只在加载时导入一次）。'
-    & node 'backend/server.js' @serverArgs
+    & node $serverEntry @serverArgs
     exit $LASTEXITCODE
 } catch {
     Write-Host ''
