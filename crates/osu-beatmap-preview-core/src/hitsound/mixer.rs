@@ -1,6 +1,6 @@
 //! 打击音混音器：把时间轴上的事件混合成 PCM。
 
-use super::{HitsoundTimeline, SampleLibrary};
+use super::{HitsoundTimeline, PlayFrequency, SampleLibrary};
 
 /// 正在播放的一个声音。
 #[derive(Debug, Clone, Copy)]
@@ -21,6 +21,8 @@ struct Voice {
     data_end_ms: f64,
     /// 循环音在样本内的循环长度（采样帧）；0 表示不循环。
     loop_len: usize,
+    /// 播放频率（音高倍率）随时间的斜坡；转盘旋转音靠它随进度升调。
+    frequency: PlayFrequency,
 }
 
 /// 循环音的句柄，用于停止 [`HitsoundMixer::start_loop`] 启动的声音。
@@ -196,6 +198,8 @@ impl HitsoundMixer {
             end_ms: f64::INFINITY,
             data_end_ms: start_ms + frames as f64 * 1000.0 / sample_rate,
             loop_len: 0,
+            // 显式触发（游玩/回放）由输入决定，不做音高调制。
+            frequency: PlayFrequency::UNITY,
         });
         true
     }
@@ -227,6 +231,7 @@ impl HitsoundMixer {
             end_ms: f64::INFINITY,
             data_end_ms: f64::INFINITY,
             loop_len,
+            frequency: PlayFrequency::UNITY,
         });
         Some(LoopHandle(id))
     }
@@ -315,6 +320,7 @@ impl HitsoundMixer {
                 },
                 data_end_ms,
                 loop_len,
+                frequency: event.frequency,
             });
         }
 
@@ -335,7 +341,7 @@ impl HitsoundMixer {
                 if frames_in_source == 0 {
                     continue;
                 }
-                let rate = source.sample_rate.max(1) as f64;
+                let sample_rate = source.sample_rate.max(1) as f64;
                 let loop_len = voice.loop_len.min(frames_in_source);
                 let playable = if loop_len > 0 {
                     loop_len
@@ -344,10 +350,12 @@ impl HitsoundMixer {
                 };
 
                 // 直接按时间反推样本位置：与画面共用同一时间轴，避免累计漂移。
-                let mut position = (frame_time - voice.start_ms) * rate / 1000.0;
-                if position < 0.0 {
+                // 音高倍率随时间变化时位置取倍率对时间的积分，否则瞬时速度会随进度越跑越快。
+                let elapsed = frame_time - voice.start_ms;
+                if elapsed < 0.0 {
                     continue;
                 }
+                let mut position = voice.frequency.integral(elapsed) * sample_rate / 1000.0;
                 if loop_len > 0 {
                     position = position.rem_euclid(playable as f64);
                 } else if position >= playable as f64 {
@@ -403,6 +411,9 @@ pub(super) fn soft_limit(value: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::models::{HitObjects, SampleBank, StandardHitObject};
+    use crate::hitsound::build_timeline;
+    use crate::hitsound::test_support::{beatmap_with, library_with, object_sample};
     use crate::hitsound::{PlayEvent, SampleData};
 
     /// 构造一个「每 100ms 一个事件、样本 10ms」的样本库与时间轴。
@@ -421,6 +432,7 @@ mod tests {
                     source_id: 0,
                     gain: 0.1,
                     looping: false,
+                    frequency: PlayFrequency::UNITY,
                 })
                 .collect(),
         };
@@ -534,6 +546,7 @@ mod tests {
                 source_id: 0,
                 gain: 1.0,
                 looping: false,
+                frequency: PlayFrequency::UNITY,
             }],
         };
         let mut mixer = HitsoundMixer::new(library, timeline, 2000);
@@ -548,5 +561,139 @@ mod tests {
                 soft_limit(expected)
             );
         }
+    }
+
+    #[test]
+    fn 升调斜坡按倍率积分推进样本位置() {
+        // 回归：位置若按「瞬时倍率 × 经过时间」计算，瞬时播放速度会变成 f + t·f'，
+        // 转盘旋转音会比 osu! 的线性升调跑得更快。这里用一个单点脉冲把积分关系钉死：
+        // 倍率从 1.0 每毫秒 +0.001（上限 2.0），第 500 帧的积分恰好是 625，
+        // 因此第 625 帧的脉冲只能在第 500 帧被采到。
+        let mut library = SampleLibrary::new();
+        let mut frames = vec![0.0_f32; 2000];
+        frames[625] = 1.0;
+        library.insert("impulse", SampleData::mono(frames, 1000));
+        let timeline = HitsoundTimeline {
+            events: vec![PlayEvent {
+                start_ms: 0.0,
+                duration_ms: 0.0,
+                source_id: 0,
+                gain: 0.1,
+                looping: false,
+                frequency: PlayFrequency::ramp(1.0, 0.001, 2.0),
+            }],
+        };
+        let mut mixer = HitsoundMixer::new(library, timeline, 1000);
+        let left: Vec<f32> = mixer
+            .render(1000)
+            .chunks_exact(2)
+            .map(|pair| pair[0])
+            .collect();
+        for (index, value) in left.iter().enumerate() {
+            if index == 500 {
+                assert!(
+                    (value - soft_limit(0.1)).abs() < 1e-6,
+                    "第 500 帧应当采到脉冲：{value}"
+                );
+            } else {
+                assert_eq!(*value, 0.0, "第 {index} 帧不应当有声音");
+            }
+        }
+    }
+
+    #[test]
+    fn 落在窗口边界的打击音不会被跳过() {
+        // 回归：曾经用 `start_ms >= window_end` 收集事件，正好落在窗口末尾的事件
+        // 会被永久跳过（事件按开始时间升序，之后再也扫不到），表现为整点打击音静音。
+        let mut library = SampleLibrary::new();
+        // 采样率与混音一致（1000Hz），每个采样帧 1ms。
+        library.insert(
+            "normal-hitnormal",
+            SampleData::stereo(vec![0.5, 0.5, 0.5, 0.5, 0.5, 0.5], 1000),
+        );
+        let mut beatmap = beatmap_with(
+            0,
+            HitObjects::Standard(vec![StandardHitObject {
+                start_time: 1000,
+                end_time: 1000,
+                hit_type: 1,
+                hitsound: 0,
+                ..Default::default()
+            }]),
+        );
+        beatmap.timing_points[0].sample_set = 1;
+        let timeline = build_timeline(&beatmap, &library);
+        assert_eq!(timeline.len(), 1);
+
+        let mut mixer = HitsoundMixer::new(library, timeline, 1000);
+        // 第一个窗口 [0, 1000ms)：事件正好在末尾开始，本窗口内不应有声。
+        let first = mixer.render(1000);
+        assert!(first.iter().all(|value| *value == 0.0));
+        // 第二个窗口 [1000, 2000ms)：必须能听到这个事件。
+        let second = mixer.render(1000);
+        assert!(
+            second.iter().any(|value| *value > 0.0),
+            "窗口边界处的事件被跳过了"
+        );
+    }
+
+    #[test]
+    fn 混音器按时间与主音量输出() {
+        let library = library_with(&["normal-hitnormal"]);
+        let beatmap = beatmap_with(
+            0,
+            HitObjects::Standard(vec![StandardHitObject {
+                start_time: 0,
+                end_time: 0,
+                hit_type: 1,
+                hitsound: 0,
+                samples: object_sample(SampleBank::Normal, 100),
+                ..Default::default()
+            }]),
+        );
+        let timeline = build_timeline(&beatmap, &library);
+
+        // 样本采样率 1000Hz，每个采样帧 1ms；4 帧 = 4ms。
+        let mut mixer = HitsoundMixer::new(library, timeline, 1000);
+        let quiet = mixer.render(2);
+        assert_eq!(quiet.len(), 4);
+        // 事件增益 1.0 × 主音量 0.5，样本值为 1.0。
+        mixer.set_master_gain(0.5);
+        mixer.seek(0.0);
+        let mixed = mixer.render(2);
+        let expected = soft_limit(0.5);
+        assert!((mixed[0] - expected).abs() < 1e-6, "left={}", mixed[0]);
+        assert!((mixed[1] - expected).abs() < 1e-6, "right={}", mixed[1]);
+    }
+
+    #[test]
+    fn 混音器seek后不补播已越过的事件() {
+        let library = library_with(&["normal-hitnormal"]);
+        let beatmap = beatmap_with(
+            0,
+            HitObjects::Standard(vec![StandardHitObject {
+                start_time: 0,
+                end_time: 0,
+                hit_type: 1,
+                hitsound: 0,
+                samples: object_sample(SampleBank::Normal, 100),
+                ..Default::default()
+            }]),
+        );
+        let timeline = build_timeline(&beatmap, &library);
+        let mut mixer = HitsoundMixer::new(library, timeline, 1000);
+        mixer.seek(500.0);
+        let output = mixer.render(2);
+        assert!(output.iter().all(|value| *value == 0.0));
+    }
+
+    #[test]
+    fn 混音器主音量忽略非有限值() {
+        let library = SampleLibrary::new();
+        let mut mixer = HitsoundMixer::new(library, HitsoundTimeline::default(), 1000);
+        mixer.set_master_gain(f64::NAN);
+        assert_eq!(mixer.master_gain(), 0.0);
+        mixer.set_master_gain(-1.0);
+        assert_eq!(mixer.master_gain(), 0.0);
     }
 }

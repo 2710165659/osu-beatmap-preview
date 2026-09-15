@@ -5,3 +5,6 @@ Dockerfile* text eol=lf
 
 # 容器里执行的 shell 脚本必须是 LF，否则 shebang 会变成 "#!/bin/sh\r"。
 *.sh text eol=lf
+
+# Windows 批处理固定成 CRLF：LF 结尾的 .bat 在部分 cmd 版本里会让 goto 的标签定位失效。
+*.bat text eol=crlf

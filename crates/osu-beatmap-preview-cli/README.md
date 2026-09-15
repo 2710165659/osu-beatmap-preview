@@ -149,7 +149,7 @@ MP4 默认还会把打击音（hit sound）混入音轨，音量 50%（与游戏
 
 - Standard / Catch / Mania 使用 argon pro (2022) 音效，Taiko 使用 osu! "classic" (2013) 音效；
 - 音效资源已内嵌进可执行文件（`assets/hitsound/*.ogg`），不需要额外文件；
-- 谱面采样点（bank、音量、自定义音效文件名）以及滑条 tick、滑条滑行音、转盘旋转音、果汁流小果等都按 osu! 的规则还原；
+- 谱面采样点（bank、音量、自定义音效文件名）以及滑条 tick、滑条滑行音、转盘旋转音、果汁流小果等都按 osu! 的规则还原；转盘的旋转音会按 autoplay 转速（477 RPM）换算旋转进度做音高调制，奖励音每转满一圈响一次（预览无法预知玩家表现，因此统一按 autoplay）；
 - 某个音效文件无法读取时按静音处理，不会中断导出；
 - 各模式可分别用 `ENABLE_HITSOUND` 与 `HITSOUND_VOLUME` 控制（见下方配置示例）。
 

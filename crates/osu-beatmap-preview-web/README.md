@@ -191,7 +191,7 @@ crates/osu-beatmap-preview-web/
 - **默认视图**：只保留一行谱面信息、视频和进度条，视频区域最大。进度条在鼠标移动或触摸时显示，停下约 1 秒后淡出；淡出只改透明度，进度条原来的位置始终占着，所以画面不会上下位移。画面参数（30/60/120 FPS、480P/720P/1080P、0.5x–2x 倍速）、音量（0–100%，默认 50%）、Mod 与运行日志都收在右上角齿轮打开的抽屉里。
 - **谱面信息**：名称与难度取自 WASM 的 `beatmapInfo`（见下）。
 - **操作**：点击画面播放/暂停，空格同样；`Esc` 关闭抽屉。左右方向键短按在**松开时**跳转 ±5 秒（按下不跳），长按右键进入 3 倍速播放、长按左键持续向前倒带，两种情况都会在画面上显示角标。
-- **打击音（hit sound）**：默认开启、音量 50%，与音乐音量分开调节（抽屉里的「打击音」一组）。音效按模式选用：Standard / Catch / Mania 用 argon pro (2022)，Taiko 用 osu! "classic" (2013)；谱面音效组与音量按 osu! 规则从 timing point 读取，滑条 tick、滑行音、转盘旋转音、果汁流小果都会还原。**音效字节内嵌在 wasm 里**（`hitsoundAsset`），页面不需要请求音效文件；浏览器只负责用 Web Audio 解码成 PCM，之后由 WASM 按音频硬件时钟推进时间轴并混音，因此画面与声音共用同一条时间轴；某个样本读不出来时按静音处理，不影响播放。
+- **打击音（hit sound）**：默认开启、音量 50%，与音乐音量分开调节（抽屉里的「打击音」一组）。音效按模式选用：Standard / Catch / Mania 用 argon pro (2022)，Taiko 用 osu! "classic" (2013)；谱面音效组与音量按 osu! 规则从 timing point 读取，滑条 tick、滑行音、转盘旋转音、果汁流小果都会还原（转盘旋转音按 autoplay 转速换算进度做音高调制，奖励音每转满一圈响一次）。**音效字节内嵌在 wasm 里**（`hitsoundAsset`），页面不需要请求音效文件；浏览器只负责用 Web Audio 解码成 PCM，之后由 WASM 按音频硬件时钟推进时间轴并混音，因此画面与声音共用同一条时间轴；某个样本读不出来时按静音处理，不影响播放。
 
   音效的送出一条链路：WASM 按 `state.position` 混出 PCM → `src/hitsound-stream.js` 写入与音频线程共享的环形缓冲（两端统一使用相对帧数，写入位置始终领先音频线程约 170ms）→ `public/hitsound-worklet.js` 按硬件时钟消费。预读窗口按「音频线程已读位置」而不是只按画面时钟计算：音频线程由音频硬件时钟驱动、稳定地领先画面时钟几十毫秒，只按画面时钟预读会让它一路追到写入前沿、读到的全是静音（表现为打击音时有时无）。锚点、坐标系、预读窗口与 seek 对齐的回归测试在 `test/hitsound-stream.test.js`。
 
@@ -276,6 +276,21 @@ npm run build        # 把 src/ 编译到 dist/
 npm run build:wasm   # 构建 wasm 产物到 public/pkg
 npm start            # node backend/server.js
 ```
+
+Windows 上也可以直接运行 `run_web.ps1`：它会切到本目录，缺 `node_modules` 时装依赖、依次构建 wasm 与前端，然后前台启动 `backend/server.js`，日志与 `Ctrl+C` 停止都在同一个窗口里。
+
+```powershell
+.\run_web.ps1                         # 全部构建后启动（http://127.0.0.1:8787）
+.\run_web.ps1 --port=8443 --https     # 其余参数原样转发给后端
+.\run_web.ps1 -NoWasm                 # 只改了前端时跳过 wasm 构建（快很多）
+.\run_web.ps1 -NoBuild                # 只改了 wasm 时跳过前端构建
+.\run_web.ps1 -NoServe                # 只构建，不启动
+.\run_web.ps1 -Help                   # 选项说明
+```
+
+本机禁用了脚本执行策略时改成 `powershell -ExecutionPolicy Bypass -File .\run_web.ps1`（`pwsh -File .\run_web.ps1` 同理）。脚本会检查 node（并要求主版本 ≥ 20）/ npm / cargo / wasm-bindgen 是否就绪，缺 `wasm32-unknown-unknown` 目标时自动 `rustup target add`；`-NoWasm` 与 `-NoBuild` 只在对应产物确实是最新时使用，否则浏览器会继续跑旧逻辑（wasm 在页面加载时只导入一次，换了以后要刷新页面）。
+
+维护这个脚本时有两点不要改：文件必须保持 **UTF-8 with BOM**（Windows PowerShell 5.1 对没有 BOM 的 UTF-8 会按 ANSI 解码，中文提示全变乱码），以及调用 npm 时必须走 `npm.cmd`——PowerShell 会把 `npm` 解析到 Node 自带的 `npm.ps1` 垫片，该垫片在脚本里被调用时会重新解析调用行并传错参数（实测报 `Unknown command: "Command"`）。
 
 改前端时可以用 Vite 开发服务器（前端热更新，后端要另开一个终端）：
 

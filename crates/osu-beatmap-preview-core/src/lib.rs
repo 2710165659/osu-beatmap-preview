@@ -26,8 +26,8 @@ pub use gameplay::{
 pub use hitsound::{
     build_timeline as build_hitsound_timeline, has_embedded_asset as hitsound_has_embedded_asset,
     referenced_names as hitsound_referenced_names, volume_gain as hitsound_volume_gain, Channels,
-    HitsoundMixer, HitsoundTimeline, LoopHandle, PlayEvent as HitsoundEvent, SampleData,
-    SampleLibrary,
+    HitsoundMixer, HitsoundTimeline, LoopHandle, PlayEvent as HitsoundEvent, PlayFrequency,
+    SampleData, SampleLibrary,
 };
 pub use model::{mods_for_mode, parse_mods, validate_mods, ModSettings};
 pub use model::{

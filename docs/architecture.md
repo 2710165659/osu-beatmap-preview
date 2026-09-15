@@ -87,7 +87,9 @@ Web（Node 后端 + 浏览器）
 
 ## 打击音（hit sound）
 
-打击音的「什么时候播放哪个样本、多大声」集中在 core 的 `hitsound` 模块里：它按四模式的 osu! 规则（Standard 的滑条 tick/滑行音、Taiko 走 legacy（classic 皮肤）路径——音效组取自物件 `hitSample` 与所在 timing point、鼓边按 `clap|whistle` 判定、strong 追加 `finish`/`whistle`、连打逐 tick、大连打按 autoplay 节奏交替敲击，Catch 的果汁流小果、Mania 的长条）把谱面展开成事件时间轴，并提供一个与音频设备无关的离线混音器。样本 PCM 由宿主提供，core 不接触文件、网络或音频设备。
+打击音的「什么时候播放哪个样本、多大声」集中在 core 的 `hitsound` 模块里：它按四模式的 osu! 规则（Standard 的滑条 tick/滑行音、转盘的旋转音按 autoplay 转速（477 RPM）换算进度做音高调制并在每转满一圈时发奖励音、Taiko 走 legacy（classic 皮肤）路径——音效组取自物件 `hitSample` 与所在 timing point、鼓边按 `clap|whistle` 判定、strong 追加 `finish`/`whistle`、连打逐 tick、大连打按 autoplay 节奏交替敲击，Catch 的果汁流小果、Mania 的长条）把谱面展开成事件时间轴，并提供一个与音频设备无关的离线混音器。样本 PCM 由宿主提供，core 不接触文件、网络或音频设备。
+
+模块按职责拆分：`hitsound/mod.rs` 只放公开入口（`build_timeline` / `referenced_names` / `volume_gain` / `SAMPLE_RATE`）与再导出，`sample.rs` 管样本与名字解析，`timeline.rs` 管事件类型与构建器（含候选名的栈上拼接），`common.rs` 放各模式共用的取样与 timing point 辅助，`standard.rs` / `taiko.rs` / `catch.rs` / `mania.rs` 各自按 osu! 规则展开物件（测试与被测模块同文件），`mixer.rs` 把时间轴混成 PCM，`assets.rs` 是内嵌样本表。
 
 - CLI：`build.rs` 把 `assets/hitsound/*.ogg` 内嵌进可执行文件，导出 MP4 时用 symphonia 解码被引用到的样本，再按视频输出时间轴整段混音后交给 AAC 编码器；音乐与打击音共用同一个 48kHz 输出下标（`chart_start + i * 1000 * speed / sample_rate`），倍速通过把混音器的内部采样率取 `sample_rate / speed` 实现，因此时间与音高都和音乐、Web 端一致；视频区间起点可能为负（首个物件前的预卷），混音位置同样允许为负。混音按 1 秒窗口分块渲染，避免把整段事件压在声音列表里。任何样本读取失败都退化为静音，不影响导出。
 - Web：core 构建时把同一批 ogg 内嵌进 wasm（`hitsound::asset_bytes`），页面按名字取字节、用 Web Audio 解码成 PCM 再交给 wasm；wasm 在音频线程的时钟下推进时间轴并混音，画面与声音使用同一条时间轴（见 [WASM 使用说明](../crates/osu-beatmap-preview-wasm/README.md)）。宿主只负责解码与输出，不需要下载音效文件。
