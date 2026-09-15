@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Standard 滑条球新增方向箭头（对照游戏内 osu! "argon" pro (2022) 皮肤的 `AngleRight` 图标）：白色 `>` 字形画在滑条球中央并跟随滑行方向旋转，折返段自动反向；几何比例取自该图标在 font size 100 下的字形位图（墨迹高度为物件直径的 0.3 倍），CPU 导出与 Web 实时预览共用同一套参数。
 - Web 播放页新增音量调节（0–100%，默认 50%），位于齿轮抽屉的「声音」分组，拖动即时生效且换谱面后沿用。
 - `crates/osu-beatmap-preview-web/run_web.ps1`：Windows 上一键构建并启动 Web 站点——切到脚本自身目录，缺 `node_modules` 时安装依赖，依次构建 wasm（`public/pkg`）与前端（`dist/`），最后前台运行 `backend/server.js`（`Ctrl+C` 停止）。会检查 node（要求主版本 ≥ 20）/ npm / cargo / wasm-bindgen，缺 `wasm32-unknown-unknown` 目标时自动 `rustup target add`；后端参数（`--port`、`--https`、`--cache-dir` 等）原样转发，`-NoWasm` / `-NoBuild` / `-NoInstall` / `-NoServe` 跳过对应步骤，`-Help` 显示说明；脚本以 UTF-8 with BOM 保存（Windows PowerShell 5.1 对无 BOM 的 UTF-8 会按 ANSI 解码，中文提示会乱码），并且调用 npm 一律走 `npm.cmd`（PowerShell 解析到的 `npm.ps1` 垫片在脚本里被调用时会重新解析调用行、把参数传成 `Command` 之类）。`.gitattributes` 增加 `*.bat text eol=crlf`，避免以后新增的批处理在非 Windows 检出后变成 LF 结尾（部分 cmd 版本会让 `goto` 的标签定位失效）。
 - 新增打击音（hit sound）支持，覆盖 CLI 的 MP4 导出与 Web 实时预览：Standard / Catch / Mania 使用 argon pro (2022) 音效，Taiko 使用 osu! "classic" (2013)；谱面音效组、音量、滑条 tick/滑行音、转盘音、果汁流小果都按 osu! 规则还原。音效资源内嵌进可执行文件与 wasm，读取失败按静音处理。

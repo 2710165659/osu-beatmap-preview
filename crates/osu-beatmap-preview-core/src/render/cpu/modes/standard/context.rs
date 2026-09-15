@@ -63,6 +63,8 @@ pub struct RenderCache {
     pub slider_body_layers: HashMap<(usize, bool), CachedLayer>,
     pub slider_body_alpha_layers: HashMap<(usize, u8), Img>,
     pub reverse_arrows: HashMap<(i64, [u8; 3]), Img>,
+    /// 滑条球方向箭头：白色图标，按旋转角度（度，取整）缓存。
+    pub ball_arrows: HashMap<i64, Img>,
     pub slider_tick_sprites: HashMap<(i64, [u8; 3]), Img>,
 }
 

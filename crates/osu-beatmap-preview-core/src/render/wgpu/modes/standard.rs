@@ -14,8 +14,8 @@ use crate::render::cpu::modes::standard::context::{
     stacked_position, standard_objects, to_frame_point, RenderCache, RenderContext,
 };
 use crate::render::cpu::modes::standard::slider::{
-    alpha_to_byte, build_reverse_arrow, darken, get_slider_render_data, slider_snaked_range,
-    SliderRenderData,
+    alpha_to_byte, build_reverse_arrow, darken, get_slider_render_data, rotate_arrow_point,
+    slider_ball_arrow_angle, slider_ball_arrow_geometry, slider_snaked_range, SliderRenderData,
 };
 use crate::render::geometry::{GameMode, OutputFormat};
 use crate::render::scene::{FrameScene, FrameSceneBuilder, SceneRect};
@@ -391,6 +391,29 @@ fn draw_slider_ball(
         (2.5 * context.frame_circle_diameter as f64 * ARGON_BORDER_RATIO).max(1.0) as f32,
         [255, 255, 255, alpha_to_byte(alpha)],
     );
+    // 方向箭头：与 CPU 路径共用几何参数，用两段线段加三个圆头拼出 `>` 形
+    // （`Line` 命令没有旋转，圆头也要显式补上），朝向由共享的旋转函数解析计算。
+    if let Some(angle) = slider_ball_arrow_angle(
+        &slider.frame_path,
+        object.slider_repeats.max(1) as i64,
+        completion,
+    ) {
+        let arrow = slider_ball_arrow_geometry(context.frame_circle_diameter as f64);
+        let white = [255, 255, 255, alpha_to_byte(alpha)];
+        let thickness = arrow.thickness as f32;
+        let to_scene = |local: (f64, f64)| {
+            let point = rotate_arrow_point(center, local, angle);
+            [point.0 as f32, point.1 as f32]
+        };
+        let tip = to_scene(arrow.tip);
+        let top = to_scene(arrow.top);
+        let bottom = to_scene(arrow.bottom);
+        scene.line(top, tip, thickness, white);
+        scene.line(tip, bottom, thickness, white);
+        for vertex in [top, tip, bottom] {
+            scene.circle(vertex, thickness / 2.0, white);
+        }
+    }
 }
 
 fn draw_spinner(
@@ -710,4 +733,114 @@ fn image_background_color() -> [u8; 4] {
         .mp4
         .style
         .IMAGE_BACKGROUND_COLOR
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{HitObjects, KvSection, TimingPoint};
+    use crate::render::scene::DrawCommand;
+
+    /// 构造一条从 (100, 192) 到 (400, 192) 的水平滑条，起点 1000ms。
+    /// SliderMultiplier 1.4 与 500ms 拍长下每段滑行 1071ms。
+    fn slider_beatmap(repeats: i32) -> Beatmap {
+        let mut general = KvSection::default();
+        general.insert("Mode", "0".to_string());
+        let mut difficulty = KvSection::default();
+        difficulty.insert("CircleSize", "4".to_string());
+        difficulty.insert("ApproachRate", "5".to_string());
+        difficulty.insert("SliderMultiplier", "1.4".to_string());
+        difficulty.insert("SliderTickRate", "1".to_string());
+        Beatmap {
+            metadata: KvSection::default(),
+            difficulty,
+            general,
+            timing_points: vec![TimingPoint {
+                time: 0.0,
+                beat_length: 500.0,
+                meter: 4,
+                uninherited: true,
+                kiai_mode: false,
+                omit_first_bar_line: false,
+                sample_set: 0,
+                sample_index: 0,
+                sample_volume: 100,
+            }],
+            hit_objects: HitObjects::Standard(vec![StandardHitObject {
+                x: 100,
+                y: 192,
+                start_time: 1000,
+                end_time: 1000 + 1071 * repeats as i64,
+                hit_type: 6,
+                hitsound: 0,
+                new_combo: true,
+                combo_offset: 0,
+                slider_type: Some("L".to_string()),
+                slider_points: vec![(400, 192)],
+                slider_repeats: repeats,
+                slider_pixel_length: 300.0,
+                slider_edge_hitsounds: vec![0; repeats as usize + 1],
+                stack_height: 0,
+                samples: Vec::new(),
+                slider_edge_samples: Vec::new(),
+            }]),
+            break_periods: Vec::new(),
+            background_filename: None,
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
+
+    /// 场景里白色方向箭头由两条线段和三个圆头组成，这里取出线段的起终点。
+    fn arrow_segments(scene: &FrameScene) -> Vec<([f32; 2], [f32; 2])> {
+        scene
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Line {
+                    from,
+                    to,
+                    thickness,
+                    color,
+                } if *color == [255, 255, 255, 255] => {
+                    assert!(*thickness > 0.0);
+                    Some((*from, *to))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn 实时场景的滑条球箭头跟随折返方向() {
+        let source = prepare_realtime(&slider_beatmap(2), None, TimeAxis::new(0))
+            .expect("实时场景必须可以准备");
+        // 第一段滑行球向右，折返后向左；两段都必须出现在箭头线段上。
+        for (time, tip_on_right) in [(1400_i64, true), (2600, false)] {
+            let scene = source.render(time).expect("任意时间都必须能出帧");
+            let segments = arrow_segments(&scene);
+            assert_eq!(segments.len(), 2, "时间 {time} 应只有方向箭头的两条线段");
+            let [first, second] = [segments[0], segments[1]];
+            // 两条线段共享的端点就是箭头的尖端，另外两端在尖端后方。
+            let tip = if first.0 == second.0 || first.0 == second.1 {
+                first.0
+            } else {
+                first.1
+            };
+            let tails = [first.0, first.1, second.0, second.1]
+                .into_iter()
+                .filter(|point| *point != tip)
+                .collect::<Vec<_>>();
+            let tail_x = tails.iter().map(|point| point[0]).sum::<f32>() / tails.len() as f32;
+            assert_eq!(
+                tip[0] > tail_x,
+                tip_on_right,
+                "时间 {time} 的箭头方向应与滑行方向一致：tip={tip:?} tails={tails:?}"
+            );
+            // 水平滑条上箭头的两端应关于尖端上下对称。
+            assert_eq!(tails.len(), 2);
+            let tail_y = (tails[0][1] + tails[1][1]) / 2.0;
+            assert!((tip[1] - tail_y).abs() < 0.5, "箭头应上下对称：tip={tip:?}");
+        }
+    }
 }

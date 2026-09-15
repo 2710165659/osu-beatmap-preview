@@ -492,6 +492,96 @@ pub fn slider_snaked_range(
 
 // ——— 滑条球 ———
 
+/// 滑条球方向箭头的几何参数（局部坐标，箭头指向 +X，单边尺寸对称于球心）。
+///
+/// 对照 lazer `ArgonSliderBall`：图标是 FontAwesome Solid `AngleRight`，
+/// 其等比缩放后的墨迹高度为物件直径的 0.3 倍，两端与尖端为圆角笔画，
+/// 这里按同一比例还原，端帽的圆角会让墨迹比字形略宽约 6%，视觉上可忽略。
+pub struct SliderBallArrowGeometry {
+    pub tip: (f64, f64),
+    pub top: (f64, f64),
+    pub bottom: (f64, f64),
+    pub thickness: f64,
+    /// 含圆头端帽的墨迹外接尺寸，用于生成精灵。
+    pub size: (u32, u32),
+}
+
+pub fn slider_ball_arrow_geometry(circle_diameter: f64) -> SliderBallArrowGeometry {
+    let height = (circle_diameter * ARGON_SLIDER_BALL_ARROW_HEIGHT_RATIO).max(1.0);
+    let thickness = (height * ARGON_SLIDER_BALL_ARROW_THICKNESS_RATIO).max(1.0);
+    let half_height = height * ARGON_SLIDER_BALL_ARROW_HALF_HEIGHT_RATIO;
+    let tip_x = height * ARGON_SLIDER_BALL_ARROW_TIP_OFFSET_RATIO;
+    // 折角外侧顶点比中心线尖端多出 (厚度/2)/sin45°，左右两侧对称，球心即墨迹中心。
+    let half_width = tip_x + thickness / 2.0 * std::f64::consts::SQRT_2;
+    let pad = 2.0_f64.max(height * 0.02);
+    SliderBallArrowGeometry {
+        tip: (tip_x, 0.0),
+        top: (tip_x - half_height, -half_height),
+        bottom: (tip_x - half_height, half_height),
+        thickness,
+        size: (
+            (half_width * 2.0 + pad * 2.0).ceil().max(1.0) as u32,
+            (height + pad * 2.0).ceil().max(1.0) as u32,
+        ),
+    }
+}
+
+/// 按 lazer `DrawableSliderBall.UpdateProgress` 的算法取滑条球当前的朝向。
+///
+/// `completion` 是滑条整体进度（0..1，从物件开始时间算起），路径进度必须经
+/// [`super::alpha::slider_path_progress`] 折算，折返段才会自动反向。
+/// 返回箭头应指向的屏幕角度（度，y 轴向下、顺时针为正）；方向向量长度小于
+/// 0.01 时无法可靠求角（急折返或极短滑条），返回 `None` 由调用方跳过绘制。
+pub fn slider_ball_arrow_angle(path: &SliderPath, span_count: i64, completion: f64) -> Option<f64> {
+    if path.points.len() < 2 || !path.total_length.is_finite() || path.total_length <= 0.0 {
+        return None;
+    }
+    let spans = span_count.max(1);
+    // 游戏中取 0.1 个世界像素的采样距离；这里按路径长度归一化，坐标系缩放会约掉。
+    let check = (0.1 / path.total_length).clamp(1e-6, 0.5);
+    let position = |completion: f64| {
+        path_position_at(
+            path,
+            super::alpha::slider_path_progress(spans, completion.clamp(0.0, 1.0)),
+        )
+    };
+    let before = position((1.0 - check).min(completion));
+    let after = position((completion + check).min(1.0));
+    let (dx, dy) = (after.0 - before.0, after.1 - before.1);
+    (dx.hypot(dy) >= 0.01).then(|| dy.atan2(dx).to_degrees())
+}
+
+/// 把滑条球箭头的局部坐标（指向 +X）旋转到帧坐标。
+///
+/// 屏幕坐标系 y 轴向下，`angle_deg` 为正表示视觉上的顺时针；与 CPU 路径使用的
+/// `Img::rotate_expand(-angle_deg)` 等价，两条渲染路径因此得到同一朝向。
+pub fn rotate_arrow_point(center: (f64, f64), local: (f64, f64), angle_deg: f64) -> (f64, f64) {
+    let (sin, cos) = angle_deg.to_radians().sin_cos();
+    (
+        center.0 + local.0 * cos - local.1 * sin,
+        center.1 + local.0 * sin + local.1 * cos,
+    )
+}
+
+/// 程序化绘制滑条球方向箭头（白色 `>` 字形），未旋转时指向 +X。
+pub fn build_slider_ball_arrow(circle_diameter: f64) -> Img {
+    let arrow = slider_ball_arrow_geometry(circle_diameter);
+    let mut img = Img::new(arrow.size.0, arrow.size.1, [0, 0, 0, 0]);
+    let cx = img.w as f64 / 2.0;
+    let cy = img.h as f64 / 2.0;
+    img.stroke_polyline(
+        &[
+            (cx + arrow.top.0, cy + arrow.top.1),
+            (cx + arrow.tip.0, cy + arrow.tip.1),
+            (cx + arrow.bottom.0, cy + arrow.bottom.1),
+        ],
+        arrow.thickness,
+        [255, 255, 255, 255],
+        true,
+    );
+    img
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn draw_slider_ball(
     frame: &mut Img,
@@ -557,6 +647,31 @@ pub fn draw_slider_ball(
         let bx = py_round(center.0 - img.w as f64 / 2.0);
         let by = py_round(center.1 - img.h as f64 / 2.0);
         frame.alpha_composite(img, bx, by);
+    }
+    {
+        // 方向箭头为白色，与游戏一致：不随 combo 颜色变化，只按角度缓存旋转结果。
+        // 角度取整到 1°，与折返箭头一致地复用精灵。
+        let Some(angle) = slider_ball_arrow_angle(
+            &slider_data.frame_path,
+            hit_object.slider_repeats.max(1) as i64,
+            completion,
+        ) else {
+            return;
+        };
+        let angle_deg = -angle;
+        let angle_key = py_round(angle_deg);
+        let rotated = cache.ball_arrows.entry(angle_key).or_insert_with(|| {
+            build_slider_ball_arrow(context.frame_circle_diameter as f64).rotate_expand(angle_deg)
+        });
+        let arrow = with_alpha(
+            &mut cache.resized_alpha,
+            rotated,
+            ID_BALL_ARROW + (angle_key + 720) as u64,
+            alpha,
+        );
+        let ox = py_round(center.0 - arrow.w as f64 / 2.0);
+        let oy = py_round(center.1 - arrow.h as f64 / 2.0);
+        frame.alpha_composite(arrow, ox, oy);
     }
 }
 
@@ -919,5 +1034,79 @@ mod tests {
         let second = cached_slider_tick_sprite(&mut cache, 12, [255, 192, 0]) as *const Img;
         assert_eq!(cache.slider_tick_sprites.len(), 1);
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn slider_ball_arrow_matches_glyph_proportions() {
+        // 器件直径 128 时，图标墨迹高度应为 0.3 × 128 = 38.4，上下对称、尖端在右。
+        let arrow = slider_ball_arrow_geometry(128.0);
+        let ink_height = arrow.top.1.abs() * 2.0 + arrow.thickness;
+        assert!((ink_height - 38.4).abs() < 1e-9, "ink_height={ink_height}");
+        assert!((arrow.top.1 + arrow.bottom.1).abs() < 1e-9);
+        assert!(arrow.tip.0 > arrow.top.0);
+
+        let sprite = build_slider_ball_arrow(128.0);
+        let (left, top, right, bottom) = sprite.alpha_bbox().expect("箭头必须有可见像素");
+        assert!(
+            (right - left) as f64 >= 23.0 && (right - left) as f64 <= 27.0,
+            "墨迹宽度应接近字形比例：{}",
+            right - left
+        );
+        assert!(
+            (bottom - top) as f64 >= 36.0 && (bottom - top) as f64 <= 40.0,
+            "墨迹高度应接近字形高度：{}",
+            bottom - top
+        );
+        // 球心即墨迹中心：精灵的墨迹包围盒应大致居中。
+        assert!(((left + right) as f64 / 2.0 - sprite.w as f64 / 2.0).abs() <= 1.0);
+        assert!(((top + bottom) as f64 / 2.0 - sprite.h as f64 / 2.0).abs() <= 1.0);
+        let white = sprite
+            .data
+            .chunks_exact(4)
+            .filter(|pixel| pixel == &[255, 255, 255, 255])
+            .count();
+        assert!(white > 0, "箭头应为不透明白色");
+    }
+
+    #[test]
+    fn slider_ball_arrow_angle_follows_path_direction() {
+        let right = build_path(&[(0.0, 0.0), (100.0, 0.0)]);
+        assert!(slider_ball_arrow_angle(&right, 1, 0.5).unwrap().abs() < 1e-9);
+        let down = build_path(&[(0.0, 0.0), (0.0, 100.0)]);
+        assert!((slider_ball_arrow_angle(&down, 1, 0.5).unwrap() - 90.0).abs() < 1e-9);
+        let up = build_path(&[(0.0, 100.0), (0.0, 0.0)]);
+        assert!((slider_ball_arrow_angle(&up, 1, 0.5).unwrap() + 90.0).abs() < 1e-9);
+        // 折线拐角处的方向取局部切线，不取整条路径的首尾连线。
+        let corner = build_path(&[(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)]);
+        assert!(slider_ball_arrow_angle(&corner, 1, 0.25).unwrap().abs() < 1e-9);
+        assert!((slider_ball_arrow_angle(&corner, 1, 0.75).unwrap() - 90.0).abs() < 1e-9);
+        // 单点路径没有方向。
+        assert!(slider_ball_arrow_angle(&build_path(&[(5.0, 5.0)]), 1, 0.5).is_none());
+    }
+
+    #[test]
+    fn slider_ball_arrow_reverses_on_return_span() {
+        // 两次滑行（1 个折返）：返程时球向左移动，箭头必须跟着反向。
+        let right = build_path(&[(0.0, 0.0), (100.0, 0.0)]);
+        assert!(slider_ball_arrow_angle(&right, 2, 0.25).unwrap().abs() < 1e-9);
+        assert!((slider_ball_arrow_angle(&right, 2, 0.75).unwrap() - 180.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn slider_ball_arrow_rotation_is_consistent_across_paths() {
+        // GPU 路径按角度旋转坐标：90°（y 轴向下即“向下”）时局部 +X 的尖端落在球心下方。
+        let (x, y) = rotate_arrow_point((10.0, 10.0), (4.0, 0.0), 90.0);
+        assert!((x - 10.0).abs() < 1e-9 && (y - 14.0).abs() < 1e-9);
+
+        // CPU 路径用 rotate_expand 旋转精灵：同一角度必须把右侧探针转到下方。
+        let mut probe = Img::new(9, 9, [0, 0, 0, 0]);
+        probe.put(8, 4, [255, 255, 255, 255]);
+        let rotated = probe.rotate_expand(-90.0);
+        let (left, top, right, bottom) = rotated.alpha_bbox().expect("探针像素必须保留");
+        let (ink_x, ink_y) = ((left + right) as f64 / 2.0, (top + bottom) as f64 / 2.0);
+        assert!(
+            (ink_x - rotated.w as f64 / 2.0).abs() <= 1.0 && ink_y > rotated.h as f64 / 2.0,
+            "rotate_expand(-90) 应把右侧探针转到下方：({ink_x}, {ink_y})"
+        );
     }
 }

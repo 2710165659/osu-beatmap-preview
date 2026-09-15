@@ -5,6 +5,9 @@ pub mod cache {
     pub const ID_SLIDER_BALL: u64 = 102;
     pub const ID_FOLLOW: u64 = 103;
     pub const ID_SLIDER_TICK: u64 = 104;
+    /// 滑条球方向箭头按旋转角度缓存，占用 `ID_BALL_ARROW + 角度` 的编号。
+    /// 取值与滑条 tick（`ID_SLIDER_TICK + 尺寸`）和折返箭头（`ID_ARROW_BASE + 角度`）的编号段都不重叠。
+    pub const ID_BALL_ARROW: u64 = 8192;
     pub const ID_ARROW_BASE: u64 = 4096;
 }
 
@@ -41,6 +44,15 @@ pub mod style {
     pub const ARGON_SLIDER_BODY_ALPHA: f64 = 0.98;
     pub const ARGON_SLIDER_TICK_SIZE_RATIO: f64 = 12.0 / 128.0;
     pub const ARGON_SLIDER_TICK_BORDER_RATIO: f64 = 3.0 / 12.0;
+    /// 滑条球方向箭头：lazer `ArgonSliderBall` 内的 FontAwesome Solid `AngleRight` 图标
+    /// （SpriteIcon 尺寸 48、缩放 (0.6, 0.8)，即墨迹高度 38.4 = 物件直径 128 的 0.3 倍）。
+    pub const ARGON_SLIDER_BALL_ARROW_HEIGHT_RATIO: f64 = 0.3;
+    /// 以下三个比例来自该图标在 font size 100 下的字形位图（38×60），
+    /// 单位都是字形高度（60）的倍数：45° 笔画的垂直厚度 21/√2≈14.85、
+    /// 折角中心线半高 22.575、尖端中心线相对字形中心的横向偏移 9.75。
+    pub const ARGON_SLIDER_BALL_ARROW_THICKNESS_RATIO: f64 = 14.85 / 60.0;
+    pub const ARGON_SLIDER_BALL_ARROW_HALF_HEIGHT_RATIO: f64 = 22.575 / 60.0;
+    pub const ARGON_SLIDER_BALL_ARROW_TIP_OFFSET_RATIO: f64 = 9.75 / 60.0;
     pub const ARGON_COMBO_COLORS: [[u8; 3]; 4] =
         [[255, 192, 0], [0, 202, 0], [18, 124, 255], [242, 24, 57]];
     pub const ARGON_SPINNER_PINK: [u8; 3] = [252, 97, 143];
