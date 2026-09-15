@@ -4,54 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [Unreleased]
+## [1.3.0] - 2026.09.15
 
 ### Added
 
-- Standard 滑条球新增方向箭头（对照游戏内 osu! "argon" pro (2022) 皮肤的 `AngleRight` 图标）：白色 `>` 字形画在滑条球中央并跟随滑行方向旋转，折返段自动反向；几何比例取自该图标在 font size 100 下的字形位图（墨迹高度为物件直径的 0.3 倍），CPU 导出与 Web 实时预览共用同一套参数。
-- Web 播放页新增音量调节（0–100%，默认 50%），位于齿轮抽屉的「声音」分组，拖动即时生效且换谱面后沿用。
-- `crates/osu-beatmap-preview-web/run_web.ps1`：Windows 上一键构建并启动 Web 站点——切到脚本自身目录，缺 `node_modules` 时安装依赖，依次构建 wasm（`public/pkg`）与前端（`dist/`），最后前台运行 `backend/server.js`（`Ctrl+C` 停止）。会检查 node（要求主版本 ≥ 20）/ npm / cargo / wasm-bindgen，缺 `wasm32-unknown-unknown` 目标时自动 `rustup target add`；后端参数（`--port`、`--https`、`--cache-dir` 等）原样转发，`-NoWasm` / `-NoBuild` / `-NoInstall` / `-NoServe` 跳过对应步骤，`-Help` 显示说明；脚本以 UTF-8 with BOM 保存（Windows PowerShell 5.1 对无 BOM 的 UTF-8 会按 ANSI 解码，中文提示会乱码），并且调用 npm 一律走 `npm.cmd`（PowerShell 解析到的 `npm.ps1` 垫片在脚本里被调用时会重新解析调用行、把参数传成 `Command` 之类）。`.gitattributes` 增加 `*.bat text eol=crlf`，避免以后新增的批处理在非 Windows 检出后变成 LF 结尾（部分 cmd 版本会让 `goto` 的标签定位失效）。
-- 新增打击音（hit sound）支持，覆盖 CLI 的 MP4 导出与 Web 实时预览：Standard / Catch / Mania 使用 argon pro (2022) 音效，Taiko 使用 osu! "classic" (2013)；谱面音效组、音量、滑条 tick/滑行音、转盘音、果汁流小果都按 osu! 规则还原。音效资源内嵌进可执行文件与 wasm，读取失败按静音处理。
-- `assets/shared_config.yml` 各模式的 `mp4` 小节新增 `ENABLE_HITSOUND`（布尔，默认开启）与 `HITSOUND_VOLUME`（百分比，默认 50，与游戏内默认音量等效）。
-- WASM 新增打击音接口：`hitsoundNames`、`hitsoundAsset`、`hitsoundAssetCount`、`hitsoundDefaults`，以及会话上的 `enableHitsound` / `setHitsoundSample` / `rebuildHitsoundTimeline` / `setHitsoundVolume` / `positionHitsound` / `seekHitsound` / `renderHitsound` / `takeHitsoundBuffer` / `resetHitsoundSamples`；画面与声音的时间轴统一由 wasm 维护，宿主只负责解码样本与输出 PCM。
-- Web 播放页新增「打击音」开关与音量滑杆（默认开启、50%），与音乐音量独立调节。
-- core 新增游玩/回放接口骨架（`gameplay::{GameplayMode, InputSnapshot, InputSource, JudgementEngine, ScoreSnapshot, GameplayOverlay, OverlayStyle, GameplayOptions}`）、打击音显式触发 API（`HitsoundMixer::{trigger, start_loop, stop_loop}`、`LoopHandle`）、`SampleLibrary::id_of` 与 `hitsound::has_embedded_asset`，为「谱面自带音效 / OSR 回放联动 / Web 游玩」预留接口（默认全部不生效，接口说明见 `docs/architecture.md` 的「后续功能接口」）。
-- `docs/architecture.md` 新增「媒体资源与 `.osu`/`.osz` 传输路径」与「音频-画面-打击音时钟模型」两节；`crates/osu-beatmap-preview-wasm/README.md` 补充音频时间轴契约（音频文件 0 点 == 谱面 0 点，`AudioLeadIn` 只影响起点）。
+- 新增打击音支持，覆盖 CLI 的 MP4 导出与 Web 实时预览：音效组、音量与滑条/转盘/连打发声均按 osu! 规则还原（Taiko 用 classic 音效，其余模式用 argon pro 2022）；音效资源内嵌，新增 `ENABLE_HITSOUND` 与 `HITSOUND_VOLUME` 配置项。
+- Web 播放页新增音乐音量（默认 50%）与「打击音」开关、音量滑杆（默认开启、100%）。
+- WASM 新增打击音接口，画面与声音的时间轴统一由 wasm 维护。
+- Standard 滑条球新增跟随滑行方向的方向箭头（argon pro 2022 样式）。
+- 新增 `run_web.ps1`，在 Windows 上一键构建并启动 Web 站点。
+- core 新增游玩/回放接口骨架、打击音触发 API 与音画时钟相关文档（接口默认不生效，为后续功能预留）。
 
 ### Changed
 
-- 预览与 CLI 的 MP4 现在共用同一个「完整区间起点」函数（`preview_start_ms`）：首个物件前 2000ms，谱面 `AudioLeadIn` 更大时按它提前。此前 Web 预览固定用 2000ms、CLI 才尊重 `AudioLeadIn`，同一张谱面在两边的起点可能不同；受影响的是 `AudioLeadIn > 2000` 的谱面（其 Web 预卷会变长）。
-- 媒体条目策略统一到 core 的 `processing::media`（路径归一化、音频/背景/自带音效条目，以及 `preview_start_ms`）；CLI 删除自己那份重复实现，Node 后端保持自写实现并由新的 `test/media-contract.test.js` 契约测试钉住。
-- 压缩包条目「归一化后什么都不剩」时，Node 后端由返回空串改为返回 `null`，与 core 完全一致。
-- 移除 core 里没有生产调用方的 `AudioData` / `RealtimeSession::set_audio` / `ResourceBundle::audio`，`cli::ResourceLoader::bundle_from_files` 随之去掉音频参数：音乐字节本来就不进 core（Web 用 `<audio>` 播放，导出由宿主解码后与打击音混音）。
-- `assets/shared_config.yml` 各模式 `mp4.style.HITSOUND_VOLUME` 默认值由 50 改为 100：游戏里 effect 音量默认 100%、地图每音音量再叠乘其上，而 50 会让打击音整体比音乐低约 6dB，响的段落里鼓声被埋掉、听感忽大忽小（实测某张标准谱：打击音层 RMS 比音乐低 11.6dB，改成 100 后约为 -5.6dB）。Web 播放页的「打击音」滑杆默认值同步变为 100。
-- CLI 的 `advance.video_audio.AUDIO_BITRATE` 默认值由 96 kbps 提高到 160 kbps：96 kbps 对 48 kHz 立体声偏紧，密集鼓点的瞬态会被抹平、带预回音（听感「发糊」）；十分钟的视频音频约多 4.8 MB（192 kbps 约多 7.2 MB，需要更高质量可在外部 `config.yml` 里调高）。
-- 修复「改了内嵌默认配置（`assets/shared_config.yml` / `cli_config.yml`）并重建二进制后，导出仍复用旧输出缓存」的问题：输出有效性检查读的是 core 的构建时间，而它为了让 core 构建可复现被钉在 1970-01-01，这项检查实际从不生效，于是旧 MP4（旧音量、旧码率、旧混音）会被一直当成有效缓存。现在改用当前可执行文件的修改时间，重建后的第一批导出会重新渲染一次；临时跳过缓存也可以加 `--no-cache`。
-- core 的 `hitsound` 模块按职责拆分（对外 API、事件与混音结果都不变）：`mod.rs` 只留公开入口与再导出，`sample.rs` 管样本与名字解析，`timeline.rs` 管事件类型与时间轴构建器，`common.rs` 放各模式共用的取样与 timing point 辅助，`standard.rs`/`taiko.rs`/`catch.rs`/`mania.rs` 各自按 osu! 规则展开物件，`mixer.rs` 混音，`assets.rs` 是内嵌样本表。测试随被测模块放在同一文件末尾，新增 `test_support.rs`（`#![cfg(test)]`，不参与生产构建）提供各模式共用的最小谱面与样本库构造。此前 2000 余行的 `mod.rs` 已难以按模式定位代码。
+- 预览与 CLI 的 MP4 共用视频区间起点函数 `preview_start_ms`，Web 预览不再忽略 `AudioLeadIn`。
+- 媒体条目策略统一到 core 的 `processing::media`，CLI 删除重复实现，Node 后端由新增的契约测试钉住。
+- CLI 的音频码率由 96 kbps 提高到 160 kbps。
 
 ### Fixed
 
--  修复部分浏览器下因时序问题导致谱面背景异常的bug
-- 修复打击音在混音窗口边界被跳过的问题：正好落在窗口末尾（例如整秒）的打击音会被永久丢弃，导致 CLI 与 Web 的打击音大部分或全部静音。
-- 修复 Web 端打击音与画面完全对不上的问题，两处根因：
-  - 共享环形缓冲的控制字发布的是**绝对**帧号，而音频线程用**环形帧下标**比较，播放绕回一圈后数据被判定为「未就绪」，声音时有时无且位置错乱；现在两端统一使用相对帧数。
-  - 混音锚点每帧都被当前时间覆盖，导致已混好的数据对应的时间被改写、写入位置一路领先播放位置；现在锚点随播放推进结算，写入位置始终只领先预读窗口。
-  - 向后 seek 时未把音频线程的读取指针拨回，它会读到新写入区之外的垃圾数据。
-- 修复 Web 端打击音「自动播放时没有声音、拖动进度条不恢复、必须在设置里手动开关一次才出声，开关之后 seek 或暂停再播放又会消失」的问题：预读窗口此前只按画面时钟计算，而音频线程由音频硬件时钟驱动、稳定地领先画面时钟几十毫秒，于是它一路追到写入前沿、读到的全是静音。现在填充目标同时看住音频线程回报的已读位置，并保证写入前沿领先它一个预读窗口（约 170ms）；音频线程回报位置也从每约 30ms 加密到每约 11ms。同时给音频线程加了欠载计数，真的跟不上混音时会在播放日志里提示一次。
-- 修复混音器里已播完的声音不会回收的问题：时长 0 的打击音事件结束时间是无限，声音列表因此随播放无限增长，每个输出帧都要遍历整张列表，长谱面会把混音拖慢到实时以下（Web 端表现为打击音整体消失）。
-- 修复混音器窗口边界的事件被播放两次的问题：正好落在窗口末尾的事件一度被前后两个窗口各收一次，音量凭空翻倍；现在窗口是 `[start, end)`，边界事件只归下一个窗口。
-- 修复转盘音效与 osu! 不一致的三处问题（为此混音器新增播放频率斜坡支持：样本位置按倍率对时间的积分反推，直接乘瞬时倍率会让音高越跑越快；Taiko 大连打仍按 `TaikoAutoGenerator` 的节奏发声，本次不改动）：
-  - 旋转循环音此前整段固定 1×，现在按 `DrawableSpinner` 的频率调制随旋转进度升调（`20000/44100` 起步、`40000/44100` 比例、`100000/44100` 上限，进度用 autoplay 的 477 RPM 换算），开头明显比原来慢，随进度升到上限；
-  - 奖励音此前在转盘出现时立刻响一声，现在按 osu! 的圈数规则发声：每转满一圈响一次，`SpinsRequired + 2` 圈之后才是第一声 `spinnerbonus`，超过奖励上限的圈数用 `spinnerbonus-max`；
-  - 转盘自身的判定音也从出现时移到结束（osu! 只在判定成立时 `PlaySamples()`）。
-- 修复滑条音效参数取错列的问题：`.osu` 中滑条的 `hitSample` 位于第 11 列，此前按第 6 列解析会把曲线数据当成音效参数，导致音效组与音量全错。
-- 修复 `hitSample` 全为 0（最常见情况）时未回退到 timing point 的问题：音效组与音量应随时间点变化，此前会被写成固定的 normal 组与 100 音量。
-- 修复缺少背景声明的谱面（或背景条目不在 OSZ 里）在 Web 端整张加载失败的问题：背景改为可选，缺失时前端退化成纯色背景，音频与画面照常工作（与 CLI 的行为一致）。
-- 修复 taiko 打击音走错皮肤逻辑的问题：此前按采样点音量分档选音效组（`>=90` drum / `>=60` normal / 其余 soft），那是 osu! Argon 皮肤（`VolumeAwareHitSampleInfo`）的规则；改用 legacy（classic 皮肤）逻辑：音效组取自物件 `hitSample`、缺省时用所在 timing point，鼓边按 `clap|whistle` 判定（此前只看 `clap` 位，whistle 蓝音符会当红音符），strong（`finish` 位）追加 `hitfinish`/`hitwhistle`，连打按 `DrumRoll.CreateNestedHitObjects()` 的 tick 逐个发声、大连打按 `TaikoAutoGenerator` 的节奏交替敲击鼓心/鼓边（此前每个物件只发一次声）。音效资源不变，仍用内嵌的 classic 套件。
-- 修复 Web 端单声道打击音（taiko 的 `taiko-*-hit*.ogg` 全是单声道）被拉长一倍、低一个八度的问题：宿主此前先把单声道交错成双声道、却仍按 `channels = 1` 交给 wasm，混音器把数组当成长度翻倍的单声道样本，每个采样帧播两次（听感上「和原音不符、开二倍速才正常」）；现在单声道按纯单声道、立体声按交错 L/R 分别交给内核，并补了格式转换的回归测试。
-- 修复 CLI 导出 MP4 时打击音与谱面不对齐的问题，两处根因：完整视频区间从「首个物件前 2000ms」开始，首个物件较早时这个起点是负数，而混音器把负位置夹到了 0，缓冲区第 0 帧因此对应谱面 0，整段打击音提前了 |起点|（最多两秒）；此外打击音此前按 1x 混好再 1:1 取样，音乐与画面却按倍速推进，倍速导出时会按 speed 倍漂移。现在混音位置允许为负，倍速由混音器的内部采样率（`输出采样率 / 倍速`）承担，时间与音高都与音乐和 Web 端一致。
-- 修复 CLI 打击音样本按最近帧（零阶保持）取样的混叠问题：内嵌样本是 44.1kHz，而 MP4 混音输出是 48kHz，鼓声会因此发毛、发刺；现在与音乐路径一致，按相邻采样帧线性插值（Web 端样本采样率与设备一致时结果不变）。
-- 修复 CLI 导出 MP4 比之前慢一倍的问题：打击音整段只用一个混音窗口，所有事件都留在声音列表里逐个输出帧遍历（O(输出帧 × 事件数)），三分钟、600 个事件在 debug 下要 45 秒；现在按 1 秒窗口分块渲染，同样的工作量约 1.3 秒，并补了防退化的回归测试。
+- 修复部分浏览器背景显示异常的问题。
+- 修复改了内嵌默认配置并重建二进制后，导出仍复用旧输出缓存的问题。
+
+---
 
 ## [1.2.2] - 2026.09.13
 
