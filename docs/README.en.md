@@ -94,6 +94,8 @@ npm test             # backend regression tests
 npm start            # open http://127.0.0.1:8787
 ```
 
+On Windows, `crates\osu-beatmap-preview-web\run_web.ps1` runs the whole sequence (install dependencies → build wasm → build the frontend → start the server); it works from any directory, and backend flags such as `--port` / `--https` are forwarded as-is (`-NoWasm` / `-NoBuild` / `-NoInstall` / `-NoServe` skip individual steps, `-Help` lists them). If script execution is disabled, use `powershell -ExecutionPolicy Bypass -File .\run_web.ps1`.
+
 See the [web site guide](../crates/osu-beatmap-preview-web/README.md) and the [WASM guide](../crates/osu-beatmap-preview-wasm/README.md) for details.
 
 ## License

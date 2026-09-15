@@ -90,6 +90,8 @@ npm test             # 后端回归测试
 npm start            # 访问 http://127.0.0.1:8787
 ```
 
+Windows 上可以用 `crates\osu-beatmap-preview-web\run_web.ps1` 一步跑完「装依赖 → 构建 wasm → 构建前端 → 启动服务器」（在任意目录调用都行，脚本会切到自己的目录），后端参数如 `--port`/`--https` 原样转发；`-NoWasm`/`-NoBuild`/`-NoInstall`/`-NoServe` 可跳过对应步骤，`-Help` 看选项；执行策略受限时用 `powershell -ExecutionPolicy Bypass -File .\run_web.ps1`。
+
 细节见 [Web 站点说明](crates/osu-beatmap-preview-web/README.md) 与 [WASM 使用说明](crates/osu-beatmap-preview-wasm/README.md)。
 
 Web 服务要部署到服务器时，`Docker/Dockerfile-web` 可以把 wasm、前端和后端一起构建成镜像（宿主机不需要 Node 或 Rust，构建时在仓库根目录执行）：
