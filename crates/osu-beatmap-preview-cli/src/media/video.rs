@@ -87,7 +87,7 @@ pub(crate) fn video_style(mode: crate::export::geometry::GameMode) -> VideoStyle
     }
 }
 
-/// 读取指定模式的 MP4 打击音开关与音量。
+/// 读取指定模式的 MP4 打击音开关、音量与谱面自带音效开关。
 pub(crate) fn hitsound_settings(
     mode: crate::export::geometry::GameMode,
 ) -> crate::media::audio::HitsoundSettings {
@@ -95,10 +95,11 @@ pub(crate) fn hitsound_settings(
     let layout = &crate::config::current().render;
     macro_rules! make {
         ($section:expr) => {
-            HitsoundSettings {
-                enabled: $section.style.ENABLE_HITSOUND,
-                volume: $section.style.HITSOUND_VOLUME as i32,
-            }
+            HitsoundSettings::new(
+                $section.style.ENABLE_HITSOUND,
+                $section.style.HITSOUND_VOLUME as i32,
+                $section.style.ENABLE_BEATMAP_HITSOUND,
+            )
         };
     }
     match mode {

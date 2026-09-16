@@ -54,6 +54,21 @@ pub(super) fn object_sample(bank: SampleBank, volume: i32) -> Vec<HitSample> {
     vec![HitSample::new(bank, HitAddition::None, volume, None)]
 }
 
+/// 一条红线：`volume` 为音量百分比，`sample_set` 为音效组 id（0 表示沿用 General.SampleSet）。
+pub(super) fn timing_point(time: f64, sample_set: i32, volume: i32) -> TimingPoint {
+    TimingPoint {
+        time,
+        beat_length: 500.0,
+        meter: 4,
+        uninherited: true,
+        kiai_mode: false,
+        omit_first_bar_line: false,
+        sample_set,
+        sample_index: 0,
+        sample_volume: volume,
+    }
+}
+
 pub(super) fn library_with(names: &[&str]) -> SampleLibrary {
     let mut library = SampleLibrary::new();
     for name in names {

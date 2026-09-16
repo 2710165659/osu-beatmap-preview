@@ -6,6 +6,7 @@
 import { computed, nextTick, reactive } from 'vue';
 
 import {
+  createBeatmapSampleIndex,
   createHitsoundContext,
   createHitsoundOutput,
   loadHitsoundSamples,
@@ -169,8 +170,16 @@ export const state = reactive({
   hitsoundVolume: DEFAULT_HITSOUND_VOLUME,
   /** 打击音状态文案：用于在侧栏说明当前是「已启用 / 加载中 / 不可用」。 */
   hitsoundStatus: '',
+  /**
+   * 是否使用谱面自带的自定义打击音（`ENABLE_BEATMAP_HITSOUND`）。
+   *
+   * 与打击音开关一样来自 `assets/shared_config.yml`（由 WASM 转出）；默认启用。
+   */
+  hitsoundBeatmap: true,
   /** 已经加载成功的样本数，仅用于诊断显示。 */
   hitsoundLoaded: 0,
+  /** 其中来自谱面自带音效的数量，仅用于诊断显示。 */
+  hitsoundBeatmapLoaded: 0,
   /** 界面上勾选的 Mod token；DA 提交时会展开成 DAAR..CS..。 */
   mods: [],
   daAr: 9,
@@ -210,7 +219,7 @@ export const state = reactive({
 const PROGRESS_LABELS = {
   osu: '获取谱面',
   osz: '服务端下载谱面包',
-  extract: '服务端解包音频与背景',
+  extract: '服务端解包音频与音效',
   transfer: '传输到客户端',
   media: '下载音频与背景',
   ready: '准备渲染',
@@ -308,6 +317,14 @@ let hitsoundPlayer = null;
 let hitsoundGeneration = 0;
 /** 欠载提示是否已经写过日志，避免每帧刷屏。 */
 let hitsoundUnderrunLogged = false;
+/**
+ * 谱面自带打击音的查找表（候选名 → 后端样本 URL）。
+ *
+ * 每次为一张谱面建立打击音时刷新一次；它只取决于谱面包，切 Mod / 转谱时沿用即可。
+ */
+let beatmapSampleIndex = new Map();
+/** 本次加载中真正命中谱面自带音效的次数，仅用于日志与状态文案。 */
+let beatmapSampleHits = 0;
 /**
  * 加载令牌：每次 `loadPreview()` 递增。
  *
@@ -885,6 +902,13 @@ function releaseHitsound() {
   hitsoundPlayer = null;
 }
 
+/** 丢弃当前谱面的自带音效清单；换谱面时调用，避免命中上一张谱面的样本。 */
+function releaseBeatmapSamples() {
+  beatmapSampleIndex = new Map();
+  beatmapSampleHits = 0;
+  state.hitsoundBeatmapLoaded = 0;
+}
+
 /**
  * 音效只能跟随 HTML 音频的真实播放状态。
  *
@@ -924,6 +948,10 @@ async function setupHitsound(token, { seekToCurrent = false } = {}) {
     return;
   }
   state.hitsoundStatus = '加载打击音...';
+  // 谱面自带音效的清单先取回来：拿不到就只用内嵌皮肤，不影响其它音效。
+  beatmapSampleHits = 0;
+  await loadBeatmapSampleIndex(token);
+  if (token !== loadToken || generation !== hitsoundGeneration) return;
 
   const context = await createHitsoundContext(HITSOUND_WORKLET_URL);
   if (!context) {
@@ -976,11 +1004,13 @@ async function setupHitsound(token, { seekToCurrent = false } = {}) {
     return;
   }
   state.hitsoundLoaded = loaded;
+  state.hitsoundBeatmapLoaded = beatmapSampleHits;
   if (loaded === 0) {
     state.hitsoundStatus = '打击音资源不可用，已静音';
     logPlay('打击音资源全部加载失败，已按静音处理');
   } else {
-    state.hitsoundStatus = `已加载 ${loaded} 个音效`;
+    state.hitsoundStatus = hitsoundStatusText(loaded);
+    if (beatmapSampleHits > 0) logPlay(`打击音：${beatmapSampleHits} 个来自谱面自带音效`);
   }
   // 解码期间音频可能已经前进；重建时间轴后始终从当前真实位置重新开始预读。
   player.seekGameTime(state.position, { seekMixer: true });
@@ -990,8 +1020,28 @@ async function setupHitsound(token, { seekToCurrent = false } = {}) {
   if (player.context.state !== 'running') addGestureHints();
 }
 
-/** 取回一个打击音样本的 ogg 字节（由 WASM 内嵌资源直接给出，不走网络）。 */
-function readHitsoundAsset(name) {
+/**
+ * 取回一个打击音样本的字节。
+ *
+ * 优先用谱面自带的同名条目（后端从 OSZ 里解出来的），取不到再回落到 WASM 内嵌皮肤：
+ * 谱面自定义的音效应当盖过默认音色，与 CLI 导出的优先级一致。允许返回 Promise——
+ * 谱面音效要走网络，内嵌资源仍是同步的。
+ */
+async function readHitsoundAsset(name) {
+  const url = beatmapSampleIndex.get(String(name).toLowerCase());
+  if (url) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        beatmapSampleHits += 1;
+        return new Uint8Array(await response.arrayBuffer());
+      }
+      logPlay(`谱面音效读取失败（${name}）：HTTP ${response.status}`);
+    } catch (error) {
+      // 单个样本取不到只影响这一个音效，仍然回退到内嵌皮肤。
+      logPlay(`谱面音效读取失败（${name}）：${errorText(error)}`);
+    }
+  }
   try {
     return wasmModule?.hitsoundAsset?.(name) ?? null;
   } catch (error) {
@@ -1001,10 +1051,46 @@ function readHitsoundAsset(name) {
 }
 
 /**
+ * 取回当前谱面的自带打击音清单并建立查找表。
+ *
+ * 配置关闭（`ENABLE_BEATMAP_HITSOUND: false`）或清单请求失败时都退化成「只用内嵌皮肤」：
+ * 谱面音效是增强项，不能因为它拿不到就让整套打击音不可用。
+ */
+async function loadBeatmapSampleIndex(token) {
+  beatmapSampleIndex = new Map();
+  if (!state.hitsoundBeatmap) return;
+  const bid = state.bid.trim();
+  if (!bid) return;
+  try {
+    const response = await fetch(`/resource/samples?bid=${encodeURIComponent(bid)}`);
+    if (!response.ok) throw new Error(await response.text());
+    const payload = await response.json();
+    if (token !== loadToken) return;
+    beatmapSampleIndex = createBeatmapSampleIndex(
+      (payload?.samples ?? []).map((name) => ({
+        name,
+        url: `/resource/sample?bid=${encodeURIComponent(bid)}&name=${encodeURIComponent(name)}`,
+      })),
+    );
+  } catch (error) {
+    if (token !== loadToken) return;
+    logPlay(`谱面自带音效清单读取失败，将只用内嵌音效：${errorText(error)}`);
+  }
+}
+
+/** 打击音状态文案；带上谱面自带音效的数量，便于确认配置有没有生效。 */
+function hitsoundStatusText(loaded) {
+  return beatmapSampleHits > 0
+    ? `已加载 ${loaded} 个音效（${beatmapSampleHits} 个来自谱面）`
+    : `已加载 ${loaded} 个音效`;
+}
+
+/**
  * 按新的会话状态重新加载打击音样本。
  *
  * 切 Mod / 转谱会改变目标模式，需要的音效集合也随之变化（例如 Standard→Mania、
- * 或 Taiko 的音量分档）。这里复用同一个音频输出，只替换 WASM 里的样本。
+ * 或 Taiko 的音量分档）。这里复用同一个音频输出与已取回的谱面音效清单，只替换
+ * WASM 里的样本。
  */
 async function reloadHitsoundSamples(token) {
   if (!hitsoundPlayer || !session || !state.hitsound) return;
@@ -1013,6 +1099,7 @@ async function reloadHitsoundSamples(token) {
   hitsoundPlayer.setPlaying(false);
   hitsoundPlayer.resetSamples();
   hitsoundPlayer.seekGameTime(state.position, { seekMixer: true });
+  beatmapSampleHits = 0;
   const loaded = await loadHitsoundSamples({
     player: hitsoundPlayer,
     names,
@@ -1020,7 +1107,8 @@ async function reloadHitsoundSamples(token) {
   });
   if (token !== loadToken || generation !== hitsoundGeneration) return;
   state.hitsoundLoaded = loaded;
-  state.hitsoundStatus = loaded > 0 ? `已加载 ${loaded} 个音效` : '打击音资源不可用，已静音';
+  state.hitsoundBeatmapLoaded = beatmapSampleHits;
+  state.hitsoundStatus = loaded > 0 ? hitsoundStatusText(loaded) : '打击音资源不可用，已静音';
   syncHitsoundPlayback({ seek: true });
 }
 
@@ -1092,7 +1180,7 @@ function hitsoundSampleRate() {
 }
 
 /**
- * 读取共享配置里该模式「是否启用打击音」的默认值。
+ * 读取共享配置里该模式「是否启用打击音」与「是否使用谱面自带音效」的默认值。
  *
  * 走 WASM 转出的 `hitsoundDefaults`（内部来自 `assets/shared_config.yml`），
  * 读不到就沿用前端常量，保证页面仍能正常工作。
@@ -1110,6 +1198,8 @@ function applyHitsoundDefaults(wasm, mode) {
   }
   if (!defaults) return;
   state.hitsound = Boolean(defaults.enabled);
+  // 旧版 wasm 没有这个字段：缺省按「启用谱面自带音效」处理（与配置默认值一致）。
+  state.hitsoundBeatmap = defaults.beatmapEnabled !== false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1519,6 +1609,7 @@ export async function loadPreview() {
     state.bid = bid;
     // 上一次会话的打击音输出属于旧谱面：先释放，避免残留的音频线程继续出声。
     releaseHitsound();
+    releaseBeatmapSamples();
     const [wasm, bytes] = await Promise.all([
       loadWasm(),
       fetchBeatmap(bid, { signal: controller.signal }),
@@ -1551,6 +1642,7 @@ export async function loadPreview() {
     // 音量固定用网页自己的默认值，理由见 applyHitsoundDefaults 的注释。
     applyHitsoundDefaults(wasm, session.mode());
     state.hitsoundLoaded = 0;
+    state.hitsoundBeatmapLoaded = 0;
     state.hitsoundStatus = state.hitsound ? '准备打击音...' : '已关闭';
     state.modeKey = session.mode();
     state.mode = state.modeKey.toUpperCase();
@@ -1909,6 +2001,7 @@ export function backToLoad() {
   removeGestureHints();
   // 打击音输出属于当前会话：连同它的 AudioContext 一起释放，音频线程不会残留。
   releaseHitsound();
+  releaseBeatmapSamples();
   state.hitsoundLoaded = 0;
   state.hitsoundStatus = '';
   // 还在后台拉音频/背景的请求要一并中止：否则它们回来时会往已经清空的播放页写状态。

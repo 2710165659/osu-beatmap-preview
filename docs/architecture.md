@@ -23,7 +23,7 @@ workspace 的默认成员是 `osu-beatmap-preview-cli`。普通 `cargo build --r
 
 ## Web 后端
 
-浏览器无法跨域直接下载 osu! 的资源，所以 Release 里的 Web 包由一个 Node.js 进程提供静态站点（`dist/`，由 Vite 从 `src/` 构建）和三类资源接口：`/resource/beatmap`、`/resource/audio`、`/resource/background`，外加只读的加载进度快照 `/resource/progress`。下载策略与 CLI 一致（多镜像竞速、Range 分块、osu.direct 优选 IP、缓存优先），并复用同一份缓存目录布局；解包只用 Node 自带的 zlib，因此后端没有任何第三方依赖（Vue/Vite/Tailwind 都只是构建期依赖）。绘制全部发生在浏览器内的 wasm 中，后端不返回像素数据。
+浏览器无法跨域直接下载 osu! 的资源，所以 Release 里的 Web 包由一个 Node.js 进程提供静态站点（`dist/`，由 Vite 从 `src/` 构建）和资源接口：`/resource/beatmap`、`/resource/audio`、`/resource/background`、`/resource/samples`（谱面自带打击音的条目清单）与 `/resource/sample`（按条目名取单个样本），外加只读的加载进度快照 `/resource/progress`。下载策略与 CLI 一致（多镜像竞速、Range 分块、osu.direct 优选 IP、缓存优先），并复用同一份缓存目录布局；解包只用 Node 自带的 zlib，因此后端没有任何第三方依赖（Vue/Vite/Tailwind 都只是构建期依赖）。绘制全部发生在浏览器内的 wasm 中，后端不返回像素数据。
 
 谱面的元信息同样由 wasm 解析：浏览器把 `/resource/beatmap` 拿到的 `.osu` 字节交给 `beatmapInfo`，返回 `BeatmapInfo` 的全量字段（概览、统计、难度与 `[General]`/`[Metadata]`/`[Difficulty]` 区段），页面只展示其中一部分。
 
@@ -41,27 +41,34 @@ CLI（bid 驱动）
           zip crate 抽音频条目 → <CACHE>/osz-download-cache/<set_id>/<fnv1a64(条目名)>.<ext>
           image crate 解背景 → RGBA（内存）            （缺背景/条目缺失 → 纯色背景）
           symphonia 解音频 → fdk-aac 编码
+          symphonia 解谱面自带打击音 → 样本库（同名条目优先于内嵌皮肤）
 
 Web（Node 后端 + 浏览器）
   GET /resource/beatmap    → <CACHE>/osu-download-cache/<bid>.osu → 原样发给浏览器
   GET /resource/audio      ┐
-  GET /resource/background ┘→ ResourceProvider.media（单飞：两个请求只下一次 .osz）
+  GET /resource/background ├→ ResourceProvider.media（单飞：这些请求只下一次 .osz）
+  GET /resource/samples    ┘
       → 自己的最小 ZIP 读取（backend/zip.js）+ Node 自带 zlib
       → <CACHE>/media/<bid>/{audio,background}.<ext>   （浏览器专属的媒体缓存）
+      → <CACHE>/media/<bid>/sample-<hash>.<ext> + samples.json（谱面自带打击音清单）
+  GET /resource/sample?name=<条目名> → 清单里的那一个样本文件
   浏览器：
       .osu  字节 → wasm.beatmapInfo(bytes)（信息面板）
                 → WebGpuSession.create(bytes, canvas, options)（渲染会话）
       背景  字节 → createImageBitmap → 画布 → getImageData → set_background_rgba（整帧拷贝进 wasm）
       音频  字节 → Blob → <audio> 元素（**不进 wasm**，音乐由浏览器直接播放）
-      打击音 → 不走网络：wasm 内嵌 ogg → hitsoundAsset 取字节 → Web Audio 解码 → setHitsoundSample(PCM)
+      打击音 → wasm 的 hitsoundRequiredNames 给出候选名；命中清单的走
+               /resource/sample 取谱面自带音效，其余用 wasm 内嵌 ogg（hitsoundAsset）→
+               Web Audio 解码 → setHitsoundSample(PCM)
 ```
 
 要点：
 
-- **条目策略只有一份**：`.osu` 里声明的文件名怎么归一化、需要压缩包里的哪些条目，由 core 的 [`processing::media`](../crates/osu-beatmap-preview-core/src/domain/media.rs)（`normalize_entry_path` / `BeatmapMedia`）定义；CLI 直接调用，Node 后端保持自写实现但被 `test/media-contract.test.js` 用同一张用例表钉住。
+- **条目策略只有一份**：`.osu` 里声明的文件名怎么归一化、需要压缩包里的哪些条目，由 core 的 [`processing::media`](../crates/osu-beatmap-preview-core/src/domain/media.rs)（`normalize_entry_path` / `sample_entry_matches` / `BeatmapMedia`）定义；CLI 直接调用，Node 后端保持自写实现但被 `test/media-contract.test.js` 用同一张用例表钉住。
 - **音频必需、背景可选**：缺音频（或条目不在压缩包里）是致命错误；缺背景（未声明、路径非法、条目缺失）只退化成纯色背景，Web 端由 `loadBackground` 的失败分支处理。
+- **谱面自带打击音**：`BeatmapMedia::from_beatmap().samples` 给出该谱面可能自带的候选样本名（含 `{bank}-{name}{index}` 这类带自定义音效索引的名字），宿主按 `sample_entry_matches` 在压缩包里找同名条目；CLI 只解参考到的那些，Web 后端按音频扩展名解出条目清单、由前端按需逐个取用（候选名规则因此仍然只有 core 一份）。
 - **缓存契约**：`.osu`（按 bid）、`.osz`（按 set id）、优选 IP JSON 与锁（缓存根）两项前端共享；解出来的媒体不共享——CLI 放在 `osz-download-cache/<set_id>/`，Web 放在 `media/<bid>/`。
-- **整包不进浏览器**：后端解出音频与背景再发（通常几 MiB），而不是让浏览器下载几十 MiB 的 `.osz`。
+- **整包不进浏览器**：后端解出音频、背景与谱面音效再发（通常几 MiB），而不是让浏览器下载几十 MiB 的 `.osz`。
 
 ## 音频-画面-打击音的时钟模型
 
@@ -77,13 +84,12 @@ Web（Node 后端 + 浏览器）
 
 ## 后续功能接口
 
-以下三项功能**尚未实现**，但接口、配置位与数据流已经留好（见 `crates/osu-beatmap-preview-core/src/gameplay.rs`、`src/domain/media.rs` 与 `src/hitsound/mixer.rs`）：
+以下两项功能**尚未实现**，但接口、配置位与数据流已经留好（见 `crates/osu-beatmap-preview-core/src/gameplay.rs` 与 `src/hitsound/mixer.rs`）：
 
-1. **谱面自带音效**：`HitSample::filename` 与 `referenced_names` 已经把自定义文件名收集出来；`BeatmapMedia::from_beatmap` 的 `samples` 给出「内嵌皮肤没有、需要去 OSZ 找」的条目，`has_embedded_asset` 用来区分两者，`SampleLibrary::insert` 负责填充。契约是**样本源优先级：OSZ 内同名条目 > 内嵌皮肤 > 静音**（后写入覆盖先写入即可）。保留的配置位是各模式 `render.<mode>.mp4.style.ENABLE_BEATMAP_HITSOUND`（默认 true）——注意 `crates/osu-beatmap-preview-core/src/generated_config.rs` 是随仓库提交的生成文件（仓库内没有生成脚本），接入时要同时改 `assets/shared_config.yml` 与它。
-2. **OSR 回放与画面联动**：`gameplay::{InputSnapshot, InputSource, JudgementEngine, ScoreSnapshot, GameplayOverlay, OverlayStyle}` 定义输入、判定与 HUD 的契约；OSR 的 LZMA 解码计划放在 core 的可选特性里（默认不启用，CLI 与 wasm 共享一份实现），CLI 侧用 `RenderRequest::gameplay`、Web 侧用 `RealtimeOptions::gameplay` 接入。HUD 画在画布内（实时用场景命令、CLI 用 `Img` 绘制），DOM 只做控制面板。
-3. **Web 游玩**：`GameplayMode::Play` 下打击音改由输入触发；为此 `HitsoundMixer` 已经提供 `trigger` / `start_loop` / `stop_loop` 显式触发 API（预览路径继续走时间轴）。输入偏移（`GameplayOptions::input_offset_ms`）留给延迟补偿。
+1. **OSR 回放与画面联动**：`gameplay::{InputSnapshot, InputSource, JudgementEngine, ScoreSnapshot, GameplayOverlay, OverlayStyle}` 定义输入、判定与 HUD 的契约；OSR 的 LZMA 解码计划放在 core 的可选特性里（默认不启用，CLI 与 wasm 共享一份实现），CLI 侧用 `RenderRequest::gameplay`、Web 侧用 `RealtimeOptions::gameplay` 接入。HUD 画在画布内（实时用场景命令、CLI 用 `Img` 绘制），DOM 只做控制面板。
+2. **Web 游玩**：`GameplayMode::Play` 下打击音改由输入触发；为此 `HitsoundMixer` 已经提供 `trigger` / `start_loop` / `stop_loop` 显式触发 API（预览路径继续走时间轴）。输入偏移（`GameplayOptions::input_offset_ms`）留给延迟补偿。
 
-三项功能共用同一条链：**输入快照 → 判定引擎 → 状态快照 → 画面叠加 + 打击音触发**，因此只接入一次渲染分支。
+两项功能共用同一条链：**输入快照 → 判定引擎 → 状态快照 → 画面叠加 + 打击音触发**，因此只接入一次渲染分支。
 
 ## 打击音（hit sound）
 
@@ -91,10 +97,18 @@ Web（Node 后端 + 浏览器）
 
 模块按职责拆分：`hitsound/mod.rs` 只放公开入口（`build_timeline` / `referenced_names` / `volume_gain` / `SAMPLE_RATE`）与再导出，`sample.rs` 管样本与名字解析，`timeline.rs` 管事件类型与构建器（含候选名的栈上拼接），`common.rs` 放各模式共用的取样与 timing point 辅助，`standard.rs` / `taiko.rs` / `catch.rs` / `mania.rs` 各自按 osu! 规则展开物件（测试与被测模块同文件），`mixer.rs` 把时间轴混成 PCM，`assets.rs` 是内嵌样本表。
 
-- CLI：`build.rs` 把 `assets/hitsound/*.ogg` 内嵌进可执行文件，导出 MP4 时用 symphonia 解码被引用到的样本，再按视频输出时间轴整段混音后交给 AAC 编码器；音乐与打击音共用同一个 48kHz 输出下标（`chart_start + i * 1000 * speed / sample_rate`），倍速通过把混音器的内部采样率取 `sample_rate / speed` 实现，因此时间与音高都和音乐、Web 端一致；视频区间起点可能为负（首个物件前的预卷），混音位置同样允许为负。混音按 1 秒窗口分块渲染，避免把整段事件压在声音列表里。任何样本读取失败都退化为静音，不影响导出。
-- Web：core 构建时把同一批 ogg 内嵌进 wasm（`hitsound::asset_bytes`），页面按名字取字节、用 Web Audio 解码成 PCM 再交给 wasm；wasm 在音频线程的时钟下推进时间轴并混音，画面与声音使用同一条时间轴（见 [WASM 使用说明](../crates/osu-beatmap-preview-wasm/README.md)）。宿主只负责解码与输出，不需要下载音效文件。
+- CLI：`build.rs` 把 `assets/hitsound/*.ogg` 内嵌进可执行文件；导出 MP4 时按「谱面自带的同名条目 > 内嵌皮肤」的优先级取出时间轴引用到的样本（前者来自音频准备阶段下载的同一个 OSZ），用 symphonia 解码，再按视频输出时间轴整段混音后交给 AAC 编码器；音乐与打击音共用同一个 48kHz 输出下标（`chart_start + i * 1000 * speed / sample_rate`），倍速通过把混音器的内部采样率取 `sample_rate / speed` 实现，因此时间与音高都和音乐、Web 端一致；视频区间起点可能为负（首个物件前的预卷），混音位置同样允许为负。混音按 1 秒窗口分块渲染，避免把整段事件压在声音列表里。任何样本读取失败都退化为静音，不影响导出。
+- Web：core 构建时把同一批 ogg 内嵌进 wasm（`hitsound::asset_bytes`），页面按名字取字节、用 Web Audio 解码成 PCM 再交给 wasm；谱面自带的自定义音效优先从后端取（`/resource/samples` 给条目清单，`/resource/sample` 按条目名取字节），取不到再回落到内嵌资源。wasm 在音频线程的时钟下推进时间轴并混音，画面与声音使用同一条时间轴（见 [WASM 使用说明](../crates/osu-beatmap-preview-wasm/README.md)）。
 
-开关与音量来自各模式 `render.<mode>.mp4.style` 的 `ENABLE_HITSOUND` 与 `HITSOUND_VOLUME`（0～100）：与 osu! 一样按 `v / 100` 换算为线性增益（`SkinnableSound` 的映射），地图里每条 timing point / 物件的音量再叠乘其上。
+开关与音量来自各模式 `render.<mode>.mp4.style` 的 `ENABLE_HITSOUND`、`ENABLE_BEATMAP_HITSOUND` 与 `HITSOUND_VOLUME`（0～100）：与 osu! 一样按 `v / 100` 换算为线性增益（`SkinnableSound` 的映射），地图里每条 timing point / 物件的音量再叠乘其上。`ENABLE_BEATMAP_HITSOUND`（默认 true）只决定要不要采纳谱面自带的同名条目，关闭后一律使用内嵌皮肤。
+
+**自定义音效索引（custom sample bank）**同样按 osu! 规则还原：物件 `hitSample` 第 3 列（`HitSample::custom_bank`）优先，物件没有声明时用它所在 timing point 的 `sampleIndex`（`LegacySampleControlPoint.ApplyTo` 的规则，见 `hitsound/common.rs`）；索引 ≥ 2 时候选名追加索引本身作为后缀（`soft-hitclap20`、taiko 的 `taiko-drum-hitnormal3`），索引 1 用无后缀名，索引 0 不带索引信息。候选顺序是「带索引 → 带 bank 前缀 → 共享目录裸名」，因此带索引的名字天然只在谱面包里存在，其余名字由内嵌皮肤提供。
+
+**取样时刻**与 osu! 的 `applySamples` 对齐：每个物件/节点都用**它自己时刻 + 5ms**（`CONTROL_POINT_LENIENCY`）生效的 `SampleControlPoint` 补齐音效组、音量与自定义索引——非 `IHasRepeats` 物件用 `GetEndTime()`（转盘的旋转音、奖励音与判定音因此都取结束处的参数），滑条的头部 / 重复箭头 / 尾部各自取自己节点时刻的参数（`edgeSounds` 决定该节点的音效位掩码）。谱面常用「在滑条尾插入低音量绿线」压掉尾部音效，靠的正是这一点；滑行音、`slidertick`、果汁流小果则继承**头部已解析**的参数（`CreateSlidingSamples` / `UpdateNestedSamples`）。
+
+`.osu` 的列号也按要求区分：圆圈 `hitSample` 在第 6 列、滑条在第 11 列（且只读音效组，音量/索引/文件名由节点补齐）、转盘在第 7 列（`endTime` 之后）。
+
+> 与 osu! 的差异：样本来源优先级在本项目里统一是「OSZ 内同名条目 > 内嵌皮肤」，比 osu! 宽松一档——osu! 只在索引 ≥ 1 或写了 `hitSample` 文件名时才允许查谱面包（索引 0 时完全无视谱面包里的同名文件），索引 ≥ 2 时也不会退到同名的无后缀谱面文件。这里为了「谱面自带音效总是生效」而统一成同名即优先。另外打击音不做立体声摆位（osu! 的「位置打击音」默认 0.2），转盘旋转音也没有 osu! 的 300ms 淡入，因此立体声像与转盘起音会略有差别。
 
 ## 请求与配置
 

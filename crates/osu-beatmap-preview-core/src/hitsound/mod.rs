@@ -182,6 +182,19 @@ mod tests {
     }
 
     #[test]
+    fn 转盘的音效参数取自第七列而不是结束时间() {
+        // 回归：转盘行是 `x,y,time,type,hitSound,endTime,hitSample`，曾经按圆圈的列号去读，
+        // 把结束时间（`3000`）当成了音效组 id，结果转盘音效组恒为 normal。
+        let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\n\n[TimingPoints]\n0,500,4,2,1,100,1,0\n\n[HitObjects]\n256,192,1000,8,0,3000,2:3:0:40:\n";
+        let beatmap = crate::parse_beatmap_bytes(source.as_bytes()).unwrap();
+        let object = &beatmap.hit_objects.as_standard().unwrap()[0];
+        assert_eq!(object.end_time, 3000);
+        let sample = object.samples.first().expect("转盘必须解析出样本");
+        assert_eq!(sample.bank, SampleBank::Soft);
+        assert_eq!(sample.volume, 40);
+    }
+
+    #[test]
     fn 自定义文件名只覆盖普通层() {
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,10,0:0:0:100:custom-hit.ogg\n";
         let beatmap = crate::parse_beatmap_bytes(source.as_bytes()).unwrap();
@@ -189,5 +202,144 @@ mod tests {
         assert_eq!(object.samples.len(), 3);
         assert_eq!(object.samples[0].filename.as_deref(), Some("custom-hit.ogg"));
         assert!(object.samples[1..].iter().all(|sample| sample.filename.is_none()));
+    }
+
+    #[test]
+    fn timing_point_的索引产生带后缀的候选名() {
+        // 物件没有自带 hitSample：音效索引来自 timing point 的 sampleIndex 列。
+        let mut beatmap = beatmap_with(
+            0,
+            HitObjects::Standard(vec![StandardHitObject {
+                start_time: 1000,
+                end_time: 1000,
+                hit_type: 1,
+                hitsound: 0,
+                samples: Vec::new(),
+                ..Default::default()
+            }]),
+        );
+        beatmap.timing_points[0].sample_set = 2;
+        beatmap.timing_points[0].sample_index = 20;
+
+        let names = referenced_names(&beatmap);
+        // 带后缀的名字优先，不带后缀的仍然是回退（内嵌皮肤提供的是后者）。
+        assert!(names.contains(&"soft-hitnormal20".to_string()), "names={names:?}");
+        assert!(names.contains(&"soft-hitnormal".to_string()), "names={names:?}");
+
+        // 谱面包里只有带后缀的样本时命中它。
+        assert_eq!(build_timeline(&beatmap, &library_with(&["soft-hitnormal20"])).len(), 1);
+        // 只有不带后缀的样本时回退到它。
+        assert_eq!(build_timeline(&beatmap, &library_with(&["soft-hitnormal"])).len(), 1);
+        // 索引 20 的样本缺失、无后缀的也没有时按静音处理。
+        assert!(build_timeline(&beatmap, &library_with(&["soft-hitclap20"])).is_empty());
+    }
+
+    #[test]
+    fn 物件的音效索引优先于_timing_point() {
+        // 物件的 hitSample 声明了 index=7：普通层、加成音、滑条 tick 与滑行音都带后缀 `7`。
+        let samples = vec![
+            HitSample::new(SampleBank::Soft, HitAddition::None, 100, None).with_custom_bank(7),
+            HitSample::new(SampleBank::Soft, HitAddition::Clap, 100, None).with_custom_bank(7),
+        ];
+        let mut beatmap = beatmap_with(
+            0,
+            HitObjects::Standard(vec![
+                StandardHitObject {
+                    start_time: 1000,
+                    end_time: 1000,
+                    hit_type: 1,
+                    hitsound: 8,
+                    samples: samples.clone(),
+                    ..Default::default()
+                },
+                // 滑条：滑行音与 tick 沿用物件头部的自定义索引。
+                StandardHitObject {
+                    start_time: 2000,
+                    end_time: 4000,
+                    hit_type: 2,
+                    hitsound: 0,
+                    slider_type: Some("L".to_string()),
+                    slider_points: vec![(100, 0)],
+                    slider_repeats: 1,
+                    slider_pixel_length: 300.0,
+                    samples,
+                    ..Default::default()
+                },
+            ]),
+        );
+        // timing point 只声明索引 1（无后缀），物件声明了 7 就不该用到它。
+        beatmap.timing_points[0].sample_set = 2;
+        beatmap.timing_points[0].sample_index = 1;
+
+        let names = referenced_names(&beatmap);
+        for expected in [
+            "soft-hitnormal7",
+            "soft-hitclap7",
+            "soft-sliderslide7",
+            "soft-slidertick7",
+        ] {
+            assert!(names.contains(&expected.to_string()), "缺少 {expected}：{names:?}");
+        }
+
+        // 带后缀的样本存在时优先使用它，而不是同名的无后缀样本（后者属于内嵌皮肤）。
+        let library = library_with(&[
+            "soft-hitnormal7",
+            "soft-hitclap7",
+            "soft-sliderslide7",
+            "soft-slidertick7",
+            "soft-hitnormal",
+        ]);
+        let timeline = build_timeline(&beatmap, &library);
+        assert!(!timeline.is_empty());
+        assert!(
+            timeline
+                .events
+                .iter()
+                .any(|event| library.name_of(event.source_id) == Some("soft-hitnormal7"))
+        );
+    }
+
+    #[test]
+    fn 索引为一表示谱面自带的无后缀音效() {
+        let mut beatmap = beatmap_with(
+            0,
+            HitObjects::Standard(vec![StandardHitObject {
+                start_time: 1000,
+                end_time: 1000,
+                hit_type: 1,
+                hitsound: 0,
+                samples: Vec::new(),
+                ..Default::default()
+            }]),
+        );
+        beatmap.timing_points[0].sample_set = 2;
+        beatmap.timing_points[0].sample_index = 1;
+        let names = referenced_names(&beatmap);
+        assert!(names.contains(&"soft-hitnormal".to_string()), "names={names:?}");
+        // 1 不带后缀，`soft-hitnormal1` 不是合法候选名。
+        assert!(!names.contains(&"soft-hitnormal1".to_string()), "names={names:?}");
+    }
+
+    #[test]
+    fn taiko_的候选名同样带索引后缀() {
+        let mut beatmap = beatmap_with(
+            1,
+            HitObjects::Taiko(vec![crate::domain::models::TaikoHitObject {
+                start_time: 1000,
+                end_time: 1000,
+                hit_type: 0,
+                hitsound: 0,
+                samples: Vec::new(),
+            }]),
+        );
+        beatmap.timing_points[0].sample_set = 2;
+        beatmap.timing_points[0].sample_index = 20;
+        let names = referenced_names(&beatmap);
+        assert!(names.contains(&"taiko-soft-hitnormal20".to_string()), "names={names:?}");
+        assert!(names.contains(&"taiko-soft-hitnormal".to_string()), "names={names:?}");
+        assert_eq!(
+            build_timeline(&beatmap, &library_with(&["taiko-soft-hitnormal20"])).len(),
+            1
+        );
     }
 }

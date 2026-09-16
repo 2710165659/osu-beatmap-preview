@@ -98,6 +98,13 @@ pub struct HitSample {
     pub addition: HitAddition,
     pub volume: i32,
     pub filename: Option<String>,
+    /// 自定义音效索引（`.osu` 的 `hitSample` 第 3 列）。
+    ///
+    /// 与 osu! 的 `HitSampleInfo.CustomSampleBank` 同义：0 表示音效来自皮肤；1 表示
+    /// 使用谱面自带的无后缀音效（`soft-hitnormal`）；≥2 表示使用带该索引后缀的音效
+    /// （`soft-hitnormal20`，见 `LegacyHitSampleInfo.Suffix`）。物件没有声明时由所在
+    /// timing point 的 `sample_index` 补齐。
+    pub custom_bank: i32,
 }
 
 impl HitSample {
@@ -107,7 +114,14 @@ impl HitSample {
             addition,
             volume,
             filename,
+            custom_bank: 0,
         }
+    }
+
+    /// 指定自定义音效索引；0 表示不使用谱面自带的音效文件。
+    pub fn with_custom_bank(mut self, custom_bank: i32) -> Self {
+        self.custom_bank = custom_bank.max(0);
+        self
     }
 }
 
@@ -122,7 +136,8 @@ pub struct TimingPoint {
     pub omit_first_bar_line: bool,
     /// `[TimingPoints]` 第 4 列的音效组；0 表示沿用谱面默认值。
     pub sample_set: i32,
-    /// `[TimingPoints]` 第 5 列的自定义音效索引（预览不使用具体文件，仅保留原值）。
+    /// `[TimingPoints]` 第 5 列的自定义音效索引（custom sample bank）。
+    /// 物件没有自带 `hitSample` 或索引为 0 时，打击音按它追加后缀名。
     pub sample_index: i32,
     /// `[TimingPoints]` 第 6 列的音效音量，0 表示静音。
     pub sample_volume: i32,
@@ -205,6 +220,10 @@ pub struct CatchHitObject {
     pub slider_pixel_length: f64,
     /// 物件头部的打击音；空表示使用谱面默认音效组。
     pub samples: Vec<HitSample>,
+    /// 各节点的音效位掩码（`edgeSounds`，下标 0 是头部）。
+    pub slider_edge_hitsounds: Vec<i32>,
+    /// 各节点的自带音效（`edgeSets` 去掉头部；下标 i 对应节点 i+1，即第 i 个重复箭头/尾部）。
+    pub slider_edge_samples: Vec<Vec<HitSample>>,
 }
 
 #[derive(Clone, Default)]

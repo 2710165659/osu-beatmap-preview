@@ -74,7 +74,10 @@ impl MediaEntry {
         Some(Self { name, extension })
     }
 
-    /// 这个条目看起来是不是一个音频文件（用于筛选谱面自带打击音）。
+    /// 这个条目是否带音频扩展名（ogg / wav / mp3）。
+    ///
+    /// 注意：谱面自带的候选样本名也可能是**不带扩展名**的（`soft-hitnormal`，实际文件是
+    /// `soft-hitnormal.ogg` 等），所以筛选候选条目时不能只看这个判断，见 [`sample_entries`]。
     pub fn is_sample(&self) -> bool {
         self.extension
             .as_deref()
@@ -86,9 +89,10 @@ impl MediaEntry {
 ///
 /// - `audio`：`[General] AudioFilename`，必需（预览/视频都要靠它出声）；
 /// - `background`：`[Events]` 的第一张背景图，可选（缺失时宿主退化成纯色背景）；
-/// - `samples`：谱面自带、且**不在内嵌打击音资源里**的候选样本名，供宿主去压缩包里
-///   查找。候选名与内嵌资源的匹配规则见 [`crate::hitsound`]：解析器已经按
-///   `{bank}-{name}` → `{name}` 的优先级收集，宿主只要把找到的条目填进样本库即可。
+/// - `samples`：谱面可能自带的候选打击音样本名，供宿主去压缩包里按
+///   [`sample_entry_matches`] 查找同名条目。找到的条目由宿主解码后填进样本库，其优先级
+///   高于内嵌皮肤（见 [`crate::hitsound::has_embedded_asset`]）：谱面自带音效是谱面
+///   自定义的一部分，内嵌资源只是它缺失时的兜底。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BeatmapMedia {
     pub audio: Option<MediaEntry>,
@@ -115,21 +119,59 @@ impl BeatmapMedia {
     }
 }
 
-/// 收集「谱面自带且内嵌资源没有」的样本条目。
+/// 压缩包条目是否就是某个候选样本名对应的文件。
+///
+/// 候选名有两种写法：不带扩展名的样本名（`soft-hitnormal`，磁盘上对应
+/// `soft-hitnormal.ogg` / `.wav` / `.mp3`）与 `hitSample` 里的自定义文件名
+/// （`custom-hit.ogg`，可能带子目录）。因此依次比较「完整条目名」「文件名」「去掉扩展名
+/// 的文件名」，全部不区分大小写；条目名或候选名非法（越界路径）时返回 `false`。
+///
+/// `src/hitsound.js` 里有同一套规则的 JS 版本，由
+/// `test/hitsound-samples.test.js` 的用例表钉住。
+pub fn sample_entry_matches(entry_name: &str, candidate: &str) -> bool {
+    let Some(entry) = normalize_entry_path(entry_name) else {
+        return false;
+    };
+    let Some(candidate) = normalize_entry_path(candidate) else {
+        return false;
+    };
+    if entry.eq_ignore_ascii_case(&candidate) {
+        return true;
+    }
+    let file_name = entry.rsplit('/').next().unwrap_or_default();
+    if file_name.eq_ignore_ascii_case(&candidate) {
+        return true;
+    }
+    match file_name.rsplit_once('.') {
+        Some((stem, _)) => stem.eq_ignore_ascii_case(&candidate),
+        None => false,
+    }
+}
+
+/// 收集谱面可能自带的打击音样本条目。
+///
+/// 候选名来自 [`crate::hitsound::referenced_names`]，包含两类：`{bank}-{name}` 这类不带
+/// 扩展名的样本名，以及 `hitSample` 里的自定义文件名（自带扩展名）。前者不能按扩展名
+/// 过滤，否则 `soft-hitnormal` 这些最常见的候选会被整批丢掉；后者必须是音频扩展名，
+/// 免得把 `.osu` 里写错的非音频文件名也拿去解包。
 ///
 /// 大小写不同的同名候选只保留第一次出现的写法（压缩包匹配本来就不区分大小写）；
-/// 输入来自 `referenced_names`，已排序，因此结果顺序稳定。
+/// 输入已排序，因此结果顺序稳定。
 fn sample_entries(beatmap: &Beatmap) -> Vec<MediaEntry> {
     let mut seen = std::collections::BTreeSet::new();
     let mut entries = Vec::new();
     for name in crate::hitsound::referenced_names(beatmap) {
-        if crate::hitsound::has_embedded_asset(&name) {
-            continue;
-        }
         let Some(entry) = MediaEntry::new(&name) else {
             continue;
         };
-        if !entry.is_sample() || !seen.insert(entry.name.to_ascii_lowercase()) {
+        if entry
+            .extension
+            .as_deref()
+            .is_some_and(|extension| !SAMPLE_EXTENSIONS.contains(&extension))
+        {
+            continue;
+        }
+        if !seen.insert(entry.name.to_ascii_lowercase()) {
             continue;
         }
         entries.push(entry);
@@ -233,7 +275,7 @@ mod tests {
     fn 音频背景与自带样本分别归类() {
         let beatmap = beatmap_with(
             vec![
-                // 内嵌皮肤已有的音效：不进 samples。
+                // 内嵌皮肤已有的音效同样要列出来：谱面自带同名文件时它优先。
                 HitSample::new(SampleBank::Normal, HitAddition::None, 100, None),
                 // 自定义文件名：要宿主去压缩包里找。
                 HitSample::new(
@@ -260,20 +302,58 @@ mod tests {
             .iter()
             .map(|entry| entry.name.as_str())
             .collect();
-        // `custom-hit` 与 `normal-custom-hit`（bank 前缀候选）都要收集，且顺序稳定。
-        assert_eq!(names, vec!["Custom-Hit.OGG", "normal-Custom-Hit.OGG"]);
+        // 自定义文件名（含 bank 前缀候选）与不带扩展名的样本名都要收集，且顺序稳定。
+        assert_eq!(
+            names,
+            vec![
+                "Custom-Hit.OGG",
+                "hitnormal",
+                "normal-Custom-Hit.OGG",
+                "normal-hitnormal",
+            ]
+        );
         assert!(!media.is_empty());
     }
 
     #[test]
-    fn 缺少音频背景与样本时为空() {
+    fn 样本条目匹配候选名() {
+        // 不带扩展名的样本名对应压缩包里的音频文件。
+        assert!(sample_entry_matches("soft-hitnormal.ogg", "soft-hitnormal"));
+        assert!(sample_entry_matches("Soft-Hitnormal.WAV", "soft-hitnormal"));
+        assert!(sample_entry_matches("hitnormal.mp3", "hitnormal"));
+        // `hitSample` 的自定义文件名可以带子目录。
+        assert!(sample_entry_matches("sub/custom-hit.ogg", "custom-hit.ogg"));
+        assert!(sample_entry_matches("Custom-Hit.OGG", "custom-hit.ogg"));
+        // bank 前缀是候选名的一部分，不能只按文件名后缀命中。
+        assert!(!sample_entry_matches(
+            "custom-hit.ogg",
+            "normal-custom-hit.ogg"
+        ));
+        assert!(!sample_entry_matches("hitnormal.ogg", "soft-hitnormal"));
+        assert!(!sample_entry_matches("spinnerbonus.ogg", "spinnerbonus-max"));
+        // 越界路径一律不匹配（避免拿 `..` 去压缩包里翻文件）。
+        assert!(!sample_entry_matches("../soft-hitnormal.ogg", "soft-hitnormal"));
+        assert!(!sample_entry_matches("soft-hitnormal.ogg", "../soft-hitnormal"));
+    }
+
+    #[test]
+    fn 缺少音频与背景时留空但保留样本候选() {
         let mut beatmap = beatmap_with(Vec::new(), None);
         beatmap.general.insert("AudioFilename", String::new());
         let media = BeatmapMedia::from_beatmap(&beatmap);
         assert!(media.audio.is_none());
         assert!(media.background.is_none());
-        assert!(media.samples.is_empty());
-        assert!(media.is_empty());
+        // 物件没有自带 hitSample 时音效参数来自 timing point，谱面仍可能自带这些同名文件，
+        // 因此候选必须照常列出（否则「谱面自带 soft-hitnormal」这类覆盖会失效）。
+        assert_eq!(
+            media
+                .samples
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["hitnormal", "normal-hitnormal"]
+        );
+        assert!(!media.is_empty());
 
         // 非法背景路径按「没有背景」处理，而不是让整张图加载失败。
         let beatmap = beatmap_with(Vec::new(), Some("../outside.jpg"));

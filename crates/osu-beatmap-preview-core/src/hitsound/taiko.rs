@@ -14,11 +14,12 @@ use super::common::DefaultSample;
 use super::sample::SampleResolver;
 use super::timeline::TimelineBuilder;
 
-/// taiko 一次敲击的取样参数：音效组 + 音量。
+/// taiko 一次敲击的取样参数：音效组 + 音量 + 自定义音效索引。
 #[derive(Debug, Clone, Copy)]
 struct TaikoSampleSpec {
     bank: SampleBank,
     volume: i32,
+    custom_bank: i32,
 }
 
 /// 复现 osu! `HitObject.CreateHitSampleInfo` 的取样规则。
@@ -51,7 +52,17 @@ fn taiko_sample_spec(samples: &[HitSample], beatmap: &Beatmap, time: i64, name: 
         .filter(|volume| *volume > 0)
         .or_else(|| fallback.map(|default| default.volume))
         .unwrap_or(100);
-    TaikoSampleSpec { bank, volume }
+    // 物件的自定义音效索引优先，其次沿用 timing point 的 `sampleIndex`。
+    let custom_bank = picked
+        .map(|sample| sample.custom_bank)
+        .filter(|custom_bank| *custom_bank > 0)
+        .or_else(|| fallback.map(|default| default.custom_bank))
+        .unwrap_or(0);
+    TaikoSampleSpec {
+        bank,
+        volume,
+        custom_bank,
+    }
 }
 
 /// 敲击一次鼓面：红音符（鼓心）用 `hitnormal`，蓝音符（鼓边）用 `hitclap`。
@@ -64,7 +75,15 @@ fn push_taiko_press<R: SampleResolver>(
 ) {
     let name = if is_rim { "hitclap" } else { "hitnormal" };
     let spec = taiko_sample_spec(samples, beatmap, time_ms as i64, name);
-    builder.push_taiko(spec.bank, name, spec.volume, time_ms, 0.0, false);
+    builder.push_taiko(
+        spec.bank,
+        name,
+        spec.custom_bank,
+        spec.volume,
+        time_ms,
+        0.0,
+        false,
+    );
 }
 
 /// strong 敲击：同一时刻在 base 之上再叠一层 `hitwhistle`（蓝）/ `hitfinish`（红）。
@@ -81,7 +100,15 @@ fn push_taiko_strong<R: SampleResolver>(
     push_taiko_press(builder, samples, beatmap, time_ms, is_rim);
     let name = if is_rim { "hitwhistle" } else { "hitfinish" };
     let spec = taiko_sample_spec(samples, beatmap, time_ms as i64, name);
-    builder.push_taiko(spec.bank, name, spec.volume, time_ms, 0.0, false);
+    builder.push_taiko(
+        spec.bank,
+        name,
+        spec.custom_bank,
+        spec.volume,
+        time_ms,
+        0.0,
+        false,
+    );
 }
 
 /// osu! `TaikoBeatmapConverter.RequiredSwellHitsPerSecond`：按 OD 换算大连打所需敲击数。

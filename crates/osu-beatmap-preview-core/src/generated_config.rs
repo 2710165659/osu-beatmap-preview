@@ -117,6 +117,7 @@ pub struct RenderStandardMp4SizingConfig {
 pub struct RenderStandardMp4StyleConfig {
     pub FPS: i64,
     pub ENABLE_HITSOUND: bool,
+    pub ENABLE_BEATMAP_HITSOUND: bool,
     pub HITSOUND_VOLUME: i64,
     pub ENABLE_BACKGROUND_IMAGE: bool,
     pub BACKGROUND_DIM: f64,
@@ -283,6 +284,7 @@ pub struct RenderTaikoMp4StyleConfig {
     pub SHOW_MEASURE_LINES: bool,
     pub FPS: f64,
     pub ENABLE_HITSOUND: bool,
+    pub ENABLE_BEATMAP_HITSOUND: bool,
     pub HITSOUND_VOLUME: i64,
 }
 
@@ -434,6 +436,7 @@ pub struct RenderCatchMp4StyleConfig {
     pub PLAYFIELD_BACKGROUND: [u8; 4],
     pub FPS: f64,
     pub ENABLE_HITSOUND: bool,
+    pub ENABLE_BEATMAP_HITSOUND: bool,
     pub HITSOUND_VOLUME: i64,
 }
 
@@ -599,6 +602,7 @@ pub struct RenderManiaMp4StyleConfig {
     pub BLACK_OPAQUE: [u8; 4],
     pub FPS: i64,
     pub ENABLE_HITSOUND: bool,
+    pub ENABLE_BEATMAP_HITSOUND: bool,
     pub HITSOUND_VOLUME: i64,
     pub IMAGE_BACKGROUND: [u8; 4],
     pub SV_TEXT_COLOR: [u8; 4],

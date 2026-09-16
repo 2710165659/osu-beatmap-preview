@@ -36,7 +36,8 @@ pub use model::{
 };
 pub use processing::conversion::{catch_convert, mania_convert, taiko_convert};
 pub use processing::media::{
-    entry_extension, normalize_entry_path, BeatmapMedia, MediaEntry, SAMPLE_EXTENSIONS,
+    entry_extension, normalize_entry_path, sample_entry_matches, BeatmapMedia, MediaEntry,
+    SAMPLE_EXTENSIONS,
 };
 pub use processing::parse::parse_beatmap_bytes;
 pub use processing::timeline::preview_start_ms;

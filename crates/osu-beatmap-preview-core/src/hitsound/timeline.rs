@@ -5,7 +5,9 @@
 
 use crate::domain::models::{Beatmap, HitSample, SampleBank};
 
-use super::common::{timing_point_at, timing_sample_bank};
+use super::common::{
+    sample_custom_bank, sample_point_at, timing_sample_bank, HeadSample,
+};
 use super::sample::SampleResolver;
 use super::volume_gain;
 
@@ -138,7 +140,7 @@ impl SampleResolver for CollectNames {
     }
 }
 
-/// 查找一个候选名字所需的缓冲长度：`bank-` 前缀 + 名字。
+/// 查找一个候选名字所需的缓冲长度：`bank-` 前缀 + 名字 + 索引后缀。
 const ASSET_KEY_CAPACITY: usize = 32;
 
 /// 把若干片段拼进定长缓冲；放不下时返回 `None`（调用方退化成堆分配）。
@@ -162,7 +164,7 @@ macro_rules! concat_key {
 
 /// 栈上的候选名字缓冲，避免每个事件都分配 `String`。
 ///
-/// 一个事件最多两个候选（`bank-name` 与裸 `name`），用定长数组即可覆盖；
+/// 一个事件最多三个候选（`bank-name{index}`、`bank-name` 与裸 `name`），用定长数组即可覆盖；
 /// 超长名字（异常谱面）会退化成堆分配的 `String`。
 enum AssetKey {
     Stack {
@@ -172,22 +174,40 @@ enum AssetKey {
     Heap(String),
 }
 
+/// 自定义音效索引对应的文件名后缀：0/1 没有后缀，≥2 是索引本身。
+///
+/// 与 osu! 的 `LegacyHitSampleInfo` 一致：`suffix: customSampleBank >= 2 ? customSampleBank.ToString() : null`。
+fn custom_suffix(custom_bank: i32) -> Option<i32> {
+    (custom_bank >= 2).then_some(custom_bank)
+}
+
 impl AssetKey {
-    /// 构造 `{bank}-{name}`（没有音效组前缀时就是 `{name}`）。
+    /// 构造 `{bank}-{name}{suffix}`（没有音效组前缀时就是 `{name}{suffix}`）。
     ///
-    /// 注意分隔符：文件名是 `normal-hitnormal`，漏掉 `-` 会查不到任何资源。
-    fn new(prefix: Option<&str>, name: &str) -> Self {
-        match prefix {
-            Some(prefix) => {
-                match concat_key!(ASSET_KEY_CAPACITY, &[prefix.as_bytes(), b"-", name.as_bytes()]) {
-                    Some((buffer, len)) => Self::Stack { buffer, len },
-                    None => Self::Heap(format!("{prefix}-{name}")),
+    /// 注意分隔符：文件名是 `normal-hitnormal`，漏掉 `-` 会查不到任何资源；
+    /// 索引后缀直接跟在名字后面（`soft-hitclap20`），不带分隔符。
+    fn new(prefix: Option<&str>, name: &str, suffix: Option<i32>) -> Self {
+        let digits = suffix.map(|value| value.to_string());
+        let name_parts: &[&[u8]] = match (&digits, prefix) {
+            (Some(digits), Some(prefix)) => &[prefix.as_bytes(), b"-", name.as_bytes(), digits.as_bytes()],
+            (Some(digits), None) => &[name.as_bytes(), digits.as_bytes()],
+            (None, Some(prefix)) => &[prefix.as_bytes(), b"-", name.as_bytes()],
+            (None, None) => &[name.as_bytes()],
+        };
+        match concat_key!(ASSET_KEY_CAPACITY, name_parts) {
+            Some((buffer, len)) => Self::Stack { buffer, len },
+            None => {
+                let mut value = String::with_capacity(name.len() + 8);
+                if let Some(prefix) = prefix {
+                    value.push_str(prefix);
+                    value.push('-');
                 }
+                value.push_str(name);
+                if let Some(digits) = digits {
+                    value.push_str(&digits);
+                }
+                Self::Heap(value)
             }
-            None => match concat_key!(ASSET_KEY_CAPACITY, &[name.as_bytes()]) {
-                Some((buffer, len)) => Self::Stack { buffer, len },
-                None => Self::Heap(name.to_string()),
-            },
         }
     }
 
@@ -199,33 +219,40 @@ impl AssetKey {
     }
 }
 
-/// 一个事件的候选名字序列：先带 `bank-` 前缀，再回退到裸名字。
+/// 一个事件的候选名字序列。
+///
+/// 与 osu! `HitSampleInfo.LookupNames` 一致：带自定义音效索引时先查 `{bank}-{name}{index}`，
+/// 再回退到 `{bank}-{name}`，最后是共享目录里的裸名 `{name}`。内嵌皮肤只提供后两种，
+/// 所以「带索引的那个来自谱面包、其余来自皮肤」自然成立。
 struct AssetCandidates<'a> {
-    first: Option<AssetKey>,
+    suffixed: Option<AssetKey>,
+    banked: Option<AssetKey>,
     plain: &'a str,
 }
 
 impl<'a> AssetCandidates<'a> {
-    fn new(prefix: Option<&str>, plain: &'a str) -> Self {
+    fn new(prefix: Option<&str>, plain: &'a str, custom_bank: i32) -> Self {
         Self {
-            first: prefix.map(|prefix| AssetKey::new(Some(prefix), plain)),
+            suffixed: custom_suffix(custom_bank).map(|suffix| AssetKey::new(prefix, plain, Some(suffix))),
+            banked: prefix.map(|prefix| AssetKey::new(Some(prefix), plain, None)),
             plain,
         }
     }
 
     fn iter(&self) -> impl Iterator<Item = &[u8]> {
-        self.first
+        self.suffixed
             .iter()
+            .chain(self.banked.iter())
             .map(AssetKey::as_bytes)
             .chain(std::iter::once(self.plain.as_bytes()))
     }
 }
 
-/// taiko 的候选名：legacy taiko 会把 `taiko-` 插到文件名前面。
+/// taiko 的候选名字缓冲：`taiko-{bank}-{name}{index}`。
 ///
-/// 目标是 `taiko-{bank}-{name}`（例如 `taiko-drum-hitnormal`），全部在栈上拼；
-/// 超长名字退化成堆分配的 `String`。
-enum TaikoCandidates {
+/// legacy taiko 会把 `taiko-` 插到文件名前面（`TaikoLegacySkinTransformer`），
+/// 同样在栈上拼，超长名字退化成堆分配的 `String`。
+enum TaikoKey {
     Stack {
         buffer: [u8; ASSET_KEY_CAPACITY],
         len: usize,
@@ -233,28 +260,58 @@ enum TaikoCandidates {
     Heap(String),
 }
 
-impl TaikoCandidates {
-    fn new(bank: &str, name: &str) -> Self {
-        let total = b"taiko-".len() + bank.len() + 1 + name.len();
-        if total <= ASSET_KEY_CAPACITY {
-            let mut buffer = [0_u8; ASSET_KEY_CAPACITY];
-            let mut len = 0;
-            for part in [b"taiko-".as_slice(), bank.as_bytes(), b"-", name.as_bytes()] {
-                buffer[len..len + part.len()].copy_from_slice(part);
-                len += part.len();
+impl TaikoKey {
+    fn new(bank: &str, name: &str, suffix: Option<i32>) -> Self {
+        let digits = suffix.map(|value| value.to_string());
+        let parts: &[&[u8]] = match &digits {
+            Some(digits) => &[
+                b"taiko-",
+                bank.as_bytes(),
+                b"-",
+                name.as_bytes(),
+                digits.as_bytes(),
+            ],
+            None => &[b"taiko-", bank.as_bytes(), b"-", name.as_bytes()],
+        };
+        match concat_key!(ASSET_KEY_CAPACITY, parts) {
+            Some((buffer, len)) => Self::Stack { buffer, len },
+            None => {
+                let mut value = format!("taiko-{bank}-{name}");
+                if let Some(digits) = digits {
+                    value.push_str(&digits);
+                }
+                Self::Heap(value)
             }
-            Self::Stack { buffer, len }
-        } else {
-            Self::Heap(format!("taiko-{bank}-{name}"))
+        }
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::Stack { buffer, len } => &buffer[..*len],
+            Self::Heap(value) => value.as_bytes(),
+        }
+    }
+}
+
+/// taiko 的候选名字序列：带索引的名字优先，其次是不带索引的名字。
+struct TaikoCandidates {
+    suffixed: Option<TaikoKey>,
+    banked: TaikoKey,
+}
+
+impl TaikoCandidates {
+    fn new(bank: &str, name: &str, custom_bank: i32) -> Self {
+        Self {
+            suffixed: custom_suffix(custom_bank).map(|suffix| TaikoKey::new(bank, name, Some(suffix))),
+            banked: TaikoKey::new(bank, name, None),
         }
     }
 
     fn iter(&self) -> impl Iterator<Item = &[u8]> {
-        match self {
-            Self::Stack { buffer, len } => Some(&buffer[..*len]),
-            Self::Heap(value) => Some(value.as_bytes()),
-        }
-        .into_iter()
+        self.suffixed
+            .iter()
+            .chain(std::iter::once(&self.banked))
+            .map(TaikoKey::as_bytes)
     }
 }
 
@@ -331,6 +388,7 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
     pub(super) fn push_spinner(
         &mut self,
         bank: SampleBank,
+        custom_bank: i32,
         volume: i32,
         start_ms: f64,
         duration_ms: f64,
@@ -339,24 +397,26 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
         if !start_ms.is_finite() {
             return;
         }
-        let candidates = AssetCandidates::new(bank.prefix(), "spinnerspin");
+        let candidates = AssetCandidates::new(bank.prefix(), "spinnerspin", custom_bank);
         let Some(source_id) = self.resolver.resolve(candidates.iter()) else {
             return;
         };
         self.push_resolved(source_id, volume, start_ms, duration_ms, true, frequency);
     }
 
+    /// 按样本名推送事件；`custom_bank` ≥ 2 时优先查带该索引后缀的名字。
     pub(super) fn push_named(
         &mut self,
         bank: SampleBank,
         name: &str,
+        custom_bank: i32,
         volume: i32,
         start_ms: f64,
         duration_ms: f64,
         looping: bool,
     ) {
         self.push_at(
-            AssetCandidates::new(bank.prefix(), name).iter(),
+            AssetCandidates::new(bank.prefix(), name, custom_bank).iter(),
             volume,
             start_ms,
             duration_ms,
@@ -364,11 +424,12 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
         );
     }
 
-    /// taiko 的查找名：`taiko-{bank}-{name}`。
+    /// taiko 的查找名：`taiko-{bank}-{name}{index}`。
     pub(super) fn push_taiko(
         &mut self,
         bank: SampleBank,
         name: &str,
+        custom_bank: i32,
         volume: i32,
         start_ms: f64,
         duration_ms: f64,
@@ -378,7 +439,7 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
             return;
         };
         self.push_at(
-            TaikoCandidates::new(prefix, name).iter(),
+            TaikoCandidates::new(prefix, name, custom_bank).iter(),
             volume,
             start_ms,
             duration_ms,
@@ -394,12 +455,13 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
         duration_ms: f64,
         looping: bool,
     ) {
-        let default = timing_point_at(beatmap, start_ms as i64);
+        let default = sample_point_at(beatmap, start_ms as i64);
         let bank = if sample.bank == SampleBank::Auto {
             default.map_or(SampleBank::Normal, |point| timing_sample_bank(beatmap, point))
         } else {
             sample.bank
         };
+        let custom_bank = sample_custom_bank(sample.custom_bank, default);
         let volume = if sample.volume > 0 {
             sample.volume
         } else {
@@ -408,8 +470,10 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
         match sample.filename.as_deref() {
             // 自定义文件名优先：先查带 bank 前缀的名字，再回退到裸文件名
             // （与 `HitSampleInfo.LookupNames` 的 `Gameplay/{bank}-{name}` 规则一致）。
+            // 写死文件名时 osu! 会把自定义索引强制成 1（`FileHitSampleInfo`），因此这里
+            // 不追加索引后缀。
             Some(filename) => self.push_at(
-                AssetCandidates::new(bank.prefix(), filename).iter(),
+                AssetCandidates::new(bank.prefix(), filename, 0).iter(),
                 volume,
                 start_ms,
                 duration_ms,
@@ -418,6 +482,7 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
             None => self.push_named(
                 bank,
                 sample.addition.suffix(),
+                custom_bank,
                 volume,
                 start_ms,
                 duration_ms,
@@ -438,37 +503,54 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
         }
     }
 
-    /// 将已有样本改成滑条/果汁流使用的样本名，同时保留其音效组、音量和自定义文件名。
+    /// 将已有样本改成滑条滑行音 / tick 之类的样本名。
+    ///
+    /// 音效组、音量与自定义索引都继承**已经按头部时刻解析好的** [`HeadSample`]：
+    /// osu! 的 `CreateSlidingSamples` / `UpdateNestedSamples` 都是把头部解析完成的样本改名，
+    /// 事件自身的时刻（例如果汁流小果的 tick 时刻）不参与参数解析。
     pub(super) fn push_transformed_samples(
         &mut self,
         samples: &[HitSample],
-        beatmap: &Beatmap,
         name: &str,
+        head: HeadSample,
         start_ms: f64,
         duration_ms: f64,
         looping: bool,
     ) {
         for sample in samples {
-            let default = timing_point_at(beatmap, start_ms as i64);
             let bank = if sample.bank == SampleBank::Auto {
-                default.map_or(SampleBank::Normal, |point| timing_sample_bank(beatmap, point))
+                head.bank
             } else {
                 sample.bank
+            };
+            let custom_bank = if sample.custom_bank > 0 {
+                sample.custom_bank
+            } else {
+                head.custom_bank
             };
             let volume = if sample.volume > 0 {
                 sample.volume
             } else {
-                default.map_or(100, |point| point.sample_volume)
+                head.volume
             };
             match sample.filename.as_deref() {
+                // 自定义文件名与普通层同理：写死文件名时不追加索引后缀。
                 Some(filename) => self.push_at(
-                    AssetCandidates::new(bank.prefix(), filename).iter(),
+                    AssetCandidates::new(bank.prefix(), filename, 0).iter(),
                     volume,
                     start_ms,
                     duration_ms,
                     looping,
                 ),
-                None => self.push_named(bank, name, volume, start_ms, duration_ms, looping),
+                None => self.push_named(
+                    bank,
+                    name,
+                    custom_bank,
+                    volume,
+                    start_ms,
+                    duration_ms,
+                    looping,
+                ),
             }
         }
     }

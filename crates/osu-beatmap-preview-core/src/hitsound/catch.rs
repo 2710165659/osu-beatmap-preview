@@ -2,7 +2,7 @@
 
 use crate::domain::models::{Beatmap, CatchHitObject, HitAddition};
 
-use super::common::{head_sample, push_declared_samples, slider_timing};
+use super::common::{head_sample, push_declared_samples, push_default_samples, slider_timing};
 use super::sample::SampleResolver;
 use super::timeline::TimelineBuilder;
 
@@ -11,12 +11,23 @@ pub(super) fn push_catch<R: SampleResolver>(
     object: &CatchHitObject,
     beatmap: &Beatmap,
 ) {
-    let (head_bank, head_volume) = head_sample(&object.samples, beatmap, object.start_time);
-    push_declared_samples(builder, &object.samples, object.hitsound, beatmap, object.start_time);
+    let head = head_sample(&object.samples, beatmap, object.start_time);
+    push_declared_samples(
+        builder,
+        &object.samples,
+        object.hitsound,
+        beatmap,
+        object.start_time as f64,
+    );
 
     if object.hit_type & 2 == 0 {
         return;
     }
+
+    // 果汁流的头 / 重复箭头 / 尾部都是「水果」，各自用**自己时刻**的 timing point 补齐参数，
+    // 位掩码取自该节点的 `edgeSounds`（osu! `JuiceStream` 的 `GetNodeSamples(nodeIndex++)`）。
+    let spans = object.slider_repeats.max(1) as usize;
+    let span_duration = (object.end_time - object.start_time) as f64 / spans as f64;
 
     // 果汁流：小果与节点都使用 `slidertick`，时间规则与滑条 tick 一致。
     let (beat_length, slider_velocity) = slider_timing(object.start_time, beatmap);
@@ -34,20 +45,55 @@ pub(super) fn push_catch<R: SampleResolver>(
     );
     for time in times {
         // 果汁流的每个小果都把头部样本名替换为 slidertick，保留所有层和音量。
+        // 参数取自头部（osu! `JuiceStream` 的 `dropletSamples = Samples.With("slidertick")`），
+        // 而不是小果所在时刻的 timing point。
         if object.samples.is_empty() {
-            builder.push_named(head_bank, "slidertick", head_volume, time, 0.0, false);
-            for _ in HitAddition::all_from_hitsound(object.hitsound) {
-                builder.push_named(head_bank, "slidertick", head_volume, time, 0.0, false);
-            }
-        } else {
-            builder.push_transformed_samples(
-                &object.samples,
-                beatmap,
+            builder.push_named(
+                head.bank,
                 "slidertick",
+                head.custom_bank,
+                head.volume,
                 time,
                 0.0,
                 false,
             );
+            for _ in HitAddition::all_from_hitsound(object.hitsound) {
+                builder.push_named(
+                    head.bank,
+                    "slidertick",
+                    head.custom_bank,
+                    head.volume,
+                    time,
+                    0.0,
+                    false,
+                );
+            }
+        } else {
+            builder.push_transformed_samples(
+                &object.samples,
+                "slidertick",
+                head,
+                time,
+                0.0,
+                false,
+            );
+        }
+    }
+
+    for span in 1..=spans {
+        let time = object.start_time as f64 + span as f64 * span_duration;
+        match object.slider_edge_samples.get(span - 1) {
+            Some(edge) if !edge.is_empty() => builder.push_samples(edge, beatmap, time, 0.0),
+            _ => push_default_samples(
+                builder,
+                beatmap,
+                object
+                    .slider_edge_hitsounds
+                    .get(span)
+                    .copied()
+                    .unwrap_or(object.hitsound),
+                time,
+            ),
         }
     }
 }
@@ -88,5 +134,39 @@ mod tests {
             library.name_of(timeline.events[0].source_id),
             Some("catch-banana")
         );
+    }
+
+    #[test]
+    fn 果汁流的尾部按节点时刻发声() {
+        // 头 / 重复箭头 / 尾部都是水果：尾部按自己时刻的 timing point 取音量，谱面常用
+        // 「在果汁流尾部插入低音量绿线」把它压掉。
+        let library = library_with(&["soft-hitnormal"]);
+        let mut beatmap = beatmap_with(
+            2,
+            HitObjects::Catch(vec![CatchHitObject {
+                x: 0,
+                y: 0,
+                start_time: 1000,
+                end_time: 2000,
+                hit_type: 2,
+                slider_type: Some("L".to_string()),
+                slider_points: vec![(100, 0)],
+                slider_repeats: 1,
+                // 路径足够短：不产生小果，只留头 / 尾两个水果。
+                slider_pixel_length: 10.0,
+                ..Default::default()
+            }]),
+        );
+        beatmap.timing_points = vec![
+            crate::hitsound::test_support::timing_point(0.0, 2, 95),
+            crate::hitsound::test_support::timing_point(2000.0, 2, 5),
+        ];
+
+        let timeline = build_timeline(&beatmap, &library);
+        assert_eq!(timeline.len(), 2, "events={:?}", timeline.events);
+        assert!((timeline.events[0].start_ms - 1000.0).abs() < 1e-9);
+        assert!((timeline.events[0].gain - 0.95).abs() < 1e-9);
+        assert!((timeline.events[1].start_ms - 2000.0).abs() < 1e-9);
+        assert!((timeline.events[1].gain - 0.05).abs() < 1e-9);
     }
 }

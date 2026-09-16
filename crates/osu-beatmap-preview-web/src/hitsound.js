@@ -38,6 +38,44 @@ function takeMixedFrames(session) {
   return samples;
 }
 
+/**
+ * 一个后端条目名能命中的候选名（全部小写）。
+ *
+ * 与 core 的 `sample_entry_matches` 是同一套规则：候选名要么是不带扩展名的样本名
+ * （`soft-hitnormal` ↔ 条目 `soft-hitnormal.ogg`），要么是 `hitSample` 里写死的文件名
+ * （`custom-hit.ogg` ↔ 条目 `sub/custom-hit.ogg`）。因此完整条目名、文件名与去掉扩展名
+ * 的文件名都可能等于候选名。`test/hitsound-samples.test.js` 用同一张用例表钉住两边。
+ */
+export function sampleLookupKeys(entryName) {
+  const name = String(entryName ?? '').trim().replaceAll('\\', '/').toLowerCase();
+  if (!name) return [];
+  const keys = [name];
+  const fileName = name.split('/').pop();
+  if (fileName !== name) keys.push(fileName);
+  const dot = fileName.lastIndexOf('.');
+  // 前导点（`.ogg` 这种隐藏文件）没有可用的主干名，只有完整名字可用。
+  if (dot > 0) keys.push(fileName.slice(0, dot));
+  return keys;
+}
+
+/**
+ * 把后端给出的谱面音效清单变成「候选名 → 条目 URL」的查找表。
+ *
+ * @param {{name: string, url: string}[]} entries 后端 `/resource/samples` 的结果
+ * @returns {Map<string, string>} 键是候选名的小写形式
+ */
+export function createBeatmapSampleIndex(entries) {
+  const index = new Map();
+  for (const entry of entries ?? []) {
+    if (!entry?.name || !entry.url) continue;
+    for (const key of sampleLookupKeys(entry.name)) {
+      // 同名条目在正规谱包里不会重复；真重复时保留先出现的那个，保证结果稳定。
+      if (!index.has(key)) index.set(key, entry.url);
+    }
+  }
+  return index;
+}
+
 /** 用 AudioContext 解码一段 ogg；失败返回 null（按静音处理）。 */
 async function decodeSample(context, bytes) {
   if (!bytes?.byteLength) return null;
@@ -250,15 +288,16 @@ export function createHitsoundOutput({ session, context, absoluteStart }) {
 /**
  * 加载全套打击音资源。
  *
- * 字节默认来自 WASM 内嵌的资源表（`hitsoundAsset`），宿主只负责用 Web Audio 解码成
- * PCM 再送回 WASM；因此不需要下载音效文件，也不存在「静态副本没同步」的问题。
+ * 字节由宿主提供：谱面自带的自定义音效优先（后端从 OSZ 里解出来的同名条目），
+ * 没有就回落到 WASM 内嵌的资源表（`hitsoundAsset`），宿主只负责用 Web Audio 解码成
+ * PCM 再送回 WASM。
  *
  * @param {object} options
  * @param {HitsoundPlayer} options.player
  * @param {string[]} options.names 需要加载的样本名
  * @param {(name: string) => Uint8Array|Promise<Uint8Array|null>|null} options.readAsset
- *   按名字取回样本字节。允许返回 Promise：后续接入「谱面自带音效」时，非内嵌的样本
- *   需要回落到后端去 OSZ 里取，读取就变成异步的。
+ *   按名字取回样本字节。允许返回 Promise：谱面自带的音效要走网络从后端取（OSZ 里的
+ *   同名条目），读取是异步的；内嵌资源仍然同步返回。
  * @returns {Promise<number>} 成功放入的样本数
  */
 export async function loadHitsoundSamples({ player, names, readAsset, onProgress }) {

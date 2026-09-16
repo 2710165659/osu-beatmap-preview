@@ -47,6 +47,8 @@ pub fn catch_convert(
             slider_repeats: ho.slider_repeats,
             slider_pixel_length: ho.slider_pixel_length,
             samples: ho.samples.clone(),
+            slider_edge_hitsounds: ho.slider_edge_hitsounds.clone(),
+            slider_edge_samples: ho.slider_edge_samples.clone(),
         })
         .collect();
     catch_objects.sort_by_key(|ho| (ho.start_time, ho.end_time));

@@ -19,6 +19,8 @@ use symphonia::core::probe::Hint;
 pub(crate) struct AudioSource {
     pub path: PathBuf,
     pub lead_in_ms: i64,
+    /// 音频所在的 OSZ；谱面自带打击音也从同一个压缩包里取。
+    pub osz_path: PathBuf,
 }
 
 pub(crate) struct AudioSourceJob {
@@ -153,6 +155,7 @@ pub(crate) fn prepare_audio_source(
         return Ok(AudioSource {
             path: target_path,
             lead_in_ms: beatmap.audio_lead_in_ms(),
+            osz_path: osz_path.to_path_buf(),
         });
     }
 
@@ -169,6 +172,7 @@ pub(crate) fn prepare_audio_source(
     Ok(AudioSource {
         path: target_path,
         lead_in_ms: beatmap.audio_lead_in_ms(),
+        osz_path: osz_path.to_path_buf(),
     })
 }
 
@@ -295,6 +299,11 @@ pub(crate) fn encode_audio_segment(
     }
     // 打击音与音乐共用同一个 48kHz 时间轴：整个片段一次性混好，按输出帧号取样，
     // 因此不需要在编码循环里做任何时间换算，也不会出现累计漂移。
+    // 谱面自带音效与音乐来自同一个 OSZ；配置关闭时只用内嵌皮肤。
+    let hitsound = hitsound.map(|settings| {
+        let osz = settings.beatmap.then(|| source.osz_path.clone());
+        settings.with_beatmap_samples(osz.as_deref())
+    });
     let hitsound = render_hitsound_segment(
         beatmap,
         hitsound,
@@ -364,12 +373,35 @@ pub(crate) fn encode_audio_segment(
     Ok(EncodedAudio { frames })
 }
 
-/// MP4 导出使用的打击音开关与音量（来自各模式 `mp4.style` 配置）。
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// MP4 导出使用的打击音开关、音量与样本来源（来自各模式 `mp4.style` 配置）。
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HitsoundSettings {
     pub enabled: bool,
     /// 音量百分比（0～100）。
     pub volume: i32,
+    /// 是否使用谱面自带的自定义打击音（`ENABLE_BEATMAP_HITSOUND`）。
+    pub beatmap: bool,
+    /// 谱面自带打击音所在的 OSZ；`None` 表示只用内嵌皮肤。
+    pub beatmap_samples: Option<PathBuf>,
+}
+
+impl HitsoundSettings {
+    /// 从配置构造；`beatmap` 对应 `ENABLE_BEATMAP_HITSOUND`。此处的样本来源为空，
+    /// 音频准备完成后由 [`HitsoundSettings::with_beatmap_samples`] 补上压缩包路径。
+    pub(crate) fn new(enabled: bool, volume: i32, beatmap: bool) -> Self {
+        Self {
+            enabled,
+            volume,
+            beatmap,
+            beatmap_samples: None,
+        }
+    }
+
+    /// 附带谱面自带音效所在的 OSZ；传 `None` 时只用内嵌皮肤。
+    pub(crate) fn with_beatmap_samples(mut self, path: Option<&Path>) -> Self {
+        self.beatmap_samples = path.map(Path::to_path_buf);
+        self
+    }
 }
 
 /// 按视频输出时间轴混出整段打击音。
@@ -392,7 +424,7 @@ fn render_hitsound_segment(
     let Some(settings) = settings.filter(|settings| settings.enabled) else {
         return Ok(None);
     };
-    let library = super::hitsound::build_library(beatmap);
+    let library = super::hitsound::build_library(beatmap, settings.beatmap_samples.as_deref());
     if library.is_empty() {
         return Ok(None);
     }
@@ -838,13 +870,10 @@ mod tests {
         let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
             .expect("fixture 必须可解析");
 
-        let library = crate::media::hitsound::build_library(&beatmap);
+        let library = crate::media::hitsound::build_library(&beatmap, None);
         assert!(!library.is_empty(), "内嵌资源没有解码出任何样本");
 
-        let settings = Some(HitsoundSettings {
-            enabled: true,
-            volume: 100,
-        });
+        let settings = Some(HitsoundSettings::new(true, 100, false));
         // `frame_count` 是视频帧数：48 帧 @48fps = 1 秒音频。
         // 起点取 900ms，让第一个打击音（谱面时间 1000ms）落在缓冲**中间**——
         // 放在窗口边界上测不出问题（边界事件由混音器自己的测试覆盖）。
@@ -874,10 +903,7 @@ mod tests {
         // 关闭开关时不产生缓冲。
         let disabled = render_hitsound_segment(
             &beatmap,
-            Some(HitsoundSettings {
-                enabled: false,
-                volume: 100,
-            }),
+            Some(HitsoundSettings::new(false, 100, false)),
             chart_start_ms,
             video_frames as usize,
             fps,
@@ -925,10 +951,7 @@ mod tests {
         let started = std::time::Instant::now();
         let mixed = render_hitsound_segment(
             &beatmap,
-            Some(HitsoundSettings {
-                enabled: true,
-                volume: 100,
-            }),
+            Some(HitsoundSettings::new(true, 100, false)),
             0,
             frames,
             sample_rate,
@@ -956,10 +979,7 @@ mod tests {
         let frames = sample_rate as usize * 3;
         let mixed = render_hitsound_segment(
             &beatmap,
-            Some(HitsoundSettings {
-                enabled: true,
-                volume: 100,
-            }),
+            Some(HitsoundSettings::new(true, 100, false)),
             0,
             frames,
             sample_rate,
@@ -991,10 +1011,7 @@ mod tests {
         let frames = sample_rate as usize * 5;
         let mixed = render_hitsound_segment(
             &beatmap,
-            Some(HitsoundSettings {
-                enabled: true,
-                volume: 100,
-            }),
+            Some(HitsoundSettings::new(true, 100, false)),
             -1_000,
             frames,
             sample_rate,
@@ -1028,10 +1045,7 @@ mod tests {
             let frames = sample_rate as usize * 7;
             let mixed = render_hitsound_segment(
                 &beatmap,
-                Some(HitsoundSettings {
-                    enabled: true,
-                    volume: 100,
-                }),
+                Some(HitsoundSettings::new(true, 100, false)),
                 0,
                 frames,
                 sample_rate,

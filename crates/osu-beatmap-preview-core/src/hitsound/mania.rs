@@ -12,7 +12,13 @@ pub(super) fn push_mania<R: SampleResolver>(
     beatmap: &Beatmap,
 ) {
     // 原生 mania 长条只在头部播放样本；持续滑行音只属于转换生成的 hold。
-    push_declared_samples(builder, &object.samples, 0, beatmap, object.start_time);
+    push_declared_samples(
+        builder,
+        &object.samples,
+        0,
+        beatmap,
+        object.start_time as f64,
+    );
 }
 
 #[cfg(test)]

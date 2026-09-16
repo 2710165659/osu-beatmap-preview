@@ -1,9 +1,11 @@
 //! osu!standard 的打击音事件：物件头、滑条与转盘。
 
-use crate::domain::models::{Beatmap, HitAddition, SampleBank, StandardHitObject};
+use crate::domain::models::{Beatmap, HitAddition, StandardHitObject};
 use crate::render::cpu::modes::catch::objects::difficulty_range;
 
-use super::common::{head_sample, push_declared_samples, push_declared_samples_at, slider_timing};
+use super::common::{
+    head_sample, push_declared_samples, push_default_samples, slider_timing, HeadSample,
+};
 use super::sample::SampleResolver;
 use super::timeline::{PlayFrequency, TimelineBuilder};
 
@@ -12,14 +14,44 @@ pub(super) fn push_standard<R: SampleResolver>(
     object: &StandardHitObject,
     beatmap: &Beatmap,
 ) {
-    let (head_bank, head_volume) = head_sample(&object.samples, beatmap, object.start_time);
-    if object.hit_type & 2 != 0 {
-        push_declared_samples(builder, &object.samples, object.hitsound, beatmap, object.start_time);
-        push_standard_slider(builder, object, beatmap, head_bank, head_volume);
-    } else if object.hit_type & 8 != 0 {
-        push_standard_spinner(builder, object, beatmap, head_bank, head_volume);
+    let head = head_sample(&object.samples, beatmap, object.start_time);
+    // 滑条头部的音效位掩码来自 `edgeSounds[0]`：`hitSample` 里没有音效参数时，它才是
+    // 决定头部加成音（whistle / finish / clap）的那一份（osu! 的 `nodeSoundTypes[0]`）。
+    let head_hitsound = if object.hit_type & 2 != 0 {
+        object
+            .slider_edge_hitsounds
+            .first()
+            .copied()
+            .unwrap_or(object.hitsound)
     } else {
-        push_declared_samples(builder, &object.samples, object.hitsound, beatmap, object.start_time);
+        object.hitsound
+    };
+    if object.hit_type & 2 != 0 {
+        push_declared_samples(
+            builder,
+            &object.samples,
+            head_hitsound,
+            beatmap,
+            object.start_time as f64,
+        );
+        push_standard_slider(builder, object, beatmap, head, head_hitsound);
+    } else if object.hit_type & 8 != 0 {
+        // 转盘的取样参数取自**结束处**的 timing point（osu! 的 `applySamples` 对非
+        // `IHasRepeats` 物件用 `GetEndTime()`），而它的判定音也在结束处发声。
+        push_standard_spinner(
+            builder,
+            object,
+            beatmap,
+            head_sample(&object.samples, beatmap, object.end_time),
+        );
+    } else {
+        push_declared_samples(
+            builder,
+            &object.samples,
+            object.hitsound,
+            beatmap,
+            object.start_time as f64,
+        );
     }
 }
 
@@ -56,8 +88,7 @@ fn push_standard_spinner<R: SampleResolver>(
     builder: &mut TimelineBuilder<R>,
     object: &StandardHitObject,
     beatmap: &Beatmap,
-    head_bank: SampleBank,
-    head_volume: i32,
+    head: HeadSample,
 ) {
     let start = object.start_time as f64;
     let end = object.end_time as f64;
@@ -94,8 +125,9 @@ fn push_standard_spinner<R: SampleResolver>(
         )
     };
     builder.push_spinner(
-        head_bank,
-        head_volume,
+        head.bank,
+        head.custom_bank,
+        head.volume,
         start,
         duration,
         PlayFrequency::ramp(start_frequency, per_ms, SPINNING_SAMPLE_MAX_FREQUENCY),
@@ -110,21 +142,36 @@ fn push_standard_spinner<R: SampleResolver>(
             break;
         }
         if index >= total_spins as i64 {
-            builder.push_named(head_bank, "spinnerbonus-max", head_volume, time, 0.0, false);
+            builder.push_named(
+                head.bank,
+                "spinnerbonus-max",
+                head.custom_bank,
+                head.volume,
+                time,
+                0.0,
+                false,
+            );
         } else if index >= spins_required_for_bonus as i64 {
-            builder.push_named(head_bank, "spinnerbonus", head_volume, time, 0.0, false);
+            builder.push_named(
+                head.bank,
+                "spinnerbonus",
+                head.custom_bank,
+                head.volume,
+                time,
+                0.0,
+                false,
+            );
         }
     }
 
     // 判定音：`DrawableHitObject` 只在 `ArmedState.Hit` 时 `PlaySamples()`，而转盘的判定
     // 成立在结束处（`CheckForResult` 在 `Time.Current < EndTime` 时直接返回），所以它响在
-    // 转盘结束而不是出现时。音效参数仍取转盘起始处的 timing point。
-    push_declared_samples_at(
+    // 转盘结束而不是出现时。
+    push_declared_samples(
         builder,
         &object.samples,
         object.hitsound,
         beatmap,
-        object.start_time,
         end,
     );
 }
@@ -133,14 +180,15 @@ fn push_standard_slider<R: SampleResolver>(
     builder: &mut TimelineBuilder<R>,
     object: &StandardHitObject,
     beatmap: &Beatmap,
-    head_bank: SampleBank,
-    head_volume: i32,
+    head: HeadSample,
+    head_hitsound: i32,
 ) {
     let (beat_length, slider_velocity) = slider_timing(object.start_time, beatmap);
     let slider_multiplier = beatmap.difficulty.get_f64_or("SliderMultiplier", 1.4);
     let tick_rate = beatmap.difficulty.get_f64_or("SliderTickRate", 1.0);
 
-    // 滑行音：按住滑条期间循环播放，继承头部普通音的音量。
+    // 滑行音：按住滑条期间循环播放，继承头部普通音的音效组 / 音量 / 自定义索引
+    //（osu! `HitObject.CreateSlidingSamples` 用头部已解析的样本改名得到）。
     if object.end_time > object.start_time {
         let duration = (object.end_time - object.start_time) as f64;
         if let Some(normal) = object
@@ -150,24 +198,25 @@ fn push_standard_slider<R: SampleResolver>(
         {
             builder.push_transformed_samples(
                 std::slice::from_ref(normal),
-                beatmap,
                 "sliderslide",
+                head,
                 object.start_time as f64,
                 duration,
                 true,
             );
         } else {
             builder.push_named(
-                head_bank,
+                head.bank,
                 "sliderslide",
-                head_volume,
+                head.custom_bank,
+                head.volume,
                 object.start_time as f64,
                 duration,
                 true,
             );
         }
         // osu! 只把头部的 whistle 复制为 sliderwhistle，其他加成音不参与滑行循环。
-        if object.hitsound & 2 != 0
+        if head_hitsound & 2 != 0
             || object
                 .samples
                 .iter()
@@ -180,17 +229,18 @@ fn push_standard_slider<R: SampleResolver>(
             {
                 builder.push_transformed_samples(
                     std::slice::from_ref(whistle),
-                    beatmap,
                     "sliderwhistle",
+                    head,
                     object.start_time as f64,
                     duration,
                     true,
                 );
             } else {
                 builder.push_named(
-                    head_bank,
+                    head.bank,
                     "sliderwhistle",
-                    head_volume,
+                    head.custom_bank,
+                    head.volume,
                     object.start_time as f64,
                     duration,
                     true,
@@ -199,7 +249,8 @@ fn push_standard_slider<R: SampleResolver>(
         }
     }
 
-    // 滑条 tick：使用滑条头的音效组与音量。
+    // 滑条 tick：使用滑条头普通样本的音效组与音量
+    //（osu! `Slider.UpdateNestedSamples` 的 `tickSample = 头部普通样本.With("slidertick")`）。
     let tick_times = crate::render::cpu::modes::standard::slider::slider_tick_times(
         object.slider_pixel_length,
         object.start_time,
@@ -211,25 +262,38 @@ fn push_standard_slider<R: SampleResolver>(
         slider_multiplier,
     );
     for time in tick_times {
-        builder.push_named(head_bank, "slidertick", head_volume, time, 0.0, false);
+        builder.push_named(
+            head.bank,
+            "slidertick",
+            head.custom_bank,
+            head.volume,
+            time,
+            0.0,
+            false,
+        );
     }
 
-    // 重复箭头与滑条尾：使用各节点的自定义音效。
+    // 重复箭头与滑条尾：每个节点用**它自己时刻**的 timing point 补齐音效组 / 音量 /
+    // 自定义索引，音效位掩码取自 `edgeSounds`（缺省时沿用物件自身的 hitsound）。
+    // 谱面常用「在滑条尾插入低音量绿线」压掉尾部音效，靠的正是这一点。
     let spans = object.slider_repeats.max(1) as usize;
     let span_duration = (object.end_time - object.start_time) as f64 / spans as f64;
     // edgeSets[1..] 对应重复节点和尾节点，尾节点在没有重复时也必须发声。
     for span in 1..=spans {
         let time = object.start_time as f64 + span as f64 * span_duration;
         match object.slider_edge_samples.get(span - 1) {
-            // 节点自带音效：直接使用。
+            // 节点自带音效：直接使用（其音效组 / 音量同样在节点时刻解析）。
             Some(edge) if !edge.is_empty() => builder.push_samples(edge, beatmap, time, 0.0),
-            // 节点没有自带音效：沿用滑条头的完整 hitsound 位掩码。
-            _ => {
-                builder.push_named(head_bank, "hitnormal", head_volume, time, 0.0, false);
-                for addition in HitAddition::all_from_hitsound(object.hitsound) {
-                    builder.push_named(head_bank, addition.suffix(), head_volume, time, 0.0, false);
-                }
-            }
+            _ => push_default_samples(
+                builder,
+                beatmap,
+                object
+                    .slider_edge_hitsounds
+                    .get(span)
+                    .copied()
+                    .unwrap_or(object.hitsound),
+                time,
+            ),
         }
     }
 }
@@ -237,9 +301,153 @@ fn push_standard_slider<R: SampleResolver>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::models::{HitObjects, HitSample};
+    use crate::domain::models::{HitObjects, HitSample, SampleBank};
     use crate::hitsound::build_timeline;
-    use crate::hitsound::test_support::{beatmap_with, library_with, object_sample, spinner_beatmap};
+    use crate::hitsound::test_support::{
+        beatmap_with, library_with, object_sample, spinner_beatmap, timing_point,
+    };
+
+    /// 滑条：`end - start` 之间均分 `slides` 段。
+    fn slider(start_time: i64, end_time: i64, slides: i32, hitsound: i32) -> StandardHitObject {
+        StandardHitObject {
+            start_time,
+            end_time,
+            hit_type: 2,
+            hitsound,
+            slider_type: Some("L".to_string()),
+            slider_points: vec![(100, 0)],
+            slider_repeats: slides,
+            // 路径足够短：不产生 tick，只留节点音效，便于断言。
+            slider_pixel_length: 10.0,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn 滑条节点参数取自节点时刻的timing_point() {
+        // 谱面常用「在滑条尾插入低音量绿线」压掉尾部音效：节点必须按自己的时刻解析音量，
+        // 而不是沿用头部（此前尾部会跟着头部一起用 95% 音量，听起来就是多出一声）。
+        let library = library_with(&["soft-hitnormal"]);
+        let mut beatmap = beatmap_with(0, HitObjects::Standard(vec![slider(1000, 2000, 2, 0)]));
+        beatmap.timing_points = vec![
+            timing_point(0.0, crate::domain::models::SAMPLE_SET_SOFT, 95),
+            timing_point(1500.0, crate::domain::models::SAMPLE_SET_SOFT, 5),
+            timing_point(2000.0, crate::domain::models::SAMPLE_SET_SOFT, 5),
+        ];
+
+        let timeline = build_timeline(&beatmap, &library);
+        // 只有头 / 重复点 / 尾三个节点音（没有 tick、也没有滑行音样本）。
+        let times: Vec<f64> = timeline.events.iter().map(|event| event.start_ms).collect();
+        assert_eq!(times, vec![1000.0, 1500.0, 2000.0], "events={times:?}");
+        assert!((timeline.events[0].gain - 0.95).abs() < 1e-9);
+        // 重复点与尾部落在低音量绿线上，音量分别是 5%。
+        assert!((timeline.events[1].gain - 0.05).abs() < 1e-9);
+        assert!((timeline.events[2].gain - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn 滑条节点的音效位掩码取自edge_sounds() {
+        let library = library_with(&["soft-hitnormal", "soft-hitwhistle"]);
+        let mut beatmap = beatmap_with(
+            0,
+            HitObjects::Standard(vec![StandardHitObject {
+                // edgeSounds = 2|2|2：头、重复点与尾部都带 whistle。
+                slider_edge_hitsounds: vec![2, 2, 2],
+                ..slider(1000, 3000, 2, 0)
+            }]),
+        );
+        beatmap.timing_points[0].sample_set = crate::domain::models::SAMPLE_SET_SOFT;
+
+        let timeline = build_timeline(&beatmap, &library);
+        let names: Vec<&str> = timeline
+            .events
+            .iter()
+            .map(|event| library.name_of(event.source_id).unwrap_or("?"))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                "soft-hitnormal",
+                "soft-hitwhistle",
+                "soft-hitnormal",
+                "soft-hitwhistle",
+                "soft-hitnormal",
+                "soft-hitwhistle",
+            ],
+            "events={names:?}"
+        );
+    }
+
+    #[test]
+    fn 滑条头部的加成音取自edge_sounds而不是物件行() {
+        // 物件行的 hitsound 是 0，但 edgeSounds[0] = 2（whistle）：头部与滑行循环都要有
+        // whistle（osu! 的 `nodeSoundTypes[0]` / `CreateSlidingSamples`）。
+        let library = library_with(&["soft-hitnormal", "soft-hitwhistle", "soft-sliderwhistle"]);
+        let mut beatmap = beatmap_with(
+            0,
+            HitObjects::Standard(vec![StandardHitObject {
+                slider_edge_hitsounds: vec![2, 0],
+                ..slider(1000, 2000, 1, 0)
+            }]),
+        );
+        beatmap.timing_points[0].sample_set = crate::domain::models::SAMPLE_SET_SOFT;
+
+        let timeline = build_timeline(&beatmap, &library);
+        let names: Vec<&str> = timeline
+            .events
+            .iter()
+            .map(|event| library.name_of(event.source_id).unwrap_or("?"))
+            .collect();
+        // 头部：hitnormal + whistle；滑行循环：sliderwhistle（普通层没有 sliderslide 样本）；
+        // 尾部（edgeSounds[1] = 0）：只有 hitnormal。
+        assert_eq!(
+            names,
+            vec![
+                "soft-hitnormal",
+                "soft-hitwhistle",
+                "soft-sliderwhistle",
+                "soft-hitnormal",
+            ],
+            "events={names:?}"
+        );
+    }
+
+    #[test]
+    fn 转盘取样参数取自结束时刻的timing_point() {
+        // osu! 的 `applySamples` 对非 `IHasRepeats` 物件用 `GetEndTime()`：转盘的旋转音、
+        // 奖励音与判定音都按结束处的音效组与音量发声。
+        let library = library_with(&["normal-spinnerspin", "drum-spinnerspin", "drum-hitnormal"]);
+        let mut beatmap = beatmap_with(
+            0,
+            HitObjects::Standard(vec![StandardHitObject {
+                start_time: 1000,
+                end_time: 3000,
+                // 位 3（8）= 转盘。
+                hit_type: 8,
+                ..Default::default()
+            }]),
+        );
+        beatmap.timing_points = vec![
+            timing_point(0.0, crate::domain::models::SAMPLE_SET_NORMAL, 100),
+            timing_point(2000.0, crate::domain::models::SAMPLE_SET_DRUM, 5),
+        ];
+
+        let timeline = build_timeline(&beatmap, &library);
+        let names: Vec<&str> = timeline
+            .events
+            .iter()
+            .map(|event| library.name_of(event.source_id).unwrap_or("?"))
+            .collect();
+        // 旋转音用 drum 组，判定音在结束处用 drum-hitnormal（音量 5%）。
+        assert!(names.contains(&"drum-spinnerspin"), "events={names:?}");
+        let judgement = timeline
+            .events
+            .iter()
+            .find(|event| library.name_of(event.source_id) == Some("drum-hitnormal"))
+            .expect("转盘结束必须发判定音");
+        assert!((judgement.start_ms - 3000.0).abs() < 1e-9);
+        assert!((judgement.gain - 0.05).abs() < 1e-9);
+    }
 
     #[test]
     fn 物件缺省音效参数时回退到timing_point() {

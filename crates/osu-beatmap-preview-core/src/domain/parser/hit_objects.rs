@@ -19,6 +19,8 @@ pub(crate) struct SliderFields {
 pub(crate) struct ParsedHitSample {
     normal_set: i32,
     addition_set: i32,
+    /// 第 3 列：自定义音效索引（custom sample bank）；0 表示不使用谱面自带的音效文件。
+    custom_bank: i32,
     volume: Option<i32>,
     filename: Option<String>,
 }
@@ -52,11 +54,12 @@ impl ParsedHitSample {
     pub(crate) fn is_default(&self) -> bool {
         self.normal_set == 0
             && self.addition_set == 0
+            && self.custom_bank == 0
             && self.volume.is_none()
             && self.filename.is_none()
     }
 
-    /// 构造带当前音量与自定义文件名的样本。
+    /// 构造带当前音量、自定义音效索引与自定义文件名的样本。
     fn build(&self, bank: SampleBank, addition: HitAddition) -> HitSample {
         HitSample::new(
             bank,
@@ -65,6 +68,8 @@ impl ParsedHitSample {
             self.volume.unwrap_or(0),
             self.filename.clone(),
         )
+        // 自定义音效索引对普通层与全部加成音都生效（osu! 的 `SampleBankInfo.CustomSampleBank`）。
+        .with_custom_bank(self.custom_bank)
     }
 
     /// 生成加成音；没有加成位时返回 `None`。
@@ -103,6 +108,12 @@ pub(crate) fn parse_hit_sample(field: Option<&str>) -> ParsedHitSample {
     let parts: Vec<&str> = field.split(':').collect();
     let normal_set = parts.first().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
     let addition_set = parts.get(1).and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+    // 负数索引没有意义（`.osu` 里出现过 -1），按「不使用谱面音效」处理。
+    let custom_bank = parts
+        .get(2)
+        .and_then(|v| v.trim().parse::<i32>().ok())
+        .unwrap_or(0)
+        .max(0);
     let volume = parts
         .get(3)
         .and_then(|v| v.trim().parse::<i32>().ok())
@@ -124,8 +135,53 @@ pub(crate) fn parse_hit_sample(field: Option<&str>) -> ParsedHitSample {
     ParsedHitSample {
         normal_set,
         addition_set,
+        custom_bank,
         volume,
         filename,
+    }
+}
+
+/// 解析滑条的 `hitSample` 字段：osu! 对滑条只读音效组。
+///
+/// `ConvertHitObjectParser` 用 `readCustomSampleBanks(split[10], bankInfo, banksOnly: true)`，
+/// 因此滑条行里的音量、自定义索引与文件名都被忽略——它们由物件与每个节点各自的
+/// timing point / 节点音效补齐（见 `hitsound` 模块）。
+pub(crate) fn parse_hit_sample_banks(field: Option<&str>) -> ParsedHitSample {
+    let parsed = parse_hit_sample(field);
+    ParsedHitSample {
+        normal_set: parsed.normal_set,
+        addition_set: parsed.addition_set,
+        custom_bank: 0,
+        volume: None,
+        filename: None,
+    }
+}
+
+/// 返回 `hitSample` 字段所在的列。
+///
+/// 列数随物件类型变化：圆圈 `x,y,time,type,hitSound,hitSample` 是第 6 列（下标 5），
+/// 滑条在 `edgeSets` 之后是第 11 列（下标 10），转盘在 `endTime` 之后是第 7 列（下标 6）。
+/// 取错列会把结束时间当成音效参数（曾被解析成音效组 id，导致转盘音效组错成 normal）。
+fn hit_sample_index(hit_type: i32) -> usize {
+    if hit_type & 2 != 0 {
+        10
+    } else if hit_type & 8 != 0 {
+        6
+    } else {
+        5
+    }
+}
+
+/// 解析对象的 `hitSample` 字段。
+///
+/// `ConvertHitObjectParser` 对滑条只用 `banksOnly: true` 读第 11 列，因此滑条的
+/// 音量、自定义索引与文件名都被忽略——它们由物件与每个节点各自的 timing point / 节点音效补齐。
+pub(crate) fn parse_object_hit_sample(parts: &[&str], hit_type: i32) -> ParsedHitSample {
+    let field = parts.get(hit_sample_index(hit_type)).copied();
+    if hit_type & 2 != 0 {
+        parse_hit_sample_banks(field)
+    } else {
+        parse_hit_sample(field)
     }
 }
 
@@ -173,6 +229,9 @@ pub(crate) fn parse_edge_sample(
         } else {
             addition_set
         },
+        // `edgeSets` 只写音效组（osu! 的 `readCustomSampleBanks(..., banksOnly: true)`），
+        // 自定义音效索引沿用物件自身声明的值。
+        custom_bank: fallback.custom_bank,
         volume: volume.or(fallback.volume),
         filename,
     };
@@ -238,10 +297,9 @@ pub(crate) fn parse_standard(
         let hit_type: i32 = parts[3].parse().ok()?;
         let hitsound: i32 = parts[4].parse().ok()?;
         let end_time = parse_end_time(&parts, start_time, hit_type, difficulty, timing_points)?;
-        // 滑条的 `hitSample` 在第 11 列（curve/slides/length/edgeSounds/edgeSets 之后），
-        // 圆圈与转盘才在第 6 列；取错列会把曲线当成音效参数。
+        // 列数随物件类型变化，取错列会把曲线或结束时间当成音效参数。
         let is_slider = hit_type & 2 != 0;
-        let hit_sample = parse_hit_sample(parts.get(if is_slider { 10 } else { 5 }).copied());
+        let hit_sample = parse_object_hit_sample(&parts, hit_type);
 
         let mut obj = StandardHitObject {
             x,
@@ -308,9 +366,8 @@ pub(crate) fn parse_taiko(
         let hit_type: i32 = parts[3].parse().ok()?;
         let hitsound: i32 = parts[4].parse().ok()?;
         let end_time = parse_end_time(&parts, start_time, hit_type, difficulty, timing_points)?;
-        // 与 standard 一致：滑条的 `hitSample` 在第 11 列（原生 taiko 谱面也可能有滑条）。
-        let is_slider = hit_type & 2 != 0;
-        let hit_sample = parse_hit_sample(parts.get(if is_slider { 10 } else { 5 }).copied());
+        // 列数随物件类型变化（原生 taiko 谱面也可能有滑条与转盘）。
+        let hit_sample = parse_object_hit_sample(&parts, hit_type);
         objects.push(TaikoHitObject {
             start_time,
             end_time,
@@ -340,9 +397,9 @@ pub(crate) fn parse_catch(
         let hit_type: i32 = parts[3].parse().ok()?;
         let hitsound: i32 = parts[4].parse().ok()?;
         let end_time = parse_end_time(&parts, start_time, hit_type, difficulty, timing_points)?;
-        // 与 standard 一致：滑条的 `hitSample` 在第 11 列。
+        // 与 standard 一致：列数随物件类型变化。
         let is_slider = hit_type & 2 != 0;
-        let hit_sample = parse_hit_sample(parts.get(if is_slider { 10 } else { 5 }).copied());
+        let hit_sample = parse_object_hit_sample(&parts, hit_type);
 
         let mut obj = CatchHitObject {
             x,
@@ -358,7 +415,7 @@ pub(crate) fn parse_catch(
         };
         if is_slider {
             let sf = parse_slider_fields(&parts)?;
-            // 滑条头沿用 edgeSets[0]，果汁流的小果与节点音效由 core 的打击音模块生成。
+            // 滑条头沿用 edgeSets[0]；重复箭头与尾部的音效由打击音模块按节点生成。
             if let Some(first) = sf.edge_sets.first() {
                 obj.samples = parse_edge_sample(
                     first,
@@ -370,6 +427,23 @@ pub(crate) fn parse_catch(
             obj.slider_points = sf.points;
             obj.slider_repeats = sf.repeats;
             obj.slider_pixel_length = sf.pixel_length;
+            obj.slider_edge_hitsounds = sf.edge_hitsounds.clone();
+            obj.slider_edge_samples = sf
+                .edge_sets
+                .iter()
+                .skip(1)
+                .enumerate()
+                .map(|(index, edge)| {
+                    parse_edge_sample(
+                        edge,
+                        sf.edge_hitsounds
+                            .get(index + 1)
+                            .copied()
+                            .unwrap_or(hitsound),
+                        &hit_sample,
+                    )
+                })
+                .collect();
         }
         objects.push(obj);
     }

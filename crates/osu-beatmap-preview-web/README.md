@@ -191,7 +191,7 @@ crates/osu-beatmap-preview-web/
 - **默认视图**：只保留一行谱面信息、视频和进度条，视频区域最大。进度条在鼠标移动或触摸时显示，停下约 1 秒后淡出；淡出只改透明度，进度条原来的位置始终占着，所以画面不会上下位移。画面参数（30/60/120 FPS、480P/720P/1080P、0.5x–2x 倍速）、音量（0–100%，默认 50%）、Mod 与运行日志都收在右上角齿轮打开的抽屉里。
 - **谱面信息**：名称与难度取自 WASM 的 `beatmapInfo`（见下）。
 - **操作**：点击画面播放/暂停，空格同样；`Esc` 关闭抽屉。左右方向键短按在**松开时**跳转 ±5 秒（按下不跳），长按右键进入 3 倍速播放、长按左键持续向前倒带，两种情况都会在画面上显示角标。
-- **打击音（hit sound）**：默认开启、音量 50%，与音乐音量分开调节（抽屉里的「打击音」一组）。音效按模式选用：Standard / Catch / Mania 用 argon pro (2022)，Taiko 用 osu! "classic" (2013)；谱面音效组与音量按 osu! 规则从 timing point 读取，滑条 tick、滑行音、转盘旋转音、果汁流小果都会还原（转盘旋转音按 autoplay 转速换算进度做音高调制，奖励音每转满一圈响一次）。**音效字节内嵌在 wasm 里**（`hitsoundAsset`），页面不需要请求音效文件；浏览器只负责用 Web Audio 解码成 PCM，之后由 WASM 按音频硬件时钟推进时间轴并混音，因此画面与声音共用同一条时间轴；某个样本读不出来时按静音处理，不影响播放。
+- **打击音（hit sound）**：默认开启、音量 50%，与音乐音量分开调节（抽屉里的「打击音」一组）。音效按模式选用：Standard / Catch / Mania 用 argon pro (2022)，Taiko 用 osu! "classic" (2013)；谱面音效组与音量按 osu! 规则从 timing point 读取，滑条 tick、滑行音、转盘旋转音、果汁流小果都会还原（转盘旋转音按 autoplay 转速换算进度做音高调制，奖励音每转满一圈响一次）。**谱面自带的自定义音效优先**：后端的 `/resource/samples` 给出该谱面包里的音效条目，前端按候选名匹配并逐个取用（`/resource/sample`），取不到才回落到 WASM 内嵌的资源（`hitsoundAsset`）；候选名包含自定义音效索引后缀（timing point 的 `sampleIndex` / 物件 `hitSample` 的 `index`，如 `soft-hitclap20`），因此按 `{bank}-{name}{index}` 命名的音效也能正确发声。是否采用谱面音效由 `assets/shared_config.yml` 的 `ENABLE_BEATMAP_HITSOUND` 决定（默认启用，切换需重建 wasm）。浏览器只负责用 Web Audio 解码成 PCM，之后由 WASM 按音频硬件时钟推进时间轴并混音，因此画面与声音共用同一条时间轴；某个样本读不出来时按静音处理，不影响播放。
 
   音效的送出一条链路：WASM 按 `state.position` 混出 PCM → `src/hitsound-stream.js` 写入与音频线程共享的环形缓冲（两端统一使用相对帧数，写入位置始终领先音频线程约 170ms）→ `public/hitsound-worklet.js` 按硬件时钟消费。预读窗口按「音频线程已读位置」而不是只按画面时钟计算：音频线程由音频硬件时钟驱动、稳定地领先画面时钟几十毫秒，只按画面时钟预读会让它一路追到写入前沿、读到的全是静音（表现为打击音时有时无）。锚点、坐标系、预读窗口与 seek 对齐的回归测试在 `test/hitsound-stream.test.js`。
 
@@ -222,11 +222,13 @@ Cross-Origin-Embedder-Policy: require-corp
 | `GET /resource/beatmap?bid=<BID>` | 该难度的 `.osu` 文本，命中缓存时直接返回本地文件 |
 | `GET /resource/audio?bid=<BID>` | 从 OSZ 中取出的音频，支持 `Range` 请求（进度条 seek 需要） |
 | `GET /resource/background?bid=<BID>` | 从 OSZ 中取出的背景图；谱面未声明背景（或压缩包里没有）时返回 `404`，前端退化成纯色背景 |
+| `GET /resource/samples?bid=<BID>` | 谱面自带打击音的条目名清单（JSON：`{ samples: [...] }`）；解包时已顺带解出并缓存 |
+| `GET /resource/sample?bid=<BID>&name=<条目名>` | 按条目名取一个谱面自带音效；名字不在清单里时返回 `404` |
 | `GET /resource/progress?bid=<BID>` | 加载进度快照（JSON）：`phase`、`received`、`total` |
 
 `bid` 必须是纯数字，否则返回 `400`；下载或解析失败返回 `502` 并附带原因文本，前端会把它显示在日志里。
 
-`/resource/progress` 的阶段依次是 `osu`（取谱面）→ `osz`（下载谱面包，带字节进度）→ `extract`（解包音频与背景）→ `ready`，失败时为 `error`。前端在加载期间每 400 ms 轮询一次，`total` 未知时显示不确定态进度条。进度快照按 bid 保留 10 分钟。
+`/resource/progress` 的阶段依次是 `osu`（取谱面）→ `osz`（下载谱面包，带字节进度）→ `extract`（解包音频、背景与谱面音效）→ `ready`，失败时为 `error`。前端在加载期间每 400 ms 轮询一次，`total` 未知时显示不确定态进度条。进度快照按 bid 保留 10 分钟。
 
 ## 下载与缓存
 

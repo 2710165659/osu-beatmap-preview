@@ -23,8 +23,10 @@ pub fn asset_count() -> usize {
 
 /// 某个样本名是否随二进制分发。
 ///
-/// 宿主据此判断「这个候选名要不要去谱面包里找」：内嵌皮肤已经提供的音效不需要，
-/// 谱面自带的自定义音效（`hitSample` 的文件名）则需要。
+/// 宿主按「谱面自带的同名条目 > 内嵌皮肤 > 静音」的优先级取样本：先在压缩包里用
+/// [`sample_entry_matches`](crate::sample_entry_matches) 找同名条目，找不到再用这个名字
+/// 取内嵌资源兜底。两者的候选名都由 [`referenced_names`](crate::hitsound::referenced_names)
+/// 给出，因此这里只回答「这个名字有没有内嵌资源」。
 pub fn has_embedded_asset(name: &str) -> bool {
     asset_bytes(name).is_some()
 }

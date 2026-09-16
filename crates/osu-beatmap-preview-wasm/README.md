@@ -153,14 +153,15 @@ npm start
 | `takeHitsoundBuffer()` | 取回上一批混音结果，返回交错立体声 `Float32Array`（长度 = 帧数 × 2） |
 | `resetHitsoundSamples()` | 清空样本并重建时间轴（切 Mod/转谱后重新加载时使用），保留音量与采样率 |
 
-推荐的使用顺序（官方 Web 页面的做法），音效字节来自 WASM 内嵌资源，不需要下载：
+推荐的使用顺序（官方 Web 页面的做法），音效字节优先取谱面自带的同名条目，取不到再用 WASM 内嵌资源：
 
 ```js
 const session = await WebGpuSession.create(bytes, canvas, options);
 const names = session.hitsoundRequiredNames();        // 需要哪些音效
 session.enableHitsound(50, audioContext.sampleRate);   // 音频设备采样率
 for (const name of names) {
-  const bytes = hitsoundAsset(name);                   // 内嵌在 wasm 里，空数组表示没有
+  // 谱面自带的自定义音效要先从后端取（OSZ 里的同名条目），内嵌资源只是兜底。
+  const bytes = (await fetchBeatmapSample(name)) ?? hitsoundAsset(name);
   if (!bytes.length) continue;
   const buffer = await decodeOgg(bytes);               // 宿主只用 Web Audio 解码
   session.setHitsoundSample(name, channels, buffer.sampleRate, loopFrames, pcm);
@@ -179,7 +180,8 @@ const pcm = session.takeHitsoundBuffer();              // 交错立体声 Float3
 `hitsoundAssetCount()`：内嵌资源数量（36），便于宿主自检。
 
 `hitsoundDefaults(mode)`：返回该模式在 `assets/shared_config.yml` 里的打击音默认值
-（`{ enabled, volume }`）。CLI 读同一份配置，网页端用它保证默认值一致。
+（`{ enabled, volume, beatmapEnabled }`；`beatmapEnabled` 对应 `ENABLE_BEATMAP_HITSOUND`，
+表示是否使用谱面自带的自定义音效）。CLI 读同一份配置，网页端用它保证默认值一致。
 
 `beatmapInfo(bytes)`：按传入的 `.osu` 字节返回谱面内部信息对象（全量字段）。它不下载文件，也不依赖 WebGPU，可以在创建会话之前调用：
 

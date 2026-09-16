@@ -145,13 +145,15 @@ osu-beatmap-preview-cli --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=
 
 四种模式均可输出带谱面原始音频的 MP4，支持 MP3、OGG 和 WAV 音源。视频默认读取 OSZ 中 `[Events]` 声明的背景图，并按 `BACKGROUND_DIM=0.7` 暗化；可通过配置关闭背景图。
 
-MP4 默认还会把打击音（hit sound）混入音轨，音量 50%（与游戏内默认音量听感一致）：
+MP4 默认还会把打击音（hit sound）混入音轨，音量 100%：
 
 - Standard / Catch / Mania 使用 argon pro (2022) 音效，Taiko 使用 osu! "classic" (2013) 音效；
 - 音效资源已内嵌进可执行文件（`assets/hitsound/*.ogg`），不需要额外文件；
 - 谱面采样点（bank、音量、自定义音效文件名）以及滑条 tick、滑条滑行音、转盘旋转音、果汁流小果等都按 osu! 的规则还原；转盘的旋转音会按 autoplay 转速（477 RPM）换算旋转进度做音高调制，奖励音每转满一圈响一次（预览无法预知玩家表现，因此统一按 autoplay）；
+- **谱面自带的自定义打击音优先**：谱面包里的同名条目（如 `soft-hitnormal.ogg`，以及 `hitSample` 里写死的文件名）会盖过内嵌音效，找不到才回退到内嵌皮肤；
+- **自定义音效索引（custom sample bank）同样生效**：物件 `hitSample` 的 `index` 与 timing point 的 `sampleIndex` 会生成带后缀的候选名（索引 20 → `soft-hitclap20`、`taiko-drum-hitnormal3`），因此谱面包里按 `{bank}-{name}{index}` 命名的成组音效会按段切换；索引 1 用无后缀名（`soft-hitclap`）；
 - 某个音效文件无法读取时按静音处理，不会中断导出；
-- 各模式可分别用 `ENABLE_HITSOUND` 与 `HITSOUND_VOLUME` 控制（见下方配置示例）。
+- 各模式可分别用 `ENABLE_HITSOUND`、`ENABLE_BEATMAP_HITSOUND` 与 `HITSOUND_VOLUME` 控制（见下方配置示例）。
 
 Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退到 CPU OpenH264。设置环境变量 `OSU_PREVIEW_NO_GPU=1` 可以强制使用 CPU 编码，便于兼容性检查或性能对比。
 
@@ -203,7 +205,7 @@ osu-beatmap-preview-cli --bid=738063 --config='{"render":{"standard":{"gif":{"st
 osu-beatmap-preview-cli --bid=738063 --config='{render: {standard: {gif: {structure: {ROW_COUNT: 1}}}}}'
 ```
 
-以下示例关闭 Standard MP4 背景图、调整暗化程度、关闭 Mania 打击音，并分别设置三种格式的整次请求超时：
+以下示例关闭 Standard MP4 背景图、调整暗化程度、让 Taiko 只用内嵌皮肤（忽略谱面自带音效）、关闭 Mania 打击音，并分别设置三种格式的整次请求超时：
 
 ```yaml
 render:
@@ -213,7 +215,12 @@ render:
         ENABLE_BACKGROUND_IMAGE: false
         BACKGROUND_DIM: 0.5
         ENABLE_HITSOUND: true
+        ENABLE_BEATMAP_HITSOUND: true
         HITSOUND_VOLUME: 50
+  taiko:
+    mp4:
+      style:
+        ENABLE_BEATMAP_HITSOUND: false
   mania:
     mp4:
       style:
@@ -223,6 +230,8 @@ timeout:
   GIF_TIMEOUT: 300
   MP4_TIMEOUT: 900
 ```
+
+`ENABLE_BEATMAP_HITSOUND` 控制是否使用谱面自带的自定义打击音（默认 `true`）：打开时先在该谱面的 OSZ 里找同名条目，找不到再回退到内嵌皮肤；关闭后一律使用内嵌皮肤。
 
 `HITSOUND_VOLUME` 为 0～100 的百分比，按 osu! 的音量曲线 `10^((v - 100) / 25)` 换算为线性增益，因此 50 与游戏内默认音量一致、100 为满音量。
 

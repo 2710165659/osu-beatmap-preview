@@ -392,6 +392,8 @@ pub fn hitsound_asset_count() -> u32 {
 /// 返回某个模式在 `assets/shared_config.yml` 里的打击音默认设置。
 ///
 /// CLI 直接读同一份配置，网页端通过这里取值，避免两边各写一份默认值而走偏。
+/// 返回 `{ enabled, volume, beatmapEnabled }`：`beatmapEnabled` 对应
+/// `ENABLE_BEATMAP_HITSOUND`，表示是否使用谱面自带的自定义打击音。
 /// `mode` 接受 `standard` / `taiko` / `catch` / `mania`（也接受 `std` 与 `ctb`）。
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = hitsoundDefaults)]
@@ -399,23 +401,27 @@ pub fn hitsound_defaults(mode: &str) -> Result<JsValue, JsValue> {
     // WASM 里没有外置配置文件，用内嵌的共享配置默认值——它由
     // `assets/shared_config.yml` 在构建时生成，CLI 也读同一份来源。
     let config = osu_beatmap_preview_core::config::CoreConfig::default();
-    // 各模式的 style 类型不同，因此这里统一取出 (是否启用, 音量) 两个值。
-    let (enabled, volume) = match mode.trim().to_ascii_lowercase().as_str() {
+    // 各模式的 style 类型不同，因此这里统一取出（是否启用、音量、是否用谱面自带音效）。
+    let (enabled, volume, beatmap_enabled) = match mode.trim().to_ascii_lowercase().as_str() {
         "standard" | "std" => (
             config.render.standard.mp4.style.ENABLE_HITSOUND,
             config.render.standard.mp4.style.HITSOUND_VOLUME,
+            config.render.standard.mp4.style.ENABLE_BEATMAP_HITSOUND,
         ),
         "taiko" => (
             config.render.taiko.mp4.style.ENABLE_HITSOUND,
             config.render.taiko.mp4.style.HITSOUND_VOLUME,
+            config.render.taiko.mp4.style.ENABLE_BEATMAP_HITSOUND,
         ),
         "catch" | "ctb" => (
             config.render.catch.mp4.style.ENABLE_HITSOUND,
             config.render.catch.mp4.style.HITSOUND_VOLUME,
+            config.render.catch.mp4.style.ENABLE_BEATMAP_HITSOUND,
         ),
         "mania" => (
             config.render.mania.mp4.style.ENABLE_HITSOUND,
             config.render.mania.mp4.style.HITSOUND_VOLUME,
+            config.render.mania.mp4.style.ENABLE_BEATMAP_HITSOUND,
         ),
         _ => {
             return Err(JsValue::from_str(&format!(
@@ -433,6 +439,11 @@ pub fn hitsound_defaults(mode: &str) -> Result<JsValue, JsValue> {
         &object,
         &JsValue::from_str("volume"),
         &JsValue::from_f64(volume as f64),
+    )?;
+    js_sys::Reflect::set(
+        &object,
+        &JsValue::from_str("beatmapEnabled"),
+        &JsValue::from_bool(beatmap_enabled),
     )?;
     Ok(object.into())
 }

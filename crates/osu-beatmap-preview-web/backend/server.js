@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // osu! 谱面预览 Web 站点与下载后端。
 //
-// 后端只做浏览器做不到的事：跨域下载 `.osu` 与 `.osz`、从 OSZ 里取出音频和背景、
-// 缓存结果，然后把静态站点（含 wasm 产物）发给浏览器。渲染完全在浏览器 WebGPU 中
-// 完成，后端不参与任何一帧的绘制。
+// 后端只做浏览器做不到的事：跨域下载 `.osu` 与 `.osz`、从 OSZ 里取出音频、背景与
+// 谱面自带的打击音、缓存结果，然后把静态站点（含 wasm 产物）发给浏览器。渲染完全在
+// 浏览器 WebGPU 中完成，后端不参与任何一帧的绘制。
 
 import http from 'node:http';
 import https from 'node:https';
@@ -75,7 +75,7 @@ async function handle(request, response) {
   const route = url.pathname;
 
   if (route.startsWith('/resource/')) {
-    await sendResource(request, response, route, url.searchParams.get('bid'));
+    await sendResource(request, response, route, url);
     return;
   }
   // 其余路径都当作静态文件（含 /pkg/ 下的 wasm 产物与 /gpu-check.html），
@@ -114,7 +114,8 @@ async function sendStatic(response, route) {
   response.end(file.body);
 }
 
-async function sendResource(request, response, route, bid) {
+async function sendResource(request, response, route, url) {
+  const bid = url.searchParams.get('bid');
   if (!bid || !/^\d+$/.test(bid)) {
     sendText(response, 400, '缺少或非法的 bid');
     return;
@@ -130,6 +131,24 @@ async function sendResource(request, response, route, bid) {
   // 加载进度：.osz 动辄几十 MiB，前端轮询这个接口画进度条。
   if (route === '/resource/progress') {
     sendJson(response, resources.progress(bid));
+    return;
+  }
+
+  // 谱面自带打击音：清单给条目名，具体字节按名逐个取（浏览器只请求 wasm 说需要的那几个）。
+  if (route === '/resource/samples') {
+    const media = await resources.media(bid, { fresh: options.noCache });
+    sendJson(response, { samples: (media.samples ?? []).map((entry) => entry.name) });
+    return;
+  }
+
+  if (route === '/resource/sample') {
+    const name = url.searchParams.get('name') ?? '';
+    const target = await resources.sample(bid, name);
+    if (!target) {
+      sendText(response, 404, '未知的谱面音效');
+      return;
+    }
+    sendBuffer(response, target.mime, await fsp.readFile(target.path), null);
     return;
   }
 

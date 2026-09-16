@@ -153,9 +153,11 @@ test('standard 谱面按 timing point 的音效组展开样本名', async (t) =>
   // 裸名是回退查找，也应该登记。
   assert.ok(names.includes('hitnormal'), `缺少裸名回退：${names}`);
   // 关键回归：带音效组前缀的样本都必须真的内嵌在 wasm 里，否则 Web 端会整片静音。
-  // 裸名（`hitnormal` 等）与转盘音的 `normal-` 变体是次级回退查找，本套皮肤不提供。
+  // 裸名（`hitnormal` 等）与转盘音（`spinnerspin` / `spinnerbonus` 及其带组前缀的变体，例如
+  // timing point 是 soft 时的 `soft-spinnerbonus`）属于次级回退查找：本套皮肤只提供不带
+  // 前缀的那一份，带前缀的名字查不到时会自然回退到它。
   for (const name of names) {
-    if (!name.includes('-') || name.startsWith('normal-spinner')) continue;
+    if (!name.includes('-') || name.includes('spinner')) continue;
     assert.ok(
       module.hitsoundAsset(name).length > 0,
       `样本 ${name} 没有内嵌资源（Web 端会静音）`,
