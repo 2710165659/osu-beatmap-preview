@@ -2,9 +2,9 @@
 //! 流式写入 MP4 文件。流程类似 `save_animated_gif_streamed`：
 //! rayon 分块并行渲染，再顺序编码以保持帧顺序。
 //!
-//! 每帧游戏区域会放入带暗化谱面背景的 16:9 画布；背景不可用或已关闭时使用黑色，
-//! 并在右上角绘制“当前 / 总时长”标签。随后转换为后端所需格式并编码为 H.264，
-//! 再写入一个 MP4 sample。
+//! 每帧物件层已经是最终视频画布（物件只会在视频边界被裁剪），画布底部叠上
+//! 暗化谱面背景；背景不可用或已关闭时使用黑色，并在右上角绘制“当前 / 总时长”标签。
+//! 随后转换为后端所需格式并编码为 H.264，再写入一个 MP4 sample。
 //! 完整动画不会同时驻留内存，最多保留 `PAR_CHUNK_SIZE` 个原始帧。
 //!
 //! ## GPU 加速
@@ -49,7 +49,10 @@ pub(crate) struct VideoStyle {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FrameComposition {
-    Playfield,
+    /// 回调返回的帧已经是最终视频画布（物件层与画布同尺寸）：背景合成在它下面，
+    /// 物件只会在视频边界被裁剪。
+    Canvas,
+    /// 回调返回已经包含背景与 HUD 的最终帧，原样送入编码器。
     FinalRgba,
 }
 
@@ -320,13 +323,12 @@ pub(crate) fn save_mp4_streamed(
     let (first_frame, first_time) = render(0)?;
     deadline.check()?;
     let (pf_w, pf_h) = (first_frame.w, first_frame.h);
-    let (out_w, out_h) = match composition {
-        FrameComposition::Playfield => crate::export::geometry::video_canvas_16_9(pf_w, pf_h),
-        FrameComposition::FinalRgba => (pf_w, pf_h),
-    };
+    // 回调返回的帧就是最终画布：分辨率由各模式按内容框 + `video_canvas` 推导，
+    // 这里绝不能再对已合成的帧调用 `video_canvas_16_9`（它不幂等，会撑大分辨率）。
+    let (out_w, out_h) = (pf_w, pf_h);
     let style = video_style(mode);
     let background = match composition {
-        FrameComposition::Playfield => background
+        FrameComposition::Canvas => background
             .as_ref()
             .map(|image| prepare_video_background(image, out_w, out_h, style)),
         FrameComposition::FinalRgba => None,
@@ -358,7 +360,7 @@ pub(crate) fn save_mp4_streamed(
 
     // ── 编码首帧并提取 SPS/PPS，供 MP4 轨道配置使用 ──
     let first_comp = match composition {
-        FrameComposition::Playfield => compose_frame(
+        FrameComposition::Canvas => compose_frame(
             first_frame,
             time_axis.to_display(first_time),
             time_axis.to_display(last_object_ms),
@@ -469,10 +471,10 @@ pub(crate) fn save_mp4_streamed(
                             pf.w, pf.h, pf_w, pf_h
                         )));
                     }
-                    // CPU playfield 在此并行合成；WGPU 帧已经包含背景和 HUD，
+                    // CPU 物件层在此并行合成；WGPU 帧已经包含背景和 HUD，
                     // 必须原样送入编码器，避免再次经过 CPU 像素合成。
                     Ok(match composition {
-                        FrameComposition::Playfield => compose_frame(
+                        FrameComposition::Canvas => compose_frame(
                             pf,
                             time_axis.to_display(time),
                             gameplay_total,

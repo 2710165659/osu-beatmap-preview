@@ -32,6 +32,9 @@ pub struct FrameLayout {
     pub scale: f64,
     pub frame_width: i64,
     pub frame_height: i64,
+    /// 物件层缓冲内的内容框。视频物件层的帧就是最终画布，底色只填这块区域，
+    /// 物件允许溢出到画布边缘；PNG/GIF 与实时链路的内容框等于整帧。
+    pub content: crate::render::geometry::PixelRect,
 }
 
 #[derive(Clone, Copy)]
@@ -228,6 +231,32 @@ pub fn build_frame_layout(output_format: crate::render::geometry::OutputFormat) 
         scale,
         frame_width: geometry.content.width,
         frame_height: geometry.content.height,
+        content: geometry.content,
+    }
+}
+
+/// MP4 物件层布局：帧尺寸 = 视频画布，内容框按 [`video_canvas`] 居中。
+///
+/// 物件层与最终画布同尺寸后，物件只会在视频边界被裁剪，不会再被内容框
+/// 切掉一半；缩放与物件尺寸完全沿用内容框布局，因此分辨率与物件大小都不变。
+pub fn build_video_frame_layout(
+    output_format: crate::render::geometry::OutputFormat,
+) -> FrameLayout {
+    let layout = build_frame_layout(output_format);
+    let geometry = crate::render::geometry::standard_geometry(output_format);
+    let canvas = crate::render::geometry::video_canvas(geometry.content);
+    FrameLayout {
+        playfield_left: layout.playfield_left + canvas.origin_x as f64,
+        playfield_top: layout.playfield_top + canvas.origin_y as f64,
+        frame_width: canvas.width as i64,
+        frame_height: canvas.height as i64,
+        content: crate::render::geometry::PixelRect {
+            x: canvas.origin_x,
+            y: canvas.origin_y,
+            width: layout.frame_width,
+            height: layout.frame_height,
+        },
+        ..layout
     }
 }
 
@@ -351,6 +380,22 @@ pub fn build_render_context(
         time_axis,
         output_format,
     }
+}
+
+/// MP4 专用渲染上下文：物件层绘制在最终视频画布上（见 [`build_video_frame_layout`]）。
+///
+/// 除 `frame_layout` 之外的字段都由缩放倍率推导，而两套布局的 `scale` 相同，
+/// 因此物件尺寸与内容框布局完全一致。
+pub fn build_video_render_context(
+    beatmap: &Beatmap,
+    hit_objects: Vec<StandardHitObject>,
+    mods: Option<&ModSettings>,
+    time_axis: TimeAxis,
+    output_format: crate::render::geometry::OutputFormat,
+) -> RenderContext {
+    let mut context = build_render_context(beatmap, hit_objects, mods, time_axis, output_format);
+    context.frame_layout = build_video_frame_layout(output_format);
+    context
 }
 
 // ——— 行时间 ———
@@ -636,5 +681,112 @@ mod tests {
 
         // osu! 的 AR 曲线在 AR<0 时继续线性外推；AR=-10 对应 3000ms。
         assert_eq!(settings.preempt_ms, 3000);
+    }
+
+    #[test]
+    fn 视频布局把内容框居中且不改变物件尺寸() {
+        for scale in [1.0_f64, 2.0] {
+            let mut custom = crate::config::CoreConfig::default();
+            custom.render.standard.mp4.SCALE = scale;
+            crate::config::with_config(std::sync::Arc::new(custom), || {
+                let content = build_frame_layout(crate::render::geometry::OutputFormat::Mp4);
+                let video = build_video_frame_layout(crate::render::geometry::OutputFormat::Mp4);
+                let canvas = crate::render::geometry::video_canvas(
+                    crate::render::geometry::standard_geometry(
+                        crate::render::geometry::OutputFormat::Mp4,
+                    )
+                    .content,
+                );
+                assert_eq!(
+                    (video.frame_width, video.frame_height),
+                    (canvas.width as i64, canvas.height as i64)
+                );
+                assert_eq!(video.content.width, content.frame_width);
+                assert_eq!(video.content.height, content.frame_height);
+                assert_eq!(
+                    video.content.x,
+                    video.frame_width - content.frame_width - video.content.x
+                );
+                assert_eq!(
+                    video.playfield_left,
+                    content.playfield_left + video.content.x as f64
+                );
+                assert_eq!(
+                    video.playfield_top,
+                    content.playfield_top + video.content.y as f64
+                );
+                // 缩放倍率与派生尺寸都不变 => 物件大小不变。
+                assert_eq!(video.scale, content.scale);
+                let beatmap = beatmap_with_difficulty("4", "5");
+                let content_context = build_render_context(
+                    &beatmap,
+                    Vec::new(),
+                    None,
+                    TimeAxis::new(0),
+                    crate::render::geometry::OutputFormat::Mp4,
+                );
+                let video_context = build_video_render_context(
+                    &beatmap,
+                    Vec::new(),
+                    None,
+                    TimeAxis::new(0),
+                    crate::render::geometry::OutputFormat::Mp4,
+                );
+                assert_eq!(
+                    video_context.frame_circle_diameter,
+                    content_context.frame_circle_diameter
+                );
+                assert_eq!(
+                    video_context.slider_body_width,
+                    content_context.slider_body_width
+                );
+                assert_eq!(
+                    video_context.slider_follow_size,
+                    content_context.slider_follow_size
+                );
+                assert_eq!(
+                    video_context.slider_ball_size,
+                    content_context.slider_ball_size
+                );
+                assert_eq!(video_context.spinner_size, content_context.spinner_size);
+                assert_eq!(
+                    video_context.settings.circle_diameter,
+                    content_context.settings.circle_diameter
+                );
+                assert_ne!(
+                    video_context.frame_layout.frame_width,
+                    content_context.frame_layout.frame_width
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn gif_配置不影响_mp4_视频布局与物件尺寸() {
+        let beatmap = beatmap_with_difficulty("4", "5");
+        let layout_for = |gif_scale: f64| {
+            let mut custom = crate::config::CoreConfig::default();
+            custom.render.standard.gif.SCALE = gif_scale;
+            crate::config::with_config(std::sync::Arc::new(custom), || {
+                let context = build_video_render_context(
+                    &beatmap,
+                    Vec::new(),
+                    None,
+                    TimeAxis::new(0),
+                    crate::render::geometry::OutputFormat::Mp4,
+                );
+                (
+                    context.frame_layout.frame_width,
+                    context.frame_layout.frame_height,
+                    context.frame_circle_diameter,
+                    context.slider_body_width,
+                    context.slider_follow_size,
+                    context.spinner_size,
+                )
+            })
+        };
+
+        // GIF 绘制缓冲区（SCALE）与 MP4 的分辨率和物件大小无关。
+        assert_eq!(layout_for(1.0), layout_for(2.0));
     }
 }

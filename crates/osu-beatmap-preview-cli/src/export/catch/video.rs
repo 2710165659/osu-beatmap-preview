@@ -15,7 +15,7 @@ use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::path::Path;
 
-use super::animation::{build_animation_layout, render_animation_frame};
+use super::animation::{build_video_animation_layout, render_animation_frame};
 use super::objects::{build_catch_render_objects, effective_difficulty};
 use super::png::rhe;
 
@@ -50,7 +50,7 @@ pub(crate) fn render_catch_video(
     let fps = fps.unwrap_or_else(|| crate::config::current().render.catch.mp4.style.FPS as u32);
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
-    let layout = build_animation_layout(
+    let layout = build_video_animation_layout(
         difficulty.cs,
         difficulty.ar,
         crate::export::geometry::OutputFormat::Mp4,
@@ -92,6 +92,6 @@ pub(crate) fn render_catch_video(
         time_axis,
         deadline,
         crate::export::geometry::GameMode::Catch,
-        crate::media::FrameComposition::Playfield,
+        crate::media::FrameComposition::Canvas,
     )
 }

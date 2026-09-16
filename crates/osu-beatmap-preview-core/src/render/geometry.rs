@@ -129,6 +129,33 @@ pub fn taiko_geometry(format: OutputFormat) -> PlayfieldGeometry {
     }
 }
 
+/// 视频画布尺寸与内容框在画布中的居中位置。
+///
+/// `origin` 是内容框左上角在画布中的整数坐标：物件层的帧尺寸就是画布，
+/// 因此物件只会在视频边界被裁，不会再被中间缓冲切掉一半。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoCanvas {
+    pub width: u32,
+    pub height: u32,
+    pub origin_x: i64,
+    pub origin_y: i64,
+}
+
+/// 由内容框推导 16:9 视频画布。
+///
+/// 尺寸公式与 [`video_canvas_16_9`] 完全一致，因此分辨率不变；
+/// 原点使用向下取整的整除，与合成阶段原来的居中偏移保持逐像素一致。
+pub fn video_canvas(content: PixelRect) -> VideoCanvas {
+    let (width, height) =
+        video_canvas_16_9(content.width.max(1) as u32, content.height.max(1) as u32);
+    VideoCanvas {
+        width,
+        height,
+        origin_x: (width as i64 - content.width) / 2,
+        origin_y: (height as i64 - content.height) / 2,
+    }
+}
+
 /// 以内容框为下限补齐最接近的 16:9，并始终向上取为偶数，避免裁掉边缘像素。
 pub fn video_canvas_16_9(content_width: u32, content_height: u32) -> (u32, u32) {
     let width = content_width.max(1) as u64;
@@ -144,7 +171,7 @@ pub fn video_canvas_16_9(content_width: u32, content_height: u32) -> (u32, u32) 
 
 #[cfg(test)]
 mod tests {
-    use super::{scale_px, scale_stroke_px, video_canvas_16_9};
+    use super::{scale_px, scale_stroke_px, video_canvas, video_canvas_16_9, PixelRect};
 
     #[test]
     fn base_playfield_lengths_use_half_even_rounding() {
@@ -172,5 +199,63 @@ mod tests {
         assert_eq!(scale_stroke_px(1.0, 0.5), 1);
         assert_eq!(scale_stroke_px(1.0, 1.5), 2);
         assert_eq!(scale_stroke_px(2.0, 2.0), 4);
+    }
+
+    #[test]
+    fn video_canvas_keeps_the_legacy_resolution_and_centers_content() {
+        // 四模式 1x/2x 的内容框：画布尺寸必须与旧公式一致，否则等于改了视频分辨率。
+        for (width, height) in [(530, 384), (470, 384), (683, 100), (384, 384)] {
+            let content = PixelRect {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            };
+            let canvas = video_canvas(content);
+            let (legacy_width, legacy_height) = video_canvas_16_9(width as u32, height as u32);
+            assert_eq!((canvas.width, canvas.height), (legacy_width, legacy_height));
+            // 内容框必须完整落在画布内，且左右/上下留白最多相差 1 像素。
+            assert!(canvas.origin_x >= 0 && canvas.origin_y >= 0);
+            assert!(canvas.origin_x + width <= canvas.width as i64);
+            assert!(canvas.origin_y + height <= canvas.height as i64);
+            let right = canvas.width as i64 - canvas.origin_x - width;
+            let bottom = canvas.height as i64 - canvas.origin_y - height;
+            assert!((canvas.origin_x - right).abs() <= 1);
+            assert!((canvas.origin_y - bottom).abs() <= 1);
+        }
+    }
+
+    #[test]
+    fn standard_video_canvas_matches_known_resolutions() {
+        let standard = PixelRect {
+            x: 0,
+            y: 0,
+            width: 530,
+            height: 384,
+        };
+        assert_eq!(
+            video_canvas(standard),
+            super::VideoCanvas {
+                width: 684,
+                height: 384,
+                origin_x: 77,
+                origin_y: 0,
+            }
+        );
+        let taiko = PixelRect {
+            x: 0,
+            y: 0,
+            width: 683,
+            height: 100,
+        };
+        assert_eq!(
+            video_canvas(taiko),
+            super::VideoCanvas {
+                width: 684,
+                height: 386,
+                origin_x: 0,
+                origin_y: 143,
+            }
+        );
     }
 }

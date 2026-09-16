@@ -34,6 +34,9 @@ pub struct AnimationLayout {
     pub render_scale: f64,
     pub frame_width: i64,
     pub frame_height: i64,
+    /// 物件层缓冲内的内容框。视频物件层的帧就是最终画布，底色只填这块区域，
+    /// 物件允许溢出到画布边缘；GIF 与实时链路的内容框等于整帧。
+    pub content: crate::render::geometry::PixelRect,
     pub playfield_background: [u8; 4],
     pub judgement_line_color: [u8; 4],
 }
@@ -101,6 +104,12 @@ pub fn build_animation_layout(
         render_scale,
         frame_width: geometry.content.width,
         frame_height: geometry.content.height,
+        content: crate::render::geometry::PixelRect {
+            x: 0,
+            y: 0,
+            width: geometry.content.width,
+            height: geometry.content.height,
+        },
         playfield_background: match output_format {
             crate::render::geometry::OutputFormat::Mp4 => {
                 crate::config::current()
@@ -121,6 +130,35 @@ pub fn build_animation_layout(
         },
         judgement_line_color:
             crate::render::cpu::modes::catch::constants::ANIMATION_JUDGEMENT_LINE_COLOR,
+    }
+}
+
+/// MP4 物件层布局：帧尺寸 = 视频画布，playfield 与内容框按 [`video_canvas`] 居中。
+///
+/// 物件层与最终画布同尺寸后，水果只会被视频边界裁剪，不会再被内容框切掉一半；
+/// `playfield_scale` 与物件直径完全沿用内容框布局，因此分辨率与物件大小都不变。
+pub fn build_video_animation_layout(
+    circle_size: f64,
+    approach_rate: f64,
+    output_format: crate::render::geometry::OutputFormat,
+) -> AnimationLayout {
+    let layout = build_animation_layout(circle_size, approach_rate, output_format);
+    let geometry = crate::render::geometry::catch_geometry(output_format);
+    let canvas = crate::render::geometry::video_canvas(geometry.content);
+    AnimationLayout {
+        canvas_width: canvas.width as i64,
+        canvas_height: canvas.height as i64,
+        playfield_left: layout.playfield_left + canvas.origin_x as f64,
+        playfield_top: layout.playfield_top + canvas.origin_y as f64,
+        frame_width: canvas.width as i64,
+        frame_height: canvas.height as i64,
+        content: crate::render::geometry::PixelRect {
+            x: canvas.origin_x,
+            y: canvas.origin_y,
+            width: layout.frame_width,
+            height: layout.frame_height,
+        },
+        ..layout
     }
 }
 
@@ -310,13 +348,27 @@ pub fn render_animation_frame(
     layout: &AnimationLayout,
     background: Option<&Img>,
 ) -> Img {
-    let mut frame = background.cloned().unwrap_or_else(|| {
-        Img::new(
-            layout.frame_width as u32,
-            layout.frame_height as u32,
-            layout.playfield_background,
-        )
-    });
+    let mut frame = match background {
+        Some(background) => background.clone(),
+        None => {
+            // 视频物件层的帧是最终画布，底色只填内容框：内容框之外的补边仍由
+            // 合成阶段用画布底色处理，水果则可以溢出到画布边缘而不被切掉。
+            let mut frame = Img::new(
+                layout.frame_width as u32,
+                layout.frame_height as u32,
+                [0, 0, 0, 0],
+            );
+            let content = layout.content;
+            frame.fill_rect_size(
+                content.x,
+                content.y,
+                content.width,
+                content.height,
+                layout.playfield_background,
+            );
+            frame
+        }
+    };
 
     let playfield_left = layout.playfield_left;
     let playfield_right = playfield_left
@@ -325,9 +377,9 @@ pub fn render_animation_frame(
     if background.is_none() {
         frame.set_rect_size(
             rhe(playfield_left),
-            0,
+            layout.content.y,
             rhe(playfield_right) - rhe(playfield_left),
-            layout.frame_height,
+            layout.content.height,
             layout.playfield_background,
         );
     }
@@ -345,8 +397,9 @@ pub fn render_animation_frame(
         layout.judgement_line_color,
     );
 
-    // 可见时间窗：对象在 [snapshot, snapshot + 下落时间窗 + 余量] 内才可能出现在帧中
-    let fall_window_ms = (layout.frame_height as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
+    // 可见时间窗：对象在 [snapshot, snapshot + 下落时间窗 + 余量] 内才可能出现在帧中。
+    // 下落时间窗按内容框高度计算，与画布补边无关。
+    let fall_window_ms = (layout.content.height as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
     // start_times_desc 为降序；找到可见区间 [lo, hi)
     let lo = start_times_desc.partition_point(|&t| t > snapshot_time + fall_window_ms);
     let hi = start_times_desc.partition_point(|&t| t >= snapshot_time - 2000);
@@ -491,5 +544,107 @@ fn draw_gif_time_label(
                 .TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::cpu::modes::catch::drawing::object_diameter;
+    use crate::render::cpu::modes::catch::objects::{ObjType, RenderObject};
+
+    #[test]
+    fn 视频布局把内容框居中且不改变水果尺寸() {
+        for scale in [1.0_f64, 2.0] {
+            let mut custom = crate::config::CoreConfig::default();
+            custom.render.catch.mp4.SCALE = scale;
+            crate::config::with_config(std::sync::Arc::new(custom), || {
+                let content =
+                    build_animation_layout(4.0, 5.0, crate::render::geometry::OutputFormat::Mp4);
+                let video = build_video_animation_layout(
+                    4.0,
+                    5.0,
+                    crate::render::geometry::OutputFormat::Mp4,
+                );
+                let geometry = crate::render::geometry::catch_geometry(
+                    crate::render::geometry::OutputFormat::Mp4,
+                );
+                let canvas = crate::render::geometry::video_canvas(geometry.content);
+                assert_eq!(
+                    (video.frame_width, video.frame_height),
+                    (canvas.width as i64, canvas.height as i64)
+                );
+                assert_eq!(
+                    (video.content.x, video.content.y),
+                    (canvas.origin_x, canvas.origin_y)
+                );
+                assert_eq!(
+                    (video.content.width, video.content.height),
+                    (content.frame_width, content.frame_height)
+                );
+                assert_eq!(
+                    video.playfield_left,
+                    content.playfield_left + canvas.origin_x as f64
+                );
+                assert_eq!(
+                    video.playfield_top,
+                    content.playfield_top + canvas.origin_y as f64
+                );
+                // 缩放与物件尺寸都不随画布变化。
+                assert_eq!(video.playfield_scale, content.playfield_scale);
+                assert_eq!(video.object_scale, content.object_scale);
+                assert_eq!(video.pixels_per_ms, content.pixels_per_ms);
+                assert_eq!(
+                    object_diameter(video.object_scale, video.playfield_scale, 1.0),
+                    object_diameter(content.object_scale, content.playfield_scale, 1.0)
+                );
+                assert_ne!(video.frame_width, content.frame_width);
+            });
+        }
+    }
+
+    #[test]
+    fn 视频布局下水果可以越过内容框() {
+        let layout =
+            build_video_animation_layout(4.0, 5.0, crate::render::geometry::OutputFormat::Mp4);
+        let start_time = 5_000;
+        let objects = vec![RenderObject {
+            object_type: ObjType::Fruit,
+            x: 0.0,
+            start_time,
+            color: [255, 0, 128],
+            scale_factor: 1.0,
+            event_time: None,
+            hyper_dash: true,
+            edge: false,
+            banana_shower_id: None,
+            banana_route_x: None,
+        }];
+        let frame = render_animation_frame(&objects, &[start_time], start_time, &layout, None);
+
+        let centre_x = layout.playfield_left;
+        let radius = object_diameter(layout.object_scale, layout.playfield_scale, 1.0) / 2.0;
+        let hyper_dash_outer = radius * 1.6;
+        assert!(
+            centre_x - hyper_dash_outer < layout.content.x as f64,
+            "测试前提：hyperdash 外环必须越过内容框"
+        );
+        let judge_y = layout.playfield_top
+            + crate::render::cpu::modes::catch::constants::STABLE_CATCHER_Y
+                * layout.playfield_scale;
+        let mut painted_left_of_content = false;
+        for x in (layout.content.x - 30)..layout.content.x {
+            for y in (judge_y.round() as i64 - 12)..=(judge_y.round() as i64 + 12) {
+                if x >= 0 && y >= 0 && frame.get(x as u32, y as u32)[3] > 0 {
+                    painted_left_of_content = true;
+                }
+            }
+        }
+        assert!(
+            painted_left_of_content,
+            "内容框左侧仍应画出水果外环（此前会被内容框裁掉一半）"
+        );
+        // 补边本身保持透明，让合成阶段的画布底色透出来。
+        assert_eq!(frame.get(0, 0)[3], 0);
     }
 }

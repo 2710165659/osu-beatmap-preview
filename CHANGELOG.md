@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- MP4 导出的物件层改为与视频画布同尺寸（playfield 按画布居中偏移，底色仍只填内容框）：此前物件先画进内容框大小的缓冲再居中贴上画布，越界物件会在内容框边界被竖切/横切一半（std 的接近圈与滑条本体、catch 的水果等都出现过），现在只会在视频边界被裁剪；输出分辨率与物件尺寸均不变，PNG/GIF 的网格裁剪与实时预览不受影响。
 - 打击音的取样时刻与 osu! 的 `applySamples` 对齐：滑条重复箭头与滑条尾按**各自节点时刻 + 5ms**的 timing point 解析音效组 / 音量 / 自定义索引，位掩码取自该节点的 `edgeSounds`（此前一律沿用滑条头，导致尾部音效不受尾部绿线影响、该响 whistle 的节点缺一声）；滑条头部的加成音同样改取 `edgeSounds[0]`。
 - 转盘的旋转音、奖励音与判定音改用转盘**结束处**的 timing point 参数（osu! 对非 `IHasRepeats` 物件用 `GetEndTime()`）。
 - 修正 `.osu` 的 `hitSample` 列号：转盘是第 7 列（`endTime` 之后），此前按圆圈的列号读取，把结束时间当成了音效组 id，使转盘音效组恒为 normal。

@@ -17,9 +17,9 @@ use std::cell::RefCell;
 use std::path::Path;
 
 use super::animation_render::{
-    build_animation_layout_with_segments_and_format, build_multiplier_points, compute_time_range,
-    draw_hit_objects, draw_row_background, prepare_hit_objects, prepare_measure_lines, pyround,
-    AnimationLayout, MultiplierLookup,
+    build_multiplier_points, build_video_animation_layout, compute_time_range, draw_hit_objects,
+    draw_row_background, prepare_hit_objects, prepare_measure_lines, pyround, AnimationLayout,
+    MultiplierLookup,
 };
 use super::notes::RenderCache;
 use super::timing::*;
@@ -80,20 +80,27 @@ pub(crate) fn render_taiko_video(
 
     let static_bg = {
         // 背景图在最终视频画布上统一处理；这里仅绘制 Taiko 自身的轨道面板。
+        // 物件层与视频画布同尺寸，底色只填内容带，补边仍由画布底色决定。
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
-            if background.is_some() {
-                [0, 0, 0, 0]
-            } else {
+            [0, 0, 0, 0],
+        );
+        if background.is_none() {
+            let content = layout.content;
+            bg.fill_rect_size(
+                content.x,
+                content.y,
+                content.width,
+                content.height,
                 crate::config::current()
                     .render
                     .taiko
                     .mp4
                     .style
-                    .IMAGE_BACKGROUND
-            },
-        );
+                    .IMAGE_BACKGROUND,
+            );
+        }
         draw_row_background(&mut bg, &layout, 0);
         bg
     };
@@ -135,16 +142,12 @@ pub(crate) fn render_taiko_video(
         time_axis,
         deadline,
         crate::export::geometry::GameMode::Taiko,
-        crate::media::FrameComposition::Playfield,
+        crate::media::FrameComposition::Canvas,
     )
 }
 
-/// MP4 的单行布局：宽度与 GIF 相同，高度裁剪为一行
+/// MP4 的单行布局：帧尺寸为视频画布（物件只在视频边界被裁），单行内容带居中
 ///（无四行堆叠、无行间距、无底部标签条）。
 fn build_video_layout(time_range: f64) -> AnimationLayout {
-    build_animation_layout_with_segments_and_format(
-        time_range,
-        1,
-        crate::export::geometry::OutputFormat::Mp4,
-    )
+    build_video_animation_layout(time_range, crate::export::geometry::OutputFormat::Mp4)
 }

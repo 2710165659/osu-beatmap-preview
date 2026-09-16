@@ -249,3 +249,25 @@ fn dropping_audio_task_cancels_and_joins_worker() {
     drop(task);
     assert!(finished.load(Ordering::Relaxed));
 }
+
+#[test]
+fn 画布尺寸的物件层按原点合成且标签留在右上角() {
+    let style = video_style(crate::export::geometry::GameMode::Standard);
+    let (width, height) = (684u32, 384u32);
+    let mut layer = Img::new(width, height, [0, 0, 0, 0]);
+    // 物件层左上角画一像素：如果合成时又居中一次，它会跑到 (77, 0)。
+    layer.put(0, 0, [10, 20, 30, 255]);
+
+    let composed = compose_frame(layer, 0, 60_000, width, height, None, style);
+
+    assert_eq!(composed.get(0, 0), [10, 20, 30, 255]);
+    let label = format_progress_label(0, 60_000);
+    let (label_w, _) = text_size(&label, style.label_font_size);
+    let label_left = width as i64 - label_w as i64 - style.label_pad;
+    let label_painted = (label_left..width as i64).any(|x| {
+        (style.label_pad..style.label_pad + style.label_font_size as i64).any(|y| {
+            composed.get(x as u32, y as u32)[3] > 0 && composed.get(x as u32, y as u32)[0] > 100
+        })
+    });
+    assert!(label_painted, "时间标签仍应绘制在画布右上角");
+}

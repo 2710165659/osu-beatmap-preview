@@ -40,39 +40,47 @@ pub fn render_frame(
     visible_indexes: &[usize],
     background: Option<&Img>,
 ) -> Img {
-    let mut frame = background.cloned().unwrap_or_else(|| {
-        let color = match context.output_format {
-            crate::render::geometry::OutputFormat::Png => {
-                crate::config::current()
-                    .render
-                    .standard
-                    .png
-                    .style
-                    .IMAGE_BACKGROUND_COLOR
-            }
-            crate::render::geometry::OutputFormat::Gif => {
-                crate::config::current()
-                    .render
-                    .standard
-                    .gif
-                    .style
-                    .IMAGE_BACKGROUND_COLOR
-            }
-            crate::render::geometry::OutputFormat::Mp4 => {
-                crate::config::current()
-                    .render
-                    .standard
-                    .mp4
-                    .style
-                    .IMAGE_BACKGROUND_COLOR
-            }
-        };
-        Img::new(
-            context.frame_layout.frame_width as u32,
-            context.frame_layout.frame_height as u32,
-            color,
-        )
-    });
+    let mut frame = match background {
+        Some(background) => background.clone(),
+        None => {
+            let color = match context.output_format {
+                crate::render::geometry::OutputFormat::Png => {
+                    crate::config::current()
+                        .render
+                        .standard
+                        .png
+                        .style
+                        .IMAGE_BACKGROUND_COLOR
+                }
+                crate::render::geometry::OutputFormat::Gif => {
+                    crate::config::current()
+                        .render
+                        .standard
+                        .gif
+                        .style
+                        .IMAGE_BACKGROUND_COLOR
+                }
+                crate::render::geometry::OutputFormat::Mp4 => {
+                    crate::config::current()
+                        .render
+                        .standard
+                        .mp4
+                        .style
+                        .IMAGE_BACKGROUND_COLOR
+                }
+            };
+            // 视频物件层的帧是最终画布，底色只填内容框：内容框之外的补边仍由
+            // 合成阶段用画布底色处理，物件则可以溢出到画布边缘而不被切掉。
+            let content = context.frame_layout.content;
+            let mut frame = Img::new(
+                context.frame_layout.frame_width as u32,
+                context.frame_layout.frame_height as u32,
+                [0, 0, 0, 0],
+            );
+            frame.fill_rect_size(content.x, content.y, content.width, content.height, color);
+            frame
+        }
+    };
 
     for &index in visible_indexes {
         let hit_object = &context.hit_objects[index];
@@ -656,4 +664,147 @@ fn break_remaining_bar_ratio(break_period: &BreakPeriod, snapshot_time: i64) -> 
     let remaining =
         break_period.end_time - super::constants::BREAK_FADE_DURATION_MS - snapshot_time;
     (remaining as f64 / effective_duration as f64).clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::models::{HitObjects, KvSection};
+    use crate::domain::shared::time_selection::TimeAxis;
+    use crate::render::cpu::modes::standard::context::{
+        build_render_context, build_video_render_context, RenderContext,
+    };
+    use crate::render::geometry::OutputFormat;
+
+    /// 单个位于游戏坐标左边缘的圆圈；AR5 的 preempt 为 1200ms。
+    fn edge_circle_beatmap() -> crate::domain::models::Beatmap {
+        let mut general = KvSection::default();
+        general.insert("Mode", "0".to_string());
+        let mut difficulty = KvSection::default();
+        difficulty.insert("CircleSize", "4".to_string());
+        difficulty.insert("ApproachRate", "5".to_string());
+        crate::domain::models::Beatmap {
+            metadata: KvSection::default(),
+            difficulty,
+            general,
+            timing_points: Vec::new(),
+            hit_objects: HitObjects::Standard(vec![crate::domain::models::StandardHitObject {
+                x: 0,
+                y: 192,
+                start_time: 5_000,
+                end_time: 5_000,
+                hit_type: 1,
+                ..Default::default()
+            }]),
+            break_periods: Vec::new(),
+            background_filename: None,
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
+
+    fn render_single(context: &RenderContext, snapshot_time: i64) -> Img {
+        let mut cache = RenderCache::default();
+        let indexes = vec![0usize];
+        render_frame(context, &mut cache, snapshot_time, &[], &indexes, None)
+    }
+
+    /// 判定点附近是否存在不透明像素（接近圈描边）。
+    fn has_stroke_pixel(frame: &Img, center: (f64, f64), radius: f64) -> bool {
+        for dx in -3..=3i64 {
+            for dy in -3..=3i64 {
+                let x = (center.0 - radius).round() as i64 + dx;
+                let y = center.1.round() as i64 + dy;
+                if x < 0 || y < 0 || x >= frame.w as i64 || y >= frame.h as i64 {
+                    continue;
+                }
+                if frame.get(x as u32, y as u32)[3] > 0 {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn 视频物件层允许接近圈越过内容框() {
+        let beatmap = edge_circle_beatmap();
+        let video = build_video_render_context(
+            &beatmap,
+            beatmap.hit_objects.as_standard().unwrap().to_vec(),
+            None,
+            TimeAxis::new(0),
+            OutputFormat::Mp4,
+        );
+        // progress = 0.5：接近圈直径缩到 2.5 倍物件直径，左边缘会越过内容框。
+        let snapshot_time = 5_000 - video.settings.preempt_ms / 2;
+        let frame = render_single(&video, snapshot_time);
+
+        let radius = video.frame_circle_diameter as f64 * 2.5 / 2.0;
+        let center = (
+            video.frame_layout.playfield_left,
+            video.frame_layout.playfield_top + 192.0 * video.frame_layout.scale,
+        );
+        assert!(
+            center.0 - radius < video.frame_layout.content.x as f64,
+            "测试前提：接近圈左边缘必须落在内容框之外"
+        );
+        assert!(
+            has_stroke_pixel(&frame, center, radius),
+            "视频物件层里内容框左侧仍应画出接近圈（此前会被内容框裁掉一半）"
+        );
+        assert_eq!(
+            (frame.w as i64, frame.h as i64),
+            (
+                video.frame_layout.frame_width,
+                video.frame_layout.frame_height
+            )
+        );
+    }
+
+    #[test]
+    fn 视频物件层底色只填内容框且补边透明() {
+        let beatmap = edge_circle_beatmap();
+        let video = build_video_render_context(
+            &beatmap,
+            beatmap.hit_objects.as_standard().unwrap().to_vec(),
+            None,
+            TimeAxis::new(0),
+            OutputFormat::Mp4,
+        );
+        // 该时刻没有任何可见物件，因此整帧只有底色。
+        let frame = render_single(&video, 0);
+        let content = video.frame_layout.content;
+        let inside_x = content.x as u32;
+        let inside_y = content.y as u32;
+        assert_eq!(frame.get(inside_x, inside_y)[3], 255);
+        // 左侧补边必须保持透明，让合成阶段的画布底色透出来（外观与修改前一致）。
+        assert_eq!(frame.get(inside_x - 1, inside_y)[3], 0);
+        assert_eq!(frame.get(frame.w - 1, frame.h - 1)[3], 0);
+    }
+
+    #[test]
+    fn gif_布局仍在内容框内绘制() {
+        let beatmap = edge_circle_beatmap();
+        let gif = build_render_context(
+            &beatmap,
+            beatmap.hit_objects.as_standard().unwrap().to_vec(),
+            None,
+            TimeAxis::new(0),
+            OutputFormat::Gif,
+        );
+        // PNG/GIF 的物件层就是内容框本身：底色覆盖整帧，行为不变。
+        assert_eq!(
+            gif.frame_layout.content,
+            crate::render::geometry::PixelRect {
+                x: 0,
+                y: 0,
+                width: gif.frame_layout.frame_width,
+                height: gif.frame_layout.frame_height,
+            }
+        );
+        let frame = render_single(&gif, 0);
+        assert_eq!(frame.get(0, 0)[3], 255);
+        assert_eq!((frame.w as i64, frame.h as i64), (530, 384));
+    }
 }

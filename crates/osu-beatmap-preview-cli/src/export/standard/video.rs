@@ -18,7 +18,7 @@ use std::cell::RefCell;
 use std::path::Path;
 
 use super::context::{
-    apply_standard_object_mods, build_render_context, build_visible_indexes_by_snapshot,
+    apply_standard_object_mods, build_video_render_context, build_visible_indexes_by_snapshot,
     standard_objects, RenderCache,
 };
 use super::render_frame;
@@ -44,7 +44,7 @@ pub(crate) fn render_standard_video(
     let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
     let (start, end) = (range.start, range.end);
     let hit_objects = apply_standard_object_mods(hit_objects, mods);
-    let context = build_render_context(
+    let context = build_video_render_context(
         beatmap,
         hit_objects,
         mods,
@@ -115,6 +115,6 @@ pub(crate) fn render_standard_video(
         time_axis,
         deadline,
         crate::export::geometry::GameMode::Standard,
-        crate::media::FrameComposition::Playfield,
+        crate::media::FrameComposition::Canvas,
     )
 }

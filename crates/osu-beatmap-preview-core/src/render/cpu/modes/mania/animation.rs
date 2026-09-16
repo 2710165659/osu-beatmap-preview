@@ -40,6 +40,9 @@ pub struct AnimationLayout {
     pub sv_font_size: u32,
     pub sv_text_color: Rgba,
     pub render_scale: f64,
+    /// 第 0 段的内容框（多段 GIF 布局只用于文档与断言；MP4 只有一段）。
+    /// 视频物件层的帧就是最终画布，底色只填这块区域，物件允许溢出到画布边缘。
+    pub content: crate::render::geometry::PixelRect,
     pub lane_background: Rgba,
     pub column_background: Rgba,
     pub left_panel_background: Rgba,
@@ -400,6 +403,7 @@ pub fn build_layout(
         sv_info_margin_left,
         sv_font_size,
         sv_text_color,
+        unit_width,
     ) = if output_format == crate::render::geometry::OutputFormat::Gif {
         let config = &crate::config::current().render.mania.gif;
         let unit_width =
@@ -431,6 +435,7 @@ pub fn build_layout(
             config.sizing.INFO_MARGIN_LEFT,
             config.sizing.SV_TEXT_FONT_SIZE,
             config.style.SV_TEXT_COLOR,
+            unit_width,
         )
     } else {
         // MP4 也保留与 GIF 相同的左右信息区，SV 标签才能位于轨道左侧，
@@ -447,6 +452,7 @@ pub fn build_layout(
             config.sizing.INFO_MARGIN_LEFT,
             config.sizing.SV_TEXT_FONT_SIZE,
             config.style.SV_TEXT_COLOR,
+            unit_width,
         )
     };
     let (lane_background, column_background, left_panel_background, judgement_line_color) =
@@ -497,10 +503,48 @@ pub fn build_layout(
         sv_font_size,
         sv_text_color,
         render_scale,
+        content: crate::render::geometry::PixelRect {
+            x: playfield_left - sv_info_margin_left,
+            y: playfield_top,
+            width: unit_width,
+            height: playfield_height,
+        },
         lane_background,
         column_background,
         left_panel_background,
         judgement_line_color,
+    }
+}
+
+/// MP4 物件层布局：帧尺寸 = 视频画布，单段舞台按 [`video_canvas`] 居中。
+///
+/// 物件层与最终画布同尺寸后，音符只会在视频边界被裁剪，不会再被内容框切掉一半；
+/// 键道宽度、滚动长度与音符尺寸完全沿用内容框布局，因此分辨率与物件大小都不变。
+pub fn build_video_layout(
+    skin_config: &super::skin::ManiaSkinConfig,
+    output_format: crate::render::geometry::OutputFormat,
+) -> AnimationLayout {
+    let layout = build_layout(skin_config, 1, false, output_format);
+    let content_width = layout.content.width;
+    let content_height = layout.playfield_height;
+    let canvas = crate::render::geometry::video_canvas(crate::render::geometry::PixelRect {
+        x: 0,
+        y: 0,
+        width: content_width,
+        height: content_height,
+    });
+    AnimationLayout {
+        image_width: canvas.width as i64,
+        image_height: canvas.height as i64,
+        playfield_left: layout.playfield_left + canvas.origin_x,
+        playfield_top: layout.playfield_top + canvas.origin_y,
+        content: crate::render::geometry::PixelRect {
+            x: canvas.origin_x,
+            y: canvas.origin_y,
+            width: content_width,
+            height: content_height,
+        },
+        ..layout
     }
 }
 
@@ -1078,6 +1122,12 @@ mod tests {
             sv_font_size: 8,
             sv_text_color: [95, 221, 108, 255],
             render_scale: 1.0,
+            content: crate::render::geometry::PixelRect {
+                x: 0,
+                y: 20,
+                width: 140,
+                height: 768,
+            },
             lane_background: [0, 0, 0, 255],
             column_background: [0, 0, 0, 255],
             left_panel_background: [112, 112, 112, 255],
@@ -1210,5 +1260,48 @@ mod tests {
         assert_eq!(with_alpha([0, 0, 0, 255], 1.0), [0, 0, 0, 255]);
         assert_eq!(with_alpha([0, 0, 0, 255], -1.0), [0, 0, 0, 0]);
         assert_eq!(with_alpha([0, 0, 0, 255], 2.0), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn 视频布局把舞台居中且不改变音符尺寸() {
+        for scale in [1.0_f64, 2.0] {
+            let mut custom = crate::config::CoreConfig::default();
+            custom.render.mania.mp4.SCALE = scale;
+            crate::config::with_config(std::sync::Arc::new(custom), || {
+                for keys in [4, 7] {
+                    let skin = crate::render::cpu::modes::mania::skin::load_mania_skin_config(
+                        keys,
+                        crate::render::geometry::OutputFormat::Mp4,
+                    );
+                    let content =
+                        build_layout(&skin, 1, false, crate::render::geometry::OutputFormat::Mp4);
+                    let video =
+                        build_video_layout(&skin, crate::render::geometry::OutputFormat::Mp4);
+                    let canvas = crate::render::geometry::video_canvas(content.content);
+                    assert_eq!(
+                        (video.image_width, video.image_height),
+                        (canvas.width as i64, canvas.height as i64)
+                    );
+                    assert_eq!(
+                        (video.content.x, video.content.y),
+                        (canvas.origin_x, canvas.origin_y)
+                    );
+                    assert_eq!(
+                        (video.content.width, video.content.height),
+                        (content.content.width, content.content.height)
+                    );
+                    assert_eq!(
+                        video.playfield_left,
+                        content.playfield_left + canvas.origin_x
+                    );
+                    assert_eq!(video.playfield_top, content.playfield_top + canvas.origin_y);
+                    // 键道宽度、滚动长度与音符头高度都不随画布变化。
+                    assert_eq!(video.column_widths, content.column_widths);
+                    assert_eq!(video.scroll_length, content.scroll_length);
+                    assert_eq!(video.note_head_height, content.note_head_height);
+                    assert_eq!(video.segment_stride, content.segment_stride);
+                }
+            });
+        }
     }
 }

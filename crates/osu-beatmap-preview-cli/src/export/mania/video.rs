@@ -17,16 +17,14 @@ use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::path::Path;
 
 use super::animation::{
-    build_layout, build_scroll_map, compute_time_range, draw_gif_hit_object,
+    build_scroll_map, build_video_layout, compute_time_range, draw_gif_hit_object,
     draw_gif_sv_indicators, draw_segment_background, segment_left, visible_pos_window,
-    AnimationLayout,
 };
 use super::skin::load_mania_skin_config;
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
     mania_objects, resolve_key_count,
 };
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_mania_video(
     beatmap: &Beatmap,
@@ -74,7 +72,7 @@ pub(crate) fn render_mania_video(
     let frame_count = ((total_ms as f64 * fps as f64 / (1000.0 * speed)).round() as usize).max(1);
 
     let skin_config = load_mania_skin_config(key_count, crate::export::geometry::OutputFormat::Mp4);
-    let layout = build_video_layout(&skin_config);
+    let layout = build_video_layout(&skin_config, crate::export::geometry::OutputFormat::Mp4);
     let native_mania = is_native_mania(beatmap);
     let scroll_map = build_scroll_map(beatmap, &original_objects, cs_mode, native_mania);
     let time_range = compute_time_range(
@@ -122,20 +120,27 @@ pub(crate) fn render_mania_video(
     // 单段静态背景：一列背景和判定线，不绘制段间分隔线。
     let static_bg = {
         // 背景图在最终视频画布上统一处理；这里仅绘制 Mania 轨道和侧板。
+        // 物件层与视频画布同尺寸，底色只填内容框，补边仍由画布底色决定。
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
-            if background.is_some() {
-                [0, 0, 0, 0]
-            } else {
+            [0, 0, 0, 0],
+        );
+        if background.is_none() {
+            let content = layout.content;
+            bg.fill_rect_size(
+                content.x,
+                content.y,
+                content.width,
+                content.height,
                 crate::config::current()
                     .render
                     .mania
                     .mp4
                     .style
-                    .IMAGE_BACKGROUND
-            },
-        );
+                    .IMAGE_BACKGROUND,
+            );
+        }
         draw_segment_background(&mut bg, segment_left(0, &layout), &layout);
         bg
     };
@@ -198,16 +203,6 @@ pub(crate) fn render_mania_video(
         time_axis,
         deadline,
         crate::export::geometry::GameMode::Mania,
-        crate::media::FrameComposition::Playfield,
-    )
-}
-
-/// MP4 的单段布局：单列宽度、无段间间隔、无底部标签区域（全局右上角标签由编码器绘制）。
-fn build_video_layout(skin_config: &super::skin::ManiaSkinConfig) -> AnimationLayout {
-    build_layout(
-        skin_config,
-        1,
-        false,
-        crate::export::geometry::OutputFormat::Mp4,
+        crate::media::FrameComposition::Canvas,
     )
 }

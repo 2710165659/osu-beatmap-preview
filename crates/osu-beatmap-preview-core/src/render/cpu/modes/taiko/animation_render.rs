@@ -87,6 +87,9 @@ pub struct AnimationLayout {
     pub first_row_top: i64,
     pub row_stride: i64,
     pub render_scale: f64,
+    /// 第 0 行的内容框（多行 GIF 布局只用于文档与断言；MP4 只有一行）。
+    /// 视频物件层的帧就是最终画布，底色只填这块区域，物件允许溢出到画布边缘。
+    pub content: crate::render::geometry::PixelRect,
     pub track_background_color: [u8; 4],
     pub track_edge_color: [u8; 4],
     pub track_accent_color: [u8; 4],
@@ -502,10 +505,42 @@ pub fn build_animation_layout_with_segments_and_format(
         first_row_top,
         row_stride,
         render_scale,
+        content: crate::render::geometry::PixelRect {
+            x: playfield_left,
+            y: first_row_top,
+            width: geometry.content.width,
+            height: row_height,
+        },
         track_background_color,
         track_edge_color,
         track_accent_color,
         judgement_line_color,
+    }
+}
+
+/// MP4 物件层布局：帧尺寸 = 视频画布，单行内容带按 [`video_canvas`] 居中。
+///
+/// 物件层与最终画布同尺寸后，音符只会在视频边界被裁剪，不会再被内容框切掉一半；
+/// 行高、鼓面板与音符尺寸完全沿用内容框布局，因此分辨率与物件大小都不变。
+pub fn build_video_animation_layout(
+    time_range: f64,
+    output_format: crate::render::geometry::OutputFormat,
+) -> AnimationLayout {
+    let layout = build_animation_layout_with_segments_and_format(time_range, 1, output_format);
+    let geometry = crate::render::geometry::taiko_geometry(output_format);
+    let canvas = crate::render::geometry::video_canvas(geometry.content);
+    AnimationLayout {
+        image_width: canvas.width as i64,
+        image_height: canvas.height as i64,
+        playfield_left: layout.playfield_left + canvas.origin_x,
+        first_row_top: layout.first_row_top + canvas.origin_y,
+        content: crate::render::geometry::PixelRect {
+            x: canvas.origin_x,
+            y: canvas.origin_y,
+            width: geometry.content.width,
+            height: layout.row_height,
+        },
+        ..layout
     }
 }
 
@@ -1083,6 +1118,12 @@ mod tests {
             first_row_top: 0,
             row_stride: 80,
             render_scale: 1.0,
+            content: crate::render::geometry::PixelRect {
+                x: 0,
+                y: 0,
+                width: 216,
+                height: 80,
+            },
             track_background_color: [0, 0, 0, 255],
             track_edge_color: [255, 255, 255, 255],
             track_accent_color: [255, 0, 0, 255],
@@ -1147,6 +1188,12 @@ mod tests {
             first_row_top: 0,
             row_stride: 80,
             render_scale: 1.0,
+            content: crate::render::geometry::PixelRect {
+                x: 0,
+                y: 0,
+                width: 216,
+                height: 80,
+            },
             track_background_color: [0, 0, 0, 255],
             track_edge_color: [255, 255, 255, 255],
             track_accent_color: [255, 0, 0, 255],
@@ -1180,5 +1227,43 @@ mod tests {
             image.get(tick_x as u32, tick_y as u32),
             [255, 255, 255, 255]
         );
+    }
+
+    #[test]
+    fn 视频布局把单行内容带居中且不改变音符尺寸() {
+        for scale in [1.0_f64, 2.0] {
+            let mut custom = crate::config::CoreConfig::default();
+            custom.render.taiko.mp4.SCALE = scale;
+            crate::config::with_config(std::sync::Arc::new(custom), || {
+                let time_range = compute_time_range();
+                let content = build_animation_layout_with_segments_and_format(
+                    time_range,
+                    1,
+                    crate::render::geometry::OutputFormat::Mp4,
+                );
+                let video = build_video_animation_layout(
+                    time_range,
+                    crate::render::geometry::OutputFormat::Mp4,
+                );
+                let geometry = crate::render::geometry::taiko_geometry(
+                    crate::render::geometry::OutputFormat::Mp4,
+                );
+                let canvas = crate::render::geometry::video_canvas(geometry.content);
+                assert_eq!(
+                    (video.image_width, video.image_height),
+                    (canvas.width as i64, canvas.height as i64)
+                );
+                assert_eq!(video.content.x, canvas.origin_x);
+                assert_eq!(video.content.y, canvas.origin_y);
+                assert_eq!(video.content.width, geometry.content.width);
+                assert_eq!(video.content.height, content.row_height);
+                assert_eq!(video.playfield_left, canvas.origin_x);
+                assert_eq!(video.first_row_top, canvas.origin_y);
+                // 行高与音符直径都不随画布变化。
+                assert_eq!(video.row_height, content.row_height);
+                assert_eq!(video.normal_note_diameter, content.normal_note_diameter);
+                assert_eq!(video.big_note_diameter, content.big_note_diameter);
+            });
+        }
     }
 }

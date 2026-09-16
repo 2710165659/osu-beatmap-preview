@@ -130,6 +130,8 @@ CPU CLI 使用进程级只读配置。实时会话通过 `RealtimeOptions` 接�
 
 WGPU 后端在场景合成阶段按模式把场景坐标映射到固定 RGBA8 画布并居中缩放，不在最终 RGBA 上做整体缩放。Standard/Catch 的背景图使用等比铺满并居中裁剪，避免固定画布出现黑色留边；Taiko/Mania 的补边保留对应模式背景色。场景仍会在无法满足模式布局时返回所需尺寸。渲染使用 premultiplied 中间目标完成 straight-alpha src-over 混合，最终 pass 恢复 straight RGBA；MSAA 不可用时只向下选择。纹理按稳定资源编号和资源实例缓存，相邻同类命令合并批次，裁剪映射为 scissor。
 
+CLI 的 MP4 导出与这条链路语义一致：物件层（CPU `Img`）本身就是最终视频画布，playfield 由 `geometry::video_canvas` 按内容框居中偏移，因此物件只会在视频边界被裁剪，不会被中间缓冲切掉一半；画布尺寸仍由内容框经 `video_canvas_16_9` 推导（分辨率不变），内容框内的底色单独填充（补边仍取画布底色）。PNG/GIF 的网格单元与实时预览继续使用内容框大小的布局。
+
 readback buffer 按 `MAX_IN_FLIGHT` 预分配。`render_stream` 在提交任何 GPU 工作前拒绝重复 frame index，按 index 排序，最多保留配置数量的在途映射，并严格按顺序回调。取消、场景错误、设备错误或回调错误都会停止新提交并取消其余映射。
 
 ## API 边界
