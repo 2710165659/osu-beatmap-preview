@@ -60,8 +60,9 @@ pub fn with_config<T>(config: Arc<CoreConfig>, run: impl FnOnce() -> T) -> T {
 mod tests {
     use super::*;
 
+    /// 配置作用域内使用宿主配置，退出后恢复默认值。
     #[test]
-    fn 配置作用域使用宿主配置并在退出后恢复默认值() {
+    fn config_scope_uses_host_config_and_restores_default() {
         let default_scale = current().render.standard.png.SCALE;
         let mut custom = CoreConfig::default();
         custom.render.standard.png.SCALE = default_scale + 0.25;

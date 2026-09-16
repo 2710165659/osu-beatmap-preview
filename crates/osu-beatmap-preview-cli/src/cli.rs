@@ -138,8 +138,9 @@ fn argument_error(error: impl std::fmt::Display) -> CliError {
 mod tests {
     use super::*;
 
+    /// CLI 不再接受 WGPU 相关参数。
     #[test]
-    fn wgpu参数不再属于cli() {
+    fn wgpu_options_are_not_part_of_cli() {
         let error = parse_args(["--bid=123", "--wgpu"]).expect_err("WGPU 参数必须被拒绝");
         assert_eq!(error.to_string(), "unknown argument: --wgpu");
     }

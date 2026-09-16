@@ -1320,8 +1320,9 @@ mod tests {
         }
     }
 
+    /// 相邻同类命令会合并，且场景在目标中居中。
     #[test]
-    fn 相邻同类命令会合并且场景在目标中居中() {
+    fn adjacent_batches_merge_and_scene_is_centered() {
         let scene = scene(vec![
             DrawCommand::Rectangle {
                 rect: SceneRect {
@@ -1349,8 +1350,9 @@ mod tests {
         assert_eq!(batches[0].vertices[0].position, [-0.5, 0.5]);
     }
 
+    /// 裁剪栈错误会在提交 GPU 前被拒绝。
     #[test]
-    fn 裁剪栈错误会在提交gpu前被拒绝() {
+    fn clip_stack_errors_are_rejected_before_submit() {
         let underflow = scene(vec![DrawCommand::PopClip]);
         assert!(build_batches(&underflow, 100, 50).is_err());
         let unbalanced = scene(vec![DrawCommand::PushClip(SceneRect {
@@ -1362,8 +1364,9 @@ mod tests {
         assert!(build_batches(&unbalanced, 100, 50).is_err());
     }
 
+    /// 滑条网格生成两层圆角覆盖的并集。
     #[test]
-    fn 滑条网格生成两层圆角覆盖并集() {
+    fn slider_mesh_generates_two_rounded_coverage_layers() {
         let points: Arc<[[f32; 2]]> = Arc::from([[10.0, 10.0], [40.0, 10.0], [40.0, 30.0]]);
         let scene = scene(vec![DrawCommand::SliderMesh {
             vertices: points,
@@ -1383,8 +1386,9 @@ mod tests {
         assert_eq!(stencil_reference(batches[2].kind), 3);
     }
 
+    /// 资源键同时包含稳定编号和资源实例。
     #[test]
-    fn 资源键同时包含稳定编号和资源实例() {
+    fn resource_key_includes_stable_id_and_instance() {
         let first = Arc::new(Img::new(1, 1, [0, 0, 0, 0]));
         let second = Arc::new(Img::new(1, 1, [0, 0, 0, 0]));
         assert_ne!(
@@ -1397,8 +1401,9 @@ mod tests {
         );
     }
 
+    /// 缓存命中要求同一个图像实例。
     #[test]
-    fn 缓存命中要求同一个图像实例() {
+    fn cache_hit_requires_same_image_instance() {
         let cached = Arc::new(Img::new(1, 1, [0, 0, 0, 0]));
         let same = Arc::clone(&cached);
         let other = Arc::new(Img::new(1, 1, [0, 0, 0, 0]));
@@ -1407,8 +1412,9 @@ mod tests {
         assert!(!is_cache_hit(None, &same));
     }
 
+    /// 缓存持有图像后，同号新图不会复用旧地址。
     #[test]
-    fn 缓存持有图像后同号新图不会复用旧地址() {
+    fn cached_image_is_not_reused_for_same_id_new_image() {
         // 模拟早期帧的 0 号资源（时间标签）被缓存，缓存条目连同纹理持有它。
         let label = Arc::new(Img::new(4, 2, [0, 0, 0, 0]));
         let label_key = ResourceKey::new(ResourceId(0), &label);

@@ -359,8 +359,9 @@ fn transform_command(
 mod tests {
     use super::*;
 
+    /// 图像场景使用稳定资源编号和有序命令。
     #[test]
-    fn 图像场景使用稳定资源编号和有序命令() {
+    fn image_scene_uses_stable_ids_and_ordered_commands() {
         let scene = FrameScene::from_image(Img::new(2, 3, [1, 2, 3, 4]), -50);
         assert_eq!((scene.width(), scene.height()), (2, 3));
         assert_eq!(scene.absolute_time_ms(), -50);
@@ -368,8 +369,9 @@ mod tests {
         assert_eq!(scene.commands.len(), 1);
     }
 
+    /// 场景合并会平移命令并重新编号资源。
     #[test]
-    fn 场景合并会平移命令并重新编号资源() {
+    fn scene_merge_translates_commands_and_renumbers_resources() {
         let source = FrameScene::from_image(Img::new(2, 3, [1, 2, 3, 4]), 10);
         let mut builder = FrameSceneBuilder::new(10, 10, 10);
         builder.rectangle(

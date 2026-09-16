@@ -554,7 +554,7 @@ mod tests {
     use crate::render::cpu::modes::catch::objects::{ObjType, RenderObject};
 
     #[test]
-    fn 视频布局把内容框居中且不改变水果尺寸() {
+    fn video_layout_centers_content_box_without_resizing_fruit() {
         for scale in [1.0_f64, 2.0] {
             let mut custom = crate::config::CoreConfig::default();
             custom.render.catch.mp4.SCALE = scale;
@@ -604,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn 视频布局下水果可以越过内容框() {
+    fn video_layout_allows_fruit_beyond_content_box() {
         let layout =
             build_video_animation_layout(4.0, 5.0, crate::render::geometry::OutputFormat::Mp4);
         let start_time = 5_000;

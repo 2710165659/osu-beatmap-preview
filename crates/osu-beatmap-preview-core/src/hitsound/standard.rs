@@ -323,8 +323,9 @@ mod tests {
         }
     }
 
+    /// 滑条节点参数取自节点时刻的 timing point。
     #[test]
-    fn 滑条节点参数取自节点时刻的timing_point() {
+    fn slider_node_params_come_from_node_time_timing_point() {
         // 谱面常用「在滑条尾插入低音量绿线」压掉尾部音效：节点必须按自己的时刻解析音量，
         // 而不是沿用头部（此前尾部会跟着头部一起用 95% 音量，听起来就是多出一声）。
         let library = library_with(&["soft-hitnormal"]);
@@ -345,8 +346,9 @@ mod tests {
         assert!((timeline.events[2].gain - 0.05).abs() < 1e-9);
     }
 
+    /// 滑条节点的音效位掩码取自 edgeSounds。
     #[test]
-    fn 滑条节点的音效位掩码取自edge_sounds() {
+    fn slider_node_hitsound_mask_comes_from_edge_sounds() {
         let library = library_with(&["soft-hitnormal", "soft-hitwhistle"]);
         let mut beatmap = beatmap_with(
             0,
@@ -378,8 +380,9 @@ mod tests {
         );
     }
 
+    /// 滑条头部的加成音取自 edgeSounds，而不是物件行。
     #[test]
-    fn 滑条头部的加成音取自edge_sounds而不是物件行() {
+    fn slider_head_addition_comes_from_edge_sounds() {
         // 物件行的 hitsound 是 0，但 edgeSounds[0] = 2（whistle）：头部与滑行循环都要有
         // whistle（osu! 的 `nodeSoundTypes[0]` / `CreateSlidingSamples`）。
         let library = library_with(&["soft-hitnormal", "soft-hitwhistle", "soft-sliderwhistle"]);
@@ -412,8 +415,9 @@ mod tests {
         );
     }
 
+    /// 转盘取样参数取自结束时刻的 timing point。
     #[test]
-    fn 转盘取样参数取自结束时刻的timing_point() {
+    fn spinner_params_come_from_end_time_timing_point() {
         // osu! 的 `applySamples` 对非 `IHasRepeats` 物件用 `GetEndTime()`：转盘的旋转音、
         // 奖励音与判定音都按结束处的音效组与音量发声。
         let library = library_with(&["normal-spinnerspin", "drum-spinnerspin", "drum-hitnormal"]);
@@ -449,8 +453,9 @@ mod tests {
         assert!((judgement.gain - 0.05).abs() < 1e-9);
     }
 
+    /// 物件缺省音效参数时回退到 timing point。
     #[test]
-    fn 物件缺省音效参数时回退到timing_point() {
+    fn object_falls_back_to_timing_point() {
         let library = library_with(&["soft-hitnormal", "drum-hitnormal"]);
         let mut beatmap = beatmap_with(
             0,
@@ -482,8 +487,9 @@ mod tests {
         assert_eq!(library.name_of(timeline.events[1].source_id), Some("drum-hitnormal"));
     }
 
+    /// 滑条生成滑行音与 tick 事件。
     #[test]
-    fn 滑条生成滑行音与tick事件() {
+    fn slider_generates_slide_and_tick_events() {
         let library = library_with(&["normal-sliderslide", "normal-slidertick"]);
         let beatmap = beatmap_with(
             0,
@@ -520,8 +526,9 @@ mod tests {
         );
     }
 
+    /// std 转盘按 osu! 规则升调并发出奖励音。
     #[test]
-    fn std转盘按osu规则升调与发奖励音() {
+    fn std_spinner_ramps_pitch_and_awards_bonus() {
         // 4 秒 OD5 的转盘：清关需要 150/60 × 4 = 10 圈，上限是 380/60 × 4 = 25 圈，
         // 因此前 12 圈（10 + 奖励间隔 2）是计分圈、第 13~25 圈是奖励圈，再往后的圈数用上限音。
         let library = library_with(&[
@@ -579,8 +586,9 @@ mod tests {
         assert_eq!(events[20], (4000.0, "normal-hitnormal"));
     }
 
+    /// std 转盘不产生超过时长的圈与零时长事件。
     #[test]
-    fn std转盘不产生超过时长的圈与零时长事件() {
+    fn std_spinner_avoids_overlong_and_zero_length_events() {
         let library = library_with(&[
             "normal-hitnormal",
             "spinnerspin",

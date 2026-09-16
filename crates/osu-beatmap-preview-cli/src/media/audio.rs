@@ -862,8 +862,9 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    /// 真实谱面的打击音混音必须产生非零样本。
     #[test]
-    fn 打击音混音对真实谱面产生非零样本() {
+    fn hitsound_mix_on_real_beatmap_produces_non_silent_samples() {
         // 回归：这条链路一旦断掉（样本没内嵌、时间轴为空、位置换算错），
         // 导出的 MP4 就会完全没有打击音，而单元测试以外很难发现。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,2000,1,0,0:0:0:0:\n";
@@ -932,8 +933,9 @@ mod tests {
         onsets
     }
 
+    /// 长谱面混音不得退化成平方复杂度。
     #[test]
-    fn 长谱面打击音混音不会退化成平方复杂度() {
+    fn long_beatmap_hitsound_mix_stays_linear() {
         // 回归：整段只用一个混音窗口时，所有事件都会压在 voices 里、逐输出帧遍历一遍
         // （O(输出帧 × 事件数)）：release 下「60 秒 + 1200 个事件」要 6.6 秒，三分钟的
         // 普通谱面要 10 秒上下，导出总耗时因此翻倍。分块渲染后同样的工作量约 0.45 秒。
@@ -968,8 +970,9 @@ mod tests {
         );
     }
 
+    /// 打击音必须落在预期的谱面时间上。
     #[test]
-    fn 打击音落在预期的谱面时间上() {
+    fn hitsound_events_land_on_expected_chart_times() {
         // 回归：混音窗口分组、时间轴位置、缓冲区下标三者一旦错位，导出的 MP4 就会
         // 要么没有打击音、要么错位；这里逐个检查每个打击音的能量峰出现在预期位置。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,2000,1,0,0:0:0:0:\n";
@@ -1000,8 +1003,9 @@ mod tests {
         }
     }
 
+    /// 视频区间起点为负时打击音不得提前出声。
     #[test]
-    fn 负起点的视频区间里打击音不提前() {
+    fn hitsound_does_not_advance_before_negative_video_start() {
         // 回归：完整视频的起点是「首个物件前 2000ms」，首个物件很早时它就是负数。
         // 此前混音器把负位置夹到 0，缓冲区第 0 帧对应谱面 0，整段打击音提前了 |起点|。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,3000,1,0,0:0:0:0:\n";
@@ -1032,8 +1036,9 @@ mod tests {
         }
     }
 
+    /// 倍速导出时打击音与谱面一起被压缩。
     #[test]
-    fn 倍速导出时打击音随谱面一起压缩() {
+    fn hitsound_compresses_with_beatmap_speed() {
         // 回归：打击音此前按 1x 混好再 1:1 取样，倍速下会与音乐/画面按 speed 倍漂移。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,3000,1,0,0:0:0:0:\n";
         let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())

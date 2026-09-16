@@ -234,8 +234,9 @@ mod tests {
         }
     }
 
+    /// 默认是纯预览模式，不改变现有画面。
     #[test]
-    fn 默认是纯预览且不改变现有画面() {
+    fn defaults_to_preview_without_changing_frames() {
         assert_eq!(GameplayMode::default(), GameplayMode::Preview);
         let options = GameplayOptions::default();
         assert_eq!(options.mode, GameplayMode::Preview);
@@ -253,8 +254,9 @@ mod tests {
         assert_eq!(style.scale, 1.0);
     }
 
+    /// 判定计数按等级分别累加。
     #[test]
-    fn 判定计数按等级累加() {
+    fn judgement_counts_accumulate_per_grade() {
         let mut counts = JudgementCounts::default();
         counts.add(Judgement::Max);
         counts.add(Judgement::Great);
@@ -270,8 +272,9 @@ mod tests {
         assert_eq!(counts.total(), 6);
     }
 
+    /// 叠加内容来自状态与输入快照。
     #[test]
-    fn 叠加内容来自状态与输入快照() {
+    fn overlay_comes_from_state_and_input_snapshot() {
         let score = ScoreSnapshot {
             score: 12_345,
             accuracy: 0.9876,
@@ -303,8 +306,9 @@ mod tests {
         assert_eq!(overlay.keys, 0);
     }
 
+    /// 输入时间轴按时间取最近一帧。
     #[test]
-    fn 输入时间轴按时间取最近一帧() {
+    fn input_timeline_picks_latest_frame_at_time() {
         let timeline = FrameTimeline(vec![
             (0, InputSnapshot::default()),
             (

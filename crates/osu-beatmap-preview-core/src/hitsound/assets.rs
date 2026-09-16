@@ -45,8 +45,9 @@ mod tests {
         SampleBank, StandardHitObject, TaikoHitObject, TimingPoint,
     };
 
+    /// 内嵌资源覆盖四模式全部音效。
     #[test]
-    fn 内嵌资源覆盖四模式的全部音效() {
+    fn embedded_assets_cover_all_modes() {
         assert_eq!(asset_count(), 36);
         for name in [
             "normal-hitnormal",
@@ -69,8 +70,9 @@ mod tests {
         assert!(asset_bytes("不存在").is_none());
     }
 
+    /// 各模式引用的样本名都能在内嵌资源里找到。
     #[test]
-    fn 各模式引用的样本名都能在内嵌资源里找到() {
+    fn every_referenced_sample_name_exists_in_embedded_assets() {
         // 不带宽度的裸名是 osu! 的次级回退查找（共享 Gameplay 目录），本套皮肤不提供；
         // 无 bank 前缀的转盘音效与 taiko 的 strong 组（classic 皮肤没有）同样允许缺失。
         const ALLOWED_MISSING: &[&str] = &[

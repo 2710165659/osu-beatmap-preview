@@ -362,8 +362,9 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// 输出缓存只在产物晚于程序构建时间时命中。
     #[test]
-    fn 输出缓存要求输出晚于程序构建时间() {
+    fn output_cache_requires_output_newer_than_build_time() {
         // 回归：这项检查此前读的是 core 的构建时间，而它被钉在 1970（可复现构建），
         // 于是「改了内嵌默认配置 + 重建」之后仍会命中旧 MP4，听到的还是旧声音。
         let dir = test_dir();

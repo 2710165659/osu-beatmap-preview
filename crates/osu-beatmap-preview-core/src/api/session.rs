@@ -550,8 +550,9 @@ mod tests {
             .expect("测试会话必须可以创建")
     }
 
+    /// 会话起点与预览起点共用同一条规则。
     #[test]
-    fn 会话起点与预览起点共用同一规则() {
+    fn session_start_shares_rule_with_preview_start() {
         // 预览（Web）与完整视频（CLI）必须从同一个起点开始：默认首个物件前 2000ms，
         // AudioLeadIn 更大时按它提前。
         let session = session_with_lead_in(5_000, 0);
@@ -571,16 +572,18 @@ mod tests {
         assert_eq!(session.timeline().duration_ms, 5_500 - 1_000);
     }
 
+    /// 未启用打击音时不产生混音输出。
     #[test]
-    fn 未启用打击音时不产生混音输出() {
+    fn no_mix_output_when_hitsound_disabled() {
         let mut session = session();
         assert!(!session.hitsound_enabled());
         assert_eq!(session.render_hitsound(16), 0);
         assert!(session.hitsound_buffer().is_empty());
     }
 
+    /// 启用打击音并放入样本后即可混音。
     #[test]
-    fn 启用后放入样本即可混音() {
+    fn mixing_works_once_samples_are_added() {
         let mut session = session();
         // 候选名按优先级列出：带 bank 前缀的名字优先，裸名是回退查找。
         assert_eq!(
@@ -620,8 +623,9 @@ mod tests {
         assert_eq!(session.hitsound_sample_rate(), 1000);
     }
 
+    /// seek 与音量接口不会 panic。
     #[test]
-    fn seek与音量接口不会panic() {
+    fn seek_and_volume_api_does_not_panic() {
         let mut session = session();
         session.enable_hitsound(50, 1000);
         session.set_hitsound_sample(

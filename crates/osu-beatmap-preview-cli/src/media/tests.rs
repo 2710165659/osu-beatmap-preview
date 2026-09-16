@@ -251,7 +251,7 @@ fn dropping_audio_task_cancels_and_joins_worker() {
 }
 
 #[test]
-fn 画布尺寸的物件层按原点合成且标签留在右上角() {
+fn canvas_sized_layer_composites_at_origin_and_keeps_label_in_corner() {
     let style = video_style(crate::export::geometry::GameMode::Standard);
     let (width, height) = (684u32, 384u32);
     let mut layer = Img::new(width, height, [0, 0, 0, 0]);

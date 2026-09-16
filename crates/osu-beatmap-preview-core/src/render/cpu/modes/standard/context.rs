@@ -684,7 +684,7 @@ mod tests {
     }
 
     #[test]
-    fn 视频布局把内容框居中且不改变物件尺寸() {
+    fn video_layout_centers_content_box_without_resizing_objects() {
         for scale in [1.0_f64, 2.0] {
             let mut custom = crate::config::CoreConfig::default();
             custom.render.standard.mp4.SCALE = scale;
@@ -762,7 +762,7 @@ mod tests {
     }
 
     #[test]
-    fn gif_配置不影响_mp4_视频布局与物件尺寸() {
+    fn gif_scale_does_not_affect_mp4_video_layout_and_object_sizes() {
         let beatmap = beatmap_with_difficulty("4", "5");
         let layout_for = |gif_scale: f64| {
             let mut custom = crate::config::CoreConfig::default();

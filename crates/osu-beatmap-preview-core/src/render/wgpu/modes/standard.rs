@@ -811,8 +811,9 @@ mod tests {
             .collect()
     }
 
+    /// 实时场景的滑条球箭头跟随折返方向。
     #[test]
-    fn 实时场景的滑条球箭头跟随折返方向() {
+    fn realtime_slider_ball_arrow_follows_repeat_direction() {
         let source = prepare_realtime(&slider_beatmap(2), None, TimeAxis::new(0))
             .expect("实时场景必须可以准备");
         // 第一段滑行球向右，折返后向左；两段都必须出现在箭头线段上。

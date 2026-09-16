@@ -727,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    fn 视频物件层允许接近圈越过内容框() {
+    fn video_layer_draws_approach_circle_beyond_content_box() {
         let beatmap = edge_circle_beatmap();
         let video = build_video_render_context(
             &beatmap,
@@ -763,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    fn 视频物件层底色只填内容框且补边透明() {
+    fn video_layer_fills_content_box_only_and_keeps_letterbox_transparent() {
         let beatmap = edge_circle_beatmap();
         let video = build_video_render_context(
             &beatmap,
@@ -784,7 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn gif_布局仍在内容框内绘制() {
+    fn gif_layout_still_draws_inside_content_box() {
         let beatmap = edge_circle_beatmap();
         let gif = build_render_context(
             &beatmap,

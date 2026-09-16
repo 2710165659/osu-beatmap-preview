@@ -206,8 +206,9 @@ mod tests {
     use super::*;
     use crate::export::scene::FrameScene;
 
+    /// 图像场景经参考光栅器后像素保持不变。
     #[test]
-    fn 图像场景经过参考后端保持像素不变() {
+    fn image_scene_round_trips_through_reference_backend() {
         let source = Img::new(3, 2, [10, 20, 30, 128]);
         let scene = FrameScene::from_image(source.clone(), 0);
         let rendered = CpuRasterizer.render_frame(&scene).unwrap();

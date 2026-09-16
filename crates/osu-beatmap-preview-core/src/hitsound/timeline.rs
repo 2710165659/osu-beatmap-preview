@@ -571,8 +571,9 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
 mod tests {
     use super::*;
 
+    /// 升调斜坡到上限后按恒定倍率积分。
     #[test]
-    fn 升调斜坡到上限后按恒定倍率积分() {
+    fn pitch_ramp_integrates_at_constant_multiplier_after_cap() {
         let frequency = PlayFrequency::ramp(1.0, 0.001, 2.0);
         assert_eq!(frequency.integral(0.0), 0.0);
         assert_eq!(frequency.integral(-5.0), 0.0);

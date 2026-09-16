@@ -244,8 +244,9 @@ mod tests {
         }
     }
 
+    /// 快照包含概览字段与派生统计。
     #[test]
-    fn 快照包含概览字段与派生统计() {
+    fn snapshot_contains_overview_fields_and_derived_stats() {
         let info = BeatmapInfo::from_beatmap(&sample_beatmap());
         assert_eq!(info.title.as_deref(), Some("Sample Song"));
         assert_eq!(info.artist.as_deref(), Some("Sample Artist"));
@@ -267,8 +268,9 @@ mod tests {
         assert_eq!(info.od, Some(8.5));
     }
 
+    /// 键值区段全量输出。
     #[test]
-    fn 键值区段全量输出() {
+    fn kv_sections_are_exported_in_full() {
         let info = BeatmapInfo::from_beatmap(&sample_beatmap());
         // 不只是常用字段：三个区段的每个键都要在快照里。
         assert_eq!(info.metadata.len(), 6);
@@ -284,8 +286,9 @@ mod tests {
         );
     }
 
+    /// 缺少可选字段时留空，而不是填默认值。
     #[test]
-    fn 缺少可选字段时留空而不是给默认值() {
+    fn missing_optional_fields_stay_empty() {
         let mut beatmap = sample_beatmap();
         beatmap.metadata.insert("Title", "   ".to_string());
         beatmap.hit_objects = HitObjects::Standard(Vec::new());
@@ -297,8 +300,9 @@ mod tests {
         assert_eq!(info.bpm, None);
     }
 
+    /// 模式名覆盖四种规则集与未知值。
     #[test]
-    fn 模式名覆盖四种规则集与未知值() {
+    fn mode_names_cover_four_rulesets_and_unknown() {
         assert_eq!(mode_name(0), "standard");
         assert_eq!(mode_name(1), "taiko");
         assert_eq!(mode_name(2), "catch");

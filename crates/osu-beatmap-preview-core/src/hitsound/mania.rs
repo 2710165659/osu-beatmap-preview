@@ -28,8 +28,9 @@ mod tests {
     use crate::hitsound::build_timeline;
     use crate::hitsound::test_support::{beatmap_with, library_with};
 
+    /// mania 按 timing point 的音效组发声。
     #[test]
-    fn mania按timing_point采样组发声() {
+    fn mania_uses_timing_point_sample_bank() {
         let mut beatmap = beatmap_with(
             3,
             HitObjects::Mania(vec![ManiaHitObject {

@@ -120,38 +120,43 @@ mod tests {
     use crate::render::geometry::GameMode;
     use crate::render::scene::{DrawCommand, FrameScene, SceneSize};
 
+    /// standard/catch 按 contain 居中补边。
     #[test]
-    fn standard和catch按contain居中补边() {
+    fn standard_and_catch_fit_with_contain() {
         let (scale, offset) = fit_playfield(GameMode::Standard, 530, 384, 1280, 720).unwrap();
         assert!((scale - 1.875).abs() < 0.001);
         assert!((offset[0] - 142.8).abs() < 1.0);
         assert_eq!(offset[1], 0.0);
     }
 
+    /// taiko 铺满宽度、上下补边。
     #[test]
-    fn taiko铺满宽度且上下补边() {
+    fn taiko_fills_width_with_vertical_letterbox() {
         let (scale, offset) = fit_playfield(GameMode::Taiko, 683, 100, 1280, 720).unwrap();
         assert!((scale - 1280.0 / 683.0).abs() < 0.001);
         assert!(offset[0].abs() < 0.01);
         assert!(offset[1] > 250.0);
     }
 
+    /// mania 铺满高度、左右补边。
     #[test]
-    fn mania铺满高度且左右补边() {
+    fn mania_fills_height_with_horizontal_letterbox() {
         let (scale, offset) = fit_playfield(GameMode::Mania, 272, 384, 1280, 720).unwrap();
         assert!((scale - 1.875).abs() < 0.001);
         assert!(offset[0] > 380.0);
         assert!(offset[1].abs() < 0.01);
     }
 
+    /// taiko/mania 在补边方向超出画布时报告所需尺寸。
     #[test]
-    fn taiko和mania在补边方向超出画布时报告所需尺寸() {
+    fn taiko_and_mania_report_required_size_when_overflowing() {
         assert!(fit_playfield(GameMode::Taiko, 100, 100, 1280, 720).is_err());
         assert!(fit_playfield(GameMode::Mania, 100, 100, 720, 1280).is_err());
     }
 
+    /// 时间标签随输出分辨率缩放。
     #[test]
-    fn 时间标签随输出分辨率缩放() {
+    fn time_label_scales_with_output_resolution() {
         let playfield = FrameScene::clear(
             SceneSize {
                 width: 530,

@@ -1230,7 +1230,7 @@ mod tests {
     }
 
     #[test]
-    fn 视频布局把单行内容带居中且不改变音符尺寸() {
+    fn video_layout_centers_row_band_without_resizing_notes() {
         for scale in [1.0_f64, 2.0] {
             let mut custom = crate::config::CoreConfig::default();
             custom.render.taiko.mp4.SCALE = scale;

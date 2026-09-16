@@ -188,8 +188,9 @@ impl SampleResolver for &SampleLibrary {
 mod tests {
     use super::*;
 
+    /// 采样帧按小数位置线性插值。
     #[test]
-    fn 采样帧按小数位置线性插值() {
+    fn sample_frames_interpolate_linearly_fractionally() {
         // 回归：混音器此前按 `position as usize` 取最近帧，44.1kHz 样本进 48kHz 输出会
         // 引入混叠（鼓声发毛）；音乐路径本来就是线性插值，这里保持一致。
         let sample = SampleData::mono(vec![0.0, 1.0, 0.0, -1.0], 1000);

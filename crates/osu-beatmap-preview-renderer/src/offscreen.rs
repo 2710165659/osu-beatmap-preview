@@ -365,8 +365,9 @@ mod tests {
     use osu_beatmap_preview_core::Img;
     use osu_beatmap_preview_core::{DrawCommand, SceneRect, SceneSize};
 
+    /// 离屏配置拒绝零尺寸和非法采样数。
     #[test]
-    fn 离屏配置拒绝零尺寸和非法采样数() {
+    fn offscreen_config_rejects_zero_size_and_invalid_msaa() {
         assert!(validate_config(OffscreenConfig {
             width: 0,
             ..Default::default()
@@ -379,8 +380,9 @@ mod tests {
         .is_err());
     }
 
+    /// 流请求在提交前拒绝重复编号并按编号排序。
     #[test]
-    fn 流请求在提交前拒绝重复编号并按编号排序() {
+    fn stream_rejects_duplicate_indices_before_submit() {
         let sorted = normalize_requests([
             FrameRequest {
                 index: 9,
@@ -412,9 +414,10 @@ mod tests {
         assert_eq!(duplicate, Err(RendererError::DuplicateFrameIndex(2)));
     }
 
+    /// 回读会移除行对齐填充并保留 RGBA。
     #[test]
     #[ignore = "需要本机可用的 WGPU 适配器"]
-    fn wgpu回读会移除行对齐填充并保留rgba() {
+    fn readback_strips_row_padding_and_preserves_rgba() {
         let config = OffscreenConfig {
             width: 65,
             height: 17,
@@ -434,9 +437,10 @@ mod tests {
         );
     }
 
+    /// 直接光栅化图元并遵守透明混合与裁剪。
     #[test]
     #[ignore = "需要本机可用的 WGPU 适配器"]
-    fn wgpu直接光栅化图元并遵守透明混合与裁剪() {
+    fn rasterizer_draws_primitives_with_blending_and_clip() {
         let config = OffscreenConfig {
             width: 96,
             height: 64,
@@ -526,9 +530,10 @@ mod tests {
         assert_eq!(pixel(72, 44), &[255, 64, 128, 255]);
     }
 
+    /// 滑条圆角连接不会重复累加透明度或产生尖角。
     #[test]
     #[ignore = "需要本机可用的 WGPU 适配器"]
-    fn wgpu滑条圆角连接不会重复累加透明度或产生尖角() {
+    fn slider_round_joins_do_not_double_blend() {
         let config = OffscreenConfig {
             width: 96,
             height: 64,

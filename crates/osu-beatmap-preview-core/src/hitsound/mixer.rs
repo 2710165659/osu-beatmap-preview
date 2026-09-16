@@ -439,8 +439,9 @@ mod tests {
         HitsoundMixer::new(library, timeline, 1000)
     }
 
+    /// 播完的声音会被回收。
     #[test]
-    fn 播完的声音会被回收() {
+    fn finished_voices_are_recycled() {
         // 回归：时长 0 的事件 `end_ms` 是无限，只按它判断会让声音列表随播放无限增长；
         // 每个输出帧都要遍历整张列表，长谱面会把混音拖到实时以下（Web 端表现为打击音
         // 整体消失）。
@@ -457,8 +458,9 @@ mod tests {
         );
     }
 
+    /// 落在窗口边界的事件只播一次。
     #[test]
-    fn 落在窗口边界的事件只播一次() {
+    fn events_on_window_boundary_play_once() {
         // 窗口是 `[start, end)`：正好在窗口末尾开始的事件必须留给下一个窗口。宿主每个
         // 窗口都会用窗口起点重新对齐游标，边界事件若被收进两个窗口，音量会凭空翻倍。
         let mut mixer = click_mixer(11);
@@ -476,8 +478,9 @@ mod tests {
         );
     }
 
+    /// 显式触发的样本从当前位置开始出声。
     #[test]
-    fn 显式触发的样本从当前位置开始出声() {
+    fn explicit_trigger_starts_at_current_position() {
         // 游玩/回放场景：没有时间轴事件，声音完全由输入触发。
         let mut mixer = click_mixer(0);
         mixer.set_position(500.0);
@@ -494,8 +497,9 @@ mod tests {
         );
     }
 
+    /// 循环音可以启动与停止。
     #[test]
-    fn 循环音可以启动与停止() {
+    fn looping_voice_can_start_and_stop() {
         let mut mixer = click_mixer(0);
         let handle = mixer.start_loop("click", 0.1).expect("循环音必须能启动");
         // 样本只有 10ms，但循环音要一直响到 stop_loop。
@@ -509,15 +513,17 @@ mod tests {
         assert!(mixer.start_loop("不存在的样本", 0.1).is_none());
     }
 
+    /// 触发增益非有限值时按静音处理。
     #[test]
-    fn 触发增益非有限值按静音处理() {
+    fn non_finite_trigger_gain_is_silent() {
         let mut mixer = click_mixer(0);
         assert!(mixer.trigger("click", f64::NAN));
         assert!(mixer.render(50).iter().all(|value| *value == 0.0));
     }
 
+    /// 负位置把起点之前的预卷算进输出。
     #[test]
-    fn 负位置把起点之前的预卷算进输出() {
+    fn negative_position_includes_pre_roll_in_output() {
         // 离线导出可能从负的谱面时间开始（首个物件前的预卷）：位置为负时缓冲区第 0 帧
         // 对应那个负时刻，0 之后的事件必须相应推后，否则整段打击音会提前。
         let mut mixer = click_mixer(1);
@@ -533,8 +539,9 @@ mod tests {
         );
     }
 
+    /// 样本采样率与混音采样率不同时按小数位置插值。
     #[test]
-    fn 样本采样率与混音采样率不同时按小数位置插值() {
+    fn sample_rate_mismatch_interpolates_fractionally() {
         // 内嵌样本是 44.1kHz、MP4 导出是 48kHz，取最近帧会把高频镜像当信号；
         // 这里用 2:1 的采样率差把插值关系钉死：位置依次是 0、0.5、1.0、1.5、2.0。
         let mut library = SampleLibrary::new();
@@ -563,8 +570,9 @@ mod tests {
         }
     }
 
+    /// 升调斜坡按倍率积分推进样本位置。
     #[test]
-    fn 升调斜坡按倍率积分推进样本位置() {
+    fn pitch_ramp_advances_sample_position_by_multiplier() {
         // 回归：位置若按「瞬时倍率 × 经过时间」计算，瞬时播放速度会变成 f + t·f'，
         // 转盘旋转音会比 osu! 的线性升调跑得更快。这里用一个单点脉冲把积分关系钉死：
         // 倍率从 1.0 每毫秒 +0.001（上限 2.0），第 500 帧的积分恰好是 625，
@@ -601,8 +609,9 @@ mod tests {
         }
     }
 
+    /// 落在窗口边界的打击音不会被跳过。
     #[test]
-    fn 落在窗口边界的打击音不会被跳过() {
+    fn hitsound_on_window_boundary_is_not_skipped() {
         // 回归：曾经用 `start_ms >= window_end` 收集事件，正好落在窗口末尾的事件
         // 会被永久跳过（事件按开始时间升序，之后再也扫不到），表现为整点打击音静音。
         let mut library = SampleLibrary::new();
@@ -637,8 +646,9 @@ mod tests {
         );
     }
 
+    /// 混音器按时间与主音量输出。
     #[test]
-    fn 混音器按时间与主音量输出() {
+    fn mixer_respects_time_and_master_volume() {
         let library = library_with(&["normal-hitnormal"]);
         let beatmap = beatmap_with(
             0,
@@ -666,8 +676,9 @@ mod tests {
         assert!((mixed[1] - expected).abs() < 1e-6, "right={}", mixed[1]);
     }
 
+    /// 混音器 seek 后不补播已越过的事件。
     #[test]
-    fn 混音器seek后不补播已越过的事件() {
+    fn mixer_does_not_replay_events_after_seek() {
         let library = library_with(&["normal-hitnormal"]);
         let beatmap = beatmap_with(
             0,
@@ -687,8 +698,9 @@ mod tests {
         assert!(output.iter().all(|value| *value == 0.0));
     }
 
+    /// 混音器主音量忽略非有限值。
     #[test]
-    fn 混音器主音量忽略非有限值() {
+    fn mixer_ignores_non_finite_master_volume() {
         let library = SampleLibrary::new();
         let mut mixer = HitsoundMixer::new(library, HitsoundTimeline::default(), 1000);
         mixer.set_master_gain(f64::NAN);

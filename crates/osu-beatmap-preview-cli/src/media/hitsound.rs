@@ -331,8 +331,9 @@ mod tests {
         osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes()).expect("fixture 必须可解析")
     }
 
+    /// 内嵌样本表覆盖四模式全部打击音。
     #[test]
-    fn 内嵌样本表覆盖四模式的全部打击音() {
+    fn embedded_sample_table_covers_all_modes() {
         // 资源目录下的 ogg 全部内嵌：缺一个都会让某个模式的某个音效静音。
         assert_eq!(embedded::HITSOUND_ASSETS.len(), 36);
         for name in [
@@ -349,8 +350,9 @@ mod tests {
         }
     }
 
+    /// 静音滑行音解码为零帧且不报错。
     #[test]
-    fn 静音滑行音解码为零帧且不报错() {
+    fn silent_slider_sound_decodes_to_zero_frames() {
         // argon pro 用静音样本关闭滑行音；这种文件可能解不出任何音频页，
         // 但必须按「静音」而不是「失败」处理，否则整条混音会被跳过。
         for name in ["normal-sliderslide", "soft-sliderwhistle"] {
@@ -361,8 +363,9 @@ mod tests {
         }
     }
 
+    /// 普通打击音解码后不是循环音。
     #[test]
-    fn 解码普通打击音不循环() {
+    fn decoding_normal_hitsound_is_not_looping() {
         let bytes = embedded_bytes("normal-hitnormal").expect("必须内嵌普通打击音");
         let sample =
             decode_sample("normal-hitnormal", bytes, Some("ogg")).expect("普通打击音必须可解码");
@@ -370,16 +373,18 @@ mod tests {
         assert_eq!(sample.loop_len, 0);
     }
 
+    /// 转盘旋转音必须标记为循环。
     #[test]
-    fn 转盘旋转音标记为循环() {
+    fn spinner_spin_sound_is_marked_looping() {
         let bytes = embedded_bytes("spinnerspin").expect("必须内嵌转盘旋转音");
         let sample = decode_sample("spinnerspin", bytes, Some("ogg")).expect("转盘旋转音必须可解码");
         assert!(sample.frames() > 0);
         assert_eq!(sample.loop_len, sample.frames());
     }
 
+    /// 损坏音频数据按静音处理，而不是 panic。
     #[test]
-    fn 损坏数据按静音处理而不是panic() {
+    fn corrupted_data_is_treated_as_silence() {
         // 截断/垃圾数据在真实环境里出现过：必须退化成静音样本，而不是 panic 或中断导出。
         let sample = decode_sample("normal-hitnormal", b"not an ogg file", Some("ogg"))
             .expect("损坏样本必须按静音处理");
@@ -391,8 +396,9 @@ mod tests {
         assert_eq!(sample.frames(), 0);
     }
 
+    /// 谱面自带的同名音效优先于内嵌皮肤。
     #[test]
-    fn 谱面自带的同名音效优先于内嵌皮肤() {
+    fn beatmap_owned_sample_wins_over_embedded_skin() {
         let dir = temp_dir("override");
         let osz = dir.join("fixture.osz");
         // 8kHz 4 帧的 wav：与内嵌 ogg 的采样率和长度都不同，足以区分来源。
@@ -433,8 +439,9 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    /// 缺少压缩包或条目不全时仍然可用。
     #[test]
-    fn 缺少压缩包或条目不全时仍然可用() {
+    fn still_usable_without_archive_or_with_partial_entries() {
         // 关闭谱面音效（`None`）与压缩包打不开都必须退化成内嵌资源，而不是空库。
         let beatmap = beatmap_with_custom_samples();
         let embedded_only = build_library(&beatmap, None);
@@ -444,8 +451,9 @@ mod tests {
         assert_eq!(missing.len(), embedded_only.len());
     }
 
+    /// 各模式引用的样本名都能找到内嵌资源。
     #[test]
-    fn 各模式引用的样本名都有内嵌资源() {
+    fn every_referenced_sample_name_has_embedded_asset() {
         // 裸名与「无 bank 前缀的专用音效」是 osu! 的次级回退查找（共享 Gameplay 目录），
         // 本套皮肤只提供带 bank 前缀的版本，因此这些名字允许缺失。
         const ALLOWED_MISSING: &[&str] = &[

@@ -105,8 +105,9 @@ mod tests {
     use crate::hitsound::build_timeline;
     use crate::hitsound::test_support::{beatmap_with, library_with};
 
+    /// 香蕉使用独立的查找名。
     #[test]
-    fn 香蕉使用独立查找名() {
+    fn banana_uses_dedicated_lookup_name() {
         let library = library_with(&["catch-banana"]);
         let beatmap = beatmap_with(
             2,
@@ -136,8 +137,9 @@ mod tests {
         );
     }
 
+    /// 果汁流的尾部按节点时刻发声。
     #[test]
-    fn 果汁流的尾部按节点时刻发声() {
+    fn juice_stream_tail_sounds_at_node_time() {
         // 头 / 重复箭头 / 尾部都是水果：尾部按自己时刻的 timing point 取音量，谱面常用
         // 「在果汁流尾部插入低音量绿线」把它压掉。
         let library = library_with(&["soft-hitnormal"]);

@@ -102,8 +102,9 @@ mod tests {
     use super::{build_timeline, referenced_names, volume_gain, SampleLibrary};
     use crate::domain::models::{HitAddition, HitObjects, HitSample, SampleBank, StandardHitObject};
 
+    /// 滑条的音效参数取自正确的列。
     #[test]
-    fn 滑条的音效参数取自正确列() {
+    fn slider_hitsound_params_come_from_correct_columns() {
         // 回归：滑条第 6 列是曲线（`B|356:192`），曾把它当成 hitSample 解析出
         // additionSet=192，导致音效组与音量全错。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,2,0,100,1,0\n\n[HitObjects]\n256,192,2000,2,0,B|356:192,1,140\n";
@@ -116,8 +117,9 @@ mod tests {
         assert!(names.contains(&"soft-sliderslide".to_string()), "names={names:?}");
     }
 
+    /// 音量曲线与游戏内一致。
     #[test]
-    fn 音量曲线与游戏内一致() {
+    fn volume_curve_matches_the_game() {
         assert!((volume_gain(100) - 1.0).abs() < 1e-9);
         assert!((volume_gain(50) - 0.5).abs() < 1e-12);
         assert!((volume_gain(0) - 0.0).abs() < 1e-12);
@@ -126,8 +128,9 @@ mod tests {
         assert!((volume_gain(500) - 1.0).abs() < 1e-9);
     }
 
+    /// 缺失样本只产生静音，不产生事件。
     #[test]
-    fn 缺失样本只产生静音不产生事件() {
+    fn missing_samples_produce_silence_only() {
         let beatmap = beatmap_with(
             0,
             HitObjects::Standard(vec![StandardHitObject {
@@ -154,8 +157,9 @@ mod tests {
         assert!((timeline.events[0].gain - 1.0).abs() < 1e-9);
     }
 
+    /// 引用名收集覆盖全部候选与裸名回退。
     #[test]
-    fn 引用名收集覆盖全部候选与裸名回退() {
+    fn referenced_names_cover_candidates_and_bare_fallback() {
         let beatmap = beatmap_with(
             0,
             HitObjects::Standard(vec![StandardHitObject {
@@ -181,8 +185,9 @@ mod tests {
         }
     }
 
+    /// 转盘的音效参数取自第七列，而不是结束时间。
     #[test]
-    fn 转盘的音效参数取自第七列而不是结束时间() {
+    fn spinner_hitsound_params_come_from_seventh_column() {
         // 回归：转盘行是 `x,y,time,type,hitSound,endTime,hitSample`，曾经按圆圈的列号去读，
         // 把结束时间（`3000`）当成了音效组 id，结果转盘音效组恒为 normal。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\n\n[TimingPoints]\n0,500,4,2,1,100,1,0\n\n[HitObjects]\n256,192,1000,8,0,3000,2:3:0:40:\n";
@@ -194,8 +199,9 @@ mod tests {
         assert_eq!(sample.volume, 40);
     }
 
+    /// 自定义文件名只覆盖普通层。
     #[test]
-    fn 自定义文件名只覆盖普通层() {
+    fn custom_filename_overrides_normal_layer_only() {
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,10,0:0:0:100:custom-hit.ogg\n";
         let beatmap = crate::parse_beatmap_bytes(source.as_bytes()).unwrap();
         let object = &beatmap.hit_objects.as_standard().unwrap()[0];
@@ -204,8 +210,9 @@ mod tests {
         assert!(object.samples[1..].iter().all(|sample| sample.filename.is_none()));
     }
 
+    /// timing point 的索引产生带后缀的候选名。
     #[test]
-    fn timing_point_的索引产生带后缀的候选名() {
+    fn timing_point_index_produces_suffixed_candidates() {
         // 物件没有自带 hitSample：音效索引来自 timing point 的 sampleIndex 列。
         let mut beatmap = beatmap_with(
             0,
@@ -234,8 +241,9 @@ mod tests {
         assert!(build_timeline(&beatmap, &library_with(&["soft-hitclap20"])).is_empty());
     }
 
+    /// 物件的音效索引优先于 timing point。
     #[test]
-    fn 物件的音效索引优先于_timing_point() {
+    fn object_sample_index_wins_over_timing_point() {
         // 物件的 hitSample 声明了 index=7：普通层、加成音、滑条 tick 与滑行音都带后缀 `7`。
         let samples = vec![
             HitSample::new(SampleBank::Soft, HitAddition::None, 100, None).with_custom_bank(7),
@@ -299,8 +307,9 @@ mod tests {
         );
     }
 
+    /// 索引为一表示谱面自带的无后缀音效。
     #[test]
-    fn 索引为一表示谱面自带的无后缀音效() {
+    fn index_one_means_bare_beatmap_sample() {
         let mut beatmap = beatmap_with(
             0,
             HitObjects::Standard(vec![StandardHitObject {
@@ -320,8 +329,9 @@ mod tests {
         assert!(!names.contains(&"soft-hitnormal1".to_string()), "names={names:?}");
     }
 
+    /// taiko 的候选名同样带索引后缀。
     #[test]
-    fn taiko_的候选名同样带索引后缀() {
+    fn taiko_candidates_also_carry_index_suffix() {
         let mut beatmap = beatmap_with(
             1,
             HitObjects::Taiko(vec![crate::domain::models::TaikoHitObject {

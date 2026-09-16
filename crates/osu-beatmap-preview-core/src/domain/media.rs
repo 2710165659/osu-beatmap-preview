@@ -191,8 +191,9 @@ mod tests {
         normalize_entry_path(value)
     }
 
+    /// 条目路径归一化，并拒绝越界路径。
     #[test]
-    fn 条目路径归一化与越界拒绝() {
+    fn entry_paths_are_normalized_and_traversal_rejected() {
         // 与 web 后端 zip.js::normalizeArchivePath 用同一张用例表（契约测试会再跑一遍）。
         assert_eq!(
             normalize(r"audio\\song.mp3").as_deref(),
@@ -213,8 +214,9 @@ mod tests {
         assert_eq!(normalize("."), None);
     }
 
+    /// 扩展名统一小写并忽略非法字符。
     #[test]
-    fn 扩展名统一小写并忽略非法字符() {
+    fn extensions_lowercased_and_invalid_characters_ignored() {
         assert_eq!(entry_extension("song.MP3").as_deref(), Some("mp3"));
         assert_eq!(entry_extension("a/b/Song.Ogg").as_deref(), Some("ogg"));
         assert_eq!(entry_extension("song.w a v"), Some("wav".to_string()));
@@ -223,8 +225,9 @@ mod tests {
         assert_eq!(entry_extension("song.  "), None);
     }
 
+    /// 条目构造拒绝非法路径。
     #[test]
-    fn 条目构造拒绝非法路径() {
+    fn entry_construction_rejects_invalid_paths() {
         assert_eq!(
             MediaEntry::new("audio/song.ogg"),
             Some(MediaEntry {
@@ -271,8 +274,9 @@ mod tests {
         }
     }
 
+    /// 音频、背景与自带样本分别归类。
     #[test]
-    fn 音频背景与自带样本分别归类() {
+    fn audio_background_and_custom_samples_are_classified() {
         let beatmap = beatmap_with(
             vec![
                 // 内嵌皮肤已有的音效同样要列出来：谱面自带同名文件时它优先。
@@ -315,8 +319,9 @@ mod tests {
         assert!(!media.is_empty());
     }
 
+    /// 样本条目按候选名匹配。
     #[test]
-    fn 样本条目匹配候选名() {
+    fn sample_entries_match_candidate_names() {
         // 不带扩展名的样本名对应压缩包里的音频文件。
         assert!(sample_entry_matches("soft-hitnormal.ogg", "soft-hitnormal"));
         assert!(sample_entry_matches("Soft-Hitnormal.WAV", "soft-hitnormal"));
@@ -336,8 +341,9 @@ mod tests {
         assert!(!sample_entry_matches("soft-hitnormal.ogg", "../soft-hitnormal"));
     }
 
+    /// 缺少音频与背景时留空，但保留样本候选。
     #[test]
-    fn 缺少音频与背景时留空但保留样本候选() {
+    fn missing_audio_and_background_keep_sample_candidates() {
         let mut beatmap = beatmap_with(Vec::new(), None);
         beatmap.general.insert("AudioFilename", String::new());
         let media = BeatmapMedia::from_beatmap(&beatmap);
@@ -361,8 +367,9 @@ mod tests {
         assert!(media.background.is_none());
     }
 
+    /// 非音频扩展名的候选不会当成样本文件。
     #[test]
-    fn 非音频扩展名的候选不会当成样本文件() {
+    fn non_audio_extensions_are_not_samples() {
         let beatmap = beatmap_with(
             vec![HitSample::new(
                 SampleBank::Normal,

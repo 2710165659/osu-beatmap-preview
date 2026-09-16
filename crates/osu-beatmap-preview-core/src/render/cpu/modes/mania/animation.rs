@@ -1263,7 +1263,7 @@ mod tests {
     }
 
     #[test]
-    fn 视频布局把舞台居中且不改变音符尺寸() {
+    fn video_layout_centers_stage_without_resizing_notes() {
         for scale in [1.0_f64, 2.0] {
             let mut custom = crate::config::CoreConfig::default();
             custom.render.mania.mp4.SCALE = scale;

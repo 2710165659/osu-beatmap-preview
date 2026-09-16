@@ -195,8 +195,9 @@ mod tests {
     use crate::hitsound::build_timeline;
     use crate::hitsound::test_support::{beatmap_with, library_with, object_sample};
 
+    /// taiko 音效组来自 timing point，而不是音量。
     #[test]
-    fn taiko音效组来自timing_point而不是音量() {
+    fn taiko_bank_comes_from_timing_point_not_volume() {
         // 回归：曾经按音量分档（>=90 drum / >=60 normal / 其余 soft），那是 osu! Argon 皮肤的逻辑；
         // legacy 路径只认物件 / timing point 声明的采样组。
         let library = library_with(&[
@@ -227,8 +228,9 @@ mod tests {
         assert!((timeline.events[0].gain - 0.95).abs() < 1e-9);
     }
 
+    /// taiko 音效组取自物件自带的 hitSample。
     #[test]
-    fn taiko音效组取自物件自带的hit_sample() {
+    fn taiko_bank_comes_from_object_hit_sample() {
         let library = library_with(&[
             "taiko-soft-hitnormal",
             "taiko-normal-hitnormal",
@@ -282,8 +284,9 @@ mod tests {
         );
     }
 
+    /// taiko 蓝音符判定包含 whistle 位。
     #[test]
-    fn taiko蓝音符判定包含whistle位() {
+    fn taiko_blue_note_judgement_includes_whistle_bit() {
         // osu! 的 `Hit` 用「样本里含 hitclap 或 hitwhistle」判定 rim，只看 clap 位会漏掉 whistle 蓝音符。
         let library = library_with(&["taiko-normal-hitclap", "taiko-normal-hitnormal"]);
         let beatmap = beatmap_with(
@@ -304,8 +307,9 @@ mod tests {
         );
     }
 
+    /// taiko 强音符追加 finish 或 whistle。
     #[test]
-    fn taiko强音符追加finish或whistle() {
+    fn taiko_strong_note_adds_finish_or_whistle() {
         let library = library_with(&[
             "taiko-normal-hitnormal",
             "taiko-normal-hitfinish",
@@ -350,8 +354,9 @@ mod tests {
         );
     }
 
+    /// taiko 连打按 tick 发声。
     #[test]
-    fn taiko连打按tick发声() {
+    fn taiko_drum_roll_sounds_per_tick() {
         let library = library_with(&["taiko-normal-hitnormal"]);
         let beatmap = beatmap_with(
             1,
@@ -374,8 +379,9 @@ mod tests {
         );
     }
 
+    /// taiko 转盘按 autoplay 节奏交替发声。
     #[test]
-    fn taiko转盘按autoplay节奏交替发声() {
+    fn taiko_spinner_alternates_like_autoplay() {
         let library = library_with(&["taiko-normal-hitnormal", "taiko-normal-hitclap"]);
         let beatmap = beatmap_with(
             1,
@@ -402,8 +408,9 @@ mod tests {
         }
     }
 
+    /// taiko 蓝音符使用 hitclap。
     #[test]
-    fn taiko蓝音符使用hitclap() {
+    fn taiko_blue_note_uses_hitclap() {
         let library = library_with(&["taiko-normal-hitclap", "taiko-normal-hitnormal"]);
         let beatmap = beatmap_with(
             1,
@@ -424,8 +431,9 @@ mod tests {
         );
     }
 
+    /// taiko 谱面从头到尾按 legacy 规则展开。
     #[test]
-    fn taiko谱面从头到尾按legacy规则展开() {
+    fn taiko_beatmap_expands_with_legacy_rules() {
         // 原生 taiko 谱面（Mode: 1）：timing point 是 soft 组，音符依次是
         // 蓝音符（whistle 位）、strong（clap + finish 位）、连打。
         let source = "osu file format v14\n\n[General]\nMode: 1\n\n[Difficulty]\nCircleSize:4\nOverallDifficulty:5\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,2,0,80,1,0\n\n[HitObjects]\n256,192,1000,1,2,0:0:0:0:\n256,192,2000,1,13,0:0:0:0:\n256,192,3000,2,0,L|356:192,1,140\n";
