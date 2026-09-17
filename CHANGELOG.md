@@ -4,27 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [Unreleased]
+## [1.3.1] - 2026.09.17
 
 ### Added
 
-- 新增 `ENABLE_BEATMAP_HITSOUND`（四模式 `render.<mode>.mp4.style`，默认启用）：谱面自带的自定义打击音（OSZ 内同名条目，如 `soft-hitnormal.ogg`，以及 `hitSample` 里写死的文件名）优先于内嵌皮肤，找不到才回退；CLI 的 MP4 导出与 Web 实时预览都已接入。
-- 打击音支持自定义音效索引（custom sample bank）：解析物件 `hitSample` 的 `index` 与 timing point 的 `sampleIndex`，索引 ≥ 2 时候选名追加索引后缀（`soft-hitclap20` / taiko 的 `taiko-drum-hitnormal3`），索引 1 用无后缀名；谱面包按 `{bank}-{name}{index}` 命名的自定义音效因此能正确发声（此前只认无后缀文件名与 `hitSample` 文件名）。
-- Web 后端新增 `/resource/samples`（谱面自带音效的条目清单）与 `/resource/sample`（按条目名取单个样本），解包时顺带解出这些条目并缓存；旧缓存缺少清单时会自动补解一次。
-
-### Changed
-
-- 媒体条目策略：`BeatmapMedia::from_beatmap()` 的 `samples` 现在给出全部候选样本名（含内嵌皮肤已有的同名条目），宿主按 core 新增的 `sample_entry_matches` 在压缩包里查找同名条目，使谱面自带音效能够覆盖内嵌音效。
+- 新增 `ENABLE_BEATMAP_HITSOUND`（四模式 `render.<mode>.mp4.style`，默认启用）：谱面自带打击音优先于内嵌皮肤，找不到才回退；CLI 的 MP4 导出与 Web 实时预览均已接入。
 
 ### Fixed
 
-- MP4 导出的物件层改为与视频画布同尺寸（playfield 按画布居中偏移，底色仍只填内容框）：此前物件先画进内容框大小的缓冲再居中贴上画布，越界物件会在内容框边界被竖切/横切一半（std 的接近圈与滑条本体、catch 的水果等都出现过），现在只会在视频边界被裁剪；输出分辨率与物件尺寸均不变，PNG/GIF 的网格裁剪与实时预览不受影响。
-- 打击音的取样时刻与 osu! 的 `applySamples` 对齐：滑条重复箭头与滑条尾按**各自节点时刻 + 5ms**的 timing point 解析音效组 / 音量 / 自定义索引，位掩码取自该节点的 `edgeSounds`（此前一律沿用滑条头，导致尾部音效不受尾部绿线影响、该响 whistle 的节点缺一声）；滑条头部的加成音同样改取 `edgeSounds[0]`。
-- 转盘的旋转音、奖励音与判定音改用转盘**结束处**的 timing point 参数（osu! 对非 `IHasRepeats` 物件用 `GetEndTime()`）。
-- 修正 `.osu` 的 `hitSample` 列号：转盘是第 7 列（`endTime` 之后），此前按圆圈的列号读取，把结束时间当成了音效组 id，使转盘音效组恒为 normal。
-- 滑条的 `hitSample` 只读音效组（osu! 的 `readCustomSampleBanks(..., banksOnly: true)`），音量 / 自定义索引 / 文件名不再被错误采纳。
-- 果汁流小果（catch）继承头部已解析的取样参数，而不是小果所在时刻的 timing point。
-- 果汁流（catch）的头部 / 重复箭头 / 尾部现在都按各自节点时刻的参数发声（此前只发头部音，`edgeSounds` / `edgeSets` 的节点信息被整个丢掉）。
+- MP4 物件层改为与视频画布同尺寸，越界物件只在视频边界被裁剪，不再于内容框边界被切掉一半；输出分辨率与物件尺寸不变，PNG/GIF 与实时预览不受影响。
+- 转盘的旋转音、奖励音与判定音改用转盘结束处的 timing point 参数。
+- 修复 Hitsound 音效错误问题。
+- 修复 ctb 接盘宽度与 EZ 红白果判定。
 
 ---
 
