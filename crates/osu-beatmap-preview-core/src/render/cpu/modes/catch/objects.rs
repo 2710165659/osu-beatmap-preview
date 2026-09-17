@@ -654,8 +654,9 @@ fn apply_offset(position: f64, amount: f64) -> f64 {
 }
 
 fn apply_hyper_dash(render_objects: &mut [RenderObject], circle_size: f64) {
-    let catcher_width =
-        crate::render::cpu::modes::catch::constants::CATCHER_BASE_SIZE * circle_scale(circle_size);
+    // 接盘缩放是水果缩放的两倍；漏掉该倍率会缩小判定宽度，误标红果。
+    // 与 stable 一致，hyperdash 使用完整接盘宽度，不扣 ALLOWED_CATCH_RANGE 边缘。
+    let catcher_width = CATCHER_BASE_SIZE * (circle_scale(circle_size) * 2.0).abs();
     let half_catcher_width = catcher_width / 2.0;
     let mut last_direction = 0i32;
     let mut last_excess = half_catcher_width;
@@ -760,8 +761,49 @@ mod tests {
     }
 
     #[test]
+    fn easy_recalculates_hyper_dash_in_both_directions() {
+        // 第一段在 EZ 下不再触发 hyperdash，但因此消耗余量，让下一段变为红果。
+        let beatmap = crate::domain::parser::parse_beatmap_str_for_tests(
+            "osu file format v14\n\
+             [General]\nMode:2\n\
+             [Difficulty]\nCircleSize:5\nApproachRate:9\n\
+             [TimingPoints]\n0,500,4,2,0,100,1,0\n\
+             [HitObjects]\n0,192,1000,1,0\n200,192,1140,1,0\n400,192,1310,1,0\n",
+        )
+        .unwrap();
+        let crate::domain::models::HitObjects::Catch(hit_objects) = &beatmap.hit_objects else {
+            panic!("测试谱面必须为 Catch 模式");
+        };
+        let normal_difficulty = effective_difficulty(&beatmap, None);
+        let normal =
+            build_catch_render_objects(&beatmap, hit_objects, None, &normal_difficulty, false)
+                .unwrap();
+        assert!(normal[0].hyper_dash);
+
+        let mods = ModSettings {
+            easy: true,
+            ..Default::default()
+        };
+        let easy_difficulty = effective_difficulty(&beatmap, Some(&mods));
+        let easy =
+            build_catch_render_objects(&beatmap, hit_objects, Some(&mods), &easy_difficulty, false)
+                .unwrap();
+        assert!(
+            !easy[0].hyper_dash,
+            "EZ 增大接盘后可达的水果不应保留红果标记"
+        );
+        assert!(!normal[1].hyper_dash);
+        assert!(
+            easy[1].hyper_dash,
+            "EZ 下前一段消耗余量后，下一颗白果应变为红果"
+        );
+        assert_eq!(normal[0].color, easy[0].color);
+    }
+
+    #[test]
     fn large_near_hyper_transition_is_marked_as_edge() {
-        let mut fruits = vec![fruit(0.0, 0), fruit(200.0, 190)];
+        // CS5 的半接盘宽度为 53.375px，此处距离 hyperdash 阈值约 9.2px。
+        let mut fruits = vec![fruit(0.0, 0), fruit(200.0, 160)];
 
         apply_hyper_dash(&mut fruits, 5.0);
 
