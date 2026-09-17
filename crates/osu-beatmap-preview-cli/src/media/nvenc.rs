@@ -114,6 +114,14 @@ impl NvencEncoder {
             crate::config::current().advance.video.VIDEO_BITRATE;
 
         // ── 5. 初始化编码器 ──
+        //
+        // 注意：`nvenc` crate 的 `Session::init_encoder` 把 `enable_encode_async`
+        // 硬编码为 0（见该 crate `safe/session.rs`，其 `InitParams` 注释标着
+        // “TODO: Support for async encoding”），因此本后端只能跑同步编码模式：
+        // `encode_picture` 会在硬件编码完当前帧后才返回，随后 `try_lock(true)`
+        // 必然立即可用。同步模式下无法在同一会话内让多帧同时在途，
+        // 所以这里不需要（也无法实现）注册资源与 bitstream 的前后缓冲；
+        // 多帧重叠由调用方 `save_mp4_streamed` 的渲染/编码流水线完成。
         let init_params = InitParams {
             encode_guid: NV_ENC_CODEC_H264_GUID,
             preset_guid: NV_ENC_PRESET_P1_GUID,

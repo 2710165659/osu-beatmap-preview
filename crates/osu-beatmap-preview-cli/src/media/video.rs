@@ -32,7 +32,40 @@ use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use rayon::prelude::*;
 use std::io::BufWriter;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Instant;
+
+/// 编码线程向渲染侧回传的耗时统计（纳秒）。
+///
+/// 渲染与编码改成并行后，两侧的耗时无法再用同一条时间线相加，
+/// 因此改用原子累加：`render` 由渲染侧写入，`encode`/`mux` 由编码线程写入。
+/// 这些值只用于日志诊断，不影响画面与文件内容。
+#[derive(Default)]
+pub(super) struct PipelineStages {
+    render_ns: AtomicU64,
+    encode_ns: AtomicU64,
+    mux_ns: AtomicU64,
+}
+
+impl PipelineStages {
+    fn add(slot: &AtomicU64, elapsed: std::time::Duration) {
+        slot.fetch_add(elapsed.as_nanos() as u64, Ordering::Relaxed);
+    }
+
+    fn millis(slot: &AtomicU64) -> f64 {
+        slot.load(Ordering::Relaxed) as f64 / 1_000_000.0
+    }
+}
+
+/// 渲染线程池与封装循环之间的在途帧上限。
+///
+/// 上限按 `PAR_CHUNK_SIZE` 收敛，使「在途帧数 × 帧字节」与改造前
+/// 单批渲染的内存占用同量级（默认 8 帧），不会因为流水线把峰值内存放大。
+fn encoder_queue_capacity(par_chunk_size: usize) -> usize {
+    par_chunk_size.clamp(1, 8)
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct VideoStyle {
@@ -230,10 +263,11 @@ pub(super) struct EncodedFrame {
 /// 后端 H.264 编码器：接收合成后的 RGBA 帧并产生 Annex-B NAL。
 /// 实现持有自身编码状态（GPU 会话、CPU codec 等），必须按顺序输入帧。
 ///
-/// 安全约定：`encode` 仅由单线程（封装循环）顺序调用，因此后端无需实现 `Sync`。
-/// trait 对象会跨 rayon 并行渲染分块持有，所以 `into_par_iter` 期间不得借用它。
-/// `save_mp4_streamed` 在并行收集完成后才编码，因此符合约定。
-pub(super) trait FrameEncoder {
+/// 安全约定：`encode` 仅由单线程顺序调用，因此后端无需实现 `Sync`。
+/// 编码器在 `save_mp4_streamed` 中被移交给独立的编码线程，之后只由该线程调用，
+/// 因此要求 `Send`（而不是 `Sync`）。trait 对象在 `into_par_iter` 期间不再被借用：
+/// 渲染分块只负责生产像素，编码完全发生在通道另一侧的编码线程上。
+pub(super) trait FrameEncoder: Send {
     /// 编码一帧合成 RGBA，返回拆分为 SPS / PPS / slice 的 NAL 供封装。
     fn encode(&mut self, rgba: &Img) -> Result<EncodedFrame>;
 
@@ -390,6 +424,8 @@ pub(crate) fn save_mp4_streamed(
     // 写入同目录临时文件，MP4 完成收尾后才原子替换最终路径，
     // 避免中断渲染留下可被缓存误用的残缺文件。编码器移入闭包再返回，
     // 使重命名后仍可抑制其会打印到 stdout 的 Drop 输出。
+    let stages = Arc::new(PipelineStages::default());
+    let stages_in_writer = Arc::clone(&stages);
     let encoder = with_atomic_output_deadline(output_path, "mp4.tmp", deadline, |tmp_path| {
         let file = std::fs::File::create(tmp_path)
             .map_err(|e| PreviewError::render(format!("failed to write mp4: {e}")))?;
@@ -450,18 +486,45 @@ pub(crate) fn save_mp4_streamed(
             .write_sample(1, &sample)
             .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
 
-        // ── 分块并行渲染和合成，顺序编码 ──
-        // 将 compose_frame 移入并行循环，使其在 rayon 线程池内与渲染同时执行，
-        // 消除串行合成瓶颈（4000 帧约 5 秒），避免 GPU 加速收益减半。
-        let mut t_render = std::time::Duration::ZERO;
-        let mut t_encode = std::time::Duration::ZERO;
-        let mut t_mux = std::time::Duration::ZERO;
+        // ── 流水线：渲染线程池持续预渲染，独立线程顺序编码并封装 ──
+        // 编码必须严格按帧号顺序执行（H.264 参考帧 + MP4 sample 顺序），
+        // 所以这里只把「编码」留在单线程上，让「渲染 + 合成」与它重叠进行。
+        // 改造前是「整块渲染 → 整块顺序编码」，rayon 在编码阶段完全空闲；
+        // 现在渲染侧只受有界通道背压，编码线程始终有下一帧可取。
+        //
+        // 后端名字必须先取成 `&'static str`：`name()` 是 `&self` 方法，
+        // 而编码器本身要被移进编码线程。
+        let encoder_name = encoder.name();
+        let (sender, receiver) = mpsc::sync_channel::<Img>(encoder_queue_capacity(par_chunk_size));
+        let worker_stages = Arc::clone(&stages_in_writer);
+        let mut worker = Some(std::thread::spawn(move || -> Result<EncoderOutcome> {
+            let mut encoder = encoder;
+            let mut mp4_writer = mp4_writer;
+            encode_stream_worker(
+                &mut *encoder,
+                &mut mp4_writer,
+                receiver,
+                encoder_name,
+                out_w,
+                out_h,
+                worker_stages,
+            )?;
+            Ok(EncoderOutcome {
+                encoder,
+                writer: mp4_writer,
+            })
+        }));
+
         let gameplay_total = time_axis.to_display(last_object_ms);
-        for chunk_start in (1..frame_count).step_by(par_chunk_size) {
-            deadline.check()?;
+        let mut send_failure: Option<Result<EncoderOutcome>> = None;
+        'pipeline: for chunk_start in (1..frame_count).step_by(par_chunk_size) {
+            if let Err(error) = deadline.check() {
+                send_failure = Some(Err(error));
+                break;
+            }
             let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
             let t0 = Instant::now();
-            let frames: Vec<Img> = (chunk_start..chunk_end)
+            let rendered: Result<Vec<Img>> = (chunk_start..chunk_end)
                 .into_par_iter()
                 .map(|fi| -> Result<Img> {
                     let (pf, time) = render(fi)?;
@@ -486,39 +549,39 @@ pub(crate) fn save_mp4_streamed(
                         FrameComposition::FinalRgba => pf,
                     })
                 })
-                .collect::<Result<Vec<_>>>()?;
-            deadline.check()?;
-            t_render += t0.elapsed();
-
-            for (i, comp) in (chunk_start..).zip(frames) {
-                deadline.check()?;
-                let t2 = Instant::now();
-                let encoded = encoder.encode(&comp)?;
-                deadline.check()?;
-                t_encode += t2.elapsed();
-                if encoded.slice.is_empty() {
-                    return Err(PreviewError::render(format!(
-                        "{} returned an empty H.264 sample for frame {i}",
-                        encoder.name()
-                    )));
+                .collect();
+            PipelineStages::add(&stages.render_ns, t0.elapsed());
+            let frames = match rendered {
+                Ok(frames) => frames,
+                Err(error) => {
+                    send_failure = Some(Err(error));
+                    break;
                 }
-
-                let t3 = Instant::now();
-                let sample = mp4::Mp4Sample {
-                    start_time: i as u64,
-                    duration: 1,
-                    rendering_offset: 0,
-                    is_sync: encoded.is_keyframe,
-                    bytes: Bytes::copy_from_slice(&encoded.slice),
-                };
-                mp4_writer
-                    .write_sample(1, &sample)
-                    .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
-                t_mux += t3.elapsed();
+            };
+            if let Err(error) = deadline.check() {
+                send_failure = Some(Err(error));
+                break;
+            }
+            // 通道有界：编码落后时这里会阻塞，形成背压而不是无上限占用内存。
+            for frame in frames {
+                // `send` 失败等价于接收端已 drop，即编码线程已结束：
+                // 此时 join 必定立即返回，不会阻塞。
+                if sender.send(frame).is_err() {
+                    send_failure = Some(worker_join(&mut worker));
+                    break 'pipeline;
+                }
             }
         }
+        // 先关闭通道，编码线程排空缓冲后会正常结束；随后 join 只会等待收尾。
+        drop(sender);
+        let outcome = match send_failure {
+            Some(result) => result,
+            None => worker_join(&mut worker),
+        };
+        let encoded_first = outcome?;
 
         let video_elapsed = video_started.elapsed();
+        let encoder = encoded_first.encoder;
         if !audio_task.is_finished() {
             crate::logging::event(
                 "audio-wait",
@@ -532,6 +595,8 @@ pub(crate) fn save_mp4_streamed(
         let encoded_audio = audio_task.join()?;
         deadline.check()?;
         let audio_wait = audio_wait_start.elapsed();
+
+        let mut mp4_writer = encoded_first.writer;
         let mut audio_start = 0_u64;
         for frame in encoded_audio.frames {
             deadline.check()?;
@@ -547,23 +612,27 @@ pub(crate) fn save_mp4_streamed(
                 .map_err(|e| PreviewError::render(format!("mp4 audio write_sample failed: {e}")))?;
             audio_start += frame.duration as u64;
         }
+
+        let render_seconds = PipelineStages::millis(&stages_in_writer.render_ns) / 1000.0;
+        let encode_seconds = PipelineStages::millis(&stages_in_writer.encode_ns) / 1000.0;
+        let mux_seconds = PipelineStages::millis(&stages_in_writer.mux_ns) / 1000.0;
         eprintln!(
             "[video] timing: render+compose={:.1}s encode={:.1}s mux={:.1}s audio-wait={:.1}s ({})",
-            t_render.as_secs_f64(),
-            t_encode.as_secs_f64(),
-            t_mux.as_secs_f64(),
+            render_seconds,
+            encode_seconds,
+            mux_seconds,
             audio_wait.as_secs_f64(),
-            encoder.name(),
+            encoder_name,
         );
         crate::logging::record_video_stats(crate::logging::VideoStats {
-            backend: Some(encoder.name().to_string()),
+            backend: Some(encoder_name.to_string()),
             resolution: Some(format!("{out_w}x{out_h}")),
             fps: Some(fps),
             frame_count: Some(frame_count),
             video_ms: Some(video_elapsed.as_secs_f64() * 1000.0),
-            render_compose_ms: Some(t_render.as_secs_f64() * 1000.0),
-            encode_ms: Some(t_encode.as_secs_f64() * 1000.0),
-            mux_ms: Some(t_mux.as_secs_f64() * 1000.0),
+            render_compose_ms: Some(render_seconds * 1000.0),
+            encode_ms: Some(encode_seconds * 1000.0),
+            mux_ms: Some(mux_seconds * 1000.0),
             audio_ms: Some(audio_wait.as_secs_f64() * 1000.0),
         });
 
@@ -589,6 +658,95 @@ pub(crate) fn save_mp4_streamed(
     });
 
     Ok(())
+}
+
+/// 编码线程随帧流结束时交还的资源。
+///
+/// 编码器必须回到主线程再释放：`nvenc` crate 的 `Drop` 会用 `println!` 写 stdout，
+/// 而 `drop_stdout_silence` 只能包住主线程上的释放点（见代码末尾）。
+pub(super) struct EncoderOutcome {
+    pub(super) encoder: Box<dyn FrameEncoder>,
+    pub(super) writer: mp4::Mp4Writer<BufWriter<std::fs::File>>,
+}
+
+#[cfg(test)]
+impl EncoderOutcome {
+    /// 收尾并落盘，返回文件字节数；供流水线测试在不启动完整导出的前提下校验写入。
+    pub(super) fn finish(mut self) -> Result<u64> {
+        self.writer
+            .write_end()
+            .map_err(|e| PreviewError::render(format!("mp4 write_end failed: {e}")))?;
+        let mut writer = self.writer.into_writer();
+        std::io::Write::flush(&mut writer)
+            .map_err(|e| PreviewError::render(format!("mp4 flush failed: {e}")))?;
+        let file = writer
+            .into_inner()
+            .map_err(|e| PreviewError::render(format!("mp4 into_inner failed: {e}")))?;
+        let len = file
+            .metadata()
+            .map_err(|e| PreviewError::render(format!("mp4 metadata failed: {e}")))?
+            .len();
+        drop(self.encoder);
+        Ok(len)
+    }
+}
+
+/// 编码线程主体：从有界通道按序取帧，编码并写入 MP4 视频轨。
+///
+/// 帧号即 MP4 sample 的 `start_time`，从 1 开始（第 0 帧已在
+/// `save_mp4_streamed` 中作为首个 IDR 写入）。通道断开即视为正常收尾：
+/// 渲染侧在出错或超时后直接 `drop(sender)`，这里返回已有结果并由调用方裁决。
+fn encode_stream_worker<E: FrameEncoder + ?Sized>(
+    encoder: &mut E,
+    writer: &mut mp4::Mp4Writer<BufWriter<std::fs::File>>,
+    receiver: mpsc::Receiver<Img>,
+    encoder_name: &'static str,
+    out_w: u32,
+    out_h: u32,
+    stages: Arc<PipelineStages>,
+) -> Result<()> {
+    let mut index: u64 = 1;
+    while let Ok(frame) = receiver.recv() {
+        if frame.w != out_w || frame.h != out_h {
+            return Err(PreviewError::render(format!(
+                "video frame bound for encoder has size {}x{}, expected {out_w}x{out_h}",
+                frame.w, frame.h
+            )));
+        }
+        let t_encode = Instant::now();
+        let encoded = encoder.encode(&frame)?;
+        PipelineStages::add(&stages.encode_ns, t_encode.elapsed());
+        if encoded.slice.is_empty() {
+            return Err(PreviewError::render(format!(
+                "{encoder_name} returned an empty H.264 sample for frame {index}"
+            )));
+        }
+        let t_mux = Instant::now();
+        let sample = mp4::Mp4Sample {
+            start_time: index,
+            duration: 1,
+            rendering_offset: 0,
+            is_sync: encoded.is_keyframe,
+            bytes: Bytes::copy_from_slice(&encoded.slice),
+        };
+        writer
+            .write_sample(1, &sample)
+            .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
+        PipelineStages::add(&stages.mux_ns, t_mux.elapsed());
+        index += 1;
+    }
+    Ok(())
+}
+
+/// 取回编码线程的结果；每段流水线只调用一次，因此句柄必然存在。
+fn worker_join(
+    worker: &mut Option<std::thread::JoinHandle<Result<EncoderOutcome>>>,
+) -> Result<EncoderOutcome> {
+    worker
+        .take()
+        .expect("编码线程只 join 一次")
+        .join()
+        .map_err(|_| PreviewError::render("video encode worker panicked"))?
 }
 
 struct JoinedAudioTask {

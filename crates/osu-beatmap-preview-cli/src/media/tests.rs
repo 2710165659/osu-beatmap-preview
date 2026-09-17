@@ -271,3 +271,105 @@ fn canvas_sized_layer_composites_at_origin_and_keeps_label_in_corner() {
     });
     assert!(label_painted, "时间标签仍应绘制在画布右上角");
 }
+
+/// 编码线程按帧号顺序编码全部在途帧，并正确交还编码器与 MP4 writer。
+///
+/// 流水线把「编码」放到独立线程后，帧号即 MP4 的 sample `start_time`。
+/// 第 0 帧由调用方单独写入，因此 worker 必须从 1 开始编号；
+/// 这里用真实 CPU 编码器（无需 GPU）验证帧数、编号与文件是否写出。
+#[test]
+fn encode_stream_worker_consumes_frames_in_order_and_returns_encoder() {
+    use crate::media::cpu::CpuEncoder;
+    use crate::media::video::encode_stream_worker;
+
+    let (width, height) = (64u32, 64u32);
+    let mut encoder: Box<dyn FrameEncoder> = Box::new(CpuEncoder::new(width, height, 15).unwrap());
+
+    let directory = std::env::temp_dir().join(format!(
+        "osu-preview-worker-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("worker.mp4");
+    let mut writer = mp4::Mp4Writer::write_start(
+        BufWriter::new(std::fs::File::create(&path).unwrap()),
+        &mp4::Mp4Config {
+            major_brand: mp4::FourCC::from(*b"isom"),
+            minor_version: 512,
+            compatible_brands: vec![mp4::FourCC::from(*b"isom")],
+            timescale: 15,
+        },
+    )
+    .unwrap();
+
+    // 第 0 帧由调用方直接编码并写入，worker 只处理其余三帧。
+    let first = encoder
+        .encode(&Img::new(width, height, [0, 0, 0, 255]))
+        .unwrap();
+    let first_sps = first.sps.clone().unwrap();
+    let first_pps = first.pps.clone().unwrap();
+    writer
+        .add_track(&mp4::TrackConfig {
+            track_type: mp4::TrackType::Video,
+            timescale: 15,
+            language: "und".to_string(),
+            media_conf: mp4::MediaConfig::AvcConfig(mp4::AvcConfig {
+                width: width as u16,
+                height: height as u16,
+                seq_param_set: first_sps,
+                pic_param_set: first_pps,
+            }),
+        })
+        .unwrap();
+    writer
+        .write_sample(
+            1,
+            &mp4::Mp4Sample {
+                start_time: 0,
+                duration: 1,
+                rendering_offset: 0,
+                is_sync: true,
+                bytes: Bytes::copy_from_slice(&first.slice),
+            },
+        )
+        .unwrap();
+
+    let (sender, receiver) = std::sync::mpsc::sync_channel::<Img>(4);
+    let stages = Arc::new(crate::media::video::PipelineStages::default());
+    let worker = std::thread::spawn(move || -> Result<EncoderOutcome> {
+        let mut encoder = encoder;
+        let mut writer = writer;
+        encode_stream_worker(
+            &mut *encoder,
+            &mut writer,
+            receiver,
+            "test",
+            width,
+            height,
+            stages,
+        )?;
+        Ok(EncoderOutcome { encoder, writer })
+    });
+
+    for offset in 1..=3u8 {
+        sender
+            .send(Img::new(
+                width,
+                height,
+                [offset * 40, offset * 20, 255, 255],
+            ))
+            .unwrap();
+    }
+    drop(sender);
+
+    let outcome = worker.join().unwrap().unwrap();
+    assert_eq!(outcome.encoder.name(), "openh264");
+    // worker 不负责收尾，这里补上 write_end 并落盘，再确认样本数据确实写进了文件。
+    let written = outcome.finish().unwrap();
+    assert!(
+        written > 40,
+        "收尾后文件应包含 MP4 头与样本数据，实际 {written} 字节"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+}

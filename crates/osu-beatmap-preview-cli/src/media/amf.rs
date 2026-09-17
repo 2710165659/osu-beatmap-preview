@@ -400,6 +400,11 @@ pub(crate) struct AmfEncoder {
     annexb_buf: Vec<u8>,
 }
 
+/// AMF 编码器只被移交给单一编码线程，之后始终由该线程调用，
+/// 不再跨线程共享；因此整体跨线程移动是安全的，但 AMF COM 接口指针本身
+/// 不实现 `Send`，需要显式声明。与 `NvencEncoder` 的处理方式一致。
+unsafe impl Send for AmfEncoder {}
+
 impl FrameEncoder for AmfEncoder {
     fn encode(&mut self, rgba: &Img) -> Result<EncodedFrame> {
         if self.frame_idx == u32::MAX {
