@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.3.2] - 2026.09.18
+
+### Performance
+
+- MP4 输出改为流水线并行：渲染线程池持续出帧，编码与封装在独立线程顺序执行，编码阶段不再让渲染线程空闲，大幅提高视频输出速度。
+- Standard 滑条主体图层缓存改为跨线程共享，大幅提高渲染速度。
+
+---
+
 ## [1.3.1] - 2026.09.17
 
 ### Added
