@@ -7,7 +7,7 @@ use crate::domain::parser::round_half_even;
 use crate::domain::shared::time_selection::{PreviewTimeSelector, TimeAxis};
 use crate::render::canvas::Img;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use super::slider::SliderRenderData;
 
@@ -58,13 +58,48 @@ pub struct CachedLayer {
     pub offset: (i64, i64),
 }
 
+/// 跨线程共享的滑条主体图层缓存。
+///
+/// 滑条主体图层的构建（2 倍超采样描边 + Lanczos 降采样）是单帧渲染里最贵的一步：
+/// 实测单次约 40ms，其中降采样约占 60%。它的输入只有「滑条序号 + 路径几何 +
+/// 宽度 + 颜色 + traceable」，在同一个 [`RenderContext`] 内是纯函数，因此可以安全共享。
+///
+/// 这里按滑条序号建槽并用 `OnceLock` 惰性初始化：多个 rayon 线程同时请求同一条
+/// 滑条时只有一个线程真正构建，其余线程在 `OnceLock` 上等待后直接复用。
+/// 之前每条线程各持一份 `RenderCache`，同一张谱面会被重复构建约「线程数」次。
+///
+/// 不同 `RenderContext` 之间不共享（每个上下文一份），因此不同谱面或不同配置
+/// 不会互相污染；同一上下文的多次渲染（例如 PNG 的 40 帧、GIF 的 75 帧）全程复用。
+pub struct SharedBodyLayers {
+    slots: Box<[OnceLock<CachedLayer>]>,
+}
+
+impl SharedBodyLayers {
+    pub fn new(hit_object_count: usize) -> Self {
+        Self {
+            slots: (0..hit_object_count)
+                .map(|_| OnceLock::new())
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        }
+    }
+
+    /// 返回该滑条已缓存的图层；尚未构建时调用 `build` 并记住结果。
+    ///
+    /// `OnceLock::get_or_init` 可能同时被多个线程调用，因此闭包必须在锁内重新取得
+    /// 所需数据，不能依赖调用方的可变借用。
+    pub fn get_or_init(&self, index: usize, build: impl FnOnce() -> CachedLayer) -> &CachedLayer {
+        self.slots[index].get_or_init(build)
+    }
+}
+
 #[derive(Default)]
 pub struct RenderCache {
     pub resized_alpha: HashMap<(u64, (u32, u32), u8), Img>,
     pub procedural: HashMap<(u64, [u8; 3]), Img>,
     pub slider_data: HashMap<usize, Arc<SliderRenderData>>,
-    pub slider_body_layers: HashMap<(usize, bool), CachedLayer>,
-    pub slider_body_alpha_layers: HashMap<(usize, u8), Img>,
+    /// 已按 alpha 派生的滑条主体图层（本线程私有）；基础图层见 [`SharedBodyLayers`]。
+    pub slider_body_alpha_layers: HashMap<(usize, u8), CachedLayer>,
     pub reverse_arrows: HashMap<(i64, [u8; 3]), Img>,
     /// 滑条球方向箭头：白色图标，按旋转角度（度，取整）缓存。
     pub ball_arrows: HashMap<i64, Img>,
@@ -96,6 +131,8 @@ pub struct RenderContext {
     pub slider_multiplier: f64,
     /// 每个音符开始时生效的 (beat_length, slider_velocity) 缓存。
     pub slider_timings: Vec<(f64, f64)>,
+    /// 跨线程共享的滑条主体图层缓存，见 [`SharedBodyLayers`]。
+    pub body_layers: SharedBodyLayers,
     pub time_axis: TimeAxis,
     pub output_format: crate::render::geometry::OutputFormat,
 }
@@ -346,6 +383,8 @@ pub fn build_render_context(
             }
         })
         .collect();
+    // 滑条主体图层缓存按物件序号建槽，需要先记下数量：`hit_objects` 随后被移入上下文。
+    let hit_objects_count = hit_objects.len();
     RenderContext {
         hit_objects,
         combo_info,
@@ -377,6 +416,7 @@ pub fn build_render_context(
         slider_tick_rate,
         slider_multiplier,
         slider_timings,
+        body_layers: SharedBodyLayers::new(hit_objects_count),
         time_axis,
         output_format,
     }

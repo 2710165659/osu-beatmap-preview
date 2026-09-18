@@ -65,41 +65,40 @@ pub fn draw_cached_slider_body(
     alpha: f64,
     traceable: bool,
 ) {
-    let cache_key = (index, traceable);
-    cache
-        .slider_body_layers
-        .entry(cache_key)
-        .or_insert_with(|| {
-            render_slider_body_layer(
-                &slider_data.frame_path.points,
-                context.slider_body_width,
-                color,
-                255,
-                traceable,
-                context.frame_layout.frame_width,
-                context.frame_layout.frame_height,
-            )
-        });
-
     let alpha_key = alpha_to_byte(alpha);
-    let (offset_x, offset_y) = {
-        let layer = &cache.slider_body_layers[&cache_key];
-        layer.offset
-    };
-    if alpha_key == 255 {
-        let layer = &cache.slider_body_layers[&cache_key];
-        frame.alpha_composite(&layer.image, offset_x, offset_y);
+    let alpha_cache_key = (index, alpha_key);
+
+    // 先查本线程的 alpha 变体缓存：命中时完全不触碰共享槽，省掉同步开销。
+    if let Some(layer) = cache.slider_body_alpha_layers.get(&alpha_cache_key) {
+        frame.alpha_composite(&layer.image, layer.offset.0, layer.offset.1);
         return;
     }
 
-    let key = (index, alpha_key);
-    if !cache.slider_body_alpha_layers.contains_key(&key) {
-        let scaled = cache.slider_body_layers[&cache_key]
-            .image
-            .scale_alpha(alpha_key as f64 / 255.0);
-        cache.slider_body_alpha_layers.insert(key, scaled);
-    }
-    frame.alpha_composite(&cache.slider_body_alpha_layers[&key], offset_x, offset_y);
+    // 基础图层是「序号 + 路径几何 + 宽度 + 颜色 + traceable」的纯函数，且这些输入在
+    // 同一个 `RenderContext` 内都不变，因此放进跨线程共享槽：多个 rayon 线程同时
+    // 需要同一条滑条时只有一个真正构建，其余复用同一份结果。
+    let shared = context.body_layers.get_or_init(index, || {
+        render_slider_body_layer(
+            &slider_data.frame_path.points,
+            context.slider_body_width,
+            color,
+            255,
+            traceable,
+            context.frame_layout.frame_width,
+            context.frame_layout.frame_height,
+        )
+    });
+
+    // 共享槽只保存未调 alpha 的基础图层；按 alpha 派生的副本留在本线程缓存。
+    // 不同线程会各自派生一次，但 `scale_alpha` 比重新构建图层便宜一个数量级。
+    let scaled = CachedLayer {
+        image: shared.image.scale_alpha(alpha_key as f64 / 255.0),
+        offset: shared.offset,
+    };
+    frame.alpha_composite(&scaled.image, scaled.offset.0, scaled.offset.1);
+    cache
+        .slider_body_alpha_layers
+        .insert(alpha_cache_key, scaled);
 }
 
 pub fn render_slider_body_layer(
@@ -839,7 +838,6 @@ pub fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
     }
     img
 }
-
 
 // ——— 辅助函数 ———
 
