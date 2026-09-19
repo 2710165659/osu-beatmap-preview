@@ -8,7 +8,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Standard 新增跟随点（follow point，对照游戏内 osu! "argon" pro (2022) 皮肤的 `ArgonFollowPoint`）：相邻两个物件之间按 32 个 playfield 单位的间距铺开，淡入位置（`fraction - 0.1` → `fraction`）、`Easing.Out` 位移与 1.5×→1× 缩放、preempt 提前量与 AR>10 时的整体加速都按游戏公式还原；转盘两端与新连击起点不生成跟随点，跟随点在物件层之下绘制。CPU 导出与 Web 实时预览共用同一套参数。
+- Standard 新增跟随点（follow point，对照游戏内 osu! "argon" pro (2022) 皮肤的 `ArgonFollowPoint`）：相邻两个物件之间按 32 个 playfield 单位的间距铺开，淡入位置（`fraction - 0.1` → `fraction`）、`Easing.Out` 位移与 1.5×→1× 缩放、preempt 提前量与 AR>10 时的整体加速都按游戏公式还原；图标使用固定的 `FC618F → BB1A41` 竖向渐变（拖后的 chevron 再乘 `Gray(0.2)`，不跟随连击色），转盘两端与新连击起点不生成跟随点，跟随点在物件层之下绘制。CPU 导出与 Web 实时预览共用同一套参数。
+
+### Fixed
+
+- 修正连击色取色序号：按 lazer `IHasComboInformation.UpdateComboInformation`，谱面首个物件（以及转盘之后的第一个物件）按新连击处理，连击序号从 0 自增到 1，因此第一个连击取的是**第二组**颜色——此前会取第一组，例如 5279008 的第一个 note 显示为粉色而游戏里是黄色（Combo2，`ArgonSkin.cs` 里也写着连击顺序「从 1 而不是 0 开始」）。谱面自带 `[Colours]` 时按 lazer `LegacyBeatmapSkin` 使用带 `ComboOffset` 的序号，皮肤配色按 `LegacySkin` / Argon 使用不带 offset 的序号；转盘不再算作新连击起点。
 
 ### Performance
 

@@ -302,30 +302,46 @@ pub fn build_video_frame_layout(
     }
 }
 
+/// 计算每个物件的连击色与连击序号。
+///
+/// 与 lazer `IHasComboInformation.UpdateComboInformation` / `OsuHitObject` 一致：
+/// `ComboIndex` 与 `ComboIndexWithOffsets` 都从 0 开始，遇到新连击时各自 +1
+/// （后者再叠加 `ComboOffset`）。**第一个物件（以及转盘之后的第一个物件）按
+/// 「新连击」处理，因此第一个连击的序号是 1 而不是 0**，取色时用的是第二个颜色；
+/// 转盘即使带新连击标记也不会开启新连击。
+///
+/// `colors_from_beatmap` 表示 `combo_colors` 是否来自谱面自带的 `[Colours]`：
+/// 来自谱面时按 lazer `LegacyBeatmapSkin` 用带 offset 的序号取色，否则按
+/// `LegacySkin` / Argon 皮肤用不带 offset 的序号取色。
 pub fn build_combo_info(
     hit_objects: &[StandardHitObject],
     combo_colors: &[[u8; 3]],
+    colors_from_beatmap: bool,
 ) -> Vec<ComboInfo> {
     let mut combo_info = Vec::with_capacity(hit_objects.len());
-    let mut color_index: usize = 0;
+    let mut combo_index: usize = 0;
+    let mut index_with_offsets: usize = 0;
     let mut number: u32 = 0;
     let mut previous_was_spinner = false;
 
     for (index, hit_object) in hit_objects.iter().enumerate() {
         let is_spinner = hit_object.hit_type & 8 != 0;
         let starts_combo =
-            index == 0 || previous_was_spinner || (hit_object.new_combo && !is_spinner);
+            !is_spinner && (hit_object.new_combo || index == 0 || previous_was_spinner);
         if starts_combo {
-            if index > 0 {
-                color_index =
-                    (color_index + hit_object.combo_offset as usize + 1) % combo_colors.len();
-            }
+            combo_index += 1;
+            index_with_offsets += hit_object.combo_offset.max(0) as usize + 1;
             number = 1;
         } else {
             number += 1;
         }
+        let color_index = if colors_from_beatmap {
+            index_with_offsets
+        } else {
+            combo_index
+        };
         combo_info.push(ComboInfo {
-            color: combo_colors[color_index],
+            color: combo_colors[color_index % combo_colors.len()],
             number,
         });
         previous_was_spinner = is_spinner;
@@ -367,7 +383,11 @@ pub fn build_render_context(
         settings.preempt_ms as f32 * beatmap.stack_leniency() as f32,
     );
     let frame_layout = build_frame_layout(output_format);
-    let combo_info = build_combo_info(&hit_objects, &skin.combo_colors);
+    let combo_info = build_combo_info(
+        &hit_objects,
+        &skin.combo_colors,
+        !beatmap.combo_colors.is_empty(),
+    );
     let frame_circle_diameter =
         py_round(settings.circle_diameter as f64 * frame_layout.scale).max(1);
     let slider_tick_rate = beatmap.difficulty.get_f64("SliderTickRate").unwrap_or(1.0);
@@ -392,6 +412,7 @@ pub fn build_render_context(
     let hit_objects_count = hit_objects.len();
     // 跟随点在世界坐标下只依赖堆叠后的物件位置与 preempt，与输出格式无关，
     // 因此在这里一次算好，PNG/GIF/MP4 与实时预览共用同一份。
+    // 注意颜色不跟随连击色：lazer `ArgonFollowPoint` 用的是固定渐变。
     let follow_points = super::follow_points::build_follow_points(&hit_objects, &settings);
     RenderContext {
         hit_objects,
@@ -678,6 +699,81 @@ mod tests {
             hit_type: 1,
             ..Default::default()
         }
+    }
+
+    /// 三个可区分的连击色，用于观察取色索引。
+    const COLORS: [[u8; 3]; 3] = [[10, 10, 10], [20, 20, 20], [30, 30, 30]];
+
+    #[test]
+    fn first_combo_starts_at_colour_index_one() {
+        // 与 lazer 一致：谱面首个物件按新连击处理，序号从 0 自增到 1，
+        // 因此第一个连击取的是第二个颜色（stable/lazer 里第一个连击色会被跳过）。
+        let objects = vec![
+            StandardHitObject {
+                new_combo: true,
+                ..circle(0, 0, 0)
+            },
+            circle(0, 0, 100),
+        ];
+        let info = build_combo_info(&objects, &COLORS, true);
+        assert_eq!(info[0].color, COLORS[1]);
+        assert_eq!((info[0].number, info[1].number), (1, 2));
+
+        // 带 offset 的新连击会额外跳色：offset = 1 时索引再 +2。
+        let objects = vec![
+            StandardHitObject {
+                new_combo: true,
+                ..circle(0, 0, 0)
+            },
+            StandardHitObject {
+                new_combo: true,
+                combo_offset: 1,
+                ..circle(0, 0, 100)
+            },
+        ];
+        let info = build_combo_info(&objects, &COLORS, true);
+        assert_eq!(info[0].color, COLORS[1]);
+        assert_eq!(info[1].color, COLORS[0]);
+    }
+
+    #[test]
+    fn skin_colours_ignore_combo_offsets() {
+        // 谱面自带 [Colours] 时按 lazer `LegacyBeatmapSkin` 用带 offset 的序号，
+        // 否则按皮肤用不带 offset 的序号。
+        let objects = vec![
+            StandardHitObject {
+                new_combo: true,
+                ..circle(0, 0, 0)
+            },
+            StandardHitObject {
+                new_combo: true,
+                combo_offset: 1,
+                ..circle(0, 0, 100)
+            },
+        ];
+        let from_skin = build_combo_info(&objects, &COLORS, false);
+        assert_eq!(from_skin[0].color, COLORS[1]);
+        assert_eq!(from_skin[1].color, COLORS[2]);
+    }
+
+    #[test]
+    fn spinner_never_starts_a_combo_and_the_next_object_does() {
+        let mut spinner = circle(0, 0, 100);
+        spinner.hit_type = 8;
+        spinner.new_combo = true;
+        spinner.end_time = 500;
+        let objects = vec![
+            StandardHitObject {
+                new_combo: true,
+                ..circle(0, 0, 0)
+            },
+            spinner,
+            circle(0, 0, 1000),
+        ];
+        let info = build_combo_info(&objects, &COLORS, true);
+        // 转盘沿用当前连击（序号继续），紧随其后的物件一定开启新连击。
+        assert_eq!((info[0].number, info[1].number, info[2].number), (1, 2, 1));
+        assert_eq!(info[2].color, COLORS[2]);
     }
 
     #[test]
