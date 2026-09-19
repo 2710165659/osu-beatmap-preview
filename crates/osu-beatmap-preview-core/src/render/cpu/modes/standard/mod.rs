@@ -6,5 +6,6 @@ pub mod context;
 mod frame;
 pub use frame::render_frame;
 pub mod digits;
+pub mod follow_points;
 pub mod slider;
 pub mod stacking;

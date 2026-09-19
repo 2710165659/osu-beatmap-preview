@@ -61,12 +61,26 @@ impl Img {
 
     /// 对应 PIL Image.alpha_composite：将 `src` 以 src-over 方式合成到 `(ox, oy)`。
     pub fn alpha_composite(&mut self, src: &Img, ox: i64, oy: i64) {
+        self.alpha_composite_scaled(src, ox, oy, 1.0);
+    }
+
+    /// 与 [`Self::alpha_composite`] 相同，但额外把 `src` 的 alpha 乘以 `factor`。
+    ///
+    /// 逐帧连续变化的透明度（例如跟随点的淡入淡出）不适合像
+    /// [`Self::with_alpha`] 那样按 alpha 派生并缓存图像，这里用查表在合成时
+    /// 直接乘 alpha，既不产生新缓存项也不会因为量化而跳变。
+    pub fn alpha_composite_scaled(&mut self, src: &Img, ox: i64, oy: i64, factor: f64) {
         let x0 = ox.max(0);
         let y0 = oy.max(0);
         let x1 = (ox + src.w as i64).min(self.w as i64);
         let y1 = (oy + src.h as i64).min(self.h as i64);
         if x0 >= x1 || y0 >= y1 {
             return;
+        }
+        let factor = factor.clamp(0.0, 1.0);
+        let mut lut = [0u8; 256];
+        for (value, entry) in lut.iter_mut().enumerate() {
+            *entry = (value as f64 * factor).round() as u8;
         }
         for y in y0..y1 {
             let sy = (y - oy) as u32;
@@ -76,7 +90,7 @@ impl Img {
             let dst = &mut self.data[drow..drow + count * 4];
             let sp = &src.data[srow..srow + count * 4];
             for (d, s) in dst.chunks_exact_mut(4).zip(sp.chunks_exact(4)) {
-                let sa = s[3];
+                let sa = lut[s[3] as usize];
                 if sa == 255 {
                     d.copy_from_slice(s);
                 } else if sa != 0 {

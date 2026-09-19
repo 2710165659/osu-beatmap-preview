@@ -8,6 +8,9 @@ use super::constants::*;
 use super::context::{
     color_id, py_round, stacked_position, to_frame_point, RenderCache, RenderContext,
 };
+use super::follow_points::{
+    build_sprite, follow_point_position, follow_point_state, sprite_height_key,
+};
 use super::slider::{
     darken, draw_cached_slider_body, draw_ring_aa, draw_slider_ball, draw_slider_body,
     draw_slider_reverse_arrows, draw_slider_ticks, fill_circle_gradient_aa, get_slider_render_data,
@@ -82,6 +85,10 @@ pub fn render_frame(
         }
     };
 
+    // 跟随点在游戏里位于物件层之下（`OsuPlayfield` 的 FollowPoints 早于
+    // HitObjectContainer），因此最先绘制，会被随后画出的物件覆盖。
+    draw_follow_points(&mut frame, context, cache, snapshot_time);
+
     for &index in visible_indexes {
         let hit_object = &context.hit_objects[index];
         if hit_object.hit_type & 8 != 0 {
@@ -112,6 +119,38 @@ pub fn render_frame(
     }
 
     frame
+}
+
+// ——— 跟随点 ———
+
+/// 绘制当前时刻所有存活区间的跟随点。
+///
+/// 每个跟随点的存活区间只有 preempt + TimeFadeIn（AR5 下 1.2 秒），比整条连接
+/// 短得多，因此逐帧扫描全部跟随点并跳过区间外的即可，不需要额外的索引结构。
+fn draw_follow_points(
+    frame: &mut Img,
+    context: &RenderContext,
+    cache: &mut RenderCache,
+    snapshot_time: i64,
+) {
+    for point in &context.follow_points {
+        let (alpha, progress) = follow_point_state(point, snapshot_time);
+        if alpha <= 0.0 {
+            continue;
+        }
+        let height = sprite_height_key(&context.settings, context.frame_layout.scale, progress);
+        // 旋转角度取整到 1°，与滑条球箭头、折返箭头一致地复用同一张精灵。
+        let angle = py_round(point.rotation);
+        let sprite = cache
+            .follow_point_sprites
+            .entry((height, angle))
+            .or_insert_with(|| build_sprite(height as f64, angle as f64));
+        let world = follow_point_position(point, progress);
+        let center = to_frame_point(world.0, world.1, &context.frame_layout);
+        let x = py_round(center.0 - sprite.w as f64 / 2.0);
+        let y = py_round(center.1 - sprite.h as f64 / 2.0);
+        frame.alpha_composite_scaled(sprite, x, y, alpha);
+    }
 }
 
 // ——— 打击圈 ———
@@ -806,5 +845,82 @@ mod tests {
         let frame = render_single(&gif, 0);
         assert_eq!(frame.get(0, 0)[3], 255);
         assert_eq!((frame.w as i64, frame.h as i64), (530, 384));
+    }
+
+    /// 两个水平相距 300 个 playfield 单位、相隔 1000ms 的圆圈（AR5）。
+    fn two_circle_beatmap() -> crate::domain::models::Beatmap {
+        let mut general = KvSection::default();
+        general.insert("Mode", "0".to_string());
+        let mut difficulty = KvSection::default();
+        difficulty.insert("CircleSize", "4".to_string());
+        difficulty.insert("ApproachRate", "5".to_string());
+        let circle = |x: i32, start_time: i64| crate::domain::models::StandardHitObject {
+            x,
+            y: 192,
+            start_time,
+            end_time: start_time,
+            hit_type: 1,
+            ..Default::default()
+        };
+        crate::domain::models::Beatmap {
+            metadata: KvSection::default(),
+            difficulty,
+            general,
+            timing_points: Vec::new(),
+            hit_objects: HitObjects::Standard(vec![circle(100, 1000), circle(400, 2000)]),
+            break_periods: Vec::new(),
+            background_filename: None,
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
+
+    /// 统计 `center` 周围 `radius` 像素内符合 `predicate` 的像素数。
+    fn count_pixels(
+        frame: &Img,
+        center: (f64, f64),
+        radius: i64,
+        predicate: impl Fn([u8; 4]) -> bool,
+    ) -> usize {
+        let mut count = 0;
+        for dx in -radius..=radius {
+            for dy in -radius..=radius {
+                let x = center.0.round() as i64 + dx;
+                let y = center.1.round() as i64 + dy;
+                if x < 0 || y < 0 || x >= frame.w as i64 || y >= frame.h as i64 {
+                    continue;
+                }
+                if predicate(frame.get(x as u32, y as u32)) {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    #[test]
+    fn follow_points_are_drawn_between_hit_objects() {
+        let beatmap = two_circle_beatmap();
+        let context = build_render_context(
+            &beatmap,
+            beatmap.hit_objects.as_standard().unwrap().to_vec(),
+            None,
+            TimeAxis::new(0),
+            OutputFormat::Gif,
+        );
+        // 第一个跟随点在连接上 48/300 处：1000ms 时已淡入完成并停在
+        // 世界坐标 (148, 192)，位于左侧圆圈的判定圈之外。
+        let center = to_frame_point(148.0, 192.0, &context.frame_layout);
+        let is_pink = |pixel: [u8; 4]| pixel[0] > 100 && pixel[0] > pixel[1] && pixel[2] > pixel[1];
+        let is_background = |pixel: [u8; 4]| pixel == [0, 0, 0, 255];
+
+        let frame = render_single(&context, 1000);
+        assert!(
+            count_pixels(&frame, center, 4, is_pink) > 0,
+            "两个圆圈之间应画出 Argon 跟随点"
+        );
+        // 淡入之前（fade_in = 360ms）同一位置不应有任何跟随点。
+        let before = render_single(&context, 300);
+        assert_eq!(count_pixels(&before, center, 4, is_background), 81);
     }
 }

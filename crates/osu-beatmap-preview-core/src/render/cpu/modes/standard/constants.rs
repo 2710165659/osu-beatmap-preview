@@ -22,6 +22,15 @@ pub mod rules {
     pub const BREAK_FADE_DURATION_MS: i64 = 325;
     pub const SNAKING_IN_SLIDERS: bool = true;
     pub const SNAKING_OUT_SLIDERS: bool = true;
+    /// 相邻跟随点的间距（playfield 单位，对应 lazer `FollowPointConnection.SPACING`）。
+    pub const FOLLOW_POINT_SPACING: i64 = 32;
+    /// 跟随点的淡出提前量（毫秒，对应 lazer `FollowPointConnection.PREEMPT`）。
+    pub const FOLLOW_POINT_PREEMPT_MS: f64 = 800.0;
+    /// AR=10 时的最小 preempt（毫秒，对应 lazer `OsuHitObject.PREEMPT_MIN`）：
+    /// 更短的 preempt 会让跟随点按同一比例整体加快。
+    pub const FOLLOW_POINT_PREEMPT_MIN_MS: f64 = 450.0;
+    /// 跟随点淡入与淡出时长的上限（毫秒，对应 lazer `OsuHitObject.TimeFadeIn`）。
+    pub const FOLLOW_POINT_FADE_IN_MS: f64 = 400.0;
 }
 
 /// 这里的值是逻辑像素；使用处必须按当前输出格式的 `SCALE` 换算。
@@ -31,6 +40,19 @@ pub mod sizing {
     pub const BREAK_OVERLAY_COUNTER_FONT_SIZE: u32 = 33;
     pub const BREAK_OVERLAY_INFO_FONT_SIZE: u32 = 18;
     pub const BREAK_OVERLAY_INFO_TOP_GAP: i64 = 14;
+    /// 跟随点图标外框边长（playfield 单位）：lazer `FollowPoint` 里 `SpriteIcon` 的尺寸 8。
+    /// chevron 字形高大于宽，等比缩放到该方框后墨迹高度就等于方框边长。
+    pub const FOLLOW_POINT_ICON_SIZE: f64 = 8.0;
+    /// FontAwesome Solid `ChevronRight` 的墨迹宽高比（字形路径包围盒约 262×429）。
+    pub const FOLLOW_POINT_CHEVRON_ASPECT: f64 = 262.0 / 429.0;
+    /// chevron 笔画厚度相对墨迹高度的比例（字形路径中斜边带的垂直厚度）。
+    pub const FOLLOW_POINT_CHEVRON_THICKNESS_RATIO: f64 = 0.16;
+    /// 两个 chevron 的墨迹中心间距相对墨迹高度的比例：
+    /// lazer 里第二个图标相对第一个偏移 4 个 playfield 单位，正好是图标外框的一半。
+    pub const FOLLOW_POINT_CHEVRON_GAP_RATIO: f64 = 0.5;
+    /// 跟随点淡入起始时的整体缩放倍率（相对 `end.Scale`）：
+    /// lazer 为 `fp.Scale = 1.5 * end.Scale`，再 `ScaleTo(end.Scale, ...)` 收敛到 1 倍。
+    pub const FOLLOW_POINT_SCALE_START: f64 = 1.5;
 }
 
 pub mod style {
@@ -56,6 +78,12 @@ pub mod style {
     pub const ARGON_COMBO_COLORS: [[u8; 3]; 4] =
         [[255, 192, 0], [0, 202, 0], [18, 124, 255], [242, 24, 57]];
     pub const ARGON_SPINNER_PINK: [u8; 3] = [252, 97, 143];
+    /// 跟随点图标的竖向渐变：lazer `ArgonFollowPoint` 的
+    /// `ColourInfo.GradientVertical(FC618F, BB1A41)`，上亮下暗。
+    pub const ARGON_FOLLOW_POINT_TOP: [u8; 3] = [0xFC, 0x61, 0x8F];
+    pub const ARGON_FOLLOW_POINT_BOTTOM: [u8; 3] = [0xBB, 0x1A, 0x41];
+    /// 前一个（拖后）chevron 叠加 `OsuColour.Gray(0.2)` 后的亮度比例。
+    pub const ARGON_FOLLOW_POINT_DIM: f64 = 0.2;
 }
 
 pub use cache::*;

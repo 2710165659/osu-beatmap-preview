@@ -1,5 +1,6 @@
 //! Standard WGPU 实时帧源准备与原生场景生成。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::domain::errors::Result;
@@ -12,6 +13,9 @@ use crate::render::cpu::modes::standard::constants::*;
 use crate::render::cpu::modes::standard::context::{
     apply_standard_object_mods, build_render_context, build_visible_indexes_by_snapshot, py_round,
     stacked_position, standard_objects, to_frame_point, RenderCache, RenderContext,
+};
+use crate::render::cpu::modes::standard::follow_points::{
+    build_sprite, follow_point_height, follow_point_position, follow_point_state,
 };
 use crate::render::cpu::modes::standard::slider::{
     alpha_to_byte, build_reverse_arrow, darken, get_slider_render_data, rotate_arrow_point,
@@ -33,6 +37,14 @@ struct PreparedBreak {
     period: BreakPeriod,
     counters: Vec<Arc<Img>>,
     info: Arc<Img>,
+}
+
+/// 预旋转好的跟随点图标：按连接方向的角度取整后共享，逐帧只做缩放与合成。
+struct PreparedFollowPoints {
+    /// 与 `context.follow_points` 一一对应的精灵。
+    sprites: Vec<Arc<Img>>,
+    /// 精灵的基准像素高度（淡入开始时的最大高度 1.5 倍物件缩放）。
+    base_height: f64,
 }
 
 /// stacking、Mod、路径采样与文字资源都在会话加载时完成；逐帧只计算生命周期和
@@ -81,6 +93,7 @@ pub fn prepare_realtime(
         .map(|image| Arc::new((*image).clone()))
         .collect::<Vec<_>>();
     let breaks = prepare_breaks(&beatmap.break_periods, &context);
+    let follow_points = prepare_follow_points(&context);
     Ok(RealtimeFrameSource::new(
         GameMode::Standard,
         move |absolute_time_ms| {
@@ -94,11 +107,38 @@ pub fn prepare_realtime(
                 &sliders,
                 &digit_masks,
                 &breaks,
+                &follow_points,
                 absolute_time_ms,
                 &indexes[0],
             ))
         },
     ))
+}
+
+/// 预先按连接方向旋转跟随点图标。
+///
+/// 图标在淡入期间从 1.5 倍缩到 1 倍，这里按最大高度建图，逐帧用四边形缩放，
+/// 因此同一角度只需要一张精灵。角度取整到 1°，与滑条球箭头、折返箭头一致。
+fn prepare_follow_points(context: &RenderContext) -> PreparedFollowPoints {
+    let base_height =
+        follow_point_height(&context.settings, context.frame_layout.scale, 0.0).max(1.0);
+    let mut sprites_by_angle: HashMap<i64, Arc<Img>> = HashMap::new();
+    let sprites = context
+        .follow_points
+        .iter()
+        .map(|point| {
+            let angle = py_round(point.rotation);
+            Arc::clone(
+                sprites_by_angle
+                    .entry(angle)
+                    .or_insert_with(|| Arc::new(build_sprite(base_height, angle as f64))),
+            )
+        })
+        .collect();
+    PreparedFollowPoints {
+        sprites,
+        base_height,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -107,6 +147,7 @@ fn render_scene(
     sliders: &[Option<PreparedSlider>],
     digits: &[Arc<Img>],
     breaks: &[PreparedBreak],
+    follow_points: &PreparedFollowPoints,
     time: i64,
     visible: &[usize],
 ) -> FrameScene {
@@ -125,6 +166,8 @@ fn render_scene(
         ),
         [0, 0, 0, 0],
     );
+    // 跟随点在游戏里位于物件层之下，先于物件发出命令。
+    draw_follow_points(&mut scene, context, follow_points, time);
     for &index in visible {
         let object = &context.hit_objects[index];
         if object.hit_type & 8 != 0 {
@@ -154,6 +197,31 @@ fn render_scene(
         draw_break(&mut scene, context, current, time);
     }
     scene.finish()
+}
+
+/// 绘制当前时刻存活区间内的跟随点，精灵按统一的基准高度等比缩放。
+fn draw_follow_points(
+    scene: &mut FrameSceneBuilder,
+    context: &RenderContext,
+    prepared: &PreparedFollowPoints,
+    time: i64,
+) {
+    for (point, sprite) in context.follow_points.iter().zip(&prepared.sprites) {
+        let (alpha, progress) = follow_point_state(point, time);
+        if alpha <= 0.0 {
+            continue;
+        }
+        let ratio = follow_point_height(&context.settings, context.frame_layout.scale, progress)
+            / prepared.base_height;
+        let side = sprite.w as f64 * ratio;
+        let world = follow_point_position(point, progress);
+        let center = to_frame_point(world.0, world.1, &context.frame_layout);
+        scene.sprite(
+            Arc::clone(sprite),
+            rect(center.0 - side / 2.0, center.1 - side / 2.0, side, side),
+            alpha as f32,
+        );
+    }
 }
 
 fn draw_hit_circle(
@@ -809,6 +877,76 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// 两个水平相距 300 个 playfield 单位的圆圈。
+    fn two_circle_beatmap() -> Beatmap {
+        let mut general = KvSection::default();
+        general.insert("Mode", "0".to_string());
+        let mut difficulty = KvSection::default();
+        difficulty.insert("CircleSize", "4".to_string());
+        difficulty.insert("ApproachRate", "5".to_string());
+        let circle = |x: i32, start_time: i64| StandardHitObject {
+            x,
+            y: 192,
+            start_time,
+            end_time: start_time,
+            hit_type: 1,
+            ..Default::default()
+        };
+        Beatmap {
+            metadata: KvSection::default(),
+            difficulty,
+            general,
+            timing_points: Vec::new(),
+            hit_objects: HitObjects::Standard(vec![circle(100, 1000), circle(400, 2000)]),
+            break_periods: Vec::new(),
+            background_filename: None,
+            combo_colors: Vec::new(),
+            beat_divisor: 0,
+        }
+    }
+
+    /// 跟随点精灵出现在连接上的正确位置，并在生命周期结束后消失。
+    #[test]
+    fn realtime_follow_points_appear_between_objects() {
+        let source = prepare_realtime(&two_circle_beatmap(), None, TimeAxis::new(0))
+            .expect("实时场景必须可以准备");
+
+        let sprites = |scene: &FrameScene| {
+            scene
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::Sprite { destination, .. } => Some(*destination),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        // 1200ms 时全部 7 个跟随点都已淡入：第一个（连接上 48/300 处）停在
+        // 世界坐标 (148, 192)，位于左侧圆圈判定圈之外。
+        let scene = source.render(1200).expect("任意时间都必须能出帧");
+        let visible = sprites(&scene);
+        // 距离 300 共 7 个跟随点（48 起每 32 一个），各自的存活区间都覆盖 1200ms。
+        assert_eq!(visible.len(), 7);
+        let layout =
+            crate::render::cpu::modes::standard::context::build_frame_layout(OutputFormat::Mp4);
+        let center = to_frame_point(148.0, 192.0, &layout);
+        assert!(
+            visible.iter().any(|quad| {
+                (quad.x + quad.width / 2.0 - center.0 as f32).abs() < 0.01
+                    && (quad.y + quad.height / 2.0 - center.1 as f32).abs() < 0.01
+            }),
+            "第一个跟随点应停在连接上的 48/300 处：{visible:?}"
+        );
+
+        // 淡入之前（fade_in = 360ms）与最后一个跟随点淡出之后都没有跟随点。
+        assert!(sprites(&source.render(300).expect("出帧失败")).is_empty());
+        assert!(
+            sprites(&source.render(2300).expect("出帧失败")).is_empty(),
+            "最后一个跟随点在 2200ms 之后应已消失"
+        );
     }
 
     /// 实时场景的滑条球箭头跟随折返方向。

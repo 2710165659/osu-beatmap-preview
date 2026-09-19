@@ -104,6 +104,8 @@ pub struct RenderCache {
     /// 滑条球方向箭头：白色图标，按旋转角度（度，取整）缓存。
     pub ball_arrows: HashMap<i64, Img>,
     pub slider_tick_sprites: HashMap<(i64, [u8; 3]), Img>,
+    /// 跟随点图标：按（像素高度, 旋转角度）缓存，两者的取值都很少。
+    pub follow_point_sprites: HashMap<(i64, i64), Img>,
 }
 
 /// std 渲染使用的皮肤参数。
@@ -119,6 +121,9 @@ pub struct Skin {
 pub struct RenderContext {
     pub hit_objects: Vec<StandardHitObject>,
     pub combo_info: Vec<ComboInfo>,
+    /// 整个谱面展开后的跟随点（世界坐标），见
+    /// [`super::follow_points::build_follow_points`]。
+    pub follow_points: Vec<super::follow_points::FollowPoint>,
     pub skin: Skin,
     pub settings: RenderSettings,
     pub frame_layout: FrameLayout,
@@ -385,9 +390,13 @@ pub fn build_render_context(
         .collect();
     // 滑条主体图层缓存按物件序号建槽，需要先记下数量：`hit_objects` 随后被移入上下文。
     let hit_objects_count = hit_objects.len();
+    // 跟随点在世界坐标下只依赖堆叠后的物件位置与 preempt，与输出格式无关，
+    // 因此在这里一次算好，PNG/GIF/MP4 与实时预览共用同一份。
+    let follow_points = super::follow_points::build_follow_points(&hit_objects, &settings);
     RenderContext {
         hit_objects,
         combo_info,
+        follow_points,
         skin,
         settings,
         frame_layout,

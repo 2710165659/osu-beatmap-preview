@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ## [1.3.2] - 2026.09.18
 
+### Added
+
+- Standard 新增跟随点（follow point，对照游戏内 osu! "argon" pro (2022) 皮肤的 `ArgonFollowPoint`）：相邻两个物件之间按 32 个 playfield 单位的间距铺开，淡入位置（`fraction - 0.1` → `fraction`）、`Easing.Out` 位移与 1.5×→1× 缩放、preempt 提前量与 AR>10 时的整体加速都按游戏公式还原；转盘两端与新连击起点不生成跟随点，跟随点在物件层之下绘制。CPU 导出与 Web 实时预览共用同一套参数。
+
 ### Performance
 
 - MP4 输出改为流水线并行：渲染线程池持续出帧，编码与封装在独立线程顺序执行，编码阶段不再让渲染线程空闲，大幅提高视频输出速度。
