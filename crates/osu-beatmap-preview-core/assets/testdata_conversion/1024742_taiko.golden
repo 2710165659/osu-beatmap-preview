@@ -380,7 +380,7 @@ TimingPoint { time: 320009.0, beat_length: -83.3333333333333, meter: 4, uninheri
 TimingPoint { time: 320396.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
 TimingPoint { time: 320396.0, beat_length: -90.9090909090909, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
 TimingPoint { time: 320493.0, beat_length: NaN, meter: 4, uninherited: false, kiai_mode: false, omit_first_bar_line: false }
-hit_objects_count=2118
+hit_objects_count=2098
 hit_objects:
 TaikoHitObject { start_time: 4332, end_time: 4332, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 4526, end_time: 4526, hit_type: 0, hitsound: 0 }
@@ -916,7 +916,7 @@ TaikoHitObject { start_time: 81074, end_time: 81074, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 81171, end_time: 81171, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 81461, end_time: 81461, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 81558, end_time: 81558, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 81848, end_time: 81848, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 81824, end_time: 81824, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 81945, end_time: 81945, hit_type: 0, hitsound: 2 }
 TaikoHitObject { start_time: 82332, end_time: 82332, hit_type: 0, hitsound: 6 }
 TaikoHitObject { start_time: 82525, end_time: 82525, hit_type: 0, hitsound: 8 }
@@ -1323,9 +1323,9 @@ TaikoHitObject { start_time: 146106, end_time: 146106, hit_type: 0, hitsound: 0 
 TaikoHitObject { start_time: 146203, end_time: 146203, hit_type: 0, hitsound: 2 }
 TaikoHitObject { start_time: 146493, end_time: 146493, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 146590, end_time: 146590, hit_type: 0, hitsound: 4 }
-TaikoHitObject { start_time: 146880, end_time: 146880, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 146856, end_time: 146856, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 146977, end_time: 146977, hit_type: 0, hitsound: 8 }
-TaikoHitObject { start_time: 147267, end_time: 147267, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 147186, end_time: 147186, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 147364, end_time: 147364, hit_type: 0, hitsound: 6 }
 TaikoHitObject { start_time: 147557, end_time: 147557, hit_type: 0, hitsound: 8 }
 TaikoHitObject { start_time: 147655, end_time: 147655, hit_type: 0, hitsound: 0 }
@@ -1627,46 +1627,26 @@ TaikoHitObject { start_time: 188977, end_time: 188977, hit_type: 0, hitsound: 0 
 TaikoHitObject { start_time: 189074, end_time: 189074, hit_type: 0, hitsound: 8 }
 TaikoHitObject { start_time: 189122, end_time: 189122, hit_type: 0, hitsound: 8 }
 TaikoHitObject { start_time: 189171, end_time: 189171, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 189558, end_time: 189558, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 189945, end_time: 189945, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 190763, end_time: 190763, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 191150, end_time: 191150, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 191537, end_time: 191537, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 192311, end_time: 192311, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 192698, end_time: 192698, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 193085, end_time: 193085, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 193472, end_time: 193472, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 192311, end_time: 193472, hit_type: 2, hitsound: 0 }
 TaikoHitObject { start_time: 193859, end_time: 193859, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 194246, end_time: 194246, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 194633, end_time: 194633, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 195408, end_time: 195408, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 195795, end_time: 195795, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 196182, end_time: 196182, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 196569, end_time: 196569, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 195408, end_time: 196569, hit_type: 2, hitsound: 0 }
 TaikoHitObject { start_time: 196956, end_time: 196956, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 197343, end_time: 197343, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 197730, end_time: 197730, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 198504, end_time: 198504, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 198891, end_time: 198891, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 198988, end_time: 200009, hit_type: 8, hitsound: 0 }
 TaikoHitObject { start_time: 200827, end_time: 200827, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 201601, end_time: 201601, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 201988, end_time: 201988, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 202375, end_time: 202375, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 202762, end_time: 202762, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 201601, end_time: 202762, hit_type: 2, hitsound: 0 }
 TaikoHitObject { start_time: 203149, end_time: 203149, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 203536, end_time: 203536, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 203923, end_time: 203923, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 204698, end_time: 204698, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 205085, end_time: 205085, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 205472, end_time: 205472, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 205859, end_time: 205859, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 204698, end_time: 205859, hit_type: 2, hitsound: 0 }
 TaikoHitObject { start_time: 206246, end_time: 206246, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 207020, end_time: 207020, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 207794, end_time: 207794, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 208181, end_time: 208181, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 208568, end_time: 208568, hit_type: 0, hitsound: 0 }
-TaikoHitObject { start_time: 208955, end_time: 208955, hit_type: 0, hitsound: 0 }
+TaikoHitObject { start_time: 207794, end_time: 208955, hit_type: 2, hitsound: 0 }
 TaikoHitObject { start_time: 209343, end_time: 209343, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 210117, end_time: 210117, hit_type: 0, hitsound: 0 }
 TaikoHitObject { start_time: 210891, end_time: 210891, hit_type: 0, hitsound: 0 }

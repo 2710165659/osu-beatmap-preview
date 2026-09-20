@@ -19,7 +19,9 @@ struct SliderConversionValues {
     taiko_duration: i64,
     tick_spacing: f64,
     distance: f64,
-    timing_beat_length: f64,
+    /// 经 precision 调整后的拍长，用于 taiko 速度与时长。
+    adjusted_beat_length: f64,
+    /// 判据阈值使用的拍长：v8+ 为 timing point 的原始拍长，否则为 precision 调整值。
     beat_length: f64,
     taiko_velocity: f64,
 }
@@ -106,7 +108,7 @@ fn taiko_convert_slider(
 ) -> Vec<TaikoHitObject> {
     let vals = slider_conversion_values(hit_object, beatmap, cursor);
 
-    if should_convert_slider_to_hits(beatmap, &vals) {
+    if should_convert_slider_to_hits(&vals) {
         let mut result: Vec<TaikoHitObject> = Vec::new();
         let all_hitsounds = taiko_slider_node_hitsounds(hit_object);
         let mut sample_index: usize = 0;
@@ -189,10 +191,15 @@ pub fn taiko_hitsound_events(
     }]
 }
 
+/// 滑条在 taiko 下的时长与 tick 间距。
+///
+/// `timing_beat_length` 必须是 timing point 的原始拍长：lazer 先按 precision 调整值
+/// 算时长与 tick 间距，只有 v8+ 的阈值判定才换回原始拍长。这里不需要那个阈值，
+/// 因此内部只使用调整后的值。
 pub fn taiko_slider_geometry(
     hit_object: &StandardHitObject,
     beatmap: &Beatmap,
-    beat_length: f64,
+    timing_beat_length: f64,
     slider_velocity: f64,
 ) -> TaikoSliderGeometry {
     let spans = i32::max(1, hit_object.slider_repeats);
@@ -201,8 +208,7 @@ pub fn taiko_slider_geometry(
     distance *= VELOCITY_MULTIPLIER;
     distance *= spans as f64;
 
-    let timing_beat_length = beat_length;
-    let mut beat_length = precision_adjusted_beat_length(timing_beat_length, slider_velocity);
+    let duration_beat_length = precision_adjusted_beat_length(timing_beat_length, slider_velocity);
 
     let slider_multiplier = taiko_slider_multiplier(beatmap);
     let slider_tick_rate = taiko_slider_tick_rate(beatmap);
@@ -210,15 +216,12 @@ pub fn taiko_slider_geometry(
         OSU_BASE_SCORING_DISTANCE * (slider_multiplier * VELOCITY_MULTIPLIER) / slider_tick_rate;
 
     let taiko_velocity = slider_scoring_point_distance * slider_tick_rate;
-    let taiko_duration = (distance / taiko_velocity * beat_length) as i64;
-
-    if beatmap.format_version() >= 8 {
-        beat_length = timing_beat_length;
-    }
+    let taiko_duration = (distance / taiko_velocity * duration_beat_length) as i64;
 
     // 与 stable 一致：tick 间距取 beat/tickRate 与 每段时长 的较小值。
+    // lazer 此处用的仍是 precision 调整后的拍长，原始拍长只参与判定阈值。
     let tick_spacing = f64::min(
-        beat_length / slider_tick_rate,
+        duration_beat_length / slider_tick_rate,
         taiko_duration as f64 / spans as f64,
     );
 
@@ -241,7 +244,7 @@ fn slider_conversion_values(
 
     let timing_beat_length = cursor.beat_length;
     let slider_velocity = cursor.slider_velocity;
-    let mut beat_length = precision_adjusted_beat_length(timing_beat_length, slider_velocity);
+    let adjusted_beat_length = precision_adjusted_beat_length(timing_beat_length, slider_velocity);
 
     let slider_multiplier = taiko_slider_multiplier(beatmap);
     let slider_tick_rate = taiko_slider_tick_rate(beatmap);
@@ -249,31 +252,34 @@ fn slider_conversion_values(
         OSU_BASE_SCORING_DISTANCE * (slider_multiplier * VELOCITY_MULTIPLIER) / slider_tick_rate;
 
     let taiko_velocity = slider_scoring_point_distance * slider_tick_rate;
+    // geometry 内部自行做 precision 调整；这里传原始拍长，与 lazer 保持一致。
     let geometry = taiko_slider_geometry(hit_object, beatmap, timing_beat_length, slider_velocity);
     let taiko_duration = geometry.taiko_duration;
 
-    if beatmap.format_version() >= 8 {
-        beat_length = timing_beat_length;
-    }
+    // stable 只在判定阈值里用原始拍长，v8 起才这样；osuV 仍要用调整后的拍长。
+    let beat_length = if beatmap.format_version() >= 8 {
+        timing_beat_length
+    } else {
+        adjusted_beat_length
+    };
 
     SliderConversionValues {
         taiko_duration,
         tick_spacing: geometry.tick_spacing,
         distance,
-        timing_beat_length,
+        adjusted_beat_length,
         beat_length,
         taiko_velocity,
     }
 }
 
-fn should_convert_slider_to_hits(beatmap: &Beatmap, vals: &SliderConversionValues) -> bool {
-    let osu_velocity = vals.taiko_velocity * (1000.0 / vals.beat_length);
-    let mut beat_length = vals.beat_length;
-    if beatmap.format_version() >= 8 {
-        beat_length = vals.timing_beat_length;
-    }
+fn should_convert_slider_to_hits(vals: &SliderConversionValues) -> bool {
+    // 顺序必须与 lazer 一致：osuV 用的是 precision 调整后的拍长，
+    // 只有阈值 2*beatLength 才换回原始拍长（v8+），否则判据会被整体放大。
+    let osu_velocity = vals.taiko_velocity * (1000.0 / vals.adjusted_beat_length);
+    let rate = vals.distance / osu_velocity * 1000.0;
 
-    vals.tick_spacing > 0.0 && vals.distance / osu_velocity * 1000.0 < 2.0 * beat_length
+    vals.tick_spacing > 0.0 && rate < 2.0 * vals.beat_length
 }
 
 fn taiko_slider_node_hitsounds(hit_object: &StandardHitObject) -> Vec<i32> {
@@ -370,5 +376,39 @@ fn taiko_slider_tick_rate(beatmap: &Beatmap) -> f64 {
         8.0
     } else {
         tick_rate.clamp(0.5, 8.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn values(
+        distance: f64,
+        taiko_velocity: f64,
+        adjusted: f64,
+        threshold: f64,
+    ) -> SliderConversionValues {
+        SliderConversionValues {
+            taiko_duration: 160,
+            tick_spacing: 160.0,
+            distance,
+            adjusted_beat_length: adjusted,
+            beat_length: threshold,
+            taiko_velocity,
+        }
+    }
+
+    /// 判据里的 osuV 必须用 precision 调整后的拍长，只有阈值 2*beatLength 用原始拍长。
+    /// `taiko_velocity` 取 1.0 时 rate = distance / (1000 / adjusted) * 1000，
+    /// 两条用例分别落在阈值两侧，交换拍长会让期望整体反转。
+    #[test]
+    fn osu_velocity_uses_adjusted_beat_length() {
+        // adjusted = 160：rate = 3 / (1000 / 160) * 1000 = 18.75
+        // 阈值拍长 320 → limit = 640，18.75 < 640 → 拆分
+        assert!(should_convert_slider_to_hits(&values(3.0, 1.0, 160.0, 320.0)));
+        // 阈值拍长 8 → limit = 16，18.75 > 16 → 不拆分。
+        // 若 osuV 误用拍长 8：rate = 375 > 16，期望反转，用例失败。
+        assert!(!should_convert_slider_to_hits(&values(3.0, 1.0, 160.0, 8.0)));
     }
 }

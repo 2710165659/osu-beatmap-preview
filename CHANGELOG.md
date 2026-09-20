@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - 修正连击色取色序号：按 lazer `IHasComboInformation.UpdateComboInformation`，谱面首个物件（以及转盘之后的第一个物件）按新连击处理，连击序号从 0 自增到 1，因此第一个连击取的是**第二组**颜色——此前会取第一组，例如 5279008 的第一个 note 显示为粉色而游戏里是黄色（Combo2，`ArgonSkin.cs` 里也写着连击顺序「从 1 而不是 0 开始」）。谱面自带 `[Colours]` 时按 lazer `LegacyBeatmapSkin` 使用带 `ComboOffset` 的序号，皮肤配色按 `LegacySkin` / Argon 使用不带 offset 的序号；转盘不再算作新连击起点。
+- 修复taiko转谱滑条错误。
 
 ### Performance
 
