@@ -5,12 +5,15 @@
 
 import { computed, nextTick, reactive } from 'vue';
 
+import { parseBeatmapText } from '../backend/beatmap-meta.js';
 import {
   createBeatmapSampleIndex,
   createHitsoundContext,
   createHitsoundOutput,
   loadHitsoundSamples,
 } from './hitsound.js';
+import { beatmapEntries, localFileKind, sampleEntries, silentWavBytes } from './local-file.js';
+import { extractEntry, findEntry, readZipIndex } from './zip.js';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -111,6 +114,13 @@ const AUDIO_METADATA_TIMEOUT = 15000;
 /** 加载进度的轮询间隔；后端只有在真正下发资源时才知道字节数。 */
 const PROGRESS_INTERVAL = 400;
 
+/**
+ * 本地 `.osu` 静音播放时钟的尾部余量（秒）。
+ *
+ * 静音 WAV 比「画面最后一帧」多留这么长，避免音频先一步 `ended` 时钟就散架。
+ */
+const SILENT_TAIL_SECONDS = 2;
+
 /** 进度条淡出的等待时间：鼠标停下大约 1 秒后隐藏。 */
 const TIMELINE_HIDE_DELAY = 1000;
 
@@ -140,6 +150,14 @@ const HITSOUND_WORKLET_URL = `${import.meta.env.BASE_URL}hitsound-worklet.js`;
 export const state = reactive({
   page: 'load',
   bid: '',
+  /** 本地上传的文件名；非空表示按本地文件加载。 */
+  localFileName: '',
+  /** 本地文件类型：`osu` / `osz` / 空。 */
+  localKind: '',
+  /** `.osz` 里的难度清单（`[{ entry, label }]`），加载页选择用。 */
+  localDifficulties: [],
+  /** 选中的难度条目名（`.osz` 专用）。 */
+  localDifficulty: '',
   convert: '',
   loading: false,
   loadLogs: [],
@@ -335,6 +353,16 @@ let beatmapSampleHits = 0;
 let loadToken = 0;
 /** 当前加载的取消句柄：切谱面或退回加载页时中止还在飞的请求。 */
 let loadAbort = null;
+/**
+ * 本地上传的文件（`File` 对象）；`null` 表示按 BID 从后端加载。
+ *
+ * 不放进 reactive：`File` 参与响应式没有意义，界面只需要 state 里的展示字段。
+ */
+let localFile = null;
+/** 当前加载的本地自带音效清单（`[{ name, url }]`，url 为 blob URL）。 */
+let localSamples = [];
+/** 本地资源的 blob URL，换谱面与退回加载页时统一 revoke。 */
+const localObjectUrls = [];
 /**
  * 浏览器正在收的媒体字节数，按资源名（audio / background）分别记录。
  *
@@ -633,6 +661,187 @@ function readBeatmapInfo(wasm, bytes) {
 }
 
 // ---------------------------------------------------------------------------
+// 本地文件（.osu / .osz）
+// ---------------------------------------------------------------------------
+
+/**
+ * 选择本地文件，回到加载页时调用（文件输入框的 change 处理）。
+ *
+ * `.osz` 会顺手把难度清单解析出来供界面选择；填了 BID 时默认选中对应
+ * `BeatmapID` 的难度。文件不合法直接抛错，由加载页显示。
+ *
+ * @param {File} file 用户选中的文件
+ */
+export async function selectLocalFile(file) {
+  const kind = localFileKind(file?.name ?? '');
+  if (!kind) throw new Error('只支持 .osu 或 .osz 文件');
+  localFile = file;
+  state.localFileName = file.name;
+  state.localKind = kind;
+  state.localDifficulties = [];
+  state.localDifficulty = '';
+  if (kind !== 'osz') return;
+  const buffer = new Uint8Array(await file.arrayBuffer());
+  const entries = readZipIndex(buffer);
+  const candidates = beatmapEntries(entries);
+  if (!candidates.length) throw new Error(`${file.name} 里找不到 .osu 谱面文件`);
+  const difficulties = [];
+  for (const entry of candidates) {
+    const bytes = await extractEntry(buffer, entry);
+    const meta = parseBeatmapText(decodeBeatmapText(bytes));
+    difficulties.push({
+      entry: entry.name,
+      label: difficultyLabel(meta, entry.name),
+      beatmapId: beatmapIdOf(meta),
+    });
+  }
+  state.localDifficulties = difficulties;
+  const bid = state.bid.trim();
+  const matched = bid ? difficulties.find((item) => String(item.beatmapId) === bid) : null;
+  state.localDifficulty = (matched ?? difficulties[0]).entry;
+}
+
+/** 清除本地文件选择，回到按 BID 加载。 */
+export function clearLocalFile() {
+  localFile = null;
+  state.localFileName = '';
+  state.localKind = '';
+  state.localDifficulties = [];
+  state.localDifficulty = '';
+}
+
+/**
+ * 读取本地来源的谱面与媒体资源。
+ *
+ * `.osu` 直接作为谱面字节（没有音频与背景）；`.osz` 先按规则挑出要预览的 `.osu`，
+ * 再从同一个压缩包里取出该难度声明的音频（必需，与后端一致）、背景（可选）与
+ * 自带打击音。判定规则见 `local-file.js`。
+ */
+async function readLocalSource() {
+  const buffer = new Uint8Array(await localFile.arrayBuffer());
+  if (state.localKind === 'osu') {
+    return { beatmap: buffer, audio: null, background: null, samples: [] };
+  }
+  const entries = readZipIndex(buffer);
+  const candidates = beatmapEntries(entries);
+  if (!candidates.length) throw new Error(`${localFile.name} 里找不到 .osu 谱面文件`);
+  // 候选 .osu 都很小：逐个解出读元数据（选难度要显示名称，bid 匹配要读 BeatmapID）。
+  const parsed = [];
+  for (const entry of candidates) {
+    const bytes = await extractEntry(buffer, entry);
+    parsed.push({ entry: entry.name, bytes, meta: parseBeatmapText(decodeBeatmapText(bytes)) });
+  }
+  const picked = pickLocalDifficulty(parsed);
+  state.localDifficulty = picked.entry;
+  const meta = picked.meta;
+  // 音频必需：没有声音的整包预览没有意义，找不到直接报错（与后端一致）。
+  const audioEntry = meta.audioFilename ? findEntry(entries, meta.audioFilename) : null;
+  if (!audioEntry) {
+    throw new Error(`OSZ 中找不到音频：${meta.audioFilename || '(谱面未指定 AudioFilename)'}`);
+  }
+  const audio = await extractEntry(buffer, audioEntry);
+  let background = null;
+  const backgroundEntry = meta.backgroundFilename ? findEntry(entries, meta.backgroundFilename) : null;
+  if (meta.backgroundFilename && !backgroundEntry) {
+    logLoad(`压缩包里找不到背景：${meta.backgroundFilename}，将使用纯色背景`);
+  } else if (backgroundEntry) {
+    background = await extractEntry(buffer, backgroundEntry);
+  }
+  const samples = await extractLocalSamples(buffer, entries, audioEntry.name);
+  return { beatmap: picked.bytes, audio, background, samples };
+}
+
+/**
+ * 从候选 `.osu` 里挑出要预览的难度。
+ *
+ * 填了 BID 就按 `BeatmapID` 匹配，匹配不到直接报错（找不到就不猜）；
+ * 没填则用加载页选中的难度，没选就取第一个顶层 `.osu`。
+ */
+function pickLocalDifficulty(parsed) {
+  const bid = state.bid.trim();
+  if (bid) {
+    const matched = parsed.find(({ meta }) => String(beatmapIdOf(meta)) === bid);
+    if (!matched) {
+      const seen = parsed
+        .map(({ meta, entry }) => `${entry} (BeatmapID=${beatmapIdOf(meta) ?? 'none'})`)
+        .join(', ');
+      throw new Error(`找不到 bid 为 ${bid} 的 .osu（压缩包内 BeatmapID：${seen}）`);
+    }
+    return matched;
+  }
+  return parsed.find(({ entry }) => entry === state.localDifficulty) ?? parsed[0];
+}
+
+/** 取出谱面自带打击音并转成 blob URL，供打击音播放器按候选名取用。 */
+async function extractLocalSamples(buffer, entries, audioEntryName) {
+  const samples = [];
+  for (const { name, entry } of sampleEntries(entries, audioEntryName)) {
+    try {
+      const bytes = await extractEntry(buffer, entry);
+      const url = URL.createObjectURL(new Blob([bytes]));
+      localObjectUrls.push(url);
+      samples.push({ name, url });
+    } catch (error) {
+      // 单个条目损坏只影响这一个音效（播放器会退回内嵌皮肤），不让整张谱面失败。
+      logLoad(`跳过无法解出的谱面音效 ${name}：${errorText(error)}`);
+    }
+  }
+  return samples;
+}
+
+/**
+ * 挂上本地来源的媒体资源。
+ *
+ * 本地 `.osz` 用压缩包里的音频与背景；本地 `.osu` 没有这两样：背景退化成纯色，
+ * 音频用一段静音 WAV 充当播放时钟（见 `local-file.js` 的 `silentWavBytes`）——
+ * 画面、倍速与打击音都走这条时钟，只是听不到音乐。
+ */
+async function prepareLocalMedia(media) {
+  state.preparingMedia = true;
+  try {
+    const silent = media.audio === null;
+    const audioBytes = media.audio
+      ?? silentWavBytes((absoluteStart + state.duration) / 1000 + SILENT_TAIL_SECONDS);
+    try {
+      await applyAudioBytes(audioBytes);
+      state.status = silent ? '无音频（本地 .osu）' : '就绪';
+    } catch (error) {
+      state.status = '无音频';
+      logPlay(`音频加载失败，将只播放画面：${errorText(error)}`);
+    }
+    if (media.background) {
+      try {
+        await applyBackgroundBytes(media.background);
+      } catch (error) {
+        logPlay(`背景加载失败，将使用黑色背景：${errorText(error)}`);
+      }
+    }
+  } finally {
+    state.preparingMedia = false;
+  }
+}
+
+/** `.osu` 文本解码；谱面文件按 UTF-8 解释（与后端 `readBeatmapText` 一致）。 */
+function decodeBeatmapText(bytes) {
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+/** `.osu` 元数据里的 `BeatmapID`；缺失或非正数时返回 `null`。 */
+function beatmapIdOf(meta) {
+  const parsed = Number(meta.metadata.get('BeatmapID'));
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** 难度显示名：`Artist - Title [Version]`，字段缺失时退回条目名。 */
+function difficultyLabel(meta, entryName) {
+  const artist = meta.metadata.get('Artist')?.trim();
+  const title = meta.metadata.get('Title')?.trim();
+  const version = meta.metadata.get('Version')?.trim();
+  if (!title && !version) return entryName;
+  return `${artist ? `${artist} - ` : ''}${title ?? ''}${version ? ` [${version}]` : ''}`;
+}
+
+// ---------------------------------------------------------------------------
 // 加载进度
 // ---------------------------------------------------------------------------
 
@@ -744,16 +953,21 @@ async function fetchWithProgress(url, { signal, onProgress } = {}) {
   return merged;
 }
 
+/** 把背景图字节解码、暗化后交给 WASM 合成。 */
+async function applyBackgroundBytes(bytes) {
+  const bitmap = await createImageBitmap(new Blob([bytes]));
+  if (backgroundBitmap) backgroundBitmap.close();
+  backgroundBitmap = bitmap;
+  paintBackground();
+}
+
 async function loadBackground(value, { signal } = {}) {
   try {
     const bytes = await fetchWithProgress(`/resource/background?bid=${encodeURIComponent(value)}`, {
       signal,
       onProgress: ({ received, total }) => reportMediaProgress({ name: 'background', received, total }),
     });
-    const bitmap = await createImageBitmap(new Blob([bytes]));
-    if (backgroundBitmap) backgroundBitmap.close();
-    backgroundBitmap = bitmap;
-    paintBackground();
+    await applyBackgroundBytes(bytes);
   } finally {
     // 失败也要注销，否则进度条会一直等着一个永远不会到的资源。
     reportMediaProgress({ name: 'background', done: true });
@@ -779,22 +993,13 @@ function paintBackground() {
 }
 
 /**
- * 下载音频并挂到音频元素上。
+ * 把音频字节挂到音频元素上并等待元数据。
  *
  * 用 blob URL 而不是直接给 `audio.src` 指向接口：blob 已经在你机器上，
  * 之后反复 seek 不会每次再向服务器要一遍几 MiB（尤其是播放页的倒带）。
  * 代价是要先下完才能播，所以调用方把它放在关键路径之外。
  */
-async function loadAudioBlob(value, { signal } = {}) {
-  let bytes;
-  try {
-    bytes = await fetchWithProgress(`/resource/audio?bid=${encodeURIComponent(value)}`, {
-      signal,
-      onProgress: ({ received, total }) => reportMediaProgress({ name: 'audio', received, total }),
-    });
-  } finally {
-    reportMediaProgress({ name: 'audio', done: true });
-  }
+async function applyAudioBytes(bytes) {
   if (!bytes.byteLength) throw new Error('音频资源为空');
   const blob = new Blob([bytes]);
   releaseAudioUrl();
@@ -819,6 +1024,20 @@ async function loadAudioBlob(value, { signal } = {}) {
     audio.addEventListener('canplay', ready, { once: true });
     audio.addEventListener('error', failed, { once: true });
   });
+}
+
+/** 从后端下载音频（带字节进度）并挂到音频元素上。 */
+async function loadAudioBlob(value, { signal } = {}) {
+  let bytes;
+  try {
+    bytes = await fetchWithProgress(`/resource/audio?bid=${encodeURIComponent(value)}`, {
+      signal,
+      onProgress: ({ received, total }) => reportMediaProgress({ name: 'audio', received, total }),
+    });
+  } finally {
+    reportMediaProgress({ name: 'audio', done: true });
+  }
+  await applyAudioBytes(bytes);
 }
 
 function releaseAudioUrl() {
@@ -907,6 +1126,10 @@ function releaseBeatmapSamples() {
   beatmapSampleIndex = new Map();
   beatmapSampleHits = 0;
   state.hitsoundBeatmapLoaded = 0;
+  // 本地音效的 blob URL 只服务这一次加载，一起回收，避免内存越攒越多。
+  for (const url of localObjectUrls) URL.revokeObjectURL(url);
+  localObjectUrls.length = 0;
+  localSamples = [];
 }
 
 /**
@@ -1059,6 +1282,12 @@ async function readHitsoundAsset(name) {
 async function loadBeatmapSampleIndex(token) {
   beatmapSampleIndex = new Map();
   if (!state.hitsoundBeatmap) return;
+  if (localFile) {
+    // 本地 .osz 的自带音效在解包时已经转成 blob URL，直接建立查找表，
+    // 不需要（也没有）后端的 /resource/samples 接口。
+    beatmapSampleIndex = createBeatmapSampleIndex(localSamples);
+    return;
+  }
   const bid = state.bid.trim();
   if (!bid) return;
   try {
@@ -1604,16 +1833,28 @@ export async function loadPreview() {
   state.preparingMedia = false;
   try {
     const bid = state.bid.trim();
-    if (!bid) throw new Error('请输入谱面 BID');
+    if (!localFile && !bid) throw new Error('请输入谱面 BID，或选择本地 .osu / .osz 文件');
     if (!canvasEl) throw new Error('画布尚未就绪，请刷新页面重试');
     state.bid = bid;
     // 上一次会话的打击音输出属于旧谱面：先释放，避免残留的音频线程继续出声。
     releaseHitsound();
     releaseBeatmapSamples();
-    const [wasm, bytes] = await Promise.all([
-      loadWasm(),
-      fetchBeatmap(bid, { signal: controller.signal }),
-    ]);
+    // 本地来源与 BID 来源只在「.osu 字节与媒体资源从哪来」上有区别，后续流程完全一致。
+    const isLocal = Boolean(localFile);
+    let media = null;
+    let bytes;
+    let wasm;
+    if (isLocal) {
+      // 文件已经在本地：解包取资源与加载 wasm 并行即可，没有网络等待。
+      [wasm, media] = await Promise.all([loadWasm(), readLocalSource()]);
+      bytes = media.beatmap;
+      localSamples = media.samples;
+    } else {
+      [wasm, bytes] = await Promise.all([
+        loadWasm(),
+        fetchBeatmap(bid, { signal: controller.signal }),
+      ]);
+    }
     if (!current()) return;
     state.info = readBeatmapInfo(wasm, bytes);
     const resolution = RESOLUTIONS[state.resolution];
@@ -1661,27 +1902,34 @@ export async function loadPreview() {
         logPlay(state.hitsoundStatus);
       })
       : Promise.resolve();
-    // 资源准备通常慢在这里（服务端下载 + 解包），进度阶段由轮询推进到 transfer/media。
-    startProgressPolling(bid);
-    // 音频与背景一起发起，但只等背景：服务端此时已经把两个文件都解出来了。
-    state.preparingMedia = true;
-    const background = loadBackground(bid, { signal: controller.signal });
-    const audioLoad = loadAudioBlob(bid, { signal: controller.signal })
-      .then(() => {
-        if (!current()) return;
-        state.status = '就绪';
-        logStageBreakdown();
-      })
-      .catch((error) => {
-        if (!current()) return;
-        state.status = '无音频';
-        logPlay(`音频加载失败，将只播放画面：${errorText(error)}`);
-        logStageBreakdown();
-      })
-      .finally(() => { if (current()) state.preparingMedia = false; });
-    await background.catch((error) => {
-      if (current()) logPlay(`背景加载失败，将使用黑色背景：${errorText(error)}`);
-    });
+    let audioLoad = Promise.resolve();
+    if (isLocal) {
+      // 本地资源都在内存里：直接挂上（音频 / 静音时钟 / 背景），没有服务端阶段可轮询。
+      await prepareLocalMedia(media);
+      if (current()) logStageBreakdown();
+    } else {
+      // 资源准备通常慢在这里（服务端下载 + 解包），进度阶段由轮询推进到 transfer/media。
+      startProgressPolling(bid);
+      // 音频与背景一起发起，但只等背景：服务端此时已经把两个文件都解出来了。
+      state.preparingMedia = true;
+      const background = loadBackground(bid, { signal: controller.signal });
+      audioLoad = loadAudioBlob(bid, { signal: controller.signal })
+        .then(() => {
+          if (!current()) return;
+          state.status = '就绪';
+          logStageBreakdown();
+        })
+        .catch((error) => {
+          if (!current()) return;
+          state.status = '无音频';
+          logPlay(`音频加载失败，将只播放画面：${errorText(error)}`);
+          logStageBreakdown();
+        })
+        .finally(() => { if (current()) state.preparingMedia = false; });
+      await background.catch((error) => {
+        if (current()) logPlay(`背景加载失败，将使用黑色背景：${errorText(error)}`);
+      });
+    }
     if (!current()) return;
     state.page = 'play';
     state.sheetOpen = false;
@@ -1698,7 +1946,8 @@ export async function loadPreview() {
     // 被 play() 的 pending 状态挡住，等元数据事件到达后由 tick 里的重试接手。
     playState(true);
     addGestureHints();
-    syncUrl();
+    // 本地文件没有可分享的深链，地址栏保持不变。
+    if (!isLocal) syncUrl();
     void audioLoad;
     void hitsoundLoad;
   } catch (error) {

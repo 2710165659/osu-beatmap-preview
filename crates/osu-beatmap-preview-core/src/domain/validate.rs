@@ -82,8 +82,11 @@ pub fn parse_time_point(raw: &str) -> Result<TimePoint> {
 }
 
 /// 与模式相关的校验上下文。
+///
+/// 这里只放输出格式与目标模式的组合。bid 的格式校验属于请求第一阶段
+/// （[`validate_bid`]），不再重复：本地 `.osu` 谱面可能没有数字 bid，
+/// 而上下文阶段并不真正消费它。
 pub struct ValidateContext<'a> {
-    pub bid: &'a str,
     pub fmt: &'a str,
     pub target_mode: i32,
 }
@@ -97,9 +100,6 @@ pub fn validate_with_context(
     duration_time: Option<f64>,
     mods: Option<ModSettings>,
 ) -> Result<Option<ModSettings>> {
-    // --- 谱面 ID ---
-    validate_bid(ctx.bid)?;
-
     if duration_time.is_some() && !matches!(ctx.fmt, "gif" | "mp4") {
         return Err(PreviewError::new(
             "--duration-time is only valid for GIF or MP4 output",
@@ -146,11 +146,7 @@ mod tests {
     use super::*;
 
     fn ctx(fmt: &str, target_mode: i32) -> ValidateContext<'_> {
-        ValidateContext {
-            bid: "123",
-            fmt,
-            target_mode,
-        }
+        ValidateContext { fmt, target_mode }
     }
 
     #[test]

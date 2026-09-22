@@ -52,7 +52,6 @@ impl RenderPlan {
             ));
         }
         let context = ValidateContext {
-            bid: &request.source.bid,
             fmt: format_name,
             target_mode,
         };

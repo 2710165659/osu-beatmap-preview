@@ -23,6 +23,58 @@ pub(crate) struct AudioSource {
     pub osz_path: PathBuf,
 }
 
+/// MP4 音频、背景与打击音所在的谱面包来源。
+pub(crate) enum OszLocation {
+    /// 按谱面集 ID 走下载缓存（未命中时从镜像下载）。
+    Download { set_id: u64 },
+    /// 用户提供的本地 `.osz`，直接读取，不再联网。
+    Local(PathBuf),
+}
+
+impl OszLocation {
+    /// 取得谱面包路径与音频缓存键。
+    ///
+    /// 下载来源的缓存键沿用谱面集 ID（与既有缓存目录兼容）；本地 `.osz` 没有稳定的
+    /// 数字 ID，改用「路径 + 大小 + 修改时间」的哈希：同一路径的文件被替换后缓存键
+    /// 随之变化，不会把旧音频误当成新谱面的。
+    fn materialize(
+        self,
+        request_bid: &str,
+        cache_dir: &Path,
+        no_cache: bool,
+        deadline: &RequestDeadline,
+    ) -> Result<(PathBuf, String)> {
+        match self {
+            Self::Download { set_id } => {
+                let path = crate::download::download_beatmapset_archive(
+                    request_bid,
+                    set_id,
+                    cache_dir,
+                    no_cache,
+                    deadline,
+                )?;
+                Ok((path, set_id.to_string()))
+            }
+            Self::Local(path) => {
+                let meta = std::fs::metadata(&path).map_err(|error| {
+                    PreviewError::download(format!(
+                        "failed to open local .osz {}: {error}",
+                        path.display()
+                    ))
+                })?;
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|duration| duration.as_nanos())
+                    .unwrap_or(0);
+                let label = format!("{}|{}|{}", path.display(), meta.len(), mtime);
+                Ok((path, format!("local-{:016x}", fnv1a64(label.as_bytes()))))
+            }
+        }
+    }
+}
+
 pub(crate) struct AudioSourceJob {
     handle: Option<std::thread::JoinHandle<Result<AudioSource>>>,
     deadline: RequestDeadline,
@@ -33,32 +85,24 @@ impl AudioSourceJob {
     pub(crate) fn start(
         request_bid: &str,
         beatmap: Beatmap,
+        osz: OszLocation,
         cache_dir: PathBuf,
         no_cache: bool,
         deadline: RequestDeadline,
         mode: crate::export::geometry::GameMode,
     ) -> Result<Self> {
-        let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
-            PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
-        })?;
         let request_bid = request_bid.to_string();
         let audio_filename = beatmap
             .audio_filename()
             .ok_or_else(|| PreviewError::parse("missing AudioFilename required for MP4 audio"))?;
+        let (osz_path, cache_key) =
+            osz.materialize(&request_bid, &cache_dir, no_cache, &deadline)?;
         crate::logging::event(
             "audio-prepare",
             "start",
             None,
-            &format!("set_id={set_id} audio={audio_filename}"),
+            &format!("osz={cache_key} audio={audio_filename}"),
         );
-
-        let osz_path = crate::download::download_beatmapset_archive(
-            &request_bid,
-            set_id,
-            &cache_dir,
-            no_cache,
-            &deadline,
-        )?;
         let media = BeatmapMedia::from_beatmap(&beatmap);
         let background = if super::video_style(mode).enable_background_image {
             load_background_image(media.background.as_ref(), &osz_path, &deadline)?
@@ -68,7 +112,14 @@ impl AudioSourceJob {
         let worker_deadline = deadline.clone();
         let handle = std::thread::spawn(move || {
             worker_deadline.check()?;
-            prepare_audio_source(&beatmap, &osz_path, &cache_dir, no_cache, &worker_deadline)
+            prepare_audio_source(
+                &beatmap,
+                &osz_path,
+                &cache_key,
+                &cache_dir,
+                no_cache,
+                &worker_deadline,
+            )
         });
         Ok(Self {
             handle: Some(handle),
@@ -118,17 +169,19 @@ struct DecodedAudio {
 
 const MAX_BACKGROUND_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
 
+/// 从谱面包中解出歌曲音频（带缓存），返回可供解码的本地文件。
+///
+/// `cache_key` 是音频缓存的子目录名：下载来源用谱面集 ID，本地 `.osz` 用文件指纹
+/// （见 [`OszLocation::materialize`]）。
 pub(crate) fn prepare_audio_source(
     beatmap: &Beatmap,
     osz_path: &Path,
+    cache_key: &str,
     cache_dir: &Path,
     no_cache: bool,
     deadline: &RequestDeadline,
 ) -> Result<AudioSource> {
     deadline.check()?;
-    let set_id = beatmap.beatmap_set_id().ok_or_else(|| {
-        PreviewError::parse("missing or invalid BeatmapSetID required for MP4 audio")
-    })?;
     let Some(audio) = BeatmapMedia::from_beatmap(beatmap).audio else {
         return Err(PreviewError::parse(
             "missing or unusable AudioFilename required for MP4 audio",
@@ -137,8 +190,8 @@ pub(crate) fn prepare_audio_source(
     // 缓存文件名 = 条目名哈希 + 扩展名；扩展名由 core 的策略给出，缺失时沿用 `audio`。
     let extension = audio.extension.as_deref().unwrap_or("audio");
     let key = fnv1a64(audio.name.as_bytes());
-    let set_cache = cache_dir.join(set_id.to_string());
-    let target_path = set_cache.join(format!("{key:016x}.{extension}"));
+    let entry_cache = cache_dir.join(cache_key);
+    let target_path = entry_cache.join(format!("{key:016x}.{extension}"));
 
     if !no_cache
         && target_path
@@ -159,7 +212,7 @@ pub(crate) fn prepare_audio_source(
         });
     }
 
-    std::fs::create_dir_all(&set_cache)
+    std::fs::create_dir_all(&entry_cache)
         .map_err(|e| PreviewError::download(format!("failed to create audio cache dir: {e}")))?;
     extract_audio_entry(osz_path, &audio.name, &target_path, deadline)?;
     crate::logging::event(

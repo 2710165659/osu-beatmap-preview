@@ -8,7 +8,10 @@ use lexopt::prelude::*;
 use osu_beatmap_preview_core::gameplay::GameplayOptions;
 use osu_beatmap_preview_core::processing::validation::parse_time_point;
 
-pub const USAGE: &str = "usage: osu-beatmap-preview-cli --bid=<BID> [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]";
+pub const USAGE: &str = "usage: osu-beatmap-preview-cli [--bid=<BID>] [--input-file=<PATH>] [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]\n\
+    \x20 --input-file=<FILE.osu>  local beatmap file: --bid optional (naming only), PNG/GIF output only (no video)\n\
+    \x20 --input-file=<FILE.osz>  local beatmapset archive: --bid required to pick the .osu by BeatmapID, PNG/GIF/MP4 output\n\
+    \x20 without --input-file, --bid is required and the beatmap is downloaded by id";
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
@@ -36,7 +39,10 @@ pub fn parse_args(
 ) -> Result<CliAction, CliError> {
     let mut parser = lexopt::Parser::from_args(args.into_iter().map(Into::into));
     let mut request = RenderRequest {
-        source: SourceOptions { bid: String::new() },
+        source: SourceOptions {
+            bid: String::new(),
+            input_file: None,
+        },
         ruleset: RulesetOptions::default(),
         view: ViewOptions::default(),
         output: OutputOptions::default(),
@@ -47,6 +53,9 @@ pub fn parse_args(
     while let Some(argument) = parser.next().map_err(argument_error)? {
         match argument {
             Long("bid") => bid = Some(value(&mut parser, "--bid")?),
+            Long("input-file") => {
+                request.source.input_file = Some(value(&mut parser, "--input-file")?)
+            }
             Long("convert") => request.ruleset.convert = Some(value(&mut parser, "--convert")?),
             Long("mod") => request.ruleset.mods.push(value(&mut parser, "--mod")?),
             Long("fmt") => request.output.format = Some(value(&mut parser, "--fmt")?),
@@ -94,7 +103,11 @@ pub fn parse_args(
             }
         }
     }
-    request.source.bid = bid.ok_or_else(|| CliError("--bid is required".into()))?;
+    // bid 与 --input-file 的组合规则统一在请求校验里做（本地 .osu 可以没有 bid），
+    // 这里先挡一道让参数错误走 CLI 的退出码 2 路径；渲染请求还会再校验一次，
+    // 库调用方也能拿到同样的规则。
+    request.source.bid = bid.unwrap_or_default();
+    crate::application::request::validate_source(&request.source).map_err(argument_error)?;
     Ok(CliAction::Render(Box::new(request)))
 }
 
@@ -143,5 +156,33 @@ mod tests {
     fn wgpu_options_are_not_part_of_cli() {
         let error = parse_args(["--bid=123", "--wgpu"]).expect_err("WGPU 参数必须被拒绝");
         assert_eq!(error.to_string(), "unknown argument: --wgpu");
+    }
+
+    /// `--input-file` 只负责收集参数，bid 与来源的组合规则交给请求校验。
+    #[test]
+    fn input_file_is_collected_without_requiring_bid() {
+        let CliAction::Render(request) = parse_args(["--input-file=map.osu"]).unwrap() else {
+            panic!("应解析为渲染请求");
+        };
+        assert_eq!(request.source.input_file.as_deref(), Some("map.osu"));
+        assert_eq!(request.source.bid, "");
+
+        let CliAction::Render(request) = parse_args(["--input-file=a.osz", "--bid=7"]).unwrap()
+        else {
+            panic!("应解析为渲染请求");
+        };
+        assert_eq!(request.source.input_file.as_deref(), Some("a.osz"));
+        assert_eq!(request.source.bid, "7");
+    }
+
+    /// 来源组合错误在参数解析阶段就报出（命令行参数错误的退出码路径）。
+    #[test]
+    fn source_combination_errors_surface_at_parse_time() {
+        let error = parse_args(["--input-file=a.osz"]).unwrap_err();
+        assert!(error.to_string().contains("--bid is required"), "{error}");
+        let error = parse_args([] as [&str; 0]).unwrap_err();
+        assert!(error.to_string().contains("--bid is required"), "{error}");
+        let error = parse_args(["--input-file=map.osk", "--bid=7"]).unwrap_err();
+        assert!(error.to_string().contains(".osu or .osz"), "{error}");
     }
 }

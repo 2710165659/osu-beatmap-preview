@@ -89,6 +89,12 @@ osu-beatmap-preview-cli --bid=738063 --fmt=gif --time-points=5 --time-points=10 
 
 # 跳过下载缓存和输出缓存，同时关闭日志
 osu-beatmap-preview-cli --bid=738063 --no-cache --no-log
+
+# 预览本地 .osu 文件（只支持 PNG / GIF，不需要 --bid）
+osu-beatmap-preview-cli --input-file=C:/maps/local-test.osu --fmt=png
+
+# 预览本地 .osz 谱面包：--bid 指定压缩包内的难度（按 .osu 的 BeatmapID 匹配），支持 MP4
+osu-beatmap-preview-cli --input-file=C:/maps/local-pack.osz --bid=738063 --fmt=mp4
 ```
 
 Windows PowerShell 中，如果程序位于当前目录，需要使用 `.\osu-beatmap-preview-windows-amd64-cli.exe` 或重命名后的实际文件名调用。
@@ -96,12 +102,13 @@ Windows PowerShell 中，如果程序位于当前目录，需要使用 `.\osu-be
 ## 命令行参数
 
 ```text
-osu-beatmap-preview-cli --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]
+osu-beatmap-preview-cli [--bid=<BID>] [--input-file=<PATH>] [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]
 ```
 
 | 参数 | 说明 |
 | --- | --- |
-| `--bid` | 必填。纯数字的 Beatmap ID。 |
+| `--bid` | 纯数字的 Beatmap ID。未提供 `--input-file` 时必填；`--input-file` 为 `.osz` 时必填（用于在压缩包内查找难度）；为 `.osu` 时可省略（给了也只用于产物命名）。 |
+| `--input-file` | 本地谱面文件路径（`.osu` 或 `.osz`），提供时不再从网络下载。`.osu` 只支持 PNG / GIF（没有音源，不支持视频）；`.osz` 需同时提供 `--bid`，支持 PNG / GIF / MP4。规则见「本地谱面文件」。 |
 | `--convert` | 目标模式：`mania`、`ctb`、`taiko`、`standard` 或 `std`。只有 Standard 谱面能转换到其他模式；目标与原模式相同时按不转谱处理。 |
 | `--fmt` | 输出格式：`png`、`gif` 或 `mp4`。省略时，Standard 使用 GIF，其他模式使用 PNG。 |
 | `--mod` | 单个 Mod。组合时重复传入；参数不区分大小写。 |
@@ -115,6 +122,14 @@ osu-beatmap-preview-cli --bid=<BID> [--convert=mania|ctb|taiko|standard] [--fmt=
 | `--output-dir` | 指定本次请求的输出根目录。 |
 | `--version` | 向 stdout 打印版本号后退出，退出码为 `0`。 |
 | `--help`、`-h` | 向 stdout 打印用法后退出，退出码为 `0`。 |
+
+### 本地谱面文件（`--input-file`）
+
+提供 `--input-file` 时不再联网，直接使用本地文件：
+
+- **`.osu`**：单个谱面文件，`--bid` 可省略（给了也只用于产物命名）。没有音源，因此**只支持 PNG / GIF，不支持 MP4（视频）**。
+- **`.osz`**：谱面包（ZIP），`--bid` 必填。程序在压缩包内查找 `[Metadata] BeatmapID` 等于 `--bid` 的 `.osu`，找到即用它预览，**支持 PNG / GIF / MP4**（音频、背景图与谱面自带打击音都取自同一个 `.osz`）；找不到任何 `.osu`、或没有任何难度匹配 `--bid` 时报错，不会随便挑一个难度。
+- 压缩包内 `.osu` 的判定与 osu! 的导入规则一致（参考 osu!lazer `BeatmapImporter`）：后缀 `.osu` 不区分大小写，且只认压缩包**顶层**的谱面，子目录里的 `.osu` 会被忽略。
 
 ### 时间轴与选段
 

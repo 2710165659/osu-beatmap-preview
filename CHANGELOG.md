@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- CLI 新增 `--input-file`，可直接预览本地谱面文件：`.osu` 不需要 `--bid`（没有音源，**仅支持 PNG / GIF，不支持视频**）；`.osz` 必须提供 `--bid`，程序按 `.osu` 的 `[Metadata] BeatmapID` 在压缩包内查找对应难度（只认压缩包顶层的 `.osu`，与 stable / osu!lazer 的导入规则一致），找不到任何 `.osu` 或没有难度匹配时报错；命中后支持 PNG / GIF / MP4，音频、背景图与谱面自带打击音都取自同一个 `.osz`。
+- Web 加载页支持选择本地 `.osu` / `.osz`：文件在浏览器内解析（新增 `src/zip.js`、`src/local-file.js`，规则与 CLI、后端一致），`.osz` 可在界面上选择难度（填了 BID 时按 `BeatmapID` 匹配，找不到报错），音频、背景图与谱面自带音效取自同一个压缩包；本地 `.osu` 用静音 WAV 充当播放时钟，纯画面 + 打击音预览，倍速与 seek 照常可用。
+
+---
+
 ## [1.3.2] - 2026.09.18
 
 ### Added

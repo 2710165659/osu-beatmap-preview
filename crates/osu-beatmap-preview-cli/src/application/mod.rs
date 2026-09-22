@@ -3,6 +3,7 @@
 pub(crate) mod artifact;
 mod execute;
 pub(crate) mod legacy;
+pub(crate) mod local;
 pub(crate) mod plan;
 pub(crate) mod ports;
 pub mod request;
