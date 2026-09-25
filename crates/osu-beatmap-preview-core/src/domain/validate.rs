@@ -100,23 +100,28 @@ pub fn validate_with_context(
     duration_time: Option<f64>,
     mods: Option<ModSettings>,
 ) -> Result<Option<ModSettings>> {
-    if duration_time.is_some() && !matches!(ctx.fmt, "gif" | "mp4") {
+    // Taiko/Catch/Mania PNG 的区间段输出：只渲染一个区间，规则与 MP4 的单段一致。
+    let segment_png = ctx.fmt == "png" && ctx.target_mode != 0;
+    if duration_time.is_some() && !(matches!(ctx.fmt, "gif" | "mp4") || segment_png) {
         return Err(PreviewError::new(
-            "--duration-time is only valid for GIF or MP4 output",
+            "--duration-time is only valid for GIF, MP4, or Taiko/Catch/Mania PNG output",
         ));
     }
-    if ctx.fmt == "mp4" && time_points.len() > 1 {
-        return Err(PreviewError::new(
-            "mp4 accepts at most one --time-points value",
-        ));
+    if (ctx.fmt == "mp4" || segment_png) && time_points.len() > 1 {
+        return Err(PreviewError::new(format!(
+            "{} accepts at most one --time-points value",
+            if segment_png {
+                "Taiko/Catch/Mania PNG"
+            } else {
+                "mp4"
+            }
+        )));
     }
-    if !time_points.is_empty()
-        && ctx.fmt != "gif"
-        && !(ctx.fmt == "png" && ctx.target_mode == 0)
-        && ctx.fmt != "mp4"
-    {
+    // 区间段 PNG 的起点与时长必须成对出现；两者都缺时保持整谱渲染。
+    if segment_png && time_points.is_empty() != duration_time.is_none() {
         return Err(PreviewError::new(
-            "--time-points is only valid for GIF, Standard PNG, or MP4 output",
+            "--time-points and --duration-time must be used together for \
+             Taiko/Catch/Mania PNG output",
         ));
     }
     if let Some(duration) = duration_time {
@@ -162,6 +167,25 @@ mod tests {
         validate_with_context(&ctx("gif", 0), &[], Some(30.0), None).unwrap();
         assert!(validate_with_context(&ctx("png", 0), &[], Some(30.0), None).is_err());
         assert!(validate_with_context(&ctx("mp4", 0), &[], Some(0.0), None).is_err());
+    }
+
+    #[test]
+    fn segment_png_requires_one_paired_time_range() {
+        // 成对给出：接受（taiko/catch/mania 任一模式）。
+        for mode in [1, 2, 3] {
+            validate_with_context(&ctx("png", mode), &[TimePoint::Seconds(30.0)], Some(20.0), None)
+                .unwrap();
+        }
+        // 缺任一端：拒绝。
+        assert!(validate_with_context(&ctx("png", 3), &[TimePoint::Preview], None, None).is_err());
+        assert!(validate_with_context(&ctx("png", 3), &[], Some(20.0), None).is_err());
+        // 多于一个时间点：拒绝（与 MP4 的单段限制一致）。
+        let two_points = [TimePoint::Seconds(1.0), TimePoint::Seconds(2.0)];
+        assert!(validate_with_context(&ctx("png", 2), &two_points, Some(20.0), None).is_err());
+        assert!(validate_with_context(&ctx("mp4", 0), &two_points, Some(20.0), None).is_err());
+        // Standard PNG 仍然不接受时长参数。
+        assert!(validate_with_context(&ctx("png", 0), &[], Some(20.0), None).is_err());
+        validate_with_context(&ctx("png", 0), &two_points, None, None).unwrap();
     }
 
     #[test]

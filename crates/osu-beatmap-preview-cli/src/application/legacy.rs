@@ -4,6 +4,7 @@ use crate::application::plan::{OutputFormat, RenderPlan};
 use crate::application::request::ValidatedRequest;
 use crate::cache;
 use crate::export::canvas::Img;
+use crate::export::segment::PngSegment;
 use crate::logging::{self, CacheKind, SummaryRecord};
 use crate::media::audio::{AudioSourceJob, OszLocation};
 use osu_beatmap_preview_core::model::mods::ModSettings;
@@ -351,6 +352,9 @@ struct ModeRenderInput<'a> {
     output_path: &'a Path,
     time_axis: TimeAxis,
     absolute_time_points: Option<Vec<i64>>,
+    /// Taiko/Catch/Mania PNG 的区间段（`--time-points` + `--duration-time`）；
+    /// 其余输出格式与整谱 PNG 为 `None`。
+    png_segment: Option<PngSegment>,
     deadline: &'a RequestDeadline,
 }
 
@@ -470,6 +474,7 @@ impl ModeRenderer for TaikoRenderer {
             input.output_path,
             input.plan.mods.as_ref(),
             input.time_axis,
+            input.png_segment,
             input.deadline,
         )
     }
@@ -525,6 +530,7 @@ impl ModeRenderer for CatchRenderer {
             input.output_path,
             input.plan.mods.as_ref(),
             input.time_axis,
+            input.png_segment,
             input.deadline,
         )
     }
@@ -580,6 +586,7 @@ impl ModeRenderer for ManiaRenderer {
             input.output_path,
             input.plan.mods.as_ref(),
             input.time_axis,
+            input.png_segment,
             input.deadline,
         )
     }
@@ -735,12 +742,20 @@ fn render_preview_for_mode_inner(
     let (time_axis, _, _) = object_time_axis(&beatmap.hit_objects)
         .ok_or_else(|| PreviewError::render("beatmap has no hit objects"))?;
     let absolute_time_points = resolve_time_points(&beatmap, time_axis, &plan.time_points)?;
+    // 区间段 PNG 只在显式给出一对时间参数时生效（校验阶段已保证恰好一个时间点）。
+    let png_segment = match (absolute_time_points.as_deref(), plan.duration_seconds) {
+        (Some([start_ms, ..]), Some(duration)) if plan.format == OutputFormat::Png => {
+            Some(PngSegment::new(*start_ms, duration)?)
+        }
+        _ => None,
+    };
     let input = ModeRenderInput {
         beatmap: &beatmap,
         plan,
         output_path,
         time_axis,
         absolute_time_points: absolute_time_points.clone(),
+        png_segment,
         deadline,
     };
     if plan.format == OutputFormat::Gif {

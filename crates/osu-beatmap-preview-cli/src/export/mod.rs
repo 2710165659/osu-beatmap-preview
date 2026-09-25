@@ -12,6 +12,7 @@ pub(crate) use osu_beatmap_preview_core::render::text;
 pub(crate) use osu_beatmap_preview_core::render::timing;
 #[cfg(test)]
 mod rasterizer;
+pub(crate) mod segment;
 
 fn save_animation_frames(
     frames: osu_beatmap_preview_core::render::cpu::AnimationFrames,

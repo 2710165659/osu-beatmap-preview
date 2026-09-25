@@ -1,8 +1,9 @@
 //! osu!taiko PNG 静态图导出：计算行布局并交给 core 绘制，然后编码保存。
 
+use crate::export::segment::{resolve_png_window, PngSegment, PngWindow};
 use crate::media::image;
 use osu_beatmap_preview_core::model::mods::ModSettings;
-use osu_beatmap_preview_core::model::Beatmap;
+use osu_beatmap_preview_core::model::{Beatmap, TaikoHitObject};
 use osu_beatmap_preview_core::processing::parse::round_half_even;
 use osu_beatmap_preview_core::processing::timeline::TimeAxis;
 use osu_beatmap_preview_core::render::cpu::modes::taiko::png::{
@@ -27,6 +28,7 @@ pub(crate) fn render_taiko_grid(
     output_path: &Path,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
+    segment: Option<PngSegment>,
     deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
     deadline.check()?;
@@ -36,7 +38,27 @@ pub(crate) fn render_taiko_grid(
     }
 
     let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap();
-    if chart_end_time
+
+    // 始终裁剪开头的静音，直接从第一个音符开始。
+    let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
+    let chart_start_time = osu_beatmap_preview_core::processing::timeline::snap_to_beat_grid(
+        first_note_time,
+        &beatmap.timing_points,
+    );
+
+    // 区间段（--time-points + --duration-time）：窗口规则与 MP4 一致（见 resolve_png_window）。
+    let window = resolve_png_window(chart_start_time, chart_end_time, segment)?;
+    let chart_start_time = window.start_ms;
+    let effective_chart_end_time = window.duration_ms();
+
+    // 10 分钟上限：整谱模式沿用谱面末尾绝对时间的旧判断；
+    // 区间段模式只看实际渲染时长，长谱面的片段仍可出图。
+    let duration_for_limit = if segment.is_some() {
+        effective_chart_end_time
+    } else {
+        chart_end_time
+    };
+    if duration_for_limit
         >= crate::config::current()
             .render
             .taiko
@@ -49,30 +71,13 @@ pub(crate) fn render_taiko_grid(
         ));
     }
 
-    // 始终裁剪开头的静音，直接从第一个音符开始。
-    let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
-    let chart_start_time = osu_beatmap_preview_core::processing::timeline::snap_to_beat_grid(
-        first_note_time,
-        &beatmap.timing_points,
-    );
-
-    let effective_chart_end_time: i64;
-    if chart_start_time > 0 {
-        for ho in &mut hit_objects {
-            ho.start_time = (ho.start_time - chart_start_time).max(0);
-            ho.end_time = (ho.end_time - chart_start_time).max(ho.start_time);
-        }
-        effective_chart_end_time = (chart_end_time - chart_start_time).max(0);
-    } else {
-        effective_chart_end_time = chart_end_time;
-    }
+    // 只保留窗口内的物件并平移到窗口起点；整谱模式窗口覆盖全部物件，行为不变。
+    window_hit_objects(&mut hit_objects, window);
 
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;
     let mut timing_points = effective_timing_points(beatmap, mods);
-    if chart_start_time > 0 {
-        for tp in &mut timing_points {
-            tp.time -= chart_start_time as f64;
-        }
+    for tp in &mut timing_points {
+        tp.time -= chart_start_time as f64;
     }
     // 静态图的 note 间距只跟随红线 BPM（绿线 SV 不影响排版）
     let spacing_timing_points = spacing_timing_points_for_png(&timing_points);
@@ -125,6 +130,20 @@ pub(crate) fn render_taiko_grid(
     image::save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
 }
+
+/// 将物件裁剪进渲染窗口并平移到窗口起点。
+///
+/// 窗口外的圆点直接丢弃，跨界长条（连打/大连打）按窗口截断，
+/// 避免窗口外的物件被挤到边界上；整谱模式窗口覆盖全部物件，结果与不裁剪一致。
+fn window_hit_objects(hit_objects: &mut Vec<TaikoHitObject>, window: PngWindow) {
+    let duration = window.duration_ms();
+    hit_objects.retain(|ho| ho.end_time >= window.start_ms && ho.start_time <= window.end_ms);
+    for ho in hit_objects.iter_mut() {
+        ho.start_time = (ho.start_time - window.start_ms).clamp(0, duration);
+        ho.end_time = (ho.end_time - window.start_ms).clamp(ho.start_time, duration);
+    }
+}
+
 /// 计算每行的起始滚动位置，使行首对齐到小节线。
 ///
 /// 从位置 0 开始，每行最多容纳 `max_row_width` 像素；下一行的起点取
@@ -369,7 +388,7 @@ fn resolve_main_bpm(redline_sections: &[RedlineSection]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::compute_row_start_positions;
+    use super::*;
 
     #[test]
     fn row_break_measure_anchors_are_scale_invariant_for_all_bpm_tiers() {
@@ -403,5 +422,59 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn taiko_object(start_time: i64, end_time: i64) -> TaikoHitObject {
+        TaikoHitObject {
+            start_time,
+            end_time,
+            hit_type: 0,
+            hitsound: 0,
+            samples: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn window_keeps_overlapping_objects_and_clips_spans() {
+        let window = PngWindow {
+            start_ms: 1_000,
+            end_ms: 3_000,
+        };
+        let mut hit_objects = vec![
+            taiko_object(0, 500),       // 窗口前：丢弃
+            taiko_object(2_000, 2_000), // 窗口内圆点：平移到0基准
+            taiko_object(0, 2_500),     // 跨窗口起点：头部截到窗口起点
+            taiko_object(2_500, 4_000), // 跨窗口终点：尾部截到窗口终点
+            taiko_object(3_500, 3_500), // 窗口后：丢弃
+        ];
+
+        window_hit_objects(&mut hit_objects, window);
+
+        let times: Vec<(i64, i64)> = hit_objects
+            .iter()
+            .map(|ho| (ho.start_time, ho.end_time))
+            .collect();
+        assert_eq!(times, vec![(1_000, 1_000), (0, 1_500), (1_500, 2_000)]);
+    }
+
+    #[test]
+    fn full_chart_window_shifts_every_object_without_clipping() {
+        let window = PngWindow {
+            start_ms: 500,
+            end_ms: 5_000,
+        };
+        let mut hit_objects = vec![
+            taiko_object(500, 500),
+            taiko_object(1_000, 2_000),
+            taiko_object(4_500, 5_000),
+        ];
+
+        window_hit_objects(&mut hit_objects, window);
+
+        let times: Vec<(i64, i64)> = hit_objects
+            .iter()
+            .map(|ho| (ho.start_time, ho.end_time))
+            .collect();
+        assert_eq!(times, vec![(0, 0), (500, 1_500), (4_000, 4_500)]);
     }
 }

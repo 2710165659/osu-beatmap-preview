@@ -1,8 +1,9 @@
 //! osu!mania PNG 静态图导出：计算布局、准备对象，交给 core 绘制后保存。
 
+use crate::export::segment::{resolve_png_window, PngSegment, PngWindow};
 use crate::media::image::save_png;
 use osu_beatmap_preview_core::model::mods::ModSettings;
-use osu_beatmap_preview_core::model::{Beatmap, TimingPoint};
+use osu_beatmap_preview_core::model::{Beatmap, ManiaHitObject, TimingPoint};
 use osu_beatmap_preview_core::processing::parse::round_half_even;
 use osu_beatmap_preview_core::processing::timeline::TimeAxis;
 use osu_beatmap_preview_core::render::cpu::modes::mania::png::{
@@ -23,6 +24,7 @@ pub(crate) fn render_mania_grid(
     output_path: &Path,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
+    segment: Option<PngSegment>,
     deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
     deadline.check()?;
@@ -57,14 +59,16 @@ pub(crate) fn render_mania_grid(
         0
     };
 
-    if chart_start_time > 0 {
-        for ho in &mut hit_objects {
-            ho.start_time = (ho.start_time - chart_start_time).max(0);
-            ho.end_time = (ho.end_time - chart_start_time).max(ho.start_time);
-        }
-    }
+    // 整谱范围以最后一个物件结尾；底部留白只是布局样式，不参与选段。
+    let chart_content_end = hit_objects.iter().map(|ho| ho.end_time).max().unwrap_or(0);
+    // 区间段（--time-points + --duration-time）：窗口规则与 MP4 一致（见 resolve_png_window）。
+    let window = resolve_png_window(chart_start_time, chart_content_end, segment)?;
+    let chart_start_time = window.start_ms;
+    // 只保留窗口内的物件并平移到窗口起点；长按跨界按窗口截断。
+    // 整谱模式窗口覆盖全部物件，行为不变。
+    window_hit_objects(&mut hit_objects, window);
 
-    let beatmap_duration = hit_objects.iter().map(|ho| ho.end_time).max().unwrap_or(0);
+    let beatmap_duration = window.duration_ms();
     let chart_end_time = beatmap_duration
         + crate::config::current()
             .render
@@ -72,28 +76,20 @@ pub(crate) fn render_mania_grid(
             .png
             .style
             .BOTTOM_PADDING_MS;
-    let timing_points_for_render: Vec<TimingPoint> = if chart_start_time > 0 {
-        beatmap
-            .timing_points
-            .iter()
-            .map(|tp| {
-                let mut tp = *tp;
-                tp.time -= chart_start_time as f64;
-                tp
-            })
-            .collect()
-    } else {
-        beatmap.timing_points.clone()
-    };
+    let timing_points_for_render: Vec<TimingPoint> = beatmap
+        .timing_points
+        .iter()
+        .map(|tp| {
+            let mut tp = *tp;
+            tp.time -= chart_start_time as f64;
+            tp
+        })
+        .collect();
     let timing_lines = build_timing_lines(
         &timing_points_for_render,
         chart_end_time,
         beatmap.beat_divisor,
-        hit_objects
-            .iter()
-            .map(|ho| ho.start_time)
-            .min()
-            .unwrap_or(0),
+        hit_objects.iter().map(|ho| ho.start_time).min().unwrap_or(0),
     );
     let sv_changes = if cs_mode
         || !native_mania
@@ -129,6 +125,20 @@ pub(crate) fn render_mania_grid(
     save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
 }
+
+/// 将物件裁剪进渲染窗口并平移到窗口起点。
+///
+/// 窗口外的圆点直接丢弃，跨界长按按窗口截断，避免窗口外的物件被挤进最后一列；
+/// 整谱模式窗口覆盖全部物件，结果与不裁剪一致。
+fn window_hit_objects(hit_objects: &mut Vec<ManiaHitObject>, window: PngWindow) {
+    let duration = window.duration_ms();
+    hit_objects.retain(|ho| ho.end_time >= window.start_ms && ho.start_time <= window.end_ms);
+    for ho in hit_objects.iter_mut() {
+        ho.start_time = (ho.start_time - window.start_ms).clamp(0, duration);
+        ho.end_time = (ho.end_time - window.start_ms).clamp(ho.start_time, duration);
+    }
+}
+
 fn build_png_layout(
     key_count: i32,
     beatmap_duration: i64,
@@ -452,4 +462,63 @@ fn build_timing_lines(
     }
 
     ordered_unique.into_values().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mania_note(start_time: i64, end_time: i64) -> ManiaHitObject {
+        ManiaHitObject {
+            lane: 0,
+            start_time,
+            end_time,
+            is_long_note: end_time > start_time,
+            samples: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn window_keeps_overlapping_objects_and_clips_holds() {
+        let window = PngWindow {
+            start_ms: 1_000,
+            end_ms: 3_000,
+        };
+        let mut hit_objects = vec![
+            mania_note(0, 500),       // 窗口前：丢弃
+            mania_note(2_000, 2_000), // 窗口内圆点：平移到 0 基准
+            mania_note(500, 2_500),   // 跨窗口起点：长按头部截到窗口起点
+            mania_note(2_500, 4_000), // 跨窗口终点：长按尾部截到窗口终点
+            mania_note(3_500, 3_500), // 窗口后：丢弃
+        ];
+
+        window_hit_objects(&mut hit_objects, window);
+
+        let times: Vec<(i64, i64)> = hit_objects
+            .iter()
+            .map(|ho| (ho.start_time, ho.end_time))
+            .collect();
+        assert_eq!(times, vec![(1_000, 1_000), (0, 1_500), (1_500, 2_000)]);
+    }
+
+    #[test]
+    fn full_chart_window_shifts_every_object_without_clipping() {
+        let window = PngWindow {
+            start_ms: 500,
+            end_ms: 5_000,
+        };
+        let mut hit_objects = vec![
+            mania_note(500, 500),
+            mania_note(1_000, 2_000),
+            mania_note(4_500, 5_000),
+        ];
+
+        window_hit_objects(&mut hit_objects, window);
+
+        let times: Vec<(i64, i64)> = hit_objects
+            .iter()
+            .map(|ho| (ho.start_time, ho.end_time))
+            .collect();
+        assert_eq!(times, vec![(0, 0), (500, 1_500), (4_000, 4_500)]);
+    }
 }

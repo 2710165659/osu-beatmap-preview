@@ -87,6 +87,9 @@ osu-beatmap-preview-cli --bid=738063 --fmt=mp4 --time-points=preview --duration-
 # 为 GIF 指定四个片段起点，每个时间点渲染 6 秒
 osu-beatmap-preview-cli --bid=738063 --fmt=gif --time-points=5 --time-points=10 --time-points=15 --time-points=20 --duration-time=6
 
+# 只渲染 Mania 谱面 1:00 起 30 秒的区间段 PNG
+osu-beatmap-preview-cli --bid=738063 --convert=mania --fmt=png --time-points=60 --duration-time=30
+
 # 跳过下载缓存和输出缓存，同时关闭日志
 osu-beatmap-preview-cli --bid=738063 --no-cache --no-log
 
@@ -112,8 +115,8 @@ osu-beatmap-preview-cli [--bid=<BID>] [--input-file=<PATH>] [--convert=mania|ctb
 | `--convert` | 目标模式：`mania`、`ctb`、`taiko`、`standard` 或 `std`。只有 Standard 谱面能转换到其他模式；目标与原模式相同时按不转谱处理。 |
 | `--fmt` | 输出格式：`png`、`gif` 或 `mp4`。省略时，Standard 使用 GIF，其他模式使用 PNG。 |
 | `--mod` | 单个 Mod。组合时重复传入；参数不区分大小写。 |
-| `--time-points` | 游戏时间点，单位为秒，也可传 `preview`。GIF 和 Standard PNG 可重复传入，MP4 最多传入一次。 |
-| `--duration-time` | GIF 每个时间点或 MP4 的输出时长，单位为秒，必须为有限正数，且只能用于 GIF 和 MP4。GIF 未指定时使用对应模式配置的片段时长；MP4 默认 `600`。 |
+| `--time-points` | 游戏时间点，单位为秒，也可传 `preview`。GIF 和 Standard PNG 可重复传入，MP4 与 Taiko/Catch/Mania PNG 最多传入一次。 |
+| `--duration-time` | GIF 每个时间点、MP4 的输出时长，或 Taiko/Catch/Mania PNG 的区间段时长，单位为秒，必须为有限正数，不能用于 Standard PNG。GIF 未指定时使用对应模式配置的片段时长；MP4 默认 `600`；区间段 PNG 必须与 `--time-points` 成对给出。 |
 | `--fps` | GIF 或 MP4 输出帧率，必须为 `1` 至 `60` 的整数。省略时使用对应模式和格式配置中的帧率；PNG 不接受该参数。 |
 | `--no-cache` | 跳过 `.osu`、OSZ 和输出文件缓存，强制重新下载和渲染。 |
 | `--no-log` | 关闭文件日志。 |
@@ -139,7 +142,9 @@ osu-beatmap-preview-cli [--bid=<BID>] [--input-file=<PATH>] [--convert=mania|ctb
 - 时间点数量不能超过当前布局的分段容量。GIF 默认共 4 段（Standard/Catch 为 2 × 2 网格，Taiko 为 4 行，Mania 为 4 列）；Standard PNG 默认有 5 行，因此最多指定 5 个行起点。
 - MP4 默认从游戏时间 `0` 开始，请求 600 秒。谱面较短时输出完整可播放范围，不填充到 600 秒；请求区间超过谱面尾部时会整体前移以保留时长。
 - MP4 支持负数起点，早于音频起点的部分输出静音。`--time-points=preview` 使用 `.osu` 文件中的 `PreviewTime`；缺失或无效时回退到首个物件。
-- `--time-points` 只适用于 GIF、Standard PNG 和 MP4；其他模式的 PNG 不接受时间点。
+- Taiko、Catch 和 Mania 的 PNG 支持区间段生成：`--time-points` 与 `--duration-time` 必须同时给出，且各最多一个（与 MP4 的单段限制一致），输出只覆盖 `[起点, 起点 + 时长]` 这一段。两者都缺时保持整谱渲染。
+- 区间段 PNG 超过谱面长度的处理与 MP4 一致：区间尾部超出谱面时整体前移以保留请求时长；请求时长超过整谱时长时输出完整谱面，不填充空白。起点早于谱面开头时整体后移进入谱面（静态图没有 MP4 前置静音的语义）。
+- `--time-points` 适用于 GIF、Standard PNG、MP4 以及 Taiko/Catch/Mania 的区间段 PNG。
 
 ## 输出格式
 
@@ -149,6 +154,8 @@ osu-beatmap-preview-cli [--bid=<BID>] [--input-file=<PATH>] [--convert=mania|ctb
 - **Taiko**：按游玩顺序排成多行，并绘制节拍线、BPM 与 SV 信息。
 - **Catch**：按谱面进度排成多列。
 - **Mania**：按键道绘制谱面，长谱面自动拆分为多列，并显示 BPM 与 SV 信息。
+
+Taiko、Catch 和 Mania 可用 `--time-points` 与 `--duration-time` 只渲染谱面的一个区间段（见「时间轴与选段」）；不带时间参数时仍渲染整谱。
 
 布局、颜色、间距和标签等均可通过配置调整。
 

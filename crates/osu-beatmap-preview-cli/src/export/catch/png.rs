@@ -1,5 +1,6 @@
 //! osu!catch PNG 静态图导出：计算布局、准备渲染对象，交给 core 绘制后保存。
 
+use crate::export::segment::{resolve_png_window, PngSegment, PngWindow};
 use crate::media::image::save_png;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::{Beatmap, TimingPoint};
@@ -13,7 +14,7 @@ use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::path::{Path, PathBuf};
 
-use super::objects::{build_catch_render_objects, effective_difficulty};
+use super::objects::{build_catch_render_objects, effective_difficulty, RenderObject};
 
 pub(crate) fn rhe(v: f64) -> i64 {
     round_half_even(v)
@@ -229,6 +230,7 @@ pub(crate) fn render_catch_grid(
     output_path: &Path,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
+    segment: Option<PngSegment>,
     deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
     deadline.check()?;
@@ -238,6 +240,7 @@ pub(crate) fn render_catch_grid(
     };
 
     let difficulty = effective_difficulty(beatmap, mods);
+    // 渲染对象始终按完整谱面展开：香蕉雨 RNG 的消耗顺序不能被区间段改变。
     let mut render_objects = build_catch_render_objects(
         beatmap,
         hit_objects,
@@ -265,27 +268,22 @@ pub(crate) fn render_catch_grid(
         0
     };
 
-    let (effective_chart_end_time, timing_points_for_render): (i64, Vec<TimingPoint>) =
-        if chart_start_time > 0 {
-            for ro in &mut render_objects {
-                ro.start_time = (ro.start_time - chart_start_time).max(0);
-                if let Some(ref mut et) = ro.event_time {
-                    *et = (*et - chart_start_time as f64).max(0.0);
-                }
-            }
-            let tp = beatmap
-                .timing_points
-                .iter()
-                .map(|tp| {
-                    let mut tp = *tp;
-                    tp.time -= chart_start_time as f64;
-                    tp
-                })
-                .collect();
-            ((chart_end_time - chart_start_time).max(0), tp)
-        } else {
-            (chart_end_time, beatmap.timing_points.clone())
-        };
+    // 区间段（--time-points + --duration-time）：窗口规则与 MP4 一致（见 resolve_png_window）。
+    let window = resolve_png_window(chart_start_time, chart_end_time, segment)?;
+    let chart_start_time = window.start_ms;
+    let effective_chart_end_time = window.duration_ms();
+
+    // 只保留窗口内的渲染对象并平移到窗口起点；整谱模式窗口覆盖全部对象，行为不变。
+    window_render_objects(&mut render_objects, window);
+    let timing_points_for_render: Vec<TimingPoint> = beatmap
+        .timing_points
+        .iter()
+        .map(|tp| {
+            let mut tp = *tp;
+            tp.time -= chart_start_time as f64;
+            tp
+        })
+        .collect();
 
     let timing_lines = build_timing_lines(&timing_points_for_render, effective_chart_end_time);
     let layout = build_layout(
@@ -300,4 +298,71 @@ pub(crate) fn render_catch_grid(
 
     save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
+}
+
+/// 将渲染对象裁剪进渲染窗口并平移到窗口起点。
+///
+/// 渲染对象都是单点事件，窗口外的直接取舍即可；整谱模式窗口覆盖全部对象，
+/// 平移结果与原先一致。
+fn window_render_objects(render_objects: &mut Vec<RenderObject>, window: PngWindow) {
+    render_objects.retain(|ro| {
+        let time = ro.event_time_or_start();
+        time >= window.start_ms as f64 && time <= window.end_ms as f64
+    });
+    for ro in render_objects.iter_mut() {
+        ro.start_time = (ro.start_time - window.start_ms).max(0);
+        if let Some(event_time) = &mut ro.event_time {
+            *event_time = (*event_time - window.start_ms as f64).max(0.0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::objects::ObjType;
+    use super::*;
+
+    fn fruit(time: i64) -> RenderObject {
+        RenderObject {
+            object_type: ObjType::Fruit,
+            x: 0.0,
+            start_time: time,
+            color: osu_beatmap_preview_core::render::cpu::modes::catch::constants::LAZER_COMBO_COLORS
+                [0],
+            scale_factor: 1.0,
+            event_time: Some(time as f64),
+            hyper_dash: false,
+            edge: false,
+            banana_shower_id: None,
+            banana_route_x: None,
+        }
+    }
+
+    #[test]
+    fn window_keeps_only_overlapping_objects() {
+        let window = PngWindow {
+            start_ms: 1_000,
+            end_ms: 3_000,
+        };
+        let mut render_objects = vec![fruit(500), fruit(1_500), fruit(3_500)];
+
+        window_render_objects(&mut render_objects, window);
+
+        let times: Vec<i64> = render_objects.iter().map(|ro| ro.start_time).collect();
+        assert_eq!(times, vec![500]);
+    }
+
+    #[test]
+    fn full_chart_window_shifts_every_object_without_dropping() {
+        let window = PngWindow {
+            start_ms: 1_000,
+            end_ms: 5_000,
+        };
+        let mut render_objects = vec![fruit(1_000), fruit(4_500)];
+
+        window_render_objects(&mut render_objects, window);
+
+        let times: Vec<i64> = render_objects.iter().map(|ro| ro.start_time).collect();
+        assert_eq!(times, vec![0, 3_500]);
+    }
 }

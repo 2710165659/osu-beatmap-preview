@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Taiko、Catch 与 Mania 的 PNG 支持区间段生成：`--time-points` 与 `--duration-time` 成对给出（各最多一个，与 MP4 的单段限制一致）时只渲染 `[起点, 起点 + 时长]` 这一段，文件名追加 `time-points..._duration...` 后缀。区间超过谱面长度的处理与 MP4 一致：尾部超出谱面时整体前移以保留请求时长，请求时长超过整谱时长时输出完整谱面（不填充空白）；起点早于谱面开头时整体后移进入谱面。两者都缺时保持整谱渲染，结果与原先完全一致。
 - CLI 新增 `--input-file`，可直接预览本地谱面文件：`.osu` 不需要 `--bid`（没有音源，**仅支持 PNG / GIF，不支持视频**）；`.osz` 必须提供 `--bid`，程序按 `.osu` 的 `[Metadata] BeatmapID` 在压缩包内查找对应难度（只认压缩包顶层的 `.osu`，与 stable / osu!lazer 的导入规则一致），找不到任何 `.osu` 或没有难度匹配时报错；命中后支持 PNG / GIF / MP4，音频、背景图与谱面自带打击音都取自同一个 `.osz`。
 - Web 加载页支持选择本地 `.osu` / `.osz`：文件在浏览器内解析（新增 `src/zip.js`、`src/local-file.js`，规则与 CLI、后端一致），`.osz` 可在界面上选择难度（填了 BID 时按 `BeatmapID` 匹配，找不到报错），音频、背景图与谱面自带音效取自同一个压缩包；本地 `.osu` 用静音 WAV 充当播放时钟，纯画面 + 打击音预览，倍速与 seek 照常可用。
 

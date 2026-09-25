@@ -28,10 +28,10 @@ impl ArtifactName {
             if !plan.time_points.is_empty() {
                 parts.push(format_time_points_suffix(&plan.time_points));
             }
-            if plan.format == OutputFormat::Gif {
-                if let Some(duration) = plan.duration_seconds {
-                    parts.push(format_duration_suffix(duration));
-                }
+            // GIF 的分段时长与区间段 PNG 的时长都要进文件名；
+            // Standard PNG 不接受 --duration-time，不会走到这里。
+            if let Some(duration) = plan.duration_seconds {
+                parts.push(format_duration_suffix(duration));
             }
         }
         if let Some(fps) = plan.fps {
@@ -170,6 +170,28 @@ mod tests {
         assert_eq!(
             ArtifactName::from_plan(&video_plan).as_str(),
             "standard_123_video-startpreview-duration600.mp4"
+        );
+    }
+
+    #[test]
+    fn segment_png_names_carry_time_range() {
+        let mut png_request = RenderRequest::new("123");
+        png_request.output.format = Some("png".to_string());
+        png_request.view.time_points = vec![TimePoint::Seconds(30.0)];
+        png_request.view.duration_seconds = Some(20.0);
+        let png_plan = RenderPlan::build(png_request.validate().unwrap(), 1, false).unwrap();
+        assert_eq!(
+            ArtifactName::from_plan(&png_plan).as_str(),
+            "taiko_123_time-points30_duration20.png"
+        );
+
+        // 整谱 PNG（无时间参数）文件名保持不变。
+        let mut full_request = RenderRequest::new("123");
+        full_request.output.format = Some("png".to_string());
+        let full_plan = RenderPlan::build(full_request.validate().unwrap(), 1, false).unwrap();
+        assert_eq!(
+            ArtifactName::from_plan(&full_plan).as_str(),
+            "taiko_123.png"
         );
     }
 
