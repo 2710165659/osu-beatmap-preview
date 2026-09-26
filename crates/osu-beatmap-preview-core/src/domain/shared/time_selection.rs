@@ -15,6 +15,12 @@ pub fn preview_start_ms(first_object_ms: i64, audio_lead_in_ms: i64) -> i64 {
     first_object_ms.saturating_sub(2_000.max(audio_lead_in_ms.max(0)))
 }
 
+/// 实时预览（Web）在最后一个物件结束后继续渲染的时长（毫秒）。
+///
+/// 与 CLI MP4 的尾部留白（`VIDEO_END_PADDING_MS`，默认 2000ms）对齐：
+/// 最后一个物件后留 2 秒余韵，预览不会在最后一个物件的瞬间结束。
+pub const PREVIEW_END_PADDING_MS: i64 = 2_000;
+
 /// 在渲染器使用的绝对 `.osu` 时间轴与 osu! 歌曲进度皮肤组件使用的
 /// 游戏时间轴之间转换。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

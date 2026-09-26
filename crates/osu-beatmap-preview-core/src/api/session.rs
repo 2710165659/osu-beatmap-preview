@@ -9,7 +9,7 @@ use crate::hitsound::{self, HitsoundMixer, SampleData, SampleLibrary, SAMPLE_RAT
 use crate::model::mods::{parse_mods, validate_mods, ModSettings};
 use crate::model::{Beatmap, HitObjects};
 use crate::processing::conversion::{catch_convert, mania_convert, taiko_convert};
-use crate::processing::timeline::{preview_start_ms, TimeAxis};
+use crate::processing::timeline::{preview_start_ms, TimeAxis, PREVIEW_END_PADDING_MS};
 use crate::render::scene::FrameScene;
 use crate::render::Img;
 use crate::support::error::{PreviewError, Result};
@@ -63,15 +63,7 @@ impl RealtimeSession {
         } else {
             1.0
         };
-        let absolute_start_ms = preview_start_ms(first, beatmap.audio_lead_in_ms());
-        let timeline = TimelineInfo {
-            first_object_ms: first,
-            last_object_ms: last,
-            absolute_start_ms,
-            // 时长从实际预览起点算起，避免进度条在最后一个物件之前提前结束。
-            duration_ms: last.saturating_sub(absolute_start_ms),
-            beatmap_speed: speed,
-        };
+        let timeline = preview_timeline(first, last, beatmap.audio_lead_in_ms(), speed);
         bundle.beatmap = Some(beatmap.clone());
         let time_axis = TimeAxis::new(first);
         let source = prepare_source(
@@ -145,14 +137,7 @@ impl RealtimeSession {
         } else {
             1.0
         };
-        let absolute_start_ms = preview_start_ms(first, beatmap.audio_lead_in_ms());
-        self.timeline = TimelineInfo {
-            first_object_ms: first,
-            last_object_ms: last,
-            absolute_start_ms,
-            duration_ms: last.saturating_sub(absolute_start_ms),
-            beatmap_speed: speed,
-        };
+        self.timeline = preview_timeline(first, last, beatmap.audio_lead_in_ms(), speed);
         self.options.mods = mods;
         self.beatmap = beatmap.clone();
         self.resources.beatmap = Some(beatmap);
@@ -422,6 +407,24 @@ fn prepare_source(
     .map_err(|error| PreviewError::render(error.to_string()))
 }
 
+/// 计算会话时间轴。
+///
+/// 起点与完整预览（CLI MP4）共用 [`preview_start_ms`]；时长从实际预览起点算起，
+/// 避免进度条在最后一个物件之前提前结束；末尾再保留 [`PREVIEW_END_PADDING_MS`]
+/// 余韵，与 MP4 的尾部留白一致，最后一个物件后仍会继续渲染 2 秒。
+fn preview_timeline(first: i64, last: i64, audio_lead_in_ms: i64, speed: f64) -> TimelineInfo {
+    let absolute_start_ms = preview_start_ms(first, audio_lead_in_ms);
+    TimelineInfo {
+        first_object_ms: first,
+        last_object_ms: last,
+        absolute_start_ms,
+        duration_ms: last
+            .saturating_sub(absolute_start_ms)
+            .saturating_add(PREVIEW_END_PADDING_MS),
+        beatmap_speed: speed,
+    }
+}
+
 fn object_time_bounds(objects: &HitObjects) -> Option<(i64, i64)> {
     let mut bounds: Option<(i64, i64)> = None;
     let mut add = |start: i64, end: i64| {
@@ -568,8 +571,16 @@ mod tests {
             preview_start_ms(5_000, 4_000)
         );
         assert_eq!(session.timeline().absolute_start_ms, 1_000);
-        // 时长按实际起点算：起点提前，时长相应变长。
-        assert_eq!(session.timeline().duration_ms, 5_500 - 1_000);
+        // 时长按实际起点算：起点提前，时长相应变长；末尾再留 2s 余韵。
+        assert_eq!(session.timeline().duration_ms, 5_500 + 2_000 - 1_000);
+    }
+
+    /// 最后一个物件后再留 2s 余韵，预览不会在最后一个物件的瞬间结束。
+    #[test]
+    fn duration_keeps_end_padding_after_last_object() {
+        let session = session_with_lead_in(5_000, 0);
+        // 起点 = 5_000 - 2_000 = 3_000，末尾 = 5_500 + 2_000 = 7_500。
+        assert_eq!(session.timeline().duration_ms, 4_500);
     }
 
     /// 未启用打击音时不产生混音输出。

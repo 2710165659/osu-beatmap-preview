@@ -108,7 +108,7 @@ npm start
 | --- | --- |
 | `WebGpuSession.create(bytes, canvas, options?)` | 异步创建会话。`bytes` 为 `.osu` 文件字节，`canvas` 为目标 `HTMLCanvasElement`，会话创建时会把 Canvas 宽高设为选项中的输出尺寸 |
 | `render_number(absoluteTimeMs)` | 把该绝对时间的一帧绘制到 Canvas；时间必须为有限数字 |
-| `duration_ms_number()` | 可玩时长，用于进度条和循环边界 |
+| `duration_ms_number()` | 预览时长（含最后一个物件后的 2s 余韵），用于进度条和循环边界 |
 | `absolute_start_ms_number()` | 游戏时间 `0:00` 对应的绝对时间；游戏时间到绝对时间即 `absoluteStart + gameTime` |
 | `beatmap_speed_number()` | 当前谱面倍速（DT/HT 等），用于同步音频播放速率 |
 | `width()` / `height()` | 当前输出尺寸 |

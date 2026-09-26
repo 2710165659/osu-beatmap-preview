@@ -74,7 +74,7 @@ Web（Node 后端 + 浏览器）
 
 实时预览只有**一个时钟**：`state.position` 是游戏时间，`absoluteTime() = absoluteStart + position` 是谱面绝对时间（0 = 音频文件 0 点），音频元素的 `currentTime * 1000` 就是这个绝对时间。三套坐标的换算只有这一处，宿主不得再叠加 `AudioLeadIn`（它只体现在 `absoluteStart` 里）。
 
-- **起点**：`absoluteStart = preview_start_ms(首个物件, AudioLeadIn)`，即首个物件前 2000ms、`AudioLeadIn` 更大时按它提前；首物件很早时该值为负，此时绝对时间 `< 0` 的前置段没有音频可播（前端停住音频、只让画面时钟走）。CLI 的 MP4 完整区间用同一个函数，因此导出与预览的时间轴一致（MP4 的尾部留白是格式差异，仍由 CLI 配置决定）。
+- **起点**：`absoluteStart = preview_start_ms(首个物件, AudioLeadIn)`，即首个物件前 2000ms、`AudioLeadIn` 更大时按它提前；首物件很早时该值为负，此时绝对时间 `< 0` 的前置段没有音频可播（前端停住音频、只让画面时钟走）。CLI 的 MP4 完整区间用同一个函数，因此导出与预览的时间轴一致；尾部两边各留 2s 余韵——实时预览固定保留 `PREVIEW_END_PADDING_MS`（最后一个物件后再渲染 2 秒），MP4 由 CLI 配置 `VIDEO_END_PADDING_MS` 决定。
 - **真源**：播放中 `audio.currentTime` 是唯一事实（`syncClockFromAudio` 每帧回写，偏差超过 1500ms 才补一次 seek）；音频还没出声（下载/缓冲/自动播放被拦）时画面按墙钟推进并周期性重试播放。
 - **seek**：赋值 `currentTime` 前先 `pause` 并冻结画面（`audioSeekPending`），等 `seeked` 或超时；拖动期间只保留最后一个目标。
 - **暂停**：先把进度对齐到音频当前位置（80ms 容差），再 `pause`，恢复时才不会跳帧。

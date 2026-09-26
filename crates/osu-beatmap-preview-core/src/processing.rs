@@ -18,7 +18,7 @@ pub mod conversion {
 pub mod timeline {
     pub use crate::domain::shared::time_selection::{
         preview_start_ms, snap_to_beat_grid, GifRenderOptions, PreviewSegmentTiming,
-        PreviewTimeSelector, TimeAxis,
+        PreviewTimeSelector, TimeAxis, PREVIEW_END_PADDING_MS,
     };
 }
 
