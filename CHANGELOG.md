@@ -4,30 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [Unreleased]
+## [1.3.3] - 2026.09.26
 
 ### Added
 
-- Taiko、Catch 与 Mania 的 PNG 支持区间段生成：`--time-points` 与 `--duration-time` 成对给出（各最多一个，与 MP4 的单段限制一致）时只渲染 `[起点, 起点 + 时长]` 这一段，文件名追加 `time-points..._duration...` 后缀。区间超过谱面长度的处理与 MP4 一致：尾部超出谱面时整体前移以保留请求时长，请求时长超过整谱时长时输出完整谱面（不填充空白）；起点早于谱面开头时整体后移进入谱面。两者都缺时保持整谱渲染，结果与原先完全一致。
-- CLI 新增 `--input-file`，可直接预览本地谱面文件：`.osu` 不需要 `--bid`（没有音源，**仅支持 PNG / GIF，不支持视频**）；`.osz` 必须提供 `--bid`，程序按 `.osu` 的 `[Metadata] BeatmapID` 在压缩包内查找对应难度（只认压缩包顶层的 `.osu`，与 stable / osu!lazer 的导入规则一致），找不到任何 `.osu` 或没有难度匹配时报错；命中后支持 PNG / GIF / MP4，音频、背景图与谱面自带打击音都取自同一个 `.osz`。
-- Web 加载页支持选择本地 `.osu` / `.osz`：文件在浏览器内解析（新增 `src/zip.js`、`src/local-file.js`，规则与 CLI、后端一致），`.osz` 可在界面上选择难度（填了 BID 时按 `BeatmapID` 匹配，找不到报错），音频、背景图与谱面自带音效取自同一个压缩包；本地 `.osu` 用静音 WAV 充当播放时钟，纯画面 + 打击音预览，倍速与 seek 照常可用。
+- Standard 新增follow point，argon pro 2022 样式。
+- Taiko / Catch / Mania 的 PNG 支持区间段渲染。
+- CLI 新增 `--input-file`，可直接预览本地 `.osu` / `.osz`。
+- Web 加载页支持选择本地 `.osu` / `.osz`。
 
 ### Changed
 
-- Web 实时预览在最后一个物件后再保留 2s 余韵才结束（进度条时长、播放终点与循环边界同步延长），与 MP4 导出的尾部留白一致；预览时长由 core 时间轴的 `PREVIEW_END_PADDING_MS` 统一决定。
+- Web 实时预览在最后一个物件后多保留 2s 余韵才结束。
+
+### Fixed
+
+- 修正连击色取色序号。
+- 修复 Taiko 转谱滑条错误。
 
 ---
 
 ## [1.3.2] - 2026.09.18
-
-### Added
-
-- Standard 新增跟随点（follow point，对照游戏内 osu! "argon" pro (2022) 皮肤的 `ArgonFollowPoint`）：相邻两个物件之间按 32 个 playfield 单位的间距铺开，淡入位置（`fraction - 0.1` → `fraction`）、`Easing.Out` 位移与 1.5×→1× 缩放、preempt 提前量与 AR>10 时的整体加速都按游戏公式还原；图标使用固定的 `FC618F → BB1A41` 竖向渐变（拖后的 chevron 再乘 `Gray(0.2)`，不跟随连击色），转盘两端与新连击起点不生成跟随点，跟随点在物件层之下绘制。CPU 导出与 Web 实时预览共用同一套参数。
-
-### Fixed
-
-- 修正连击色取色序号：按 lazer `IHasComboInformation.UpdateComboInformation`，谱面首个物件（以及转盘之后的第一个物件）按新连击处理，连击序号从 0 自增到 1，因此第一个连击取的是**第二组**颜色——此前会取第一组，例如 5279008 的第一个 note 显示为粉色而游戏里是黄色（Combo2，`ArgonSkin.cs` 里也写着连击顺序「从 1 而不是 0 开始」）。谱面自带 `[Colours]` 时按 lazer `LegacyBeatmapSkin` 使用带 `ComboOffset` 的序号，皮肤配色按 `LegacySkin` / Argon 使用不带 offset 的序号；转盘不再算作新连击起点。
-- 修复taiko转谱滑条错误。
 
 ### Performance
 
