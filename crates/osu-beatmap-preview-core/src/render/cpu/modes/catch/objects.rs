@@ -48,6 +48,8 @@ pub struct RenderObject {
     pub scale_factor: f64,
     pub event_time: Option<f64>,
     pub hyper_dash: bool,
+    /// 动画按每个展开物件的判定时刻应用 HD；水滴与香蕉也必须继承。
+    pub hidden: bool,
     /// 接近 hyperdash 极限、需要引导线提示的大跨度移动。
     pub edge: bool,
     /// 所属香蕉雨编号；仅香蕉物件设置。
@@ -232,6 +234,11 @@ pub fn build_catch_render_objects(
         );
     }
     apply_hyper_dash(&mut render_objects, difficulty.cs);
+    if mods.is_some_and(|mods| mods.hidden) {
+        for object in &mut render_objects {
+            object.hidden = true;
+        }
+    }
     Ok(render_objects)
 }
 
@@ -249,6 +256,7 @@ pub fn build_fruit_object(
         scale_factor: 1.0,
         event_time,
         hyper_dash: false,
+        hidden: false,
         edge: false,
         banana_shower_id: None,
         banana_route_x: None,
@@ -296,6 +304,7 @@ fn build_banana_shower_objects(
             scale_factor: crate::render::cpu::modes::catch::constants::BANANA_SCALE,
             event_time: Some(current_time as f64),
             hyper_dash: false,
+            hidden: false,
             edge: false,
             banana_shower_id: shower_id,
             banana_route_x: None,
@@ -356,6 +365,7 @@ fn build_juice_stream_objects(
                     scale_factor: crate::render::cpu::modes::catch::constants::DROPLET_SCALE,
                     event_time: Some(event.time),
                     hyper_dash: false,
+                    hidden: false,
                     edge: false,
                     banana_shower_id: None,
                     banana_route_x: None,
@@ -616,6 +626,7 @@ fn build_tiny_droplets_between(
             scale_factor: crate::render::cpu::modes::catch::constants::TINY_DROPLET_SCALE,
             event_time: Some(time),
             hyper_dash: false,
+            hidden: false,
             edge: false,
             banana_shower_id: None,
             banana_route_x: None,
@@ -754,6 +765,7 @@ mod tests {
             scale_factor: 1.0,
             event_time: Some(time as f64),
             hyper_dash: false,
+            hidden: false,
             edge: false,
             banana_shower_id: None,
             banana_route_x: None,

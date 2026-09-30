@@ -816,7 +816,8 @@ fn sample_freq_index(sample_rate: u32) -> Result<mp4::SampleFreqIndex> {
 
 /// 按优先级尝试硬件编码器，全部不可用时回退到 CPU openh264。
 fn create_encoder(w: u32, h: u32, fps: u32) -> Result<Box<dyn FrameEncoder>> {
-    // `OSU_PREVIEW_NO_GPU=1` 强制使用 CPU 路径（用于基准测试或回退）。
+    // 硬件编码器仅在 Windows 启用；`OSU_PREVIEW_NO_GPU=1` 强制使用 CPU 路径。
+    #[cfg(windows)]
     let force_cpu = std::env::var("OSU_PREVIEW_NO_GPU").as_deref() == Ok("1");
     // 1. NVENC（NVIDIA）——仅 Windows。
     #[cfg(windows)]

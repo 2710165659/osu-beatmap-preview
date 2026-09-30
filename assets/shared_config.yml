@@ -365,7 +365,7 @@ skin:
   # 皮肤颜色均为 RGB/RGBA；MANIA 下的 KEYS_N 为对应键数的列布局。
   COMBO_COLORS: [[150, 230, 255], [255, 125, 177], [130, 255, 160]] # Standard 连击颜色，按顺序循环
   HIT_CIRCLE_OVERLAP: 10 # Standard 圆圈重叠像素数
-  HYPER_DASH: [255, 82, 139] # Hyper dash 提示颜色（RGB）
+  HYPER_DASH: [255, 0, 0] # Hyper dash 外圈颜色（RGB），与 osu! 默认 HyperDashFruit 一致
   MANIA:
     # 每个 KEYS_N 块：COLUMN_WIDTHS 为各列宽度；COLUMN_LINE_WIDTHS 为 keys+1 条边界线宽度；
     # HIT_POSITION 为 osu! stable 480 高坐标系中的判定线位置。
