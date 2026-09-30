@@ -189,11 +189,11 @@ fn prepare_taiko_segment_gif_frames(
             .style
             .SHOW_MEASURE_LINES,
     );
-    let time_range = compute_time_range() / speed_multiplier;
+    // DT/HT 已作用于谱面时钟；滚动窗口保持谱面时间单位，避免倍率重复生效。
+    let time_range = compute_time_range();
 
     let layout = build_animation_layout(time_range);
     let frame_count = pyround(segment_duration_ms * fps / 1000.0).max(1) as usize;
-    let frame_duration_ms = pyround(1000.0 / fps).max(1) as u32;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -279,7 +279,7 @@ fn prepare_taiko_segment_gif_frames(
         canvas
     };
 
-    Ok(AnimationFrames::new(frame_count, frame_duration_ms, render))
+    Ok(AnimationFrames::with_frame_rate(frame_count, fps, render))
 }
 
 // ─── 时间范围与倍率 ───
@@ -1265,5 +1265,62 @@ mod tests {
                 assert_eq!(video.big_note_diameter, content.big_note_diameter);
             });
         }
+    }
+
+    #[test]
+    fn rate_mods_change_clock_without_changing_note_spacing() {
+        let beatmap = crate::domain::parser::parse_beatmap_bytes(
+            b"osu file format v14\n\n[General]\nMode:1\n\n[Difficulty]\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,2000,1,8,0:0:0:0:\n",
+        )
+        .unwrap();
+        let mut config = crate::config::CoreConfig::default();
+        config.render.taiko.gif.SCALE = 0.5;
+        config.render.taiko.gif.structure.ROW_COUNT = 1;
+        config.render.taiko.gif.style.SHOW_TIME_LABEL = false;
+        config.render.taiko.gif.style.SHOW_MEASURE_LINES = false;
+        crate::config::with_config(std::sync::Arc::new(config), || {
+            let deadline = RequestDeadline::new(
+                std::time::Instant::now(),
+                "gif",
+                std::time::Duration::from_secs(60),
+            );
+            for base in ["", "EZ", "HR", "SW CS"] {
+                let prepare = |tokens: &str| {
+                    let mods = crate::domain::mods::parse_mods(
+                        &tokens
+                            .split_whitespace()
+                            .map(str::to_owned)
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap();
+                    prepare_taiko_gif_frames(
+                        &beatmap,
+                        Some(&mods),
+                        GifRenderOptions::Segments {
+                            times_ms: Some(vec![1_000]),
+                            duration_seconds: Some(1.0),
+                            time_axis: crate::domain::shared::time_selection::TimeAxis::new(0),
+                        },
+                        Some(20),
+                        &deadline,
+                    )
+                    .unwrap()
+                };
+                let normal = prepare(base);
+                for (rate, frame_index, normal_index) in [
+                    ("DT", 4, 6),
+                    ("HT", 8, 6),
+                    ("DT1.25", 8, 10),
+                    ("HT0.5", 16, 8),
+                ] {
+                    let changed = prepare(&format!("{base} {rate}"));
+                    assert_eq!(changed.frame_count(), 20);
+                    assert!(
+                        changed.render(frame_index).data == normal.render(normal_index).data,
+                        "{base} {rate} 在相同谱面时间不能额外改变音符间距"
+                    );
+                }
+            }
+        });
     }
 }

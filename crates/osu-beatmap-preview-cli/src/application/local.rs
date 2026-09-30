@@ -234,13 +234,17 @@ mod tests {
     }
 
     fn write_temp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT_TEMP_ID: AtomicUsize = AtomicUsize::new(0);
+        // 系统时钟的分辨率不足以保证并行测试目录唯一，额外使用进程内原子序号。
         let dir = std::env::temp_dir().join(format!(
-            "osu-preview-local-test-{}-{}",
+            "osu-preview-local-test-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(name);

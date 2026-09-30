@@ -7,7 +7,7 @@ use crate::domain::parser::round_half_even;
 use crate::domain::shared::time_selection::{PreviewTimeSelector, TimeAxis};
 use crate::render::canvas::Img;
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, Weak};
 
 use super::slider::SliderRenderData;
 
@@ -72,6 +72,7 @@ pub struct CachedLayer {
 /// 不会互相污染；同一上下文的多次渲染（例如 PNG 的 40 帧、GIF 的 75 帧）全程复用。
 pub struct SharedBodyLayers {
     slots: Box<[OnceLock<CachedLayer>]>,
+    cache_identity: Arc<()>,
 }
 
 impl SharedBodyLayers {
@@ -81,6 +82,7 @@ impl SharedBodyLayers {
                 .map(|_| OnceLock::new())
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
+            cache_identity: Arc::new(()),
         }
     }
 
@@ -95,6 +97,7 @@ impl SharedBodyLayers {
 
 #[derive(Default)]
 pub struct RenderCache {
+    context_identity: Weak<()>,
     pub resized_alpha: HashMap<(u64, (u32, u32), u8), Img>,
     pub procedural: HashMap<(u64, [u8; 3]), Img>,
     pub slider_data: HashMap<usize, Arc<SliderRenderData>>,
@@ -106,6 +109,20 @@ pub struct RenderCache {
     pub slider_tick_sprites: HashMap<(i64, [u8; 3]), Img>,
     /// 跟随点图标：按（像素高度, 旋转角度）缓存，两者的取值都很少。
     pub follow_point_sprites: HashMap<(i64, i64), Img>,
+}
+
+impl RenderCache {
+    /// 线程缓存可跨导出任务存活，但路径、尺寸、颜色和 alpha 变体只属于当前上下文。
+    pub(super) fn prepare_for_context(&mut self, context: &RenderContext) {
+        let identity = &context.body_layers.cache_identity;
+        if self.context_identity.as_ptr() != Arc::as_ptr(identity) {
+            // Weak 保留旧标识的分配，避免上下文销毁后地址复用造成错误命中。
+            *self = Self {
+                context_identity: Arc::downgrade(identity),
+                ..Self::default()
+            };
+        }
+    }
 }
 
 /// std 渲染使用的皮肤参数。

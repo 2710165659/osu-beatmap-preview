@@ -157,7 +157,7 @@ pub fn save_animated_gif_streamed(
     frame_count: usize,
     render: impl Fn(usize) -> Img + Send + Sync,
     path: &Path,
-    frame_duration_ms: u32,
+    frame_rate: f64,
     deadline: &RequestDeadline,
 ) -> Result<()> {
     deadline.check()?;
@@ -241,8 +241,6 @@ pub fn save_animated_gif_streamed(
             .set_repeat(gif::Repeat::Infinite)
             .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
 
-        let delay = (frame_duration_ms / 10) as u16; // GIF delay unit = 10ms
-
         let pixel_count = w.saturating_mul(h);
         // 两块缓冲区交替保存当前帧和上一帧，避免每帧重新分配并清零整张 indexed 图像。
         let mut prev_indexed: Vec<u8> = Vec::with_capacity(pixel_count);
@@ -322,7 +320,11 @@ pub fn save_animated_gif_streamed(
                     height: rect.3 as u16,
                     left: rect.0 as u16,
                     top: rect.1 as u16,
-                    delay,
+                    // GIF 延迟以厘秒保存。对累计时间取整后作差，将不可整除的
+                    // 帧周期分摊到相邻帧，任意帧前缀的误差都不超过半厘秒。
+                    delay: (((fi + 1) as f64 * 100.0 / frame_rate).round()
+                        - (fi as f64 * 100.0 / frame_rate).round())
+                    .max(1.0) as u16,
                     dispose: gif::DisposalMethod::Keep,
                     transparent,
                     needs_user_input: false,
@@ -522,12 +524,53 @@ mod timeout_tests {
                 Img::new(1, 1, [0, 0, 0, 255])
             },
             &path,
-            100,
+            10.0,
             &expired("gif"),
         )
         .unwrap_err();
         assert!(error.to_string().contains("GIF preview request timed out"));
         assert!(!rendered.load(Ordering::Relaxed));
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn gif_frame_delays_preserve_duration_at_fractional_centiseconds() {
+        let deadline = RequestDeadline::new(
+            std::time::Instant::now(),
+            "gif",
+            std::time::Duration::from_secs(60),
+        );
+        for fps in [15, 20, 30, 60] {
+            let path = std::env::temp_dir().join(format!(
+                "osu-preview-gif-timing-{}-{fps}.gif",
+                std::process::id()
+            ));
+            save_animated_gif_streamed(
+                fps,
+                |index| Img::new(4, 4, [(index * 16) as u8, 100, 200, 255]),
+                &path,
+                fps as f64,
+                &deadline,
+            )
+            .unwrap();
+            let mut decoder = gif::DecodeOptions::new()
+                .read_info(std::fs::File::open(&path).unwrap())
+                .unwrap();
+            let mut frame_count = 0;
+            let mut elapsed_ms = 0;
+            while let Some(frame) = decoder.read_next_frame().unwrap() {
+                elapsed_ms += u64::from(frame.delay) * 10;
+                frame_count += 1;
+                let expected_ms = frame_count as f64 * 1000.0 / fps as f64;
+                assert!(
+                    (elapsed_ms as f64 - expected_ms).abs() <= 5.01,
+                    "{fps}fps 的第 {frame_count} 帧累积时长错误：{elapsed_ms}ms"
+                );
+            }
+            assert_eq!(frame_count, fps);
+            assert_eq!(elapsed_ms, 1_000);
+            drop(decoder);
+            std::fs::remove_file(path).unwrap();
+        }
     }
 }

@@ -283,7 +283,6 @@ fn prepare_catch_segment_gif_frames(
         crate::render::geometry::OutputFormat::Gif,
     );
     let frame_count = rhe(segment_duration_ms * fps / 1000.0).max(1) as usize;
-    let frame_duration_ms = rhe(1000.0 / fps).max(1) as u32;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
         .iter()
@@ -340,7 +339,7 @@ fn prepare_catch_segment_gif_frames(
         canvas
     };
 
-    Ok(AnimationFrames::new(frame_count, frame_duration_ms, render))
+    Ok(AnimationFrames::with_frame_rate(frame_count, fps, render))
 }
 
 /// 渲染单段单帧：背景 + 判定线 + 接手 + 可见的下落对象。

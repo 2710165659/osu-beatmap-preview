@@ -28,7 +28,6 @@ pub fn prepare_realtime(
     if hit_objects.is_empty() {
         return Err(PreviewError::render("taiko beatmap has no hit objects"));
     }
-    let speed = mods.map_or(1.0, |value| value.speed_multiplier);
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;
     let timing_points = effective_timing_points(beatmap, mods);
     let multiplier_lookup = MultiplierLookup {
@@ -51,11 +50,8 @@ pub fn prepare_realtime(
             .style
             .SHOW_MEASURE_LINES,
     );
-    let layout = build_animation_layout_with_segments_and_format(
-        compute_time_range() / speed,
-        1,
-        OutputFormat::Mp4,
-    );
+    let layout =
+        build_animation_layout_with_segments_and_format(compute_time_range(), 1, OutputFormat::Mp4);
     Ok(RealtimeFrameSource::new(
         GameMode::Taiko,
         move |absolute_time_ms| {
