@@ -85,8 +85,7 @@ pub struct RedlineSection {
     pub meter: i32,
 }
 
-/// 从红线（uninherited timing point）构建分段，再按段内节拍生成节拍线。
-
+/// 绘制单列的标尺面板、游玩区域底色与边框。
 fn draw_column_background(image: &mut Img, layout: &CatchPngLayout, column_index: i64) {
     let column_left = column_left(column_index);
     let chart_top = crate::config::current()
@@ -801,6 +800,7 @@ mod tests {
             scale_factor: 1.0,
             event_time: Some(time as f64),
             hyper_dash: false,
+            hidden: false,
             edge: true,
             banana_shower_id: None,
             banana_route_x: None,

@@ -37,7 +37,7 @@ export const CONVERT_MODES = ['standard', 'taiko', 'catch', 'mania'];
 export const MOD_OPTIONS = Object.freeze({
   standard: ['EZ', 'HR', 'HD', 'DA', 'TC', 'DT', 'HT'],
   taiko: ['EZ', 'HR', 'SW', 'CS', 'DT', 'HT'],
-  catch: ['EZ', 'HR', 'DT', 'HT'],
+  catch: ['EZ', 'HR', 'HD', 'DT', 'HT'],
   mania: ['CS', 'DT', 'HT', '1K', '2K', '3K', '4K', '5K', '6K', '7K', '8K', '9K', '10K', 'DS', 'IN', 'HO'],
 });
 

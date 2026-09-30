@@ -3,7 +3,9 @@
 use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::Beatmap;
 use crate::domain::mods::ModSettings;
-use crate::render::cpu::modes::catch::animation::{build_animation_layout, AnimationLayout};
+use crate::render::cpu::modes::catch::animation::{
+    build_animation_layout, object_alpha, AnimationLayout,
+};
 use crate::render::cpu::modes::catch::drawing::object_diameter;
 use crate::render::cpu::modes::catch::objects::{
     build_catch_render_objects, effective_difficulty, ObjType, RenderObject,
@@ -108,8 +110,12 @@ fn draw_object_scene(
     if center[1] + diameter / 2.0 < 0.0 || center[1] - diameter / 2.0 > judgement_y as f32 {
         return;
     }
+    let alpha = object_alpha(object, absolute_time_ms, layout.time_preempt);
+    if alpha == 0 {
+        return;
+    }
     let radius = diameter / 2.0;
-    let color = [object.color[0], object.color[1], object.color[2], 255];
+    let color = [object.color[0], object.color[1], object.color[2], alpha];
     match object.object_type {
         ObjType::Fruit | ObjType::Droplet | ObjType::TinyDroplet => {
             if object.hyper_dash {
@@ -118,11 +124,16 @@ fn draw_object_scene(
                     center,
                     radius * 1.6,
                     radius * 0.6,
-                    [hyper[0], hyper[1], hyper[2], 255],
+                    [hyper[0], hyper[1], hyper[2], alpha],
                 );
             }
-            scene.circle(center, radius, color);
-            scene.ring(center, radius, radius * 0.2, [255, 255, 255, 255]);
+            // 半透明时本体止于白色边框内沿，避免边框区域重复混合透明度。
+            scene.circle(
+                center,
+                if alpha < 255 { radius * 0.8 } else { radius },
+                color,
+            );
+            scene.ring(center, radius, radius * 0.2, [255, 255, 255, alpha]);
         }
         ObjType::Banana => scene.ring(center, radius, radius * 0.2, color),
     }
