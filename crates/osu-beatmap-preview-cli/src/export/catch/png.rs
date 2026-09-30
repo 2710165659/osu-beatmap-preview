@@ -327,11 +327,13 @@ mod tests {
             object_type: ObjType::Fruit,
             x: 0.0,
             start_time: time,
-            color: osu_beatmap_preview_core::render::cpu::modes::catch::constants::LAZER_COMBO_COLORS
-                [0],
+            color:
+                osu_beatmap_preview_core::render::cpu::modes::catch::constants::LAZER_COMBO_COLORS
+                    [0],
             scale_factor: 1.0,
             event_time: Some(time as f64),
             hyper_dash: false,
+            hidden: false,
             edge: false,
             banana_shower_id: None,
             banana_route_x: None,

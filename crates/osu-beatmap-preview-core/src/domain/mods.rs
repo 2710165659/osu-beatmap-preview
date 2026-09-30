@@ -343,7 +343,7 @@ fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
     match (fmt, mode) {
         ("gif", 0) => &["EZ", "HR", "HD", "DA", "TC"],
         ("gif", 1) => &["EZ", "HR", "SW", "CS"],
-        ("gif", 2) => &["EZ", "HR"],
+        ("gif", 2) => &["EZ", "HR", "HD"],
         ("gif", 3) => &["K", "DS", "CS", "IN", "HO"],
         ("png", 0) => &["EZ", "HR", "HD", "DA", "TC"],
         ("png", 1) => &["EZ", "HR", "SW"],
@@ -463,6 +463,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         2 => {
             filtered.easy = settings.easy;
             filtered.hard_rock = settings.hard_rock;
+            filtered.hidden = settings.hidden;
         }
         3 => {
             filtered.mania_keys = settings.mania_keys;
@@ -480,6 +481,29 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn catch_hidden_is_supported_for_animations_and_preserved_by_filter() {
+        for extra in [None, Some("EZ"), Some("HR"), Some("DT"), Some("HT")] {
+            let mut tokens = vec!["HD".to_string()];
+            if let Some(extra) = extra {
+                tokens.push(extra.to_string());
+            }
+            let settings = parse_mods(&tokens).unwrap();
+            for format in ["gif", "mp4"] {
+                assert!(validate_mods(&settings, Some(2), Some(format)).is_empty());
+            }
+            assert!(mods_for_mode(&settings, 2).hidden);
+        }
+    }
+
+    #[test]
+    fn catch_hidden_remains_unsupported_for_static_charts() {
+        let settings = parse_mods(&["HD".into()]).unwrap();
+        assert!(validate_mods(&settings, Some(2), Some("png"))
+            .iter()
+            .any(|error| error.contains("HD is not supported for catch PNG")));
+    }
 
     #[test]
     fn parses_mods_as_individual_tokens() {

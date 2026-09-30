@@ -12,7 +12,7 @@ use crate::render::canvas::Img;
 use crate::render::cpu::AnimationFrames;
 use crate::render::text::{draw_text, text_size};
 
-use super::drawing::{draw_catch_object, object_diameter};
+use super::drawing::{draw_catch_object_with_alpha, object_diameter};
 use super::objects::{build_catch_render_objects, effective_difficulty, RenderObject};
 fn rhe(value: f64) -> i64 {
     crate::domain::parser::round_half_even(value)
@@ -31,6 +31,8 @@ pub struct AnimationLayout {
     pub playfield_top: f64,
     pub object_scale: f64,
     pub pixels_per_ms: f64,
+    /// 已应用 EZ/HR 的 AR 提前时间；DT/HT 通过谱面时钟推进，无需再乘倍速。
+    pub time_preempt: f64,
     pub render_scale: f64,
     pub frame_width: i64,
     pub frame_height: i64,
@@ -101,6 +103,7 @@ pub fn build_animation_layout(
         playfield_top,
         object_scale,
         pixels_per_ms,
+        time_preempt: time_range,
         render_scale,
         frame_width: geometry.content.width,
         frame_height: geometry.content.height,
@@ -431,7 +434,27 @@ fn draw_gif_object(
         return;
     }
 
-    draw_catch_object(frame, catch_object, center_x, center_y, diameter);
+    draw_catch_object_with_alpha(
+        frame,
+        catch_object,
+        center_x,
+        center_y,
+        diameter,
+        object_alpha(catch_object, snapshot_time, layout.time_preempt),
+    );
+}
+
+/// 对齐 CatchModHidden：剩余提前时间从 60% 到 44% 时线性淡出。
+/// https://github.com/ppy/osu/blob/master/osu.Game.Rulesets.Catch/Mods/CatchModHidden.cs
+pub(crate) fn object_alpha(object: &RenderObject, snapshot_time: i64, time_preempt: f64) -> u8 {
+    if !object.hidden {
+        return 255;
+    }
+    if time_preempt <= 0.0 {
+        return 0;
+    }
+    let remaining = (object.start_time as f64 - snapshot_time as f64) / time_preempt;
+    (((remaining - 0.44) / (0.6 - 0.44)).clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -553,6 +576,72 @@ mod tests {
     use crate::render::cpu::modes::catch::objects::{ObjType, RenderObject};
 
     #[test]
+    fn hidden_opacity_uses_preempt_fraction_for_every_object_kind() {
+        let mut object =
+            super::super::objects::build_fruit_object(256.0, 10_000, [30, 120, 220], None);
+        object.hidden = true;
+        for kind in [
+            ObjType::Fruit,
+            ObjType::Droplet,
+            ObjType::TinyDroplet,
+            ObjType::Banana,
+        ] {
+            object.object_type = kind;
+            for preempt in [450.0, 1200.0, 1800.0] {
+                for (remaining, expected) in
+                    [(0.8, 255), (0.6, 255), (0.52, 128), (0.44, 0), (0.2, 0)]
+                {
+                    let snapshot = object.start_time - rhe(preempt * remaining);
+                    assert_eq!(object_alpha(&object, snapshot, preempt), expected);
+                }
+            }
+        }
+        object.hidden = false;
+        assert_eq!(object_alpha(&object, object.start_time, 1200.0), 255);
+    }
+
+    #[test]
+    fn hidden_gif_frames_fade_fruit_before_the_judgement_line() {
+        let beatmap = crate::parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:2\n\
+              [Difficulty]\nCircleSize:5\nApproachRate:5\n\
+              [TimingPoints]\n0,500,4,1,0,100,1,0\n\
+              [HitObjects]\n256,192,1000,1,0,0:0:0:0:\n",
+        )
+        .unwrap();
+        let deadline = RequestDeadline::new(
+            std::time::Instant::now(),
+            "gif",
+            std::time::Duration::from_secs(30),
+        );
+        let options = GifRenderOptions::Segments {
+            times_ms: Some(vec![400]),
+            duration_seconds: Some(0.5),
+            time_axis: TimeAxis::new(0),
+        };
+        let normal =
+            prepare_catch_gif_frames(&beatmap, None, options.clone(), Some(20), &deadline).unwrap();
+        let mods = ModSettings {
+            hidden: true,
+            ..ModSettings::new()
+        };
+        let hidden =
+            prepare_catch_gif_frames(&beatmap, Some(&mods), options, Some(20), &deadline).unwrap();
+        assert!(normal.render(0).data != hidden.render(0).data);
+
+        let layout = build_animation_layout(5.0, 5.0, crate::render::geometry::OutputFormat::Gif);
+        let (origin_x, origin_y) = frame_origin(0, &layout);
+        let x =
+            rhe(origin_x as f64 + layout.playfield_left + 256.0 * layout.playfield_scale) as u32;
+        let y = rhe(origin_y as f64
+            + layout.playfield_top
+            + super::super::constants::STABLE_CATCHER_Y * layout.playfield_scale
+            - 500.0 * layout.pixels_per_ms) as u32;
+        assert_ne!(normal.render(2).get(x, y), layout.playfield_background);
+        assert_eq!(hidden.render(2).get(x, y), layout.playfield_background);
+    }
+
+    #[test]
     fn video_layout_centers_content_box_without_resizing_fruit() {
         for scale in [1.0_f64, 2.0] {
             let mut custom = crate::config::CoreConfig::default();
@@ -615,6 +704,7 @@ mod tests {
             scale_factor: 1.0,
             event_time: None,
             hyper_dash: true,
+            hidden: false,
             edge: false,
             banana_shower_id: None,
             banana_route_x: None,

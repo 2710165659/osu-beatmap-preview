@@ -339,7 +339,8 @@ mod tests {
     /// 谱面 ID：bid > BeatmapID > 文件名主干。
     #[test]
     fn effective_id_prefers_bid_then_beatmap_id_then_file_stem() {
-        let path = Path::new(r"C:\maps\My Map [Hard].osu");
+        // 正斜杠在各平台都能分隔目录，避免把 Windows 路径误当作 Unix 文件名。
+        let path = Path::new("maps/My Map [Hard].osu");
         let with_id = parse(osu_text(Some(300), "Hard").as_bytes());
         assert_eq!(effective_id("777", &with_id, path), "777");
         assert_eq!(effective_id("", &with_id, path), "300");

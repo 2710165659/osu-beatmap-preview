@@ -193,7 +193,18 @@ fn skin_defaults_cover_all_mania_keycounts() {
     assert_block!(config.skin.MANIA.KEYS_18, 18, 48, 19, 460);
     assert_eq!(config.skin.COMBO_COLORS.len(), 3);
     assert_eq!(config.skin.HIT_CIRCLE_OVERLAP, 10);
-    assert_eq!(config.skin.HYPER_DASH, [255, 82, 139]);
+    assert_eq!(config.skin.HYPER_DASH, [255, 0, 0]);
+}
+
+#[test]
+fn custom_hyperdash_color_overrides_the_red_default() {
+    let config =
+        super::load_layers(Some(r#"{"skin":{"HYPER_DASH":[255,82,139]}}"#), false, None).unwrap();
+    assert_eq!(config.runtime.skin.HYPER_DASH, [255, 82, 139]);
+    assert_eq!(
+        config.variant.unwrap().difference,
+        serde_json::json!({"skin": {"HYPER_DASH": [255, 82, 139]}})
+    );
 }
 
 #[test]

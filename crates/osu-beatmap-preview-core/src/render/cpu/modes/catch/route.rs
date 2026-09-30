@@ -360,6 +360,7 @@ mod tests {
             scale_factor: BANANA_SCALE,
             event_time: Some(time as f64),
             hyper_dash: false,
+            hidden: false,
             edge: false,
             banana_shower_id: None,
             banana_route_x: None,
