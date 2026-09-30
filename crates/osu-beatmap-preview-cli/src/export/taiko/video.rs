@@ -18,8 +18,8 @@ use std::path::Path;
 
 use super::animation_render::{
     build_multiplier_points, build_video_animation_layout, compute_time_range, draw_hit_objects,
-    draw_row_background, prepare_hit_objects, prepare_measure_lines, pyround, AnimationLayout,
-    MultiplierLookup,
+    draw_row_background, prepare_hit_objects_with_mods, prepare_measure_lines, pyround,
+    taiko_flashlight, taiko_visibility_timeline, AnimationLayout, MultiplierLookup,
 };
 use super::notes::RenderCache;
 use super::timing::*;
@@ -58,12 +58,16 @@ pub(crate) fn render_taiko_video(
         points: build_multiplier_points(&timing_points, slider_multiplier),
     };
     let slider_tick_rate = beatmap.difficulty.get_f64_or("SliderTickRate", 1.0);
-    let prepared_hit_objects = prepare_hit_objects(
+    let prepared_hit_objects = prepare_hit_objects_with_mods(
         &hit_objects,
         &multiplier_lookup,
         &timing_points,
         slider_tick_rate,
+        mods,
     );
+    let flashlight = mods
+        .is_some_and(|mods| mods.flashlight)
+        .then(|| taiko_visibility_timeline(&hit_objects, &beatmap.break_periods));
     let prepared_measure_lines = prepare_measure_lines(
         &hit_objects,
         &timing_points,
@@ -126,6 +130,17 @@ pub(crate) fn render_taiko_video(
                 &mut cache.borrow_mut(),
             );
         });
+        if let Some(timeline) = &flashlight {
+            taiko_flashlight(timeline, snapshot_time, &layout, 0).apply(
+                &mut canvas,
+                crate::export::geometry::PixelRect {
+                    x: 0,
+                    y: 0,
+                    width: layout.image_width,
+                    height: layout.image_height,
+                },
+            );
+        }
         Ok((canvas, snapshot_time))
     };
 

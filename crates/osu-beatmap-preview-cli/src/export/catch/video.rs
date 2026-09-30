@@ -15,7 +15,7 @@ use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use std::path::Path;
 
-use super::animation::{build_video_animation_layout, render_animation_frame};
+use super::animation::{build_video_animation_layout, render_animation_frame, CatchFlashlight};
 use super::objects::{build_catch_render_objects, effective_difficulty};
 use super::png::rhe;
 
@@ -40,6 +40,9 @@ pub(crate) fn render_catch_video(
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects =
         build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
+    let flashlight = mods
+        .is_some_and(|mods| mods.flashlight)
+        .then(|| CatchFlashlight::new(&render_objects, &beatmap.break_periods));
 
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let first = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
@@ -54,7 +57,8 @@ pub(crate) fn render_catch_video(
         difficulty.cs,
         difficulty.ar,
         crate::export::geometry::OutputFormat::Mp4,
-    );
+    )
+    .with_hidden_kiai(beatmap, mods);
     // 视频背景在最终 16:9 画布上统一处理，playfield 只提供透明对象层。
     let frame_background = background.as_ref().map(|_| {
         Img::new(
@@ -68,13 +72,24 @@ pub(crate) fn render_catch_video(
 
     let render = move |frame_index: usize| -> Result<(Img, i64)> {
         let snapshot_time = start + rhe(frame_index as f64 * 1000.0 * speed / fps as f64);
-        let frame = render_animation_frame(
+        let mut frame = render_animation_frame(
             &render_objects,
             &start_times,
             snapshot_time,
             &layout,
             frame_background.as_ref(),
         );
+        if let Some(flashlight) = &flashlight {
+            flashlight.at(snapshot_time, &layout).apply(
+                &mut frame,
+                crate::export::geometry::PixelRect {
+                    x: 0,
+                    y: 0,
+                    width: layout.frame_width,
+                    height: layout.frame_height,
+                },
+            );
+        }
         Ok((frame, snapshot_time))
     };
 

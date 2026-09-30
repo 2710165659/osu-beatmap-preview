@@ -11,6 +11,7 @@ use crate::domain::timeout::RequestDeadline;
 use crate::render::canvas::Img;
 use crate::render::cpu::AnimationFrames;
 use crate::render::text::{draw_text, text_size};
+use crate::render::visibility::{Flashlight, FlashlightKind, VisibilityTimeline};
 use std::cell::RefCell;
 
 use super::animation::{
@@ -18,7 +19,7 @@ use super::animation::{
 };
 use super::constants::*;
 use super::notes::{
-    cached_drum_roll_tick, cached_note_disc, cached_roll_tail, draw_drum_panel, draw_note_disc,
+    cached_drum_roll_tick, cached_note_disc, cached_roll_tail, draw_drum_panel,
     draw_track_background, paste_clipped, RenderCache,
 };
 use super::timing::*;
@@ -64,6 +65,7 @@ pub struct PreparedTaikoHitObject {
     pub min_multiplier: f64,
     pub max_multiplier: f64,
     pub drum_roll_ticks: Vec<PreparedAnimationPoint>,
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -172,12 +174,16 @@ fn prepare_taiko_segment_gif_frames(
         points: build_multiplier_points(&timing_points, slider_multiplier),
     };
     let slider_tick_rate = beatmap.difficulty.get_f64_or("SliderTickRate", 1.0);
-    let prepared_hit_objects = prepare_hit_objects(
+    let prepared_hit_objects = prepare_hit_objects_with_mods(
         &hit_objects,
         &multiplier_lookup,
         &timing_points,
         slider_tick_rate,
+        mods,
     );
+    let flashlight = mods
+        .is_some_and(|mods| mods.flashlight)
+        .then(|| taiko_visibility_timeline(&hit_objects, &beatmap.break_periods));
     let prepared_measure_lines = prepare_measure_lines(
         &hit_objects,
         &timing_points,
@@ -254,6 +260,18 @@ fn prepare_taiko_segment_gif_frames(
                     &mut cache.borrow_mut(),
                 )
             });
+            if let Some(timeline) = &flashlight {
+                taiko_flashlight(timeline, snapshot_time, &layout, segment_index as i64).apply(
+                    &mut canvas,
+                    crate::render::geometry::PixelRect {
+                        // 音符允许溢出轨道；遮罩必须覆盖整行宽度，包含页面边距。
+                        x: 0,
+                        y: gif_row_top(segment_index as i64, &layout),
+                        width: layout.image_width,
+                        height: layout.row_height,
+                    },
+                );
+            }
         }
 
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
@@ -345,6 +363,22 @@ pub fn prepare_hit_objects(
     timing_points: &[TimingPoint],
     slider_tick_rate: f64,
 ) -> Vec<PreparedTaikoHitObject> {
+    prepare_hit_objects_with_mods(
+        hit_objects,
+        multiplier_lookup,
+        timing_points,
+        slider_tick_rate,
+        None,
+    )
+}
+
+pub fn prepare_hit_objects_with_mods(
+    hit_objects: &[TaikoHitObject],
+    multiplier_lookup: &MultiplierLookup,
+    timing_points: &[TimingPoint],
+    slider_tick_rate: f64,
+    mods: Option<&ModSettings>,
+) -> Vec<PreparedTaikoHitObject> {
     hit_objects
         .iter()
         .map(|hit_object| {
@@ -356,6 +390,7 @@ pub fn prepare_hit_objects(
                 end_multiplier,
                 min_multiplier: start_multiplier.min(end_multiplier),
                 max_multiplier: start_multiplier.max(end_multiplier),
+                hidden: mods.is_some_and(|mods| mods.hidden),
                 drum_roll_ticks: generate_drum_roll_ticks(
                     hit_object,
                     timing_points,
@@ -370,6 +405,47 @@ pub fn prepare_hit_objects(
             }
         })
         .collect()
+}
+
+/// 普通音符从 preempt 起线性淡出，经过滚动距离的 37.5% 后完全消失。
+/// 连打条/气球保留；连打刻度与普通音符使用同一规则，且跟随自己的 SV。
+pub fn hidden_alpha(note_time: f64, snapshot_time: i64, multiplier: f64, time_range: f64) -> f64 {
+    let preempt = time_range / multiplier;
+    if preempt <= 0.0 {
+        return 0.0;
+    }
+    (((note_time - snapshot_time as f64) / preempt - 0.625) / 0.375).clamp(0.0, 1.0)
+}
+
+pub fn taiko_visibility_timeline(
+    objects: &[TaikoHitObject],
+    breaks: &[crate::domain::models::BreakPeriod],
+) -> VisibilityTimeline {
+    VisibilityTimeline::new(
+        objects
+            .iter()
+            .filter(|object| object.hit_type & (DRUMROLL_FLAG | SWELL_FLAG) == 0)
+            .map(|object| object.start_time as f64),
+        breaks,
+    )
+}
+
+pub fn taiko_flashlight(
+    timeline: &VisibilityTimeline,
+    time: i64,
+    layout: &AnimationLayout,
+    row: i64,
+) -> Flashlight {
+    Flashlight {
+        center: [
+            judgement_line_x(layout) as f64,
+            gif_row_center_y(row, layout) as f64,
+        ],
+        radius: 200.0 * layout.row_height as f64 / TAIKO_BASE_HEIGHT
+            * timeline.flashlight_scale(FlashlightKind::Taiko, time),
+        band: false,
+        dim: 0.0,
+    }
 }
 
 pub fn prepare_measure_lines(
@@ -786,16 +862,31 @@ fn draw_circle_object(
         crate::render::cpu::modes::taiko::constants::CENTRE_NOTE_COLOR
     };
 
-    draw_note_disc(
-        image,
-        cache,
-        color,
-        diameter,
-        center_x,
-        center_y,
-        crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
-        false,
-    );
+    let alpha = if hit_object.hidden {
+        hidden_alpha(
+            base.start_time as f64,
+            snapshot_time,
+            hit_object.start_multiplier,
+            layout.time_range,
+        )
+    } else {
+        1.0
+    };
+    if alpha > 0.0 {
+        let sprite = cached_note_disc(
+            cache,
+            color,
+            diameter,
+            crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
+            false,
+        );
+        image.alpha_composite_scaled(
+            sprite,
+            pyround(center_x as f64 - diameter as f64 / 2.0),
+            pyround(center_y as f64 - diameter as f64 / 2.0),
+            alpha,
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -871,6 +962,7 @@ fn draw_span_object(
             cache,
             clip_left,
             clip_right,
+            hit_object.hidden,
         );
     }
     draw_span_head(
@@ -897,12 +989,16 @@ fn draw_drum_roll_ticks(
     cache: &mut RenderCache,
     clip_left: i64,
     clip_right: i64,
+    hidden: bool,
 ) {
     let base_diameter =
         pyround(layout.normal_note_diameter as f64 * DRUM_ROLL_TICK_DIAMETER_RATIO).max(1);
 
     for tick in ticks {
-        let (alpha, scale) = drum_roll_tick_transform(tick.time, snapshot_time);
+        let (mut alpha, scale) = drum_roll_tick_transform(tick.time, snapshot_time);
+        if hidden {
+            alpha *= hidden_alpha(tick.time, snapshot_time, tick.multiplier, layout.time_range);
+        }
         if alpha <= 0.0 {
             continue;
         }
@@ -1103,6 +1199,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hidden_notes_fade_with_preempt_and_scroll_velocity() {
+        for multiplier in [0.5, 1.0, 2.0] {
+            let preempt = 1000.0 / multiplier;
+            for (remaining, expected) in [(1.0, 1.0), (0.8125, 0.5), (0.625, 0.0), (0.0, 0.0)] {
+                let snapshot = pyround(4000.0 - preempt * remaining);
+                assert!(
+                    (hidden_alpha(4000.0, snapshot, multiplier, 1000.0) - expected).abs() <= 0.002
+                );
+            }
+        }
+    }
+
+    #[test]
     fn drum_roll_end_tick_is_drawn_above_tail() {
         let layout = AnimationLayout {
             segment_width: 100,
@@ -1145,6 +1254,7 @@ mod tests {
                 time: 1000.0,
                 multiplier: 1.0,
             }],
+            hidden: false,
         };
         let mut image = Img::new(216, 96, [0, 0, 0, 255]);
         let mut cache = RenderCache::default();
@@ -1215,6 +1325,7 @@ mod tests {
                 time: 500.0,
                 multiplier: 1.0,
             }],
+            hidden: false,
         };
         let mut image = Img::new(216, 96, [0, 0, 0, 255]);
         let mut cache = RenderCache::default();
@@ -1265,6 +1376,64 @@ mod tests {
                 assert_eq!(video.big_note_diameter, content.big_note_diameter);
             });
         }
+    }
+
+    #[test]
+    fn flashlight_hides_notes_that_overflow_into_page_margins() {
+        let mut config = crate::config::CoreConfig::default();
+        config.render.taiko.gif.SCALE = 0.75;
+        config.render.taiko.gif.structure.ROW_COUNT = 2;
+        config.render.taiko.gif.sizing.PAGE_MARGIN_RIGHT = 32;
+        config.render.taiko.gif.style.SHOW_TIME_LABEL = false;
+        config.render.taiko.gif.style.SHOW_MEASURE_LINES = false;
+        crate::config::with_config(std::sync::Arc::new(config), || {
+            let layout = build_animation_layout(compute_time_range());
+            let right_bound =
+                layout.playfield_left + layout.left_panel_width + layout.right_panel_width;
+            let multiplier = 1.4 * MULTIPLIER_BASE_BEAT_LENGTH / 500.0;
+            let note_time = 1000
+                + pyround(
+                    (right_bound - judgement_line_x(&layout) - 1) as f64 * layout.time_range
+                        / (multiplier * layout.segment_width as f64),
+                );
+            let beatmap = crate::domain::parser::parse_beatmap_bytes(
+                format!(
+                    "osu file format v14\n\n[General]\nMode:1\n\n[Difficulty]\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,{note_time},1,0,0:0:0:0:\n256,192,5000,1,0,0:0:0:0:\n"
+                ).as_bytes(),
+            ).unwrap();
+            let deadline = RequestDeadline::new(
+                std::time::Instant::now(),
+                "gif",
+                std::time::Duration::from_secs(60),
+            );
+            let prepare = |mods: Option<&ModSettings>| {
+                prepare_taiko_gif_frames(
+                    &beatmap,
+                    mods,
+                    GifRenderOptions::Segments {
+                        times_ms: Some(vec![1000, 1020]),
+                        duration_seconds: Some(1.0),
+                        time_axis: crate::domain::shared::time_selection::TimeAxis::new(0),
+                    },
+                    Some(20),
+                    &deadline,
+                )
+                .unwrap()
+                .render(0)
+            };
+            let normal = prepare(None);
+            let mods = ModSettings {
+                flashlight: true,
+                ..ModSettings::default()
+            };
+            let masked = prepare(Some(&mods));
+            for row in 0..2 {
+                let x = (right_bound + 1) as u32;
+                let y = gif_row_center_y(row, &layout) as u32;
+                assert!(normal.get(x, y)[0] > 50, "测试音符必须溢出到边距");
+                assert_eq!(masked.get(x, y), [0, 0, 0, 255], "FL 必须覆盖溢出的音符");
+            }
+        });
     }
 
     #[test]

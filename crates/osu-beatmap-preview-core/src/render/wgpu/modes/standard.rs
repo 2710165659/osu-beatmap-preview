@@ -56,6 +56,9 @@ pub fn prepare_realtime(
 ) -> Result<RealtimeFrameSource> {
     let objects = apply_standard_object_mods(standard_objects(beatmap)?, mods);
     let context = build_render_context(beatmap, objects, mods, time_axis, OutputFormat::Mp4);
+    if let Some(flashlight) = &context.flashlight {
+        flashlight.get(&context);
+    }
     let mut cache = RenderCache::default();
     let sliders = context
         .hit_objects
@@ -189,6 +192,17 @@ fn render_scene(
         if context.hit_objects[index].hit_type & 8 == 0 {
             draw_approach_circle(&mut scene, context, index, time);
         }
+    }
+    if let Some(flashlight) = &context.flashlight {
+        flashlight.get(context).at(context, time).draw_scene(
+            &mut scene,
+            crate::render::geometry::PixelRect {
+                x: 0,
+                y: 0,
+                width: context.frame_layout.frame_width,
+                height: context.frame_layout.frame_height,
+            },
+        );
     }
     if let Some(current) = breaks
         .iter()

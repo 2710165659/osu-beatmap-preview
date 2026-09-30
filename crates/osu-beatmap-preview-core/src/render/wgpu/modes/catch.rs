@@ -4,7 +4,7 @@ use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::Beatmap;
 use crate::domain::mods::ModSettings;
 use crate::render::cpu::modes::catch::animation::{
-    build_animation_layout, object_alpha, AnimationLayout,
+    build_animation_layout, object_alpha, AnimationLayout, CatchFlashlight,
 };
 use crate::render::cpu::modes::catch::drawing::object_diameter;
 use crate::render::cpu::modes::catch::objects::{
@@ -26,7 +26,11 @@ pub fn prepare_realtime(
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects =
         build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
-    let layout = build_animation_layout(difficulty.cs, difficulty.ar, OutputFormat::Mp4);
+    let flashlight = mods
+        .is_some_and(|mods| mods.flashlight)
+        .then(|| CatchFlashlight::new(&render_objects, &beatmap.break_periods));
+    let layout = build_animation_layout(difficulty.cs, difficulty.ar, OutputFormat::Mp4)
+        .with_hidden_kiai(beatmap, mods);
     render_objects.sort_by_key(|object| std::cmp::Reverse(object.start_time));
     let start_times = render_objects
         .iter()
@@ -40,6 +44,7 @@ pub fn prepare_realtime(
                 &start_times,
                 absolute_time_ms,
                 &layout,
+                flashlight.as_ref(),
             ))
         },
     ))
@@ -50,6 +55,7 @@ fn render_scene(
     start_times: &[i64],
     absolute_time_ms: i64,
     layout: &AnimationLayout,
+    flashlight: Option<&CatchFlashlight>,
 ) -> crate::render::scene::FrameScene {
     let mut scene = FrameSceneBuilder::new(
         layout.frame_width as u32,
@@ -84,8 +90,30 @@ fn render_scene(
     let fall_window = (layout.frame_height as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
     let lo = start_times.partition_point(|&time| time > absolute_time_ms + fall_window);
     let hi = start_times.partition_point(|&time| time >= absolute_time_ms - 2000);
+    let kiai_active = layout
+        .hidden_kiai
+        .as_ref()
+        .is_some_and(|timeline| timeline.is_active_at(absolute_time_ms));
     for object in &render_objects[lo..hi] {
-        draw_object_scene(&mut scene, object, absolute_time_ms, judgement_y, layout);
+        draw_object_scene(
+            &mut scene,
+            object,
+            absolute_time_ms,
+            judgement_y,
+            layout,
+            kiai_active,
+        );
+    }
+    if let Some(flashlight) = flashlight {
+        flashlight.at(absolute_time_ms, layout).draw_scene(
+            &mut scene,
+            crate::render::geometry::PixelRect {
+                x: 0,
+                y: 0,
+                width: layout.frame_width,
+                height: layout.frame_height,
+            },
+        );
     }
     scene.finish()
 }
@@ -96,6 +124,7 @@ fn draw_object_scene(
     absolute_time_ms: i64,
     judgement_y: f64,
     layout: &AnimationLayout,
+    kiai_active: bool,
 ) {
     let local_time = object.start_time - absolute_time_ms;
     let center = [
@@ -110,7 +139,7 @@ fn draw_object_scene(
     if center[1] + diameter / 2.0 < 0.0 || center[1] - diameter / 2.0 > judgement_y as f32 {
         return;
     }
-    let alpha = object_alpha(object, absolute_time_ms, layout.time_preempt);
+    let alpha = object_alpha(object, absolute_time_ms, layout.time_preempt, kiai_active);
     if alpha == 0 {
         return;
     }

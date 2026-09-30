@@ -19,7 +19,7 @@
 
 ## 功能亮点
 
-- **Mod 支持**：`EZ` `HR` `HD` `DA` `TC` `SW` `CS` `DS` `IN` `HO` 以及 `1K`–`10K` 键数可自由组合；`DT`、`HT` 支持自定义倍速（`1.01`–`2.00x`、`0.50`–`0.99x`）。
+- **Mod 支持**：`EZ` `HR` `HD` `FL` `DA` `TC` `SW` `CS` `DS` `IN` `HO` 以及 `1K`–`10K` 键数可自由组合；`DT`、`HT` 支持自定义倍速（`1.01`–`2.00x`、`0.50`–`0.99x`）。
 - **转谱**：Standard 谱面可转到 Taiko、Catch 或 Mania，并在此基础上可以应用 mod。
 - **四种模式**：osu!standard、osu!taiko、osu!catch、osu!mania 各有独立的布局、皮肤和配色，都能输出 PNG 概览、GIF 分段预览和带原曲音频的 H.264 MP4。
 - **浏览器实时预览**：Web 包解压后 `node backend/server.js`（或 `npm start`）就能在浏览器里播放谱面，支持 Mod 热切换、转谱、seek、倍速、音量（默认 50%）、分辨率（480P/720P/1080P）与 30/60/120 FPS 切换。

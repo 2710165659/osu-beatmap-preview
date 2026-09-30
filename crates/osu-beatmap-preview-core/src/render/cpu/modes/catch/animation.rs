@@ -13,7 +13,57 @@ use crate::render::cpu::AnimationFrames;
 use crate::render::text::{draw_text, text_size};
 
 use super::drawing::{draw_catch_object_with_alpha, object_diameter};
-use super::objects::{build_catch_render_objects, effective_difficulty, RenderObject};
+use super::objects::{build_catch_render_objects, effective_difficulty, ObjType, RenderObject};
+use crate::render::visibility::{
+    AutoplayPath, Flashlight, FlashlightKind, KiaiTimeline, VisibilityTimeline,
+};
+
+pub struct CatchFlashlight {
+    path: AutoplayPath,
+    timeline: VisibilityTimeline,
+}
+
+impl CatchFlashlight {
+    pub fn new(objects: &[RenderObject], breaks: &[crate::domain::models::BreakPeriod]) -> Self {
+        // 小水滴和香蕉不增加 combo。接盘在水果/大水滴之间插值，香蕉雨沿用已知路线。
+        let points = objects
+            .iter()
+            .filter_map(|object| {
+                if matches!(object.object_type, ObjType::Fruit | ObjType::Droplet) {
+                    Some((object.start_time as f64, [object.x, 0.0]))
+                } else {
+                    object
+                        .banana_route_x
+                        .map(|x| (object.start_time as f64, [x, 0.0]))
+                }
+            })
+            .collect();
+        let hit_times = objects
+            .iter()
+            .filter(|object| matches!(object.object_type, ObjType::Fruit | ObjType::Droplet))
+            .map(|object| object.start_time as f64);
+        Self {
+            path: AutoplayPath::new(points, 0.0),
+            timeline: VisibilityTimeline::new(hit_times, breaks),
+        }
+    }
+
+    pub fn at(&self, time: i64, layout: &AnimationLayout) -> Flashlight {
+        Flashlight {
+            center: [
+                layout.playfield_left + self.path.position_at(time)[0] * layout.playfield_scale,
+                layout.playfield_top
+                    + crate::render::cpu::modes::catch::constants::STABLE_CATCHER_Y
+                        * layout.playfield_scale,
+            ],
+            radius: 203.125
+                * layout.playfield_scale
+                * self.timeline.flashlight_scale(FlashlightKind::Catch, time),
+            band: false,
+            dim: 0.0,
+        }
+    }
+}
 fn rhe(value: f64) -> i64 {
     crate::domain::parser::round_half_even(value)
 }
@@ -41,6 +91,17 @@ pub struct AnimationLayout {
     pub content: crate::render::geometry::PixelRect,
     pub playfield_background: [u8; 4],
     pub judgement_line_color: [u8; 4],
+    /// HD 下的 Kiai 轮廓；由完整谱面的效果点切换，不跟随 BPM 闪烁。
+    pub hidden_kiai: Option<KiaiTimeline>,
+}
+
+impl AnimationLayout {
+    pub fn with_hidden_kiai(mut self, beatmap: &Beatmap, mods: Option<&ModSettings>) -> Self {
+        self.hidden_kiai = mods
+            .is_some_and(|mods| mods.hidden)
+            .then(|| KiaiTimeline::new(&beatmap.timing_points));
+        self
+    }
 }
 
 pub fn build_animation_layout(
@@ -133,6 +194,7 @@ pub fn build_animation_layout(
         },
         judgement_line_color:
             crate::render::cpu::modes::catch::constants::ANIMATION_JUDGEMENT_LINE_COLOR,
+        hidden_kiai: None,
     }
 }
 
@@ -244,6 +306,9 @@ fn prepare_catch_segment_gif_frames(
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects =
         build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
+    let flashlight = mods
+        .is_some_and(|mods| mods.flashlight)
+        .then(|| CatchFlashlight::new(&render_objects, &beatmap.break_periods));
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let segment_duration_ms = duration_seconds
@@ -281,7 +346,8 @@ fn prepare_catch_segment_gif_frames(
         difficulty.cs,
         difficulty.ar,
         crate::render::geometry::OutputFormat::Gif,
-    );
+    )
+    .with_hidden_kiai(beatmap, mods);
     let frame_count = rhe(segment_duration_ms * fps / 1000.0).max(1) as usize;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
@@ -314,8 +380,19 @@ fn prepare_catch_segment_gif_frames(
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
             let (frame_x, frame_y) = frame_origin(segment_index, &layout);
-            let frame =
+            let mut frame =
                 render_animation_frame(&render_objects, &start_times, snapshot_time, &layout, None);
+            if let Some(flashlight) = &flashlight {
+                flashlight.at(snapshot_time, &layout).apply(
+                    &mut frame,
+                    crate::render::geometry::PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: layout.frame_width,
+                        height: layout.frame_height,
+                    },
+                );
+            }
             canvas.alpha_composite(&frame, frame_x, frame_y);
             if crate::config::current()
                 .render
@@ -406,8 +483,19 @@ pub fn render_animation_frame(
     let lo = start_times_desc.partition_point(|&t| t > snapshot_time + fall_window_ms);
     let hi = start_times_desc.partition_point(|&t| t >= snapshot_time - 2000);
 
+    let kiai_active = layout
+        .hidden_kiai
+        .as_ref()
+        .is_some_and(|timeline| timeline.is_active_at(snapshot_time));
     for catch_object in &render_objects[lo..hi] {
-        draw_gif_object(&mut frame, catch_object, snapshot_time, judgement_y, layout);
+        draw_gif_object(
+            &mut frame,
+            catch_object,
+            snapshot_time,
+            judgement_y,
+            layout,
+            kiai_active,
+        );
     }
 
     frame
@@ -420,6 +508,7 @@ fn draw_gif_object(
     snapshot_time: i64,
     judgement_y: f64,
     layout: &AnimationLayout,
+    kiai_active: bool,
 ) {
     let local_time = catch_object.start_time - snapshot_time;
     let center_x = layout.playfield_left + catch_object.x * layout.playfield_scale;
@@ -440,13 +529,23 @@ fn draw_gif_object(
         center_x,
         center_y,
         diameter,
-        object_alpha(catch_object, snapshot_time, layout.time_preempt),
+        object_alpha(
+            catch_object,
+            snapshot_time,
+            layout.time_preempt,
+            kiai_active,
+        ),
     );
 }
 
 /// 对齐 CatchModHidden：剩余提前时间从 60% 到 44% 时线性淡出。
 /// https://github.com/ppy/osu/blob/master/osu.Game.Rulesets.Catch/Mods/CatchModHidden.cs
-pub(crate) fn object_alpha(object: &RenderObject, snapshot_time: i64, time_preempt: f64) -> u8 {
+pub(crate) fn object_alpha(
+    object: &RenderObject,
+    snapshot_time: i64,
+    time_preempt: f64,
+    kiai_active: bool,
+) -> u8 {
     if !object.hidden {
         return 255;
     }
@@ -454,7 +553,15 @@ pub(crate) fn object_alpha(object: &RenderObject, snapshot_time: i64, time_preem
         return 0;
     }
     let remaining = (object.start_time as f64 - snapshot_time as f64) / time_preempt;
-    (((remaining - 0.44) / (0.6 - 0.44)).clamp(0.0, 1.0) * 255.0).round() as u8
+    let hidden_alpha = (((remaining - 0.44) / (0.6 - 0.44)).clamp(0.0, 1.0) * 255.0).round() as u8;
+    // Kiai 中以固定约 30% 不透明度近似淡淡的水果轮廓。
+    // 这是圆形预览样式的亮度选择，不是 stable 皮肤 lighting 的精确参数。
+    const KIAI_OUTLINE_ALPHA: u8 = 77;
+    if kiai_active {
+        hidden_alpha.max(KIAI_OUTLINE_ALPHA)
+    } else {
+        hidden_alpha
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -592,12 +699,12 @@ mod tests {
                     [(0.8, 255), (0.6, 255), (0.52, 128), (0.44, 0), (0.2, 0)]
                 {
                     let snapshot = object.start_time - rhe(preempt * remaining);
-                    assert_eq!(object_alpha(&object, snapshot, preempt), expected);
+                    assert_eq!(object_alpha(&object, snapshot, preempt, false), expected);
                 }
             }
         }
         object.hidden = false;
-        assert_eq!(object_alpha(&object, object.start_time, 1200.0), 255);
+        assert_eq!(object_alpha(&object, object.start_time, 1200.0, false), 255);
     }
 
     #[test]
@@ -639,6 +746,174 @@ mod tests {
             - 500.0 * layout.pixels_per_ms) as u32;
         assert_ne!(normal.render(2).get(x, y), layout.playfield_background);
         assert_eq!(hidden.render(2).get(x, y), layout.playfield_background);
+    }
+
+    #[test]
+    fn hidden_kiai_fruit_does_not_blink_while_falling() {
+        let mut config = crate::config::CoreConfig::default();
+        config.render.catch.gif.structure.ROW_COUNT = 1;
+        config.render.catch.gif.structure.IMAGES_PER_ROW = 1;
+        config.render.catch.gif.style.SHOW_TIME_LABEL = false;
+        crate::config::with_config(std::sync::Arc::new(config), || {
+            let beatmap = crate::parse_beatmap_bytes(
+                b"osu file format v14\n[General]\nMode:2\n[Difficulty]\nCircleSize:5\nApproachRate:5\n[TimingPoints]\n0,500,4,1,0,100,1,1\n[HitObjects]\n256,192,3000,1,0,0:0:0:0:\n",
+            ).unwrap();
+            let mods = ModSettings {
+                hidden: true,
+                ..ModSettings::new()
+            };
+            let frames = prepare_catch_gif_frames(
+                &beatmap,
+                Some(&mods),
+                GifRenderOptions::Segments {
+                    times_ms: Some(vec![2500]),
+                    duration_seconds: Some(0.4),
+                    time_axis: TimeAxis::new(0),
+                },
+                Some(20),
+                &RequestDeadline::new(
+                    std::time::Instant::now(),
+                    "gif",
+                    std::time::Duration::from_secs(30),
+                ),
+            )
+            .unwrap();
+            let layout =
+                build_animation_layout(5.0, 5.0, crate::render::geometry::OutputFormat::Gif);
+            let (origin_x, origin_y) = frame_origin(0, &layout);
+            let x = rhe(origin_x as f64 + layout.playfield_left + 256.0 * layout.playfield_scale)
+                as u32;
+            let center_at = |index: usize| {
+                let time = 2500 + index as i64 * 50;
+                let y = rhe(origin_y as f64
+                    + layout.playfield_top
+                    + super::super::constants::STABLE_CATCHER_Y * layout.playfield_scale
+                    - (3000 - time) as f64 * layout.pixels_per_ms) as u32;
+                frames.render(index).get(x, y)
+            };
+            let initial = center_at(0);
+            assert_ne!(
+                initial, layout.playfield_background,
+                "Kiai 中保留淡淡的水果轮廓"
+            );
+            for index in 1..frames.frame_count() {
+                assert_eq!(
+                    center_at(index),
+                    initial,
+                    "已淡出的同一水果不能按 BPM 忽明忽暗，frame={index}"
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn hidden_kiai_reveals_a_faint_fruit_and_stops_at_the_effect_boundary() {
+        let mut config = crate::config::CoreConfig::default();
+        config.render.catch.gif.structure.ROW_COUNT = 1;
+        config.render.catch.gif.structure.IMAGES_PER_ROW = 1;
+        config.render.catch.gif.style.SHOW_TIME_LABEL = false;
+        crate::config::with_config(std::sync::Arc::new(config), || {
+            let beatmap = crate::parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:2\n\
+              [Difficulty]\nCircleSize:5\nApproachRate:5\n\
+              [TimingPoints]\n0,500,4,1,0,100,1,0\n750,-100,4,1,0,100,0,1\n1300,-100,4,1,0,100,0,0\n\
+              [HitObjects]\n128,192,1000,1,0,0:0:0:0:\n256,192,1500,1,0,0:0:0:0:\n384,192,2500,1,0,0:0:0:0:\n",
+        ).unwrap();
+            let mut without_kiai = beatmap.clone();
+            for point in &mut without_kiai.timing_points {
+                point.kiai_mode = false;
+            }
+            let deadline = RequestDeadline::new(
+                std::time::Instant::now(),
+                "gif",
+                std::time::Duration::from_secs(30),
+            );
+            let mods = ModSettings {
+                hidden: true,
+                ..ModSettings::new()
+            };
+            let prepare = |map: &Beatmap| {
+                prepare_catch_gif_frames(
+                    map,
+                    Some(&mods),
+                    GifRenderOptions::Segments {
+                        times_ms: Some(vec![1000]),
+                        duration_seconds: Some(1.0),
+                        time_axis: TimeAxis::new(0),
+                    },
+                    Some(20),
+                    &deadline,
+                )
+                .unwrap()
+            };
+            let hidden = prepare(&without_kiai);
+            let kiai = prepare(&beatmap);
+            let layout =
+                build_animation_layout(5.0, 5.0, crate::render::geometry::OutputFormat::Gif);
+            let (origin_x, origin_y) = frame_origin(0, &layout);
+            let x = rhe(origin_x as f64 + layout.playfield_left + 256.0 * layout.playfield_scale)
+                as u32;
+            let y = rhe(origin_y as f64
+                + layout.playfield_top
+                + super::super::constants::STABLE_CATCHER_Y * layout.playfield_scale
+                - 500.0 * layout.pixels_per_ms) as u32;
+            let normal = prepare_catch_gif_frames(
+                &beatmap,
+                None,
+                GifRenderOptions::Segments {
+                    times_ms: Some(vec![1000]),
+                    duration_seconds: Some(1.0),
+                    time_axis: TimeAxis::new(0),
+                },
+                Some(20),
+                &deadline,
+            )
+            .unwrap();
+            assert_eq!(hidden.render(0).get(x, y), layout.playfield_background);
+            let ghost = kiai.render(0).get(x, y);
+            assert_ne!(
+                ghost, layout.playfield_background,
+                "Kiai 中已淡出的水果应保留淡淡的轮廓"
+            );
+            assert_ne!(
+                ghost,
+                normal.render(0).get(x, y),
+                "Kiai 轮廓不能取消 HD 淡出"
+            );
+            assert!(
+                kiai.render(6).data == hidden.render(6).data,
+                "Kiai 关闭后应恢复普通 HD"
+            );
+            let first = kiai.render(0);
+            kiai.render(10);
+            assert!(
+                first.data == kiai.render(0).data,
+                "乱序出帧不能改变 Kiai 轮廓"
+            );
+            for (speed, rate_index, normal_index) in [(1.5, 2, 3), (0.75, 4, 3)] {
+                let rate = ModSettings {
+                    hidden: true,
+                    speed_multiplier: speed,
+                    ..ModSettings::new()
+                };
+                let frames = prepare_catch_gif_frames(
+                    &beatmap,
+                    Some(&rate),
+                    GifRenderOptions::Segments {
+                        times_ms: Some(vec![1000]),
+                        duration_seconds: Some(1.0),
+                        time_axis: TimeAxis::new(0),
+                    },
+                    Some(20),
+                    &deadline,
+                )
+                .unwrap();
+                assert!(
+                    frames.render(rate_index).data == kiai.render(normal_index).data,
+                    "倍速不能改变同一谱面时刻的 Kiai 轮廓"
+                );
+            }
+        });
     }
 
     #[test]

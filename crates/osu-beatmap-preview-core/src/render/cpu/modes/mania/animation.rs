@@ -10,6 +10,7 @@ use crate::domain::timeout::RequestDeadline;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::cpu::AnimationFrames;
 use crate::render::text::{draw_text, render_text_sprite, text_size};
+use crate::render::visibility::{Flashlight, FlashlightKind, ManiaHidden, VisibilityTimeline};
 
 use super::{
     apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, format_sv_label,
@@ -49,6 +50,54 @@ pub struct AnimationLayout {
     pub judgement_line_color: Rgba,
 }
 
+pub fn mania_visibility_timeline(
+    objects: &[ManiaHitObject],
+    breaks: &[crate::domain::models::BreakPeriod],
+) -> VisibilityTimeline {
+    let mut hit_times = Vec::with_capacity(objects.len() * 2);
+    for object in objects {
+        hit_times.push(object.start_time as f64);
+        if object.is_long_note {
+            hit_times.push(object.end_time as f64);
+        }
+    }
+    VisibilityTimeline::new(hit_times, breaks)
+}
+
+pub fn mania_hidden(
+    timeline: &VisibilityTimeline,
+    time: i64,
+    layout: &AnimationLayout,
+) -> ManiaHidden {
+    ManiaHidden::new(
+        timeline,
+        time,
+        layout.playfield_top,
+        layout.playfield_top + layout.hit_position_y,
+        layout.render_scale * 0.5,
+    )
+}
+
+pub fn mania_flashlight(
+    timeline: &VisibilityTimeline,
+    time: i64,
+    layout: &AnimationLayout,
+    left: i64,
+) -> Flashlight {
+    Flashlight {
+        center: [
+            (left + layout.segment_width / 2) as f64,
+            (layout.playfield_top + layout.playfield_height / 2) as f64,
+        ],
+        radius: 50.0
+            * layout.render_scale
+            * 0.5
+            * timeline.flashlight_scale(FlashlightKind::Mania, time),
+        band: true,
+        dim: 0.0,
+    }
+}
+
 /// 将谱面时间映射为连续滚动距离，同时处理 BPM 和 SV 变化。
 pub struct ScrollMap {
     starts: Vec<f64>,
@@ -85,6 +134,10 @@ pub fn prepare_mania_gif_frames(
         hit_objects = apply_hold_off_mod(&hit_objects);
     }
     let cs_mode = mods.is_some_and(|m| m.cs_override);
+    let hidden = mods.is_some_and(|mods| mods.hidden);
+    let flashlight = mods.is_some_and(|mods| mods.flashlight);
+    let visibility = (hidden || flashlight)
+        .then(|| mania_visibility_timeline(&hit_objects, &beatmap.break_periods));
     if hit_objects.is_empty() {
         return Err(PreviewError::render("mania beatmap has no hit objects"));
     }
@@ -276,6 +329,8 @@ pub fn prepare_mania_gif_frames(
 
     let render_frame = move |frame_index: usize| -> Img {
         let mut canvas = static_bg.clone();
+        // HD 对整个音符层统一减 alpha，避免相交长按或头部叠加时重复淡化。
+        let mut notes = hidden.then(|| Img::new(canvas.w, canvas.h, [0, 0, 0, 0]));
 
         for (segment_index, _segment_timing) in segment_timings.iter().enumerate() {
             let seg_left = segment_left(segment_index as i64, &layout);
@@ -304,7 +359,7 @@ pub fn prepare_mania_gif_frames(
                     break;
                 }
                 draw_gif_hit_object(
-                    &mut canvas,
+                    notes.as_mut().unwrap_or(&mut canvas),
                     &hit_objects[idx],
                     &palette,
                     &hold_colors,
@@ -316,6 +371,21 @@ pub fn prepare_mania_gif_frames(
                     pixels_per_scroll_unit,
                 );
             }
+            if let Some(timeline) = &visibility {
+                let rect = crate::render::geometry::PixelRect {
+                    x: seg_left,
+                    y: layout.playfield_top,
+                    width: layout.segment_width,
+                    height: layout.playfield_height,
+                };
+                if let Some(notes) = &mut notes {
+                    mania_hidden(timeline, snapshot_time, &layout).apply(notes, rect);
+                }
+                if flashlight {
+                    mania_flashlight(timeline, snapshot_time, &layout, seg_left)
+                        .apply(&mut canvas, rect);
+                }
+            }
             if show_time_label {
                 // 贴入预渲染时间标签精灵图，避免每帧调用 format!/text_size。
                 let pl = &pre_labels[segment_index];
@@ -324,6 +394,9 @@ pub fn prepare_mania_gif_frames(
                     canvas.alpha_composite(&note.sprite, note.x, note.y);
                 }
             }
+        }
+        if let Some(notes) = notes {
+            canvas.alpha_composite(&notes, 0, 0);
         }
         canvas
     };
@@ -1084,6 +1157,57 @@ fn draw_gif_sv_indicators_fast(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_fades_hold_body_and_head_without_covering_judgement_line() {
+        let skin = load_mania_skin_config(4, crate::render::geometry::OutputFormat::Gif);
+        let layout = build_layout(&skin, 1, false, crate::render::geometry::OutputFormat::Gif);
+        let object = ManiaHitObject {
+            lane: 0,
+            start_time: 1000,
+            end_time: 3000,
+            is_long_note: true,
+            ..Default::default()
+        };
+        let palette = super::super::lane_palette(4);
+        let holds: Vec<_> = palette.iter().map(|&color| darken(color, 0.5)).collect();
+        let left = segment_left(0, &layout);
+        let mut notes = Img::new(
+            layout.image_width as u32,
+            layout.image_height as u32,
+            [0, 0, 0, 0],
+        );
+        draw_gif_hit_object(
+            &mut notes,
+            &object,
+            &palette,
+            &holds,
+            left,
+            1000.0,
+            3000.0,
+            900.0,
+            &layout,
+            0.15 * layout.render_scale,
+        );
+        let x = (left + layout.left_panel_width + layout.column_widths[0] / 2) as u32;
+        let head_y = y_at_position(1000.0, 900.0, &layout, 0.15 * layout.render_scale)
+            - layout.note_head_height / 2;
+        assert_eq!(notes.get(x, head_y as u32)[3], 255);
+        let upper_y = layout.playfield_top + 100;
+        assert_eq!(notes.get(x, upper_y as u32)[3], 255);
+        let timeline = mania_visibility_timeline(std::slice::from_ref(&object), &[]);
+        mania_hidden(&timeline, 900, &layout).apply(&mut notes, layout.content);
+        assert_eq!(notes.get(x, head_y as u32)[3], 0);
+        assert_eq!(notes.get(x, upper_y as u32)[3], 255);
+        let mut canvas = Img::new(notes.w, notes.h, [0, 0, 0, 0]);
+        draw_segment_background(&mut canvas, left, &layout);
+        let judgement = canvas.get(x, (layout.playfield_top + layout.hit_position_y) as u32);
+        canvas.alpha_composite(&notes, 0, 0);
+        assert_eq!(
+            canvas.get(x, (layout.playfield_top + layout.hit_position_y) as u32),
+            judgement
+        );
+    }
 
     /// 下落音符模式下，未来音符位于判定线以上，过去音符位于判定线以下。
     fn y_at_time(

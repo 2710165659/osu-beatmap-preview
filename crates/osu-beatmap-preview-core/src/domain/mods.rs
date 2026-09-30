@@ -15,6 +15,7 @@ pub struct ModSettings {
     pub easy: bool,
     pub hard_rock: bool,
     pub hidden: bool,
+    pub flashlight: bool,
     pub traceable: bool,
 
     pub swap: bool,
@@ -47,6 +48,7 @@ impl ModSettings {
             || self.easy
             || self.hard_rock
             || self.hidden
+            || self.flashlight
             || self.traceable
             || self.swap
             || self.cs_override
@@ -148,6 +150,7 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         "EZ" => s.easy = true,
         "HR" => s.hard_rock = true,
         "HD" => s.hidden = true,
+        "FL" => s.flashlight = true,
         "TC" => s.traceable = true,
         "SW" => s.swap = true,
         "CS" => s.cs_override = true,
@@ -286,6 +289,9 @@ pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str
     if mode == Some(3) && settings.inverse && settings.hold_off {
         errors.push("IN and HO cannot be used together".to_string());
     }
+    if mode == Some(3) && settings.hidden && settings.flashlight {
+        errors.push("HD and FL cannot be used together for mania".to_string());
+    }
 
     if let (Some(mode), Some(fmt)) = (mode, fmt) {
         if (0..=3).contains(&mode) {
@@ -341,11 +347,11 @@ fn da_range(mode: i32, param: &str) -> Option<(f64, f64)> {
 
 fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
     match (fmt, mode) {
-        ("gif", 0) => &["EZ", "HR", "HD", "DA", "TC"],
-        ("gif", 1) => &["EZ", "HR", "SW", "CS"],
-        ("gif", 2) => &["EZ", "HR", "HD"],
-        ("gif", 3) => &["K", "DS", "CS", "IN", "HO"],
-        ("png", 0) => &["EZ", "HR", "HD", "DA", "TC"],
+        ("gif", 0) => &["EZ", "HR", "HD", "FL", "DA", "TC"],
+        ("gif", 1) => &["EZ", "HR", "HD", "FL", "SW", "CS"],
+        ("gif", 2) => &["EZ", "HR", "HD", "FL"],
+        ("gif", 3) => &["K", "DS", "CS", "IN", "HO", "HD", "FL"],
+        ("png", 0) => &["EZ", "HR", "HD", "FL", "DA", "TC"],
         ("png", 1) => &["EZ", "HR", "SW"],
         ("png", 2) => &["EZ", "HR"],
         ("png", 3) => &["K", "DS", "IN", "HO"],
@@ -392,6 +398,9 @@ fn active_switch_mods(settings: &ModSettings) -> Vec<(String, String)> {
     }
     if settings.hidden {
         active.push(("HD".into(), "HD".into()));
+    }
+    if settings.flashlight {
+        active.push(("FL".into(), "FL".into()));
     }
     if settings.traceable {
         active.push(("TC".into(), "TC".into()));
@@ -440,6 +449,8 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         speed_multiplier: settings.speed_multiplier,
         double_time: settings.double_time,
         half_time: settings.half_time,
+        hidden: settings.hidden && (0..=3).contains(&mode),
+        flashlight: settings.flashlight && (0..=3).contains(&mode),
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
     };
@@ -447,7 +458,6 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         0 => {
             filtered.easy = settings.easy;
             filtered.hard_rock = settings.hard_rock;
-            filtered.hidden = settings.hidden;
             filtered.traceable = settings.traceable;
             filtered.da_cs = settings.da_cs;
             filtered.da_ar = settings.da_ar;
@@ -463,7 +473,6 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         2 => {
             filtered.easy = settings.easy;
             filtered.hard_rock = settings.hard_rock;
-            filtered.hidden = settings.hidden;
         }
         3 => {
             filtered.mania_keys = settings.mania_keys;
@@ -481,6 +490,42 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_and_flashlight_support_all_animation_rulesets() {
+        for mode in 0..=3 {
+            for token in ["HD", "FL"] {
+                let settings = parse_mods(&[token.into(), "DT".into()]).unwrap();
+                for format in ["gif", "mp4"] {
+                    assert!(
+                        validate_mods(&settings, Some(mode), Some(format)).is_empty(),
+                        "mode={mode}, token={token}, format={format}"
+                    );
+                }
+                let filtered = mods_for_mode(&settings, mode);
+                assert!(if token == "HD" {
+                    filtered.hidden
+                } else {
+                    filtered.flashlight
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn mania_hidden_and_flashlight_are_incompatible() {
+        let settings = parse_mods(&["HD".into(), "FL".into()]).unwrap();
+        for mode in 0..=3 {
+            let errors = validate_mods(&settings, Some(mode), Some("gif"));
+            if mode == 3 {
+                assert!(errors
+                    .iter()
+                    .any(|error| error.contains("HD and FL cannot be used together for mania")));
+            } else {
+                assert!(errors.is_empty(), "mode={mode}: {errors:?}");
+            }
+        }
+    }
 
     #[test]
     fn catch_hidden_is_supported_for_animations_and_preserved_by_filter() {

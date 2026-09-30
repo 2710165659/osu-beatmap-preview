@@ -183,15 +183,20 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 
 | 模式 | GIF / MP4 | PNG |
 | --- | --- | --- |
-| Standard | `EZ` `HR` `HD` `DA` `TC` `DT` `HT` | `EZ` `HR` `HD` `DA` `TC` |
-| Taiko | `EZ` `HR` `SW` `CS` `DT` `HT` | `EZ` `HR` `SW` |
-| Catch | `EZ` `HR` `HD` `DT` `HT` | `EZ` `HR` |
-| Mania | `CS` `DT` `HT` `1K`-`10K` `DS` `IN` `HO` | `1K`-`10K` `DS` `IN` `HO` |
+| Standard | `EZ` `HR` `HD` `FL` `DA` `TC` `DT` `HT` | `EZ` `HR` `HD` `FL` `DA` `TC` |
+| Taiko | `EZ` `HR` `HD` `FL` `SW` `CS` `DT` `HT` | `EZ` `HR` `SW` |
+| Catch | `EZ` `HR` `HD` `FL` `DT` `HT` | `EZ` `HR` |
+| Mania | `HD` `FL` `CS` `DT` `HT` `1K`-`10K` `DS` `IN` `HO` | `1K`-`10K` `DS` `IN` `HO` |
 
 主要规则如下：
 
 - `DT` 与 `HT` 互斥。`DT` 默认 `1.5x`，可设为 `1.01` 至 `2.00`；`HT` 默认 `0.75x`，可设为 `0.50` 至 `0.99`，例如 `--mod=dt1.25`。
 - `EZ` 与 `HR`、`TC` 与 `HD`、`IN` 与 `HO` 分别互斥。
+- Mania 的 `HD` 与 `FL` 互斥，其余三种模式允许 `HD+FL`。
+- Taiko HD 让普通音符和连打刻度渐隐，保留连打条与气球；Mania HD 对音符头与长按主体统一渐隐，遮罩随连击扩大，判定线、键道和 SV 提示保留。
+- Catch HD 在 Kiai 区段持续保留淡淡的物件轮廓，不随 BPM 闪烁；区段结束后恢复普通 HD。圆形预览样式暂用约 30% 不透明度近似轮廓亮度，不逐像素复刻皮肤 lighting 纹理。
+- FL 在 Standard 跟随自动光标，滑条期间额外暗化；Catch 跟随接盘；Taiko 固定于判定区；Mania 保留中部横向可视带。前三种模式在 100/200 combo 时缩圈，休息段扩张。
+- 预览没有玩家输入或回放：FL 轨迹由物件间插值估算，连击按无 miss 进度计算；Standard 跟随延迟使用连续阻尼近似，Catch 香蕉雨沿用相邻水果的插值路线。
 - `DA` 仅适用于 Standard，不能与 `EZ` 或 `HR` 同时使用。格式为 `da<参数><值>`，参数支持 `cs`、`ar`、`od`、`hp`，例如 `--mod=dacs5ar9.5`。
 - `1K` 至 `10K` 互斥；`DS` 和键数 Mod 只会在 Standard 转 Mania 时改变转谱结果。
 - `DT` 和 `HT` 不适用于 PNG；MP4 使用与 GIF 相同的 Mod 支持规则。

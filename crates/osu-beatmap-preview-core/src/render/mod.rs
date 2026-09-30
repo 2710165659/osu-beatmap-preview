@@ -4,6 +4,7 @@ pub mod geometry;
 pub mod scene;
 pub mod text;
 pub mod timing;
+pub mod visibility;
 pub mod wgpu;
 
 pub use canvas::{Img, Rgba};
