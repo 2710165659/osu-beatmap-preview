@@ -9,8 +9,8 @@ pub const BREAK_GAP_MS: i64 = 2200;
 /// （`AudioLeadIn` 是游戏开局的预卷时长，osu! 与实际游玩都按它提前开始）。
 ///
 /// 音频文件的 0 点就是谱面时间轴的 0 点，`AudioLeadIn` **只决定从多早开始播放**，
-/// 不改变音频与物件时间的对应关系——因此这里只影响起点，宿主换算
-/// `audio.currentTime` 时不能再叠加 `AudioLeadIn`。
+/// 不改变音频与物件时间的对应关系——因此这里只影响起点，宿主把谱面绝对时间换算成
+/// 播放进度时不能再叠加 `AudioLeadIn`。
 pub fn preview_start_ms(first_object_ms: i64, audio_lead_in_ms: i64) -> i64 {
     first_object_ms.saturating_sub(2_000.max(audio_lead_in_ms.max(0)))
 }

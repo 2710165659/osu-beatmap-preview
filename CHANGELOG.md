@@ -4,21 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [1.3.4] - 2026.09.29
+## [1.3.4] - 2026.09.30
 
 ### Added
 
-- WASM 输入改为单文件（`.osu` / `.osz` 字节）：`.osz` 的解包与音乐/背景/音效解码全部移入 wasm，本地文件与 BID 走同一条链路。
-- WASM 新增时钟接口（`play` / `pause` / `seek` / `setRate` / `clockMs`）与统一混音输出（`pullAudio` / `onAudioClock` / `audioEpoch`）：音乐与音效混成一条 PCM 流，时钟由 WASM 维护。
+- Catch 支持 `HD`：水果、水滴与香蕉在到达判定线前渐隐（#4）。
+- WASM 输入改为单文件（`.osu` / `.osz` 字节），解包与音乐/背景/音效解码全部移入 wasm。
+- WASM 新增时钟接口（`play` / `pause` / `seek` / `setRate` / `clockMs`）与统一混音输出（`pullAudio` / `onAudioClock` / `audioEpoch`）。
 
 ### Changed
 
-- Web 移除 `<audio>` 元素与静音 WAV 假时钟；WASM 接口大幅精简（样本装载、时间轴重建、预读对齐全部内化）；后端收敛为 `/resource/file` 与 `/resource/progress`。
+- Catch 的 hyperdash 外圈默认色改为 `#FF0000`，可用 `skin.HYPER_DASH` 配置（#4）。
+- Web 移除 `<audio>` 元素与静音 WAV 假时钟，时钟统一由 WASM 维护。
 - 倍速下音乐与音效一起变速变调（与 CLI 一致）。
+- GIF 帧延迟按精确帧率分摊厘秒，时长不再因逐帧取整而缩短（#5）。
 
 ### Fixed
 
-- 带 bank 前缀的转盘旋转音（如 `normal-spinnerspin`）此前不按循环音播放。
+- 修复换 Mod 或切换谱面后复用旧 Standard 渲染缓存导致的花屏（#5）。
+- 修复 `DT`/`HT` 下 Taiko 音符间距被重复缩放的问题（#5）。
+- 修复非 Windows 平台误读 `OSU_PREVIEW_NO_GPU` 的问题（#4）。
+- 修复带 bank 前缀的转盘旋转音（如 `normal-spinnerspin`）不循环播放的问题。
+
+### Contributors
+
+- `yaowan233`（#4、#5）。
 
 ---
 

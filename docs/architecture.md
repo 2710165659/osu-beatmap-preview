@@ -68,7 +68,7 @@ Web（Node 后端 + 浏览器）
 
 ## 音频-画面-打击音的时钟模型
 
-实时预览只有**一个时钟，且它在 WASM 里**：`RealtimeSession` 持有 `PreviewClock`（`core/src/api/clock.rs`），`play` / `pause` / `seek` / `setRate` / `clockMs` 全部由会话维护，宿主只提供墙钟读数（`performance.now()`）。时间一律用「谱面绝对毫秒」（0 = 音频文件 0 点）；宿主界面上的「游戏时间」= `clockMs() - absoluteStart`，换算只有这一处，不得再叠加 `AudioLeadIn`（它只体现在 `absoluteStart` 里）。
+实时预览只有**一个时钟，且它在 WASM 里**：`RealtimeSession` 持有 `PreviewClock`（`core/src/api/clock.rs`），`play` / `pause` / `seek` / `setRate` / `clockMs` 全部由会话维护，宿主只提供墙钟读数（`performance.now()`）。时间一律用「谱面绝对毫秒」（0 = 音频文件 0 点）；宿主进度条上的「已播放时长」= `clockMs() - absoluteStart`，换算只有这一处，不得再叠加 `AudioLeadIn`（它只体现在 `absoluteStart` 里）。注意这**不是** osu! 的「游戏时间轴」：那条时间轴（`TimeAxis`，首个可玩物件为 `0:00`）由 CLI 的时间标签与 MP4 右上角 HUD 使用，锚点是 `first_object_ms`，与预览起点 `absoluteStart` 相差一个预卷段。
 
 - **起点**：`absoluteStart = preview_start_ms(首个物件, AudioLeadIn)`，即首个物件前 2000ms、`AudioLeadIn` 更大时按它提前；首物件很早时该值为负，此时绝对时间 `< 0` 的前置段音乐还没开始（混音位置允许为负，`frame_at` 的越界语义自然给静音），画面与音效照常。CLI 的 MP4 完整区间用同一个函数，因此导出与预览的时间轴一致；尾部两边各留 2s 余韵——实时预览固定保留 `PREVIEW_END_PADDING_MS`（最后一个物件后再渲染 2 秒），MP4 由 CLI 配置 `VIDEO_END_PADDING_MS` 决定。
 - **真源**：有音频输出时，音频线程的**消费位置**就是「此刻听到的谱面时间」，每约 11ms 回报一次（`onAudioClock`），时钟向它平滑锚定（40ms 死区吸收报告粒度、超出部分按比例回收）；音频被自动播放策略拦下、设备停摆或没有音频输出时，时钟按墙钟继续推进，画面不冻结。音频恢复后输出流整体重置到画面位置（`pull_audio` 的走散重对齐），音频跳到画面位置继续，画面绝不回跳。

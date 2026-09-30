@@ -109,7 +109,7 @@ npm start
 | `seek(chartTimeMs)` | 跳到谱面绝对时间：换时钟锚、丢弃正在播放的声音、重置输出流（见 `audioEpoch()`） |
 | `setRate(userRate)` | 设置用户倍速（不含 DT/HT）；总倍速 = 用户倍速 × 谱面变速，由会话换算 |
 | `rate()` | 当前总倍速，即音频线程的消费速率 |
-| `clockMs()` | 当前谱面绝对时间；画面按它渲染，UI 的「游戏时间」= `clockMs() - absoluteStartMs()` |
+| `clockMs()` | 当前谱面绝对时间；画面按它渲染，进度条的「已播放时长」= `clockMs() - absoluteStartMs()` |
 | `playing()` | 时钟是否在推进 |
 | `renderFrame()` | 按内部时钟把当前帧绘制到 Canvas |
 | `pullAudio(maxFrames)` | 补一段「音乐 + 打击音」统一混音，返回交错立体声 `Float32Array`（帧数 × 2，可能为空）；补多少由 WASM 的预读窗口决定 |
@@ -120,7 +120,7 @@ npm start
 | `set_mods(mods)` | 热切换 Mod，数组每项是一个独立 token；转谱后所需样本由 WASM 重新装载，`absoluteStartMs()` 可能变化，需要重新读取 |
 | `resize(width, height)` | 同时更新 surface 与 core 的合成尺寸；只改 Canvas 不会改变渲染尺寸 |
 | `durationMs()` | 预览时长（含最后一个物件后的 2s 余韵），用于进度条和结束判定 |
-| `absoluteStartMs()` | 游戏时间 `0:00` 对应的绝对时间 |
+| `absoluteStartMs()` | 预览起点（进度条 `0:00`）对应的谱面绝对时间；与游戏时间轴（首个可玩物件为 `0:00`）不同 |
 | `beatmapSpeed()` | 当前谱面倍速（DT/HT 等） |
 | `audioSampleRate()` | 混音输出采样率（创建时给定的 `sampleRate`） |
 | `width()` / `height()` | 当前输出尺寸 |
