@@ -97,7 +97,6 @@ fn render_standard_segment_gif(
 
     let (canvas_w, canvas_h) = gif_canvas_size();
     let frame_count = ((segment_duration_ms * fps / 1000.0).round() as usize).max(1);
-    let frame_duration_ms = ((1000.0 / fps).round() as u32).max(1);
 
     let segment_snapshot_times: Vec<Vec<i64>> = row_timings
         .iter()
@@ -236,11 +235,5 @@ fn render_standard_segment_gif(
         canvas
     };
 
-    save_animated_gif_streamed(
-        frame_count,
-        render,
-        output_path,
-        frame_duration_ms,
-        deadline,
-    )
+    save_animated_gif_streamed(frame_count, render, output_path, fps, deadline)
 }

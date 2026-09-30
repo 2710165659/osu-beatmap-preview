@@ -43,6 +43,7 @@ pub fn render_frame(
     visible_indexes: &[usize],
     background: Option<&Img>,
 ) -> Img {
+    cache.prepare_for_context(context);
     let mut frame = match background {
         Some(background) => background.clone(),
         None => {
@@ -922,5 +923,71 @@ mod tests {
         // 淡入之前（fade_in = 360ms）同一位置不应有任何跟随点。
         let before = render_single(&context, 300);
         assert_eq!(count_pixels(&before, center, 4, is_background), 81);
+    }
+
+    #[test]
+    fn reused_cache_matches_fresh_frames_after_mod_and_beatmap_changes() {
+        let source = b"osu file format v14\n\n[General]\nMode:0\n\n[Difficulty]\nCircleSize:4\nApproachRate:6\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n128,96,1000,1,0,0:0:0:0:\n180,300,1500,2,0,B|350:280|420:180,2,240\n";
+        let beatmap = crate::domain::parser::parse_beatmap_bytes(source).unwrap();
+        let mut reused = RenderCache::default();
+        for tokens in ["", "HR", "EZ", "TC", "HD", "HD HR", "DACS6AR8", ""] {
+            let mods = crate::domain::mods::parse_mods(
+                &tokens
+                    .split_whitespace()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+            let objects = super::super::context::apply_standard_object_mods(
+                beatmap.hit_objects.as_standard().unwrap().to_vec(),
+                Some(&mods),
+            );
+            let context = build_render_context(
+                &beatmap,
+                objects,
+                Some(&mods),
+                TimeAxis::new(0),
+                OutputFormat::Gif,
+            );
+            for time in [1_400, 1_550, 1_850] {
+                let expected = render_frame(
+                    &context,
+                    &mut RenderCache::default(),
+                    time,
+                    &[],
+                    &[0, 1],
+                    None,
+                );
+                let actual = render_frame(&context, &mut reused, time, &[], &[0, 1], None);
+                assert!(
+                    actual.data == expected.data,
+                    "跨请求缓存改变了 {tokens} 在 {time}ms 的画面"
+                );
+            }
+        }
+
+        let mut other = beatmap.clone();
+        if let HitObjects::Standard(objects) = &mut other.hit_objects {
+            for object in objects {
+                object.y = 384 - object.y;
+            }
+        }
+        let context = build_render_context(
+            &other,
+            other.hit_objects.as_standard().unwrap().to_vec(),
+            None,
+            TimeAxis::new(0),
+            OutputFormat::Gif,
+        );
+        let expected = render_frame(
+            &context,
+            &mut RenderCache::default(),
+            1_550,
+            &[],
+            &[0, 1],
+            None,
+        );
+        let actual = render_frame(&context, &mut reused, 1_550, &[], &[0, 1], None);
+        assert!(actual.data == expected.data, "切换谱面后不能复用旧滑条路径");
     }
 }

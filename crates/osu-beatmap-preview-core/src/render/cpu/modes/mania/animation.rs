@@ -155,7 +155,6 @@ pub fn prepare_mania_gif_frames(
         crate::config::current().render.mania.gif.style.SCROLL_SPEED,
     );
     let pixels_per_scroll_unit = layout.scroll_length as f64 / time_range;
-    let frame_duration_ms = round_half_even(1000.0 / fps).max(1);
     let max_segment_end = segment_timings
         .iter()
         .map(|t| t.start_time + segment_duration)
@@ -329,9 +328,9 @@ pub fn prepare_mania_gif_frames(
         canvas
     };
 
-    Ok(AnimationFrames::new(
+    Ok(AnimationFrames::with_frame_rate(
         frame_count as usize,
-        frame_duration_ms as u32,
+        fps,
         render_frame,
     ))
 }

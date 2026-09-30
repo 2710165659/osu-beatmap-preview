@@ -195,6 +195,7 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 - `DA` 仅适用于 Standard，不能与 `EZ` 或 `HR` 同时使用。格式为 `da<参数><值>`，参数支持 `cs`、`ar`、`od`、`hp`，例如 `--mod=dacs5ar9.5`。
 - `1K` 至 `10K` 互斥；`DS` 和键数 Mod 只会在 Standard 转 Mania 时改变转谱结果。
 - `DT` 和 `HT` 不适用于 PNG；MP4 使用与 GIF 相同的 Mod 支持规则。
+- `--duration-time` 表示动画的实际播放时长。GIF 在 15、30、60 fps 等帧率下会分摊厘秒延迟，避免时长因逐帧取整而缩短。
 - 重复的 Mod 或不受当前模式、格式支持的 Mod 会直接报错，不会静默忽略。
 
 ## 配置

@@ -75,7 +75,8 @@ pub(crate) fn render_taiko_video(
             .style
             .SHOW_MEASURE_LINES,
     );
-    let time_range = compute_time_range() / speed;
+    // 播放倍率已由 snapshot_time 推进，不能再次缩放滚动窗口。
+    let time_range = compute_time_range();
     let layout = build_video_layout(time_range);
 
     let static_bg = {
