@@ -19,7 +19,7 @@ A standalone osu! beatmap preview tool for osu!standard, osu!taiko, osu!catch, a
 
 ## Highlights
 
-- **Mods**: `EZ` `HR` `HD` `DA` `TC` `SW` `CS` `DS` `IN` `HO` and `1K`-`10K` key counts combine freely; `DT`/`HT` accept custom speed multipliers (`1.01`-`2.00x` / `0.50`-`0.99x`).
+- **Mods**: `EZ` `HR` `HD` `FL` `DA` `TC` `SW` `CS` `DS` `IN` `HO` and `1K`-`10K` key counts combine freely; `DT`/`HT` accept custom speed multipliers (`1.01`-`2.00x` / `0.50`-`0.99x`).
 - **Conversion**: Standard beatmaps convert to Taiko, Catch, or Mania, and Mods can be applied on top of the conversion.
 - **Four modes**: osu!standard, osu!taiko, osu!catch, and osu!mania each have their own layout, skin, and colors, and each can export PNG overviews, segmented GIF previews, and H.264 MP4 videos with the original audio.
 - **Real-time preview in the browser**: Unzip the web package and run `node backend/server.js` (or `npm start`) to play beatmaps in the browser with Mod hot-swapping, conversion, seek, speed, resolution (480P/720P/1080P) and 30/60/120 FPS switching, or jump straight in with `/?bid=<BID>`. The backend only downloads, caches, and reports download progress; every frame is rendered locally with WebGPU.

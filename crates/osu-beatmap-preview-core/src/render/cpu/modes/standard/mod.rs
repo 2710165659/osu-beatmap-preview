@@ -9,3 +9,4 @@ pub mod digits;
 pub mod follow_points;
 pub mod slider;
 pub mod stacking;
+pub mod visibility;

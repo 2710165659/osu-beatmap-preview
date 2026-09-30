@@ -3,11 +3,13 @@
 use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::Beatmap;
 use crate::domain::mods::ModSettings;
+use crate::render::canvas::Img;
 use crate::render::cpu::modes::taiko::animation::{drum_roll_tick_transform, measure_line_alpha};
 use crate::render::cpu::modes::taiko::animation_render::{
     build_animation_layout_with_segments_and_format, build_multiplier_points, compute_time_range,
-    gif_row_center_y, gif_row_top, judgement_line_x, object_x, prepare_hit_objects,
-    prepare_measure_lines, AnimationLayout, MultiplierLookup, PreparedAnimationPoint,
+    gif_row_center_y, gif_row_top, hidden_alpha, judgement_line_x, object_x,
+    prepare_hit_objects_with_mods, prepare_measure_lines, taiko_flashlight,
+    taiko_visibility_timeline, AnimationLayout, MultiplierLookup, PreparedAnimationPoint,
     PreparedTaikoHitObject,
 };
 use crate::render::cpu::modes::taiko::constants::*;
@@ -18,6 +20,7 @@ use crate::render::cpu::modes::taiko::timing::{
 use crate::render::geometry::{GameMode, OutputFormat};
 use crate::render::scene::{FrameSceneBuilder, SceneRect};
 use crate::render::wgpu::RealtimeFrameSource;
+use std::sync::Arc;
 
 /// 预计算 Taiko 滚动倍率、物件和小节线，供任意时间点重复取景。
 pub fn prepare_realtime(
@@ -33,11 +36,12 @@ pub fn prepare_realtime(
     let multiplier_lookup = MultiplierLookup {
         points: build_multiplier_points(&timing_points, slider_multiplier),
     };
-    let prepared_hit_objects = prepare_hit_objects(
+    let prepared_hit_objects = prepare_hit_objects_with_mods(
         &hit_objects,
         &multiplier_lookup,
         &timing_points,
         beatmap.difficulty.get_f64_or("SliderTickRate", 1.0),
+        mods,
     );
     let prepared_measure_lines = prepare_measure_lines(
         &hit_objects,
@@ -52,6 +56,33 @@ pub fn prepare_realtime(
     );
     let layout =
         build_animation_layout_with_segments_and_format(compute_time_range(), 1, OutputFormat::Mp4);
+    let flashlight = mods
+        .is_some_and(|mods| mods.flashlight)
+        .then(|| taiko_visibility_timeline(&hit_objects, &beatmap.break_periods));
+    let hidden_sprites: Vec<_> = prepared_hit_objects
+        .iter()
+        .map(|object| {
+            (object.hidden && object.hit_object.hit_type & (DRUMROLL_FLAG | SWELL_FLAG) == 0).then(
+                || {
+                    let sound = object.hit_object.hitsound;
+                    Arc::new(crate::render::cpu::modes::taiko::notes::build_note_disc(
+                        if sound & HIT_SOUNDS_RIM != 0 {
+                            RIM_NOTE_COLOR
+                        } else {
+                            CENTRE_NOTE_COLOR
+                        },
+                        if sound & HIT_SOUNDS_STRONG != 0 {
+                            layout.big_note_diameter
+                        } else {
+                            layout.normal_note_diameter
+                        },
+                        crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
+                        false,
+                    ))
+                },
+            )
+        })
+        .collect();
     Ok(RealtimeFrameSource::new(
         GameMode::Taiko,
         move |absolute_time_ms| {
@@ -67,7 +98,19 @@ pub fn prepare_realtime(
                 &prepared_measure_lines,
                 &layout,
                 absolute_time_ms,
+                &hidden_sprites,
             );
+            if let Some(timeline) = &flashlight {
+                taiko_flashlight(timeline, absolute_time_ms, &layout, 0).draw_scene(
+                    &mut scene,
+                    crate::render::geometry::PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: layout.image_width,
+                        height: layout.image_height,
+                    },
+                );
+            }
             Ok(scene.finish())
         },
     ))
@@ -159,6 +202,7 @@ fn draw_objects_scene(
     measure_lines: &[PreparedAnimationPoint],
     layout: &AnimationLayout,
     snapshot_time: i64,
+    hidden_sprites: &[Option<Arc<Img>>],
 ) {
     let clip_left = judgement_line_x(layout);
     let clip_right = layout.playfield_left + layout.left_panel_width + layout.right_panel_width;
@@ -171,7 +215,7 @@ fn draw_objects_scene(
         clip_left,
         clip_right,
     );
-    for hit_object in hit_objects.iter().rev() {
+    for (index, hit_object) in hit_objects.iter().enumerate().rev() {
         if crate::render::cpu::modes::taiko::animation_render::can_skip(
             hit_object,
             snapshot_time,
@@ -193,7 +237,13 @@ fn draw_objects_scene(
                 layout.row_height,
             ));
         }
-        draw_hit_object_scene(scene, hit_object, layout, snapshot_time);
+        draw_hit_object_scene(
+            scene,
+            hit_object,
+            layout,
+            snapshot_time,
+            hidden_sprites[index].as_ref(),
+        );
         if clipped {
             scene.pop_clip();
         }
@@ -236,6 +286,7 @@ fn draw_hit_object_scene(
     object: &PreparedTaikoHitObject,
     layout: &AnimationLayout,
     snapshot_time: i64,
+    hidden_sprite: Option<&Arc<Img>>,
 ) {
     let base = &object.hit_object;
     if base.hit_type & SWELL_FLAG != 0 {
@@ -280,6 +331,31 @@ fn draw_hit_object_scene(
         } else {
             CENTRE_NOTE_COLOR
         };
+        if let Some(sprite) = hidden_sprite {
+            let alpha = hidden_alpha(
+                base.start_time as f64,
+                snapshot_time,
+                object.start_multiplier,
+                layout.time_range,
+            );
+            if alpha > 0.0 {
+                scene.sprite(
+                    Arc::clone(sprite),
+                    rect(
+                        crate::domain::parser::round_half_even(
+                            center_x as f64 - diameter as f64 / 2.0,
+                        ),
+                        crate::domain::parser::round_half_even(
+                            gif_row_center_y(0, layout) as f64 - diameter as f64 / 2.0,
+                        ),
+                        diameter,
+                        diameter,
+                    ),
+                    alpha as f32,
+                );
+            }
+            return;
+        }
         draw_note_disc_scene(
             scene,
             center_x,
@@ -347,7 +423,10 @@ fn draw_span_scene(
             .round()
             .max(1.0) as i64;
         for tick in &object.drum_roll_ticks {
-            let (alpha, scale) = drum_roll_tick_transform(tick.time, snapshot_time);
+            let (mut alpha, scale) = drum_roll_tick_transform(tick.time, snapshot_time);
+            if object.hidden {
+                alpha *= hidden_alpha(tick.time, snapshot_time, tick.multiplier, layout.time_range);
+            }
             if alpha <= 0.0 {
                 continue;
             }

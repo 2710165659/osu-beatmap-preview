@@ -8,7 +8,8 @@ use crate::domain::mods::ModSettings;
 use crate::domain::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::cpu::modes::mania::animation::{
-    build_layout, build_scroll_map, compute_time_range, segment_left, visible_pos_window,
+    build_layout, build_scroll_map, compute_time_range, draw_gif_hit_object, mania_flashlight,
+    mania_hidden, mania_visibility_timeline, segment_left, visible_pos_window,
 };
 use crate::render::cpu::modes::mania::skin::load_mania_skin_config;
 use crate::render::cpu::modes::mania::{
@@ -38,6 +39,10 @@ pub fn prepare_realtime(
     if hit_objects.is_empty() {
         return Err(PreviewError::render("mania beatmap has no hit objects"));
     }
+    let hidden = mods.is_some_and(|mods| mods.hidden);
+    let flashlight = mods.is_some_and(|mods| mods.flashlight);
+    let visibility = (hidden || flashlight)
+        .then(|| mania_visibility_timeline(&hit_objects, &beatmap.break_periods));
     let speed = mods.map_or(1.0, |value| value.speed_multiplier);
     let skin_config = load_mania_skin_config(key_count, OutputFormat::Mp4);
     let layout = build_layout(&skin_config, 1, false, OutputFormat::Mp4);
@@ -117,6 +122,13 @@ pub fn prepare_realtime(
                 &layout,
                 pixels_per_scroll_unit,
             );
+            let mut notes = hidden.then(|| {
+                Img::new(
+                    layout.image_width as u32,
+                    layout.image_height as u32,
+                    [0, 0, 0, 0],
+                )
+            });
             let (lo_pos, hi_pos) = visible_pos_window(
                 snapshot_pos,
                 &layout,
@@ -128,18 +140,55 @@ pub fn prepare_realtime(
                 if pos_start[index] > hi_pos {
                     break;
                 }
-                draw_hit_object_scene(
-                    &mut scene,
-                    &hit_objects[index],
-                    &palette,
-                    &hold_colors,
-                    left,
-                    pos_start[index],
-                    pos_end[index],
-                    snapshot_pos,
-                    &layout,
-                    pixels_per_scroll_unit,
-                );
+                if let Some(notes) = &mut notes {
+                    draw_gif_hit_object(
+                        notes,
+                        &hit_objects[index],
+                        &palette,
+                        &hold_colors,
+                        left,
+                        pos_start[index],
+                        pos_end[index],
+                        snapshot_pos,
+                        &layout,
+                        pixels_per_scroll_unit,
+                    );
+                } else {
+                    draw_hit_object_scene(
+                        &mut scene,
+                        &hit_objects[index],
+                        &palette,
+                        &hold_colors,
+                        left,
+                        pos_start[index],
+                        pos_end[index],
+                        snapshot_pos,
+                        &layout,
+                        pixels_per_scroll_unit,
+                    );
+                }
+            }
+            if let Some(timeline) = &visibility {
+                if let Some(mut notes) = notes {
+                    mania_hidden(timeline, absolute_time_ms, &layout)
+                        .apply(&mut notes, layout.content);
+                    scene.sprite(
+                        Arc::new(notes),
+                        rect(0, 0, layout.image_width, layout.image_height),
+                        1.0,
+                    );
+                }
+                if flashlight {
+                    mania_flashlight(timeline, absolute_time_ms, &layout, left).draw_scene(
+                        &mut scene,
+                        crate::render::geometry::PixelRect {
+                            x: 0,
+                            y: 0,
+                            width: layout.image_width,
+                            height: layout.image_height,
+                        },
+                    );
+                }
             }
             Ok(scene.finish())
         },

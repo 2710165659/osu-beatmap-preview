@@ -157,6 +157,8 @@ pub struct RenderContext {
     pub body_layers: SharedBodyLayers,
     pub time_axis: TimeAxis,
     pub output_format: crate::render::geometry::OutputFormat,
+    /// 等最终画布布局就绪后初始化，避免 MP4 居中偏移使自动光圈错位。
+    pub flashlight: Option<super::visibility::StandardFlashlightCache>,
 }
 
 pub struct RowTiming {
@@ -466,6 +468,9 @@ pub fn build_render_context(
         body_layers: SharedBodyLayers::new(hit_objects_count),
         time_axis,
         output_format,
+        flashlight: mods
+            .is_some_and(|mods| mods.flashlight)
+            .then(|| super::visibility::StandardFlashlightCache::new(&beatmap.break_periods)),
     }
 }
 

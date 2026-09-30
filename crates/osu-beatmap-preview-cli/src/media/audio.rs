@@ -509,6 +509,8 @@ fn render_hitsound_segment(
     let mut buffer = vec![0.0_f32; frames * 2];
     let window_frames = sample_rate.max(1) as usize;
     for chunk in buffer.chunks_mut(window_frames * 2) {
+        #[cfg(test)]
+        tests::record_mix_window(chunk.len() / 2);
         mixer.render_into(chunk);
     }
     Ok(Some(buffer))
@@ -951,7 +953,9 @@ mod tests {
         .expect("混音不应失败")
         .expect("启用且样本充足时必须产生混音缓冲");
         assert_eq!(mixed.len(), expected_samples as usize * 2);
-        let peak = mixed.iter().fold(0.0_f32, |acc, value| acc.max(value.abs()));
+        let peak = mixed
+            .iter()
+            .fold(0.0_f32, |acc, value| acc.max(value.abs()));
         assert!(peak > 0.01, "打击音缓冲全为零（peak={peak}）");
 
         // 关闭开关时不产生缓冲。
@@ -986,24 +990,24 @@ mod tests {
         onsets
     }
 
-    /// 长谱面混音不得退化成平方复杂度。
+    /// 长谱面必须使用有界混音窗口，避免退回整段渲染。
     #[test]
-    fn long_beatmap_hitsound_mix_stays_linear() {
+    fn long_hitsound_exports_keep_bounded_mix_windows() {
         // 回归：整段只用一个混音窗口时，所有事件都会压在 voices 里、逐输出帧遍历一遍
-        // （O(输出帧 × 事件数)）：release 下「60 秒 + 1200 个事件」要 6.6 秒，三分钟的
-        // 普通谱面要 10 秒上下，导出总耗时因此翻倍。分块渲染后同样的工作量约 0.45 秒。
-        // 下面的上限留了二十倍余量，既容得下慢机器，又能拦住「退回单窗口」的改动。
+        // （O(输出帧 × 事件数)）。旧用例用 release 的耗时设置 10 秒上限，未优化的
+        // macOS CI 会在正确分块时越线。直接观测真实混音调用，保留退化检查并去除机器依赖。
         let mut source = String::from("osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n");
         for index in 0..1_200 {
             source.push_str(&format!("256,192,{},1,0,0:0:0:0:\n", index * 50));
         }
         let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
             .expect("fixture 必须可解析");
-        let sample_rate = 48_000_u32;
-        // 60 秒输出、每 50ms 一个音符。
-        let frames = sample_rate as usize * 60;
+        // 较低采样率减少测试计算量；仍保留 1200 个事件及 60 秒以上的混音跨度。
+        let sample_rate = 4_000_u32;
+        // 加上不满一秒的尾块，检查输出不会被截断。
+        let frames = sample_rate as usize * 60 + sample_rate as usize / 4;
+        MIX_WINDOWS.with(|windows| windows.set(MixWindows::default()));
 
-        let started = std::time::Instant::now();
         let mixed = render_hitsound_segment(
             &beatmap,
             Some(HitsoundSettings::new(true, 100, false)),
@@ -1015,12 +1019,20 @@ mod tests {
         )
         .expect("混音不应失败")
         .expect("必须产生混音缓冲");
-        let elapsed = started.elapsed();
+        let windows = MIX_WINDOWS.with(std::cell::Cell::get);
         assert_eq!(mixed.len(), frames * 2);
         assert!(
-            elapsed < std::time::Duration::from_secs(10),
-            "60 秒 / 1200 个事件的打击音混音耗时 {elapsed:?}，混音窗口可能又退化成了整段"
+            windows.max_frames <= sample_rate as usize,
+            "混音窗口必须至多一秒，实际 {windows:?}"
         );
+        assert_eq!(windows.frames, frames, "所有采样帧和尾块都必须送入混音器");
+        assert!(windows.calls > 1, "长谱面不能一次渲染整段");
+        for (index, chunk) in mixed.chunks_exact(sample_rate as usize * 2).enumerate() {
+            assert!(
+                chunk.iter().any(|sample| sample.abs() > 0.01),
+                "第 {index} 秒缺少打击音"
+            );
+        }
     }
 
     /// 打击音必须落在预期的谱面时间上。
@@ -1165,5 +1177,30 @@ mod tests {
         assert_eq!(&output[..2], &[0, 0]);
         assert_eq!(&output[2..4], &[100, 100]);
         assert!(output[4] > 100);
+    }
+
+    /// 只在测试构建中观测实际送进混音器的窗口；各测试线程独立计数。
+    #[derive(Clone, Copy, Debug, Default)]
+    struct MixWindows {
+        calls: usize,
+        frames: usize,
+        max_frames: usize,
+    }
+
+    std::thread_local! {
+        static MIX_WINDOWS: std::cell::Cell<MixWindows> = const {
+            std::cell::Cell::new(MixWindows { calls: 0, frames: 0, max_frames: 0 })
+        };
+    }
+
+    pub(super) fn record_mix_window(frames: usize) {
+        MIX_WINDOWS.with(|windows| {
+            let previous = windows.get();
+            windows.set(MixWindows {
+                calls: previous.calls + 1,
+                frames: previous.frames + frames,
+                max_frames: previous.max_frames.max(frames),
+            });
+        });
     }
 }

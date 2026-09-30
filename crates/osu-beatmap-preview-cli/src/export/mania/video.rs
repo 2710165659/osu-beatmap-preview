@@ -18,7 +18,8 @@ use std::path::Path;
 
 use super::animation::{
     build_scroll_map, build_video_layout, compute_time_range, draw_gif_hit_object,
-    draw_gif_sv_indicators, draw_segment_background, segment_left, visible_pos_window,
+    draw_gif_sv_indicators, draw_segment_background, mania_flashlight, mania_hidden,
+    mania_visibility_timeline, segment_left, visible_pos_window,
 };
 use super::skin::load_mania_skin_config;
 use super::{
@@ -50,6 +51,10 @@ pub(crate) fn render_mania_video(
         hit_objects = apply_hold_off_mod(&hit_objects);
     }
     let cs_mode = mods.is_some_and(|m| m.cs_override);
+    let hidden = mods.is_some_and(|mods| mods.hidden);
+    let flashlight = mods.is_some_and(|mods| mods.flashlight);
+    let visibility = (hidden || flashlight)
+        .then(|| mania_visibility_timeline(&hit_objects, &beatmap.break_periods));
     if hit_objects.is_empty() {
         return Err(PreviewError::render("mania beatmap has no hit objects"));
     }
@@ -150,6 +155,7 @@ pub(crate) fn render_mania_video(
             start + round_half_even(frame_index as f64 * 1000.0 * speed / fps as f64);
         let snapshot_pos = scroll_map.position_at(snapshot_time as f64);
         let mut canvas = static_bg.clone();
+        let mut notes = hidden.then(|| Img::new(canvas.w, canvas.h, [0, 0, 0, 0]));
         let seg_left = segment_left(0, &layout);
         draw_gif_sv_indicators(
             &mut canvas,
@@ -174,7 +180,7 @@ pub(crate) fn render_mania_video(
                 break;
             }
             draw_gif_hit_object(
-                &mut canvas,
+                notes.as_mut().unwrap_or(&mut canvas),
                 &hit_objects[idx],
                 &palette,
                 &hold_colors,
@@ -185,6 +191,23 @@ pub(crate) fn render_mania_video(
                 &layout,
                 pixels_per_scroll_unit,
             );
+        }
+        if let Some(timeline) = &visibility {
+            if let Some(mut notes) = notes {
+                mania_hidden(timeline, snapshot_time, &layout).apply(&mut notes, layout.content);
+                canvas.alpha_composite(&notes, 0, 0);
+            }
+            if flashlight {
+                mania_flashlight(timeline, snapshot_time, &layout, seg_left).apply(
+                    &mut canvas,
+                    crate::export::geometry::PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: layout.image_width,
+                        height: layout.image_height,
+                    },
+                );
+            }
         }
         Ok((canvas, snapshot_time))
     };

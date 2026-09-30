@@ -115,6 +115,19 @@ pub fn render_frame(
         }
     }
 
+    if let Some(flashlight) = &context.flashlight {
+        let state = flashlight.get(context);
+        state.at(context, snapshot_time).apply(
+            &mut frame,
+            crate::render::geometry::PixelRect {
+                x: 0,
+                y: 0,
+                width: context.frame_layout.frame_width,
+                height: context.frame_layout.frame_height,
+            },
+        );
+    }
+
     if let Some(current_break) = current_break_period(break_periods, snapshot_time) {
         draw_break_overlay(&mut frame, current_break, snapshot_time, context);
     }
@@ -715,6 +728,40 @@ mod tests {
         build_render_context, build_video_render_context, RenderContext,
     };
     use crate::render::geometry::OutputFormat;
+
+    #[test]
+    fn flashlight_follows_objects_in_scaled_and_centered_video_layouts() {
+        let beatmap = edge_circle_beatmap();
+        let mods = crate::domain::mods::ModSettings {
+            flashlight: true,
+            ..crate::domain::mods::ModSettings::new()
+        };
+        for scale in [0.5, 1.0, 2.0] {
+            let mut config = crate::config::CoreConfig::default();
+            config.render.standard.mp4.SCALE = scale;
+            crate::config::with_config(std::sync::Arc::new(config), || {
+                let context = build_video_render_context(
+                    &beatmap,
+                    beatmap.hit_objects.as_standard().unwrap().to_vec(),
+                    Some(&mods),
+                    TimeAxis::new(0),
+                    OutputFormat::Mp4,
+                );
+                let mask = context
+                    .flashlight
+                    .as_ref()
+                    .unwrap()
+                    .get(&context)
+                    .at(&context, 5200);
+                let expected = to_frame_point(0.0, 192.0, &context.frame_layout);
+                assert!((mask.center[0] - expected.0).abs() < 1.0 * scale);
+                assert!((mask.center[1] - expected.1).abs() < 0.01);
+                assert_eq!(mask.radius, 125.0 * context.frame_layout.scale);
+                let image = render_single(&context, 5200);
+                assert_eq!(image.get(image.w - 1, 0), [0, 0, 0, 255]);
+            });
+        }
+    }
 
     /// 单个位于游戏坐标左边缘的圆圈；AR5 的 preempt 为 1200ms。
     fn edge_circle_beatmap() -> crate::domain::models::Beatmap {

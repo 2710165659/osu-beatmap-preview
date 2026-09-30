@@ -206,6 +206,101 @@ mod tests {
     use super::*;
     use crate::export::scene::FrameScene;
 
+    #[test]
+    fn realtime_visibility_mods_change_pixels_and_survive_seeking() {
+        use osu_beatmap_preview_core::{
+            domain::mods::parse_mods, domain::parser::parse_beatmap_bytes,
+        };
+        for mode in 0..=3 {
+            let objects = if mode == 3 {
+                "64,192,1000,1,0,0:0:0:0:\n192,192,1300,128,0,3000:0:0:0:0:\n320,192,1600,1,0,0:0:0:0:\n"
+            } else {
+                "80,96,1000,1,0,0:0:0:0:\n300,220,1300,1,8,0:0:0:0:\n180,300,1600,2,0,L|350:280,2,170\n"
+            };
+            let source = format!("osu file format v14\n\n[General]\nMode:{mode}\n\n[Difficulty]\nCircleSize:4\nApproachRate:6\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n{objects}");
+            let beatmap = parse_beatmap_bytes(source.as_bytes()).unwrap();
+            let normal = realtime_source(&beatmap, None);
+            let normal = CpuRasterizer
+                .render_frame(&normal.render(1200).unwrap())
+                .unwrap();
+            for code in ["HD", "FL"] {
+                let mods = parse_mods(&[code.into()]).unwrap();
+                let source = realtime_source(&beatmap, Some(&mods));
+                let expected = CpuRasterizer
+                    .render_frame(&source.render(1200).unwrap())
+                    .unwrap();
+                assert!(normal.data != expected.data, "mode={mode}, mod={code}");
+                for time in [300, 1800, 1200] {
+                    source.render(time).unwrap();
+                }
+                let repeated = CpuRasterizer
+                    .render_frame(&source.render(1200).unwrap())
+                    .unwrap();
+                assert_eq!(expected.data, repeated.data);
+            }
+        }
+    }
+
+    #[test]
+    fn catch_hidden_kiai_is_visible_in_realtime_and_obeys_flashlight() {
+        use osu_beatmap_preview_core::{
+            domain::mods::parse_mods, domain::parser::parse_beatmap_bytes,
+        };
+        let map = parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:2\n[Difficulty]\nCircleSize:5\nApproachRate:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n750,-100,4,1,0,100,0,1\n1300,-100,4,1,0,100,0,0\n[HitObjects]\n0,192,800,1,0,0:0:0:0:\n512,192,1500,1,0,0:0:0:0:\n512,192,2500,1,0,0:0:0:0:\n",
+        ).unwrap();
+        let mut plain = map.clone();
+        for point in &mut plain.timing_points {
+            point.kiai_mode = false;
+        }
+        let hd = parse_mods(&["HD".into()]).unwrap();
+        let normal = realtime_source(&plain, Some(&hd));
+        let kiai = realtime_source(&map, Some(&hd));
+        let pixels = |source: &osu_beatmap_preview_core::render::wgpu::RealtimeFrameSource,
+                      time| {
+            CpuRasterizer
+                .render_frame(&source.render(time).unwrap())
+                .unwrap()
+                .data
+        };
+        let expected = pixels(&kiai, 1000);
+        assert_ne!(
+            expected,
+            pixels(&normal, 1000),
+            "WGPU 场景必须保留 Kiai 中淡淡的水果轮廓"
+        );
+        assert_eq!(pixels(&kiai, 1300), pixels(&normal, 1300));
+        kiai.render(2400).unwrap();
+        assert_eq!(expected, pixels(&kiai, 1000));
+        let hdfl = parse_mods(&["HD".into(), "FL".into()]).unwrap();
+        let masked = realtime_source(&map, Some(&hdfl));
+        let plain_masked = realtime_source(&plain, Some(&hdfl));
+        assert_eq!(
+            pixels(&masked, 1000),
+            pixels(&plain_masked, 1000),
+            "FL 外的 Kiai 轮廓仍必须隐藏"
+        );
+    }
+
+    fn realtime_source(
+        beatmap: &osu_beatmap_preview_core::domain::models::Beatmap,
+        mods: Option<&osu_beatmap_preview_core::domain::mods::ModSettings>,
+    ) -> osu_beatmap_preview_core::render::wgpu::RealtimeFrameSource {
+        use osu_beatmap_preview_core::render::wgpu;
+        match beatmap.mode() {
+            0 => wgpu::prepare_standard(
+                beatmap,
+                mods,
+                osu_beatmap_preview_core::domain::shared::time_selection::TimeAxis::new(0),
+            ),
+            1 => wgpu::prepare_taiko(beatmap, mods),
+            2 => wgpu::prepare_catch(beatmap, mods),
+            3 => wgpu::prepare_mania(beatmap, mods),
+            _ => unreachable!(),
+        }
+        .unwrap()
+    }
+
     /// 图像场景经参考光栅器后像素保持不变。
     #[test]
     fn image_scene_round_trips_through_reference_backend() {
