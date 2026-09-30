@@ -1,10 +1,11 @@
-// 打击音播放内核（AudioWorklet）。
+// 音频播放内核（AudioWorklet）：音乐 + 打击音统一混音流的消费端。
 //
 // 它只做一件事：按音频硬件时钟从共享环形缓冲区里取 PCM 输出，并把「已经播到哪个
-// 采样帧」通过消息回报给主线程。混音、事件时间轴、倍速换算的权威实现在 WASM 里，
-// 这里不做任何时间判断，因此不存在两处时钟互相追的问题。
+// 采样帧」通过消息回报给主线程（主线程再转给 WASM 的 onAudioClock，作为画面时钟的
+// 锚点）。混音、事件时间轴、倍速换算的权威实现在 WASM 里，这里不做任何时间判断，
+// 因此不存在两处时钟互相追的问题。
 //
-// 协议与 `src/hitsound.js` 中的 `createHitsoundOutput()` 一致：
+// 协议与 `src/hitsound.js` 中的 `createAudioOutput()` 一致：
 // - 主线程 → 内核：`{ ring, control, mask, readFrame, playing, rate }`
 // - 主线程 → 内核：`{ command: 'readFrame', value }`（seek / 重新对齐）
 // - 内核 → 主线程：`{ readPosition, frames, underrunFrames }`
@@ -33,8 +34,8 @@ class HitsoundProcessor extends AudioWorkletProcessor {
     // 这样写入超过一圈后仍能判断数据是否已被覆盖，避免把旧数据当成当前音效。
     this.readPosition = 0;
     this.playing = false;
-    // 每个输出帧消耗的游戏采样帧数（= 播放倍速）。倍速播放时打击音随之变快，
-    // 与音乐倍速保持一致。
+    // 每个输出帧消耗的谱面采样帧数（= 总倍速）。倍速播放时音乐与打击音随之变快，
+    // 与画面时钟保持一致。
     this.rate = 1;
     /** 自上次回报以来经过的输出帧数，用于按固定间距回报位置。 */
     this.reportedFrames = 0;

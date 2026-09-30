@@ -1,20 +1,40 @@
-//! WebAssembly 适配层。网络请求和 Canvas 生命周期由 JavaScript 宿主负责。
+//! WebAssembly 适配层：**单文件输入**（`.osu` / `.osz`）→ 实时预览。
+//!
+//! 数据流只有一条：宿主把一份文件的字节（`.osu` 或 `.osz` 整包）连同 Canvas 交给
+//! [`WebGpuSession::create`]，其余全部在 WASM 内完成——`.osz` 解包（音乐、背景、
+//! 自带音效）、音频解码、音乐与音效统一混音、时钟推进。宿主只做四件事：
+//! 取字节、给 Canvas、把混音结果送进音频设备、把音频线程的消费位置转发回来。
+//!
+//! 时间权威是会话时钟（[`osu_beatmap_preview_core::PreviewClock`]）：`play` / `pause` /
+//! `seek` / `setRate` / `clockMs` 全部在 WASM 里，宿主不再计算时间，也没有
+//! 「静音 WAV + `<audio>` 元素」这类假时钟。
 
-#[cfg(target_arch = "wasm32")]
-use osu_beatmap_preview_core::{
-    parse_beatmap_bytes, BeatmapInfo, RealtimeOptions, RealtimeSession, ResourceBundle,
-};
-#[cfg(target_arch = "wasm32")]
-use osu_beatmap_preview_renderer::{SurfaceConfig, SurfaceRenderer};
-#[cfg(target_arch = "wasm32")]
-use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+pub mod archive;
+pub mod decode;
+
+#[cfg(target_arch = "wasm32")]
+use osu_beatmap_preview_core::{
+    hitsound, parse_beatmap_bytes, BeatmapInfo, RealtimeOptions, RealtimeSession, ResourceBundle,
+};
+#[cfg(target_arch = "wasm32")]
+use osu_beatmap_preview_renderer::{SurfaceConfig, SurfaceRenderer};
+
+/// 墙钟读数（毫秒）：时钟推进与音频位置锚定共用。
+#[cfg(target_arch = "wasm32")]
+fn wall_ms() -> f64 {
+    web_sys::window()
+        .and_then(|window| window.performance())
+        .map(|performance| performance.now())
+        .unwrap_or_else(js_sys::Date::now)
+}
+
 /// 直接渲染到浏览器 WebGPU Canvas 的会话。
 ///
-/// 浏览器仅把 `.osu` 字节、Canvas 和类型化选项交给 WASM；每一帧都在本地 GPU
-/// 中完成，不会返回 RGBA 缓冲或发起任何帧网络请求。
+/// 创建时一次性收下整份文件；音乐与打击音在 WASM 内统一混音，画面与声音共用同一条
+/// 时间轴（会话时钟），倍速、seek、暂停都只有一处位置计算。
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub struct WebGpuSession {
@@ -22,18 +42,82 @@ pub struct WebGpuSession {
     surface: wgpu::Surface<'static>,
     surface_config: wgpu::SurfaceConfiguration,
     renderer: SurfaceRenderer,
+    /// `.osz` 里的自带音效条目（条目名 + 字节）；切 Mod 后按新候选名重新匹配装载。
+    custom_samples: Vec<(String, Vec<u8>)>,
+    /// 是否采用谱面自带音效（`ENABLE_BEATMAP_HITSOUND`）。
+    use_beatmap_samples: bool,
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl WebGpuSession {
+    /// 用一份文件创建会话：`.osu` 字节（只有谱面与内嵌音效）或 `.osz` 整包字节
+    /// （音乐、背景、自带音效全部在 WASM 内解出）。
+    ///
+    /// `options`：`{ bid?, difficulty?, convert?, mods?, width, height, sampleRate?,
+    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound? }`。
+    /// 难度选择优先 `difficulty`（压缩包条目名），其次 `bid`（`BeatmapID`），
+    /// 都没有时取第一个顶层 `.osu`。`sampleRate` 必须等于宿主音频设备的实际采样率。
     #[wasm_bindgen(js_name = create)]
     pub async fn create(
         bytes: Vec<u8>,
         canvas: web_sys::HtmlCanvasElement,
         options: Option<JsValue>,
     ) -> Result<WebGpuSession, JsValue> {
-        let session = create_session(&bytes, options.unwrap_or(JsValue::UNDEFINED))?;
+        let options = options.unwrap_or(JsValue::UNDEFINED);
+        let content = archive::read_input(&bytes, &read_selector(&options), true)
+            .map_err(|error| JsValue::from_str(&error))?;
+        let beatmap = parse_beatmap_bytes(&content.beatmap).map_err(js_error)?;
+
+        let mut realtime = RealtimeOptions::default();
+        if !options.is_undefined() && !options.is_null() {
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("convert")) {
+                realtime.convert = value.as_string();
+            }
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("mods")) {
+                if let Ok(values) = serde_wasm_bindgen::from_value::<Vec<String>>(value) {
+                    realtime.mods = values;
+                }
+            }
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("width")) {
+                realtime.render.width = value.as_f64().unwrap_or(0.0) as u32;
+            }
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("height")) {
+                realtime.render.height = value.as_f64().unwrap_or(0.0) as u32;
+            }
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("sampleRate")) {
+                if let Some(rate) = value.as_f64() {
+                    realtime.audio.sample_rate = rate.max(1.0) as u32;
+                }
+            }
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("hitsoundEnabled")) {
+                realtime.audio.hitsound_enabled = value.as_bool().unwrap_or(true);
+            }
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("hitsoundVolume")) {
+                realtime.audio.hitsound_volume = value.as_f64().unwrap_or(100.0) as i32;
+            }
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("musicVolume")) {
+                realtime.audio.music_volume = value.as_f64().unwrap_or(50.0) as i32;
+            }
+        }
+        let use_beatmap_samples = option_bool(&options, "beatmapHitsound").unwrap_or(true);
+
+        // 背景在 WASM 内解码后直接进合成；解不出来退化成纯色背景。
+        let mut bundle = ResourceBundle::new(beatmap);
+        if let Some(background) = content.background.as_deref() {
+            bundle.background = decode::decode_background(background);
+        }
+        let mut session = RealtimeSession::from_bundle(bundle, realtime).map_err(js_error)?;
+
+        // 音乐解码失败是致命错误（没有声音的整包预览没有意义）；
+        // 单独的 `.osu` 没有音乐，时钟照常自驱。
+        if let Some(audio) = content.audio.as_deref() {
+            let music = decode::decode_music(audio, extension_of(&content.audio_name))
+                .map_err(|error| JsValue::from_str(&error))?;
+            session.set_music(Some(music));
+        }
+        load_samples(&mut session, &content.samples, use_beatmap_samples);
+
         let (width, height) = session.options().render.dimensions();
         canvas.set_width(width);
         canvas.set_height(height);
@@ -78,11 +162,11 @@ impl WebGpuSession {
         let surface_config = surface
             .get_default_config(&adapter, width, height)
             .ok_or_else(|| JsValue::from_str("浏览器 WebGPU Canvas 不支持所选适配器"))?;
-        let device = Arc::new(device);
-        let queue = Arc::new(queue);
+        let device = std::sync::Arc::new(device);
+        let queue = std::sync::Arc::new(queue);
         surface.configure(&device, &surface_config);
         let renderer = SurfaceRenderer::new(
-            Arc::clone(&device),
+            std::sync::Arc::clone(&device),
             queue,
             SurfaceConfig {
                 width,
@@ -96,16 +180,66 @@ impl WebGpuSession {
             surface,
             surface_config,
             renderer,
+            custom_samples: content.samples,
+            use_beatmap_samples,
         })
     }
 
-    pub fn render_number(&mut self, absolute_time_ms: f64) -> Result<(), JsValue> {
-        if !absolute_time_ms.is_finite() {
-            return Err(JsValue::from_str("渲染时间必须是有限数字"));
+    // ── 时钟（WASM 内部维护，宿主不再计算时间） ─────────────────────────
+
+    /// 开始播放：时钟从当前时刻继续推进。
+    pub fn play(&mut self) {
+        self.inner.play(wall_ms());
+    }
+
+    /// 暂停：把当前时刻固化。
+    pub fn pause(&mut self) {
+        self.inner.pause(wall_ms());
+    }
+
+    /// 跳到指定谱面绝对时间（毫秒，0 = 音频文件 0 点，可为负）。
+    pub fn seek(&mut self, chart_ms: f64) -> Result<(), JsValue> {
+        if !chart_ms.is_finite() {
+            return Err(JsValue::from_str("跳转时间必须是有限数字"));
         }
+        self.inner.seek(wall_ms(), chart_ms);
+        Ok(())
+    }
+
+    /// 设置用户倍速（0.5 / 1 / 2……，不含 DT/HT；总倍速由会话乘上谱面变速）。
+    #[wasm_bindgen(js_name = setRate)]
+    pub fn set_rate(&mut self, user_rate: f64) -> Result<(), JsValue> {
+        if !user_rate.is_finite() || user_rate <= 0.0 {
+            return Err(JsValue::from_str("倍速必须是正的有限数字"));
+        }
+        self.inner.set_rate(wall_ms(), user_rate);
+        Ok(())
+    }
+
+    /// 当前谱面绝对时间（毫秒）；画面按它渲染。
+    #[wasm_bindgen(js_name = clockMs)]
+    pub fn clock_ms(&self) -> f64 {
+        self.inner.clock_ms(wall_ms())
+    }
+
+    /// 当前总倍速（用户倍速 × 谱面变速），即音频线程的消费速率。
+    #[wasm_bindgen(js_name = rate)]
+    pub fn total_rate(&self) -> f64 {
+        self.inner.rate()
+    }
+
+    pub fn playing(&self) -> bool {
+        self.inner.playing()
+    }
+
+    // ── 输出 ───────────────────────────────────────────────────────────
+
+    /// 按内部时钟渲染一帧到 Canvas。
+    #[wasm_bindgen(js_name = renderFrame)]
+    pub fn render_frame(&mut self) -> Result<(), JsValue> {
         let scene = self
             .inner
-            .scene_at_absolute(absolute_time_ms.round() as i64)
+            .scene_at_absolute(self.inner.clock_ms(wall_ms()).round() as i64)
             .map_err(js_error)?;
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
@@ -130,50 +264,67 @@ impl WebGpuSession {
         Ok(())
     }
 
-    pub fn duration_ms_number(&self) -> f64 {
-        self.inner.timeline().duration_ms as f64
+    /// 补一段「音乐 + 打击音」统一混音，返回交错立体声 f32（帧数 × 2，可能为空）。
+    ///
+    /// 补多少由预读窗口决定；宿主把返回数据接在环形缓冲写入前沿之后即可。
+    /// 返回后请先检查 [`WebGpuSession::audio_epoch`]：纪元变化表示输出流已整体重置，
+    /// 必须把环形读写指针一起归零并通知音频线程从头重读。
+    #[wasm_bindgen(js_name = pullAudio)]
+    pub fn pull_audio(&mut self, max_frames: u32) -> Vec<f32> {
+        self.inner.pull_audio(wall_ms(), max_frames.max(1) as usize)
     }
 
-    pub fn absolute_start_ms_number(&self) -> f64 {
-        self.inner.timeline().absolute_start_ms as f64
+    /// 转发音频线程回报的消费位置（自上次重置起已消费的采样帧）。
+    ///
+    /// 这是画面时钟锚定的依据：有音频输出时画面贴着「此刻听到的位置」走，音画不分家。
+    #[wasm_bindgen(js_name = onAudioClock)]
+    pub fn on_audio_clock(&mut self, consumed_frames: f64) {
+        if consumed_frames.is_finite() && consumed_frames >= 0.0 {
+            self.inner.on_audio_clock(consumed_frames as u64, wall_ms());
+        }
     }
 
-    pub fn beatmap_speed_number(&self) -> f64 {
-        self.inner.timeline().beatmap_speed
+    /// 混音输出流的重置纪元（宿主据此归零环形读写指针）。
+    #[wasm_bindgen(js_name = audioEpoch)]
+    pub fn audio_epoch(&self) -> f64 {
+        self.inner.audio_epoch() as f64
     }
 
-    pub fn width(&self) -> u32 {
-        self.surface_config.width
+    // ── 调节 ───────────────────────────────────────────────────────────
+
+    /// 更新音乐音量百分比（0～100）。
+    #[wasm_bindgen(js_name = setMusicVolume)]
+    pub fn set_music_volume(&mut self, volume_percent: i32) {
+        self.inner.set_music_volume(volume_percent.clamp(0, 100));
     }
 
-    pub fn height(&self) -> u32 {
-        self.surface_config.height
+    /// 更新打击音音量百分比（0～100）。
+    #[wasm_bindgen(js_name = setHitsoundVolume)]
+    pub fn set_hitsound_volume(&mut self, volume_percent: i32) {
+        self.inner.set_hitsound_volume(volume_percent.clamp(0, 100));
     }
 
-    pub fn mode(&self) -> String {
-        format!("{:?}", self.inner.mode()).to_lowercase()
+    /// 打开/关闭打击音；关闭时音乐照常输出。
+    #[wasm_bindgen(js_name = setHitsoundEnabled)]
+    pub fn set_hitsound_enabled(&mut self, enabled: bool) {
+        self.inner.set_hitsound_enabled(enabled);
     }
 
     /// 热切换当前会话的 mod，数组中的每项对应一个独立 token。
+    ///
+    /// 转谱会改变目标模式与所需样本，切换后按新谱面重新装载样本并重建时间轴。
     pub fn set_mods(&mut self, mods: JsValue) -> Result<(), JsValue> {
         let values = serde_wasm_bindgen::from_value::<Vec<String>>(mods)
             .map_err(|error| JsValue::from_str(&format!("mod 参数无效：{error}")))?;
-        self.inner.set_mods(values).map_err(js_error)
-    }
-
-    pub fn set_background_rgba(
-        &mut self,
-        width: u32,
-        height: u32,
-        rgba: Vec<u8>,
-    ) -> Result<(), JsValue> {
-        self.inner
-            .set_background(osu_beatmap_preview_core::ImageData {
-                width,
-                height,
-                rgba,
-            })
-            .map_err(js_error)
+        self.inner.set_mods(values, wall_ms()).map_err(js_error)?;
+        let Self {
+            inner,
+            custom_samples,
+            use_beatmap_samples,
+            ..
+        } = self;
+        load_samples(inner, custom_samples, *use_beatmap_samples);
+        Ok(())
     }
 
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(), JsValue> {
@@ -190,203 +341,183 @@ impl WebGpuSession {
         self.inner.set_render_size(width, height).map_err(js_error)
     }
 
-    // ── 打击音（hit sound） ──────────────────────────────────────────────
-    //
-    // 音频的整条时间轴都在 WASM 内：宿主只负责「解码样本 → 送进来」和
-    // 「按音频时钟取混音结果 → 送出去」。这样画面与声音共用同一份位置计算，
-    // 倍速、seek、暂停都只有一处实现。
+    // ── 信息 ───────────────────────────────────────────────────────────
 
-    /// 打开打击音并指定音量百分比（0～100）。
-    ///
-    /// `sampleRate` 必须等于宿主音频设备的采样率，混音结果可以直接使用。
-    /// 打开后样本库为空，需要按 [`WebGpuSession::hitsound_required_names`] 逐个
-    /// 调用 [`WebGpuSession::set_hitsound_sample`]。
-    #[wasm_bindgen(js_name = enableHitsound)]
-    pub fn enable_hitsound(&mut self, volume_percent: i32, sample_rate: u32) -> Result<(), JsValue> {
-        if sample_rate == 0 {
-            return Err(JsValue::from_str("音频采样率必须为正数"));
-        }
-        self.inner
-            .enable_hitsound(volume_percent.clamp(0, 100), sample_rate);
-        Ok(())
+    #[wasm_bindgen(js_name = durationMs)]
+    pub fn duration_ms(&self) -> f64 {
+        self.inner.timeline().duration_ms as f64
     }
 
-    /// 关闭打击音；关闭后所有混音接口返回静音。
-    #[wasm_bindgen(js_name = disableHitsound)]
-    pub fn disable_hitsound(&mut self) {
-        self.inner.disable_hitsound();
+    #[wasm_bindgen(js_name = absoluteStartMs)]
+    pub fn absolute_start_ms(&self) -> f64 {
+        self.inner.timeline().absolute_start_ms as f64
     }
 
-    /// 清空已加载的样本并重建时间轴（保留音量与采样率）。
-    ///
-    /// 切 Mod 或转谱后需要的样本集合会变，宿主重新调用
-    /// [`WebGpuSession::set_hitsound_sample`] 即可，不必重建会话。
-    #[wasm_bindgen(js_name = resetHitsoundSamples)]
-    pub fn reset_hitsound_samples(&mut self) {
-        self.inner.reset_hitsound_samples();
+    #[wasm_bindgen(js_name = beatmapSpeed)]
+    pub fn beatmap_speed(&self) -> f64 {
+        self.inner.timeline().beatmap_speed
     }
 
-    #[wasm_bindgen(js_name = hitsoundEnabled)]
-    pub fn hitsound_enabled(&self) -> bool {
-        self.inner.hitsound_enabled()
+    #[wasm_bindgen(js_name = audioSampleRate)]
+    pub fn audio_sample_rate(&self) -> u32 {
+        self.inner.audio_sample_rate()
     }
 
-    /// 当前谱面需要宿主提供 PCM 的样本名（按优先级排列，含裸名回退）。
-    ///
-    /// 宿主只需下载/解码它认得出来的名字；缺失的样本在混音时按静音处理。
-    #[wasm_bindgen(js_name = hitsoundRequiredNames)]
-    pub fn hitsound_required_names(&self) -> Vec<String> {
-        self.inner.hitsound_required_names()
+    pub fn width(&self) -> u32 {
+        self.surface_config.width
     }
 
-    /// 当前采样率下是否已有可用样本；没有样本时宿主不必启动音频输出。
-    #[wasm_bindgen(js_name = hitsoundHasSamples)]
-    pub fn hitsound_has_samples(&self) -> bool {
-        self.inner.hitsound_has_samples()
+    pub fn height(&self) -> u32 {
+        self.surface_config.height
     }
 
-    #[wasm_bindgen(js_name = hitsoundSampleRate)]
-    pub fn hitsound_sample_rate(&self) -> u32 {
-        self.inner.hitsound_sample_rate()
-    }
-
-    /// 放入一段已解码的样本 PCM。
-    ///
-    /// 只放进样本库；全部放完后必须调用一次
-    /// [`WebGpuSession::rebuild_hitsound_timeline`]（否则事件时间轴还是空的）。
-    /// 一次批量加载只需重建一次，避免逐个样本遍历整张谱面。
-    #[wasm_bindgen(js_name = setHitsoundSample)]
-    pub fn set_hitsound_sample(
-        &mut self,
-        name: &str,
-        channels: u32,
-        sample_rate: u32,
-        loop_length: u32,
-        samples: Vec<f32>,
-    ) -> Result<(), JsValue> {
-        if name.is_empty() {
-            return Err(JsValue::from_str("样本名不能为空"));
-        }
-        if sample_rate == 0 {
-            return Err(JsValue::from_str("样本采样率必须为正数"));
-        }
-        if !matches!(channels, 1 | 2) {
-            return Err(JsValue::from_str("样本声道数只能是 1 或 2"));
-        }
-        // 循环长度以采样帧为单位；交错立体声的数组长度是帧数的两倍。
-        let frame_count = if channels == 1 {
-            samples.len()
-        } else {
-            samples.len() / 2
-        };
-        let loop_length = loop_length.min(frame_count as u32) as usize;
-        let data = if channels == 1 {
-            osu_beatmap_preview_core::Channels::Mono(samples)
-        } else {
-            osu_beatmap_preview_core::Channels::Stereo(samples)
-        };
-        self.inner
-            .set_hitsound_sample(name, data, sample_rate, loop_length);
-        Ok(())
-    }
-
-    /// 用已放入的样本重建打击音事件时间轴（样本全部放完后调用一次）。
-    #[wasm_bindgen(js_name = rebuildHitsoundTimeline)]
-    pub fn rebuild_hitsound_timeline(&mut self) {
-        self.inner.rebuild_hitsound_timeline();
-    }
-
-    /// 更新打击音音量百分比（0～100）。
-    #[wasm_bindgen(js_name = setHitsoundVolume)]
-    pub fn set_hitsound_volume(&mut self, volume_percent: i32) {
-        self.inner.set_hitsound_volume(volume_percent.clamp(0, 100));
-    }
-
-    /// 把混音位置对齐到谱面时间（毫秒），不清空正在播放的声音。
-    ///
-    /// 用于宿主音频时钟与 WASM 位置对齐；真正的 seek 请用
-    /// [`WebGpuSession::seekHitsound`]。
-    #[wasm_bindgen(js_name = positionHitsound)]
-    pub fn position_hitsound(&mut self, chart_time_ms: f64) {
-        self.inner.position_hitsound(chart_time_ms);
-    }
-
-    /// 跳到指定谱面时间并丢弃正在播放的声音。
-    #[wasm_bindgen(js_name = seekHitsound)]
-    pub fn seek_hitsound(&mut self, chart_time_ms: f64) {
-        self.inner.seek_hitsound(chart_time_ms);
-    }
-
-    #[wasm_bindgen(js_name = hitsoundPositionMs)]
-    pub fn hitsound_position_ms(&self) -> f64 {
-        self.inner.hitsound_position_ms()
-    }
-
-    /// 从当前混音位置渲染 `frames` 个立体声采样帧到内部缓冲。
-    ///
-    /// 返回随后可读取的帧数（未启用打击音时为 0）。
-    #[wasm_bindgen(js_name = renderHitsound)]
-    pub fn render_hitsound(&mut self, frames: u32) -> u32 {
-        self.inner.render_hitsound(frames as usize) as u32
-    }
-
-    /// 取回最近一次 [`WebGpuSession::render_hitsound`] 的混音结果。
-    ///
-    /// 返回交错立体声 f32 的副本（长度为帧数 × 2），长度就是上一次渲染请求的帧数。
-    /// 用返回值而不是裸指针：wasm-bindgen 会为 `Vec<f32>` 生成能感知内存增长的
-    /// 拷贝，宿主拿到的是普通 `Float32Array`，不需要自己维护 `WebAssembly.Memory` 视图。
-    #[wasm_bindgen(js_name = takeHitsoundBuffer)]
-    pub fn take_hitsound_buffer(&mut self) -> Vec<f32> {
-        self.inner.take_hitsound_buffer()
+    pub fn mode(&self) -> String {
+        format!("{:?}", self.inner.mode()).to_lowercase()
     }
 }
 
-/// 解析 `.osu` 字节并返回谱面内部信息（全量字段）。
+/// 按「谱面自带条目 > 内嵌皮肤」的优先级装载当前谱面需要的样本。
 ///
-/// WASM 侧没有网络能力，`bid` 的下载由宿主完成（浏览器取 `/resource/beatmap`、
-/// Node 后端取本地缓存），这里只按传入的谱面字节解析，返回的对象字段与
-/// [`BeatmapInfo`] 一一对应。
+/// 候选名由谱面内容决定（`hitsound_required_names`），每个候选按
+/// [`osu_beatmap_preview_core::sample_entry_matches`] 在 `.osz` 条目里找同名文件；
+/// 找不到（或解不出有效音频）才回落到 wasm 内嵌皮肤，两边都没有按静音处理。
+/// 装载完成后重建一次事件时间轴（逐样本重建会反复遍历整张谱面）。
+#[cfg(target_arch = "wasm32")]
+fn load_samples(
+    session: &mut RealtimeSession,
+    custom: &[(String, Vec<u8>)],
+    use_beatmap_samples: bool,
+) {
+    session.reset_hitsound_samples();
+    for name in session.hitsound_required_names() {
+        let mut loaded = false;
+        if use_beatmap_samples {
+            if let Some((entry, bytes)) = custom
+                .iter()
+                .find(|(entry, _)| osu_beatmap_preview_core::sample_entry_matches(entry, &name))
+            {
+                let data = decode::decode_sample(&name, bytes, extension_of(entry));
+                // 空样本视为「取不到」：回落内嵌皮肤，与旧 Web 端的解码失败语义一致
+                //（argon pro 的静音滑行音本身就是内嵌资源，回落后仍是静音）。
+                if data.frames() > 0 {
+                    session.set_hitsound_sample(&name, data.channels, data.sample_rate, data.loop_len);
+                    loaded = true;
+                }
+            }
+        }
+        if !loaded {
+            if let Some(bytes) = hitsound::asset_bytes(&name) {
+                let data = decode::decode_sample(&name, bytes, Some("ogg"));
+                if data.frames() > 0 {
+                    session.set_hitsound_sample(&name, data.channels, data.sample_rate, data.loop_len);
+                }
+            }
+        }
+    }
+    session.rebuild_hitsound_timeline();
+}
+
+/// 解析难度选择：`difficulty`（条目名）优先，其次 `bid`（`BeatmapID`），都没有取第一个。
+#[cfg(target_arch = "wasm32")]
+fn read_selector(options: &JsValue) -> archive::DifficultySelector {
+    if let Some(entry) = option_string(options, "difficulty") {
+        if !entry.trim().is_empty() {
+            return archive::DifficultySelector::ByEntry(entry);
+        }
+    }
+    if let Ok(value) = js_sys::Reflect::get(options, &JsValue::from_str("bid")) {
+        if let Some(bid) = value.as_f64() {
+            if bid.is_finite() && bid > 0.0 {
+                return archive::DifficultySelector::ById(bid as u64);
+            }
+        }
+        if let Some(text) = value.as_string() {
+            if let Ok(bid) = text.trim().parse::<u64>() {
+                return archive::DifficultySelector::ById(bid);
+            }
+        }
+    }
+    archive::DifficultySelector::First
+}
+
+#[cfg(target_arch = "wasm32")]
+fn option_string(options: &JsValue, key: &str) -> Option<String> {
+    js_sys::Reflect::get(options, &JsValue::from_str(key))
+        .ok()
+        .and_then(|value| value.as_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn option_bool(options: &JsValue, key: &str) -> Option<bool> {
+    js_sys::Reflect::get(options, &JsValue::from_str(key))
+        .ok()
+        .and_then(|value| value.as_bool())
+}
+
+/// 条目扩展名（小写、不含点），用作 symphonia 的格式提示。
+#[cfg(target_arch = "wasm32")]
+fn extension_of(name: &str) -> Option<&str> {
+    name.rsplit_once('.').map(|(_, extension)| extension)
+}
+
+/// 解析 `.osu` / `.osz` 字节并返回谱面内部信息（全量字段）与难度清单。
+///
+/// `options` 与 [`WebGpuSession::create`] 的难度选择一致（`bid` / `difficulty`）；
+/// 单独的 `.osu` 没有难度清单（返回空数组），`.osz` 里有几行就返回几行，
+/// 供加载页直接渲染难度下拉。
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = beatmapInfo)]
-pub fn beatmap_info(bytes: Vec<u8>) -> Result<JsValue, JsValue> {
-    let beatmap = parse_beatmap_bytes(&bytes).map_err(js_error)?;
+pub fn beatmap_info(bytes: Vec<u8>, options: Option<JsValue>) -> Result<JsValue, JsValue> {
+    let options = options.unwrap_or(JsValue::UNDEFINED);
+    let content = archive::read_input(&bytes, &read_selector(&options), false)
+        .map_err(|error| JsValue::from_str(&error))?;
+    let beatmap = parse_beatmap_bytes(&content.beatmap).map_err(js_error)?;
     let info = BeatmapInfo::from_beatmap(&beatmap);
     // 默认序列化会把 map 变成 JS Map、把 None 变成 undefined；这里统一成
     // 普通对象与 null，宿主可以直接用 `info.title` 取值。
     let serializer = serde_wasm_bindgen::Serializer::new()
         .serialize_maps_as_objects(true)
         .serialize_missing_as_null(true);
-    serde::Serialize::serialize(&info, &serializer).map_err(js_error)
+    let value = serde::Serialize::serialize(&info, &serializer).map_err(js_error)?;
+    // 单独的 `.osu` 不显示难度清单；`.osz` 的清单来自全部顶层 `.osu`。
+    let difficulties = if is_plain_osu(&bytes) {
+        js_sys::Array::new()
+    } else {
+        let list = js_sys::Array::new();
+        for difficulty in &content.difficulties {
+            let row = js_sys::Object::new();
+            js_sys::Reflect::set(
+                &row,
+                &JsValue::from_str("entry"),
+                &JsValue::from_str(&difficulty.entry),
+            )?;
+            js_sys::Reflect::set(
+                &row,
+                &JsValue::from_str("label"),
+                &JsValue::from_str(&difficulty.label),
+            )?;
+            js_sys::Reflect::set(
+                &row,
+                &JsValue::from_str("beatmapId"),
+                &match difficulty.beatmap_id {
+                    Some(id) => JsValue::from_f64(id as f64),
+                    None => JsValue::NULL,
+                },
+            )?;
+            list.push(&row);
+        }
+        list
+    };
+    js_sys::Reflect::set(&value, &JsValue::from_str("difficulties"), &difficulties)?;
+    Ok(value)
 }
 
-/// 按传入的 `.osu` 字节返回打击音需要的样本名（按优先级排列，含裸名回退）。
-///
-/// 宿主据此决定要解码哪些音效；名字取不到资源时直接忽略即可，混音阶段按静音处理。
+/// 字节是否是单独的 `.osu`（而不是 `.osz` 整包）。
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = hitsoundNames)]
-pub fn hitsound_names(bytes: Vec<u8>) -> Result<Vec<String>, JsValue> {
-    let beatmap = parse_beatmap_bytes(&bytes).map_err(js_error)?;
-    Ok(osu_beatmap_preview_core::hitsound_referenced_names(&beatmap))
-}
-
-/// 取回某个打击音样本的 ogg 字节。
-///
-/// **资源随 wasm 一起分发**（由 core 的 build.rs 内嵌），宿主不需要再向站点请求
-/// 音效文件，也就不存在「静态副本没同步导致全部 404」的问题。返回空数组表示没有
-/// 对应资源（裸名回退、或本套皮肤不提供的音效），宿主跳过即可。
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = hitsoundAsset)]
-pub fn hitsound_asset(name: &str) -> Vec<u8> {
-    osu_beatmap_preview_core::hitsound::asset_bytes(name)
-        .map(<[u8]>::to_vec)
-        .unwrap_or_default()
-}
-
-/// 内嵌打击音资源数量，便于宿主自检。
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = hitsoundAssetCount)]
-pub fn hitsound_asset_count() -> u32 {
-    osu_beatmap_preview_core::hitsound::asset_count() as u32
+fn is_plain_osu(bytes: &[u8]) -> bool {
+    !bytes.starts_with(b"PK\x03\x04")
+        && !bytes.starts_with(b"PK\x05\x06")
+        && !bytes.starts_with(b"PK\x07\x08")
 }
 
 /// 返回某个模式在 `assets/shared_config.yml` 里的打击音默认设置。
@@ -446,29 +577,6 @@ pub fn hitsound_defaults(mode: &str) -> Result<JsValue, JsValue> {
         &JsValue::from_bool(beatmap_enabled),
     )?;
     Ok(object.into())
-}
-
-#[cfg(target_arch = "wasm32")]
-fn create_session(bytes: &[u8], options: JsValue) -> Result<RealtimeSession, JsValue> {
-    let beatmap = parse_beatmap_bytes(bytes).map_err(js_error)?;
-    let mut realtime = RealtimeOptions::default();
-    if !options.is_undefined() && !options.is_null() {
-        if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("convert")) {
-            realtime.convert = value.as_string();
-        }
-        if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("mods")) {
-            if let Ok(values) = serde_wasm_bindgen::from_value::<Vec<String>>(value) {
-                realtime.mods = values;
-            }
-        }
-        if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("width")) {
-            realtime.render.width = value.as_f64().unwrap_or(0.0) as u32;
-        }
-        if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("height")) {
-            realtime.render.height = value.as_f64().unwrap_or(0.0) as u32;
-        }
-    }
-    RealtimeSession::from_bundle(ResourceBundle::new(beatmap), realtime).map_err(js_error)
 }
 
 #[cfg(target_arch = "wasm32")]

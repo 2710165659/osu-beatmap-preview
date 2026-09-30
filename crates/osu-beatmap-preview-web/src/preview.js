@@ -1,19 +1,16 @@
 // 预览页的共享状态与全部播放逻辑。
 //
-// 组件只负责画界面：谱面会话（WASM）、音频元素、播放时钟、Mod 与分辨率切换都集中在
-// 这里。state 做成模块级单例，组件直接引用，避免为了几个控件层层传递 props。
+// 组件只负责画界面：谱面会话（WASM）、音频输出、播放时钟、Mod 与分辨率切换都集中
+// 在这里。state 做成模块级单例，组件直接引用，避免为了几个控件层层传递 props。
+//
+// 输入只有**一份文件**（`.osu` 或 `.osz` 整包字节）：`.osz` 的解包、音乐/背景/音效的
+// 解码、统一混音与时钟全部在 WASM 里完成；宿主只做四件事——取字节、给 Canvas、把混音
+// 结果写进音频环形缓冲、把音频线程的消费位置转发回 WASM。因此这里**没有 `<audio>`
+// 元素、没有静音 WAV 假时钟**：画面时间直接来自 `session.clockMs()`，音画共用一条时间轴。
 
 import { computed, nextTick, reactive } from 'vue';
 
-import { parseBeatmapText } from '../backend/beatmap-meta.js';
-import {
-  createBeatmapSampleIndex,
-  createHitsoundContext,
-  createHitsoundOutput,
-  loadHitsoundSamples,
-} from './hitsound.js';
-import { beatmapEntries, localFileKind, sampleEntries, silentWavBytes } from './local-file.js';
-import { extractEntry, findEntry, readZipIndex } from './zip.js';
+import { createAudioContext, createAudioOutput } from './hitsound.js';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -33,6 +30,9 @@ export const SPEED_CHOICES = [0.5, 0.75, 1, 1.5, 2];
 /** 允许的转谱模式；也用于校验 URL 里的 convert 参数。 */
 export const CONVERT_MODES = ['standard', 'taiko', 'catch', 'mania'];
 
+/** 数字模式 → 谱面模式 key（`hitsoundDefaults` 的参数）。 */
+const MODE_KEYS = ['standard', 'taiko', 'catch', 'mania'];
+
 /** README「Mod 支持」表：Standard / Taiko / Catch / Mania 的 GIF & MP4 支持项。 */
 export const MOD_OPTIONS = Object.freeze({
   standard: ['EZ', 'HR', 'HD', 'DA', 'TC', 'DT', 'HT'],
@@ -41,16 +41,11 @@ export const MOD_OPTIONS = Object.freeze({
   mania: ['CS', 'DT', 'HT', '1K', '2K', '3K', '4K', '5K', '6K', '7K', '8K', '9K', '10K', 'DS', 'IN', 'HO'],
 });
 
-// 播放页沿用 osu! 视频预览的默认背景暗化：暗化 70%，保留 30% 亮度，
-// 只处理背景资源，不改变 playfield 和其他平台的渲染配置。
-const BACKGROUND_DIM = 0.7;
-
 /**
  * 默认音量 50%。
  *
  * 网页预览通常和其他标签页/应用的声音同时存在，默认拉满容易盖过别的声音，
- * 所以留半个刻度。用户调过之后不再重置：音频元素在整个播放页生命周期里只有一份，
- * 换谱面、切 Mod 都会沿用当前音量。
+ * 所以留半个刻度。用户调过之后不再重置：换谱面、切 Mod 都沿用当前音量。
  */
 const DEFAULT_VOLUME = 0.5;
 
@@ -71,30 +66,7 @@ const DEFAULT_HITSOUND_VOLUME = 50;
  * 播放刚开始、seek 落地的那一两个音频块出现少量静音是正常的，阈值取大一些才能把
  * 真正的欠载和这些瞬态区分开。
  */
-const HITSOUND_UNDERRUN_ALERT_FRAMES = 24000;
-
-/** 音频被自动播放策略拦下后重试播放的最小间隔，避免每帧都调用 play()。 */
-const AUDIO_RETRY_INTERVAL = 500;
-
-/** 手机浏览器上 seek 要几秒才落地，超时后放行，靠对齐逻辑兜底。 */
-const AUDIO_SEEK_TIMEOUT = 2000;
-/**
- * 音频与画面差距超过这个值才判定为「需要重新 seek」。
- *
- * 移动端一次 seek 会重新缓冲并卡一下声音，所以微小差距宁可让画面等音频
- * （见 tick 里的对齐），也不要频繁动 seek——反复 seek 正是音画不同步的根源。
- */
-const AUDIO_RESYNC_THRESHOLD = 120;
-/** 画面时钟最多等音频这么久，超过就退回按墙钟推进。 */
-const AUDIO_RESYNC_MAX_WAIT = 1500;
-/**
- * 暂停时允许把画面进度对齐到音频的最大偏移。
- *
- * 取 80ms（约 5 帧 @60FPS）是有意的：自动播放被拦下时，用户点画面会先在手势里
- * 恢复播放、紧接着这次点击又把它暂停，音频在这几十毫秒里已经往前走了一点。对齐
- * 窗口放到几百毫秒，就会把这几十毫秒的「向前跳」画出来——那正是用户看到的跳帧。
- */
-const PAUSE_ALIGN_TOLERANCE = 80;
+const AUDIO_UNDERRUN_ALERT_FRAMES = 24000;
 
 /** 触发播放需要「用户激活」，因此只用指针 / 触摸 / 键盘这类真实输入当作手势。 */
 const GESTURE_EVENTS = ['pointerdown', 'touchstart', 'keydown'];
@@ -102,24 +74,8 @@ const GESTURE_EVENTS = ['pointerdown', 'touchstart', 'keydown'];
 /** 手势恢复音频后，多短时间内的播放/暂停操作算「只是想把声音打开」。 */
 const GESTURE_RESUME_WINDOW = 400;
 
-/**
- * 音频元数据的等待上限。
- *
- * 极少数环境下媒体元素既不触发 loadedmetadata 也不触发 error（例如拿不到音频输出
- * 设备、或服务端不支持 Range 时的媒体管线卡死）。没有这个上限，loadPreview 的
- * Promise.allSettled 会永远挂住，整个播放页都进不去，因此超时后按「无音频」处理。
- */
-const AUDIO_METADATA_TIMEOUT = 15000;
-
 /** 加载进度的轮询间隔；后端只有在真正下发资源时才知道字节数。 */
 const PROGRESS_INTERVAL = 400;
-
-/**
- * 本地 `.osu` 静音播放时钟的尾部余量（秒）。
- *
- * 静音 WAV 比「画面最后一帧」多留这么长，避免音频先一步 `ended` 时钟就散架。
- */
-const SILENT_TAIL_SECONDS = 2;
 
 /** 进度条淡出的等待时间：鼠标停下大约 1 秒后隐藏。 */
 const TIMELINE_HIDE_DELAY = 1000;
@@ -136,12 +92,12 @@ const REWIND_STEP = 500;
 const WASM_URL = `${import.meta.env.BASE_URL}pkg/osu_beatmap_preview_wasm.js`;
 
 /**
- * 打击音播放内核（AudioWorklet）。
+ * 音频播放内核（AudioWorklet）。
  *
  * 放在 `public/` 下按运行时 URL 加载：worklet 必须在音频线程里独立加载。
- * 音效资源本身由 WASM 内嵌（见 `hitsoundAsset`），不再需要静态副本。
+ * 音乐与音效的混音结果由 WASM 产出，这里只做按硬件时钟消费。
  */
-const HITSOUND_WORKLET_URL = `${import.meta.env.BASE_URL}hitsound-worklet.js`;
+const AUDIO_WORKLET_URL = `${import.meta.env.BASE_URL}hitsound-worklet.js`;
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -154,7 +110,7 @@ export const state = reactive({
   localFileName: '',
   /** 本地文件类型：`osu` / `osz` / 空。 */
   localKind: '',
-  /** `.osz` 里的难度清单（`[{ entry, label }]`），加载页选择用。 */
+  /** `.osz` 里的难度清单（`[{ entry, label, beatmapId }]`），加载页选择用。 */
   localDifficulties: [],
   /** 选中的难度条目名（`.osz` 专用）。 */
   localDifficulty: '',
@@ -174,7 +130,7 @@ export const state = reactive({
   fps: 60,
   resolution: '720',
   speed: 1,
-  /** 音频音量（0–1）；0 即静音，与「静音播放中」角标无关。 */
+  /** 音乐音量（0–1）；0 即静音，与「静音播放中」角标无关。 */
   volume: DEFAULT_VOLUME,
   /** 是否启用打击音（hit sound）。 */
   hitsound: DEFAULT_HITSOUND_ENABLED,
@@ -186,28 +142,24 @@ export const state = reactive({
    * 打击音跟随网页这个刻度。用户调过之后不再重置。
    */
   hitsoundVolume: DEFAULT_HITSOUND_VOLUME,
-  /** 打击音状态文案：用于在侧栏说明当前是「已启用 / 加载中 / 不可用」。 */
+  /** 音频输出状态文案：用于在侧栏说明当前是「已启用 / 已关闭 / 不可用」。 */
   hitsoundStatus: '',
   /**
    * 是否使用谱面自带的自定义打击音（`ENABLE_BEATMAP_HITSOUND`）。
    *
    * 与打击音开关一样来自 `assets/shared_config.yml`（由 WASM 转出）；默认启用。
+   * 它在会话创建时生效（决定装载哪些样本）。
    */
   hitsoundBeatmap: true,
-  /** 已经加载成功的样本数，仅用于诊断显示。 */
-  hitsoundLoaded: 0,
-  /** 其中来自谱面自带音效的数量，仅用于诊断显示。 */
-  hitsoundBeatmapLoaded: 0,
   /** 界面上勾选的 Mod token；DA 提交时会展开成 DAAR..CS..。 */
   mods: [],
   daAr: 9,
   daCs: 4,
   sheetOpen: false,
   /**
-   * 自动播放是否被浏览器拦下。
+   * 声音是否没有真的出来（自动播放策略把 AudioContext 拦下了）。
    *
-   * 这个值描述的是「此刻音频真的没在响」，而不是「曾经失败过一次」：手势恢复
-   * 成功或音频真正开始播放后必须归位，否则静音提示会一直挂着。
+   * 这个值描述的是「此刻音频真的没在响」：上下文恢复后必须归位，否则提示会一直挂着。
    */
   audioBlocked: false,
   /** 进度条是否可见：隐藏时只改透明度，盒子留在原处，画面不会上下跳。 */
@@ -222,12 +174,10 @@ export const state = reactive({
    *
    * `received/total` 是当前阶段的字节数，`total` 为 0 表示还不知道总量（不确定态）；
    * `speed/eta` 由前端对两次轮询采样算出来，服务端不必关心。阶段语义：
-   * osu 取谱面 → osz 服务端下载 → extract 服务端解包 → transfer 传给浏览器 →
-   * media 浏览器收音频/背景 → ready 进播放页。
+   * osu 服务端定位谱面 → osz 服务端下载谱面包 → transfer 传输到客户端 →
+   * ready 进播放页（`.osz` 的解包与解码在 WASM 内完成）。
    */
   progress: { phase: 'idle', received: 0, total: 0, message: '', speed: 0, eta: null },
-  /** 音频与背景是否还在后台准备（进了播放页也可能还没拉完）。 */
-  preparingMedia: false,
   gpuAvailable: typeof navigator !== 'undefined' && Boolean(navigator.gpu),
   /** 安全上下文（https / localhost）。WebGPU 只在这里可用，用它区分两种失败原因。 */
   secureContext: typeof window === 'undefined' || window.isSecureContext !== false,
@@ -235,11 +185,9 @@ export const state = reactive({
 
 /** 加载阶段的文案；未知阶段一律显示「正在加载」。 */
 const PROGRESS_LABELS = {
-  osu: '获取谱面',
+  osu: '服务端定位谱面',
   osz: '服务端下载谱面包',
-  extract: '服务端解包音频与音效',
   transfer: '传输到客户端',
-  media: '下载音频与背景',
   ready: '准备渲染',
 };
 const DEFAULT_PROGRESS_LABEL = '正在加载';
@@ -266,52 +214,26 @@ export const daVisible = computed(() => modTokens.value.includes('DA') && state.
 
 // 非响应式的内部状态：这些值每帧都会变，放进 reactive 只会带来无意义的依赖追踪。
 let session = null;
-let backgroundBitmap = null;
 let canvasEl = null;
 let viewportEl = null;
 let viewportObserver = null;
 let wasmReady = null;
-/**
- * 已加载的 wasm 模块。
- *
- * 打击音资源内嵌在 wasm 里，解码时要按样本名取字节（`hitsoundAsset`），
- * 所以把它单独存一份，避免每个调用点都重新 `import`。
- */
+/** 已加载的 wasm 模块（`beatmapInfo` / `hitsoundDefaults` 都是自由函数）。 */
 let wasmModule = null;
 let animation = 0;
 let absoluteStart = 0;
-let beatmapSpeed = 1;
 let targetFps = 60;
-let lastTick = 0;
 let lastRenderTime = 0;
 let hasRenderedFrame = false;
-let audioEnded = false;
 /**
- * 音频 seek 是否还在飞。
+ * 音频输出（AudioContext + Worklet + 环形缓冲）。
  *
- * 只有一个 seek 允许在飞：期间画面冻结等 `seeked`；手机上一次 seek 要几百毫秒，
- * 并发拖动只保留最后一个目标，当前 seek 完成后继续执行；音频元素自己的 currentTime
- * 仍然是最终事实，避免连续 input 把中间位置反复打断后丢掉最后一次拖动。
+ * 只有「AudioWorklet + SharedArrayBuffer」都可用时才会建立；不可用时退化成
+ * 「只有画面」，并把这个原因写进状态文案与播放日志。
  */
-let audioSeekPending = false;
-/** seek 期间最新一次拖动目标；当前 seek 完成后马上应用。 */
-let pendingAudioSeek = null;
-/** seek 结束时是否要顺手把声音接上（seek 会先 pause）。 */
-let audioPlayWhenSeeked = false;
-/**
- * 正在重建会话或改画布尺寸。
- *
- * 这些操作在移动端会阻塞主线程几百毫秒到数秒（GPU 资源重建 + 重新上传背景），
- * 期间画面时钟不能继续按墙钟往前跑，否则操作结束后画面已经跑到音频前面。
- */
-let renderPending = false;
-/**
- * 已经在日志里写过一次播放被拦，避免 tick 里的重试把日志刷屏。
- *
- * 它只抑制日志，不参与静音角标的状态判定。
- */
+let audioOutput = null;
+/** 音频被自动播放策略拦下时的提示只写一次日志，避免 tick 里的重试刷屏。 */
 let audioBlockLogged = false;
-let pendingAudioRequest = null;
 /**
  * 用户手势恢复音频成功的时刻（performance.now()），0 表示本次手势没有恢复过。
  *
@@ -320,56 +242,25 @@ let pendingAudioRequest = null;
  * 点击处理会先消费掉这个标记。
  */
 let audioResumedAt = 0;
-let lastAudioStartAttempt = 0;
-let audioObjectUrl = null;
 let modSwitching = false;
 let appliedMods = [];
 /**
- * 打击音输出。
- *
- * 只有「WASM 会话 + AudioWorklet + SharedArrayBuffer」三者都可用时才会建立；
- * 缺任何一项都退化成「只播音乐与画面」，并把这个原因写进播放日志。
- */
-let hitsoundPlayer = null;
-/** 打击音加载代数；开关、切谱或重载时递增，阻止旧异步任务覆盖当前播放器。 */
-let hitsoundGeneration = 0;
-/** 欠载提示是否已经写过日志，避免每帧刷屏。 */
-let hitsoundUnderrunLogged = false;
-/**
- * 谱面自带打击音的查找表（候选名 → 后端样本 URL）。
- *
- * 每次为一张谱面建立打击音时刷新一次；它只取决于谱面包，切 Mod / 转谱时沿用即可。
- */
-let beatmapSampleIndex = new Map();
-/** 本次加载中真正命中谱面自带音效的次数，仅用于日志与状态文案。 */
-let beatmapSampleHits = 0;
-/**
  * 加载令牌：每次 `loadPreview()` 递增。
  *
- * 音频与背景在进入播放页之后才继续下载，期间用户可能又加载了别的谱面、或者退回
- * 加载页；每个 await 之后都要用令牌确认自己还是「当前这次加载」，否则旧请求回来
- * 会把新会话的状态覆盖掉。
+ * 每个 await 之后都要用令牌确认自己还是「当前这次加载」，否则旧请求回来会把新会话的
+ * 状态覆盖掉（用户可能又加载了别的谱面、或者退回加载页）。
  */
 let loadToken = 0;
 /** 当前加载的取消句柄：切谱面或退回加载页时中止还在飞的请求。 */
 let loadAbort = null;
 /**
- * 本地上传的文件（`File` 对象）；`null` 表示按 BID 从后端加载。
+ * 本地上传的文件（`File` 对象）与它的字节；`null` 表示按 BID 从后端加载。
  *
  * 不放进 reactive：`File` 参与响应式没有意义，界面只需要 state 里的展示字段。
+ * 字节在选文件时读一次（出难度清单），加载时复用，避免同一大文件读两遍。
  */
 let localFile = null;
-/** 当前加载的本地自带音效清单（`[{ name, url }]`，url 为 blob URL）。 */
-let localSamples = [];
-/** 本地资源的 blob URL，换谱面与退回加载页时统一 revoke。 */
-const localObjectUrls = [];
-/**
- * 浏览器正在收的媒体字节数，按资源名（audio / background）分别记录。
- *
- * 两个资源是并行下的，各自的阶段推进由它们分别汇报；聚合出「一共收了多少」才能
- * 让进度条显示成一个整体，而不是在两个数字之间来回跳。
- */
-const mediaProgress = new Map();
+let localBytes = null;
 /** 最近一次进度是前端自己推进的还是服务端轮询来的；用于避免旧阶段盖掉新阶段。 */
 let lastProgressSource = 'local';
 /** 当前阶段的开始时刻与各阶段累计耗时，结束后写进播放日志。 */
@@ -384,12 +275,8 @@ let rewindResume = false;
 // 进度条的计时器与「按住不放」的原因集合（指针悬停、焦点在里面）。
 let timelineTimer = 0;
 const timelinePins = new Set();
-
-// 音频元素不进 DOM：它只负责出声，画面完全由 WASM 绘制。
-const audio = new Audio();
-audio.preload = 'auto';
-// 音量在模块初始化时就落到元素上；之后只在 setVolume 里维护，不需要每次加载重设。
-audio.volume = state.volume;
+/** 加载进度的轮询计时器。 */
+let progressTimer = 0;
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -412,15 +299,8 @@ const stamp = () => new Date().toLocaleTimeString();
 const logLoad = (message) => { state.loadLogs.push(`${stamp()} ${errorText(message)}`); };
 const logPlay = (message) => { state.playLogs.push(`${stamp()} ${errorText(message)}`); };
 
-const playbackRate = () => (speedOverride ?? state.speed) * beatmapSpeed;
-/**
- * 谱面绝对时间（毫秒）：0 = 音频文件 0 点，也是打击音事件时间轴的坐标系。
- *
- * 这里**不叠加 AudioLeadIn**：它只决定预览从多早开始（体现在 `absoluteStart` 里），
- * 不改变音频与物件时间的对应关系。因此「音频文件的 0 点 == 谱面 0 点」，
- * `audio.currentTime * 1000` 就是谱面绝对时间，`seekAudioTo` 赋的也是这个值。
- */
-const absoluteTime = () => absoluteStart + state.position;
+/** 当前用户倍速（不含 DT/HT；总倍速由 WASM 乘上谱面变速）。 */
+const userRate = () => speedOverride ?? state.speed;
 
 // ---------------------------------------------------------------------------
 // 加载进度的格式化与速率采样
@@ -500,7 +380,6 @@ const loadRateSampler = createRateSampler();
 /** 重置整个加载进度（每次开始加载或退回加载页时调用）。 */
 function resetProgress(phase = 'idle') {
   loadRateSampler.reset();
-  mediaProgress.clear();
   stageActive = phase;
   stageStartedAt = performance.now();
   stageDurations.clear();
@@ -527,8 +406,8 @@ function stageTotals() {
  * 记录一个阶段的进度；速度与剩余时间由采样器补齐。
  *
  * 只有「前端自己推进」的阶段才带 source='local'：服务端轮询回来的旧阶段不能盖掉
- * 它。典型场景是前端已经进了播放页开始下音频（media），而轮询仍在下发更早的
- * transfer——同一份数据在两条链路上流动，谁最新以本地为准。
+ * 它。典型场景是前端已经进了播放页，而轮询仍在下发更早的 osz——同一份数据在两条
+ * 链路上流动，谁最新以本地为准。
  */
 function reportProgress({ phase, received = 0, total = 0, message = '', source = 'server' }) {
   if (source === 'local') lastProgressSource = 'local';
@@ -540,7 +419,7 @@ function reportProgress({ phase, received = 0, total = 0, message = '', source =
 /**
  * 把各阶段耗时写进播放日志。
  *
- * 云端部署时「慢」可能来自镜像、服务端解包或本地带宽，把这几个数字摊开才判断得出
+ * 云端部署时「慢」可能来自镜像、服务端下载或本地带宽，把这几个数字摊开才判断得出
  * 该优化哪一段。
  */
 function logStageBreakdown() {
@@ -551,28 +430,6 @@ function logStageBreakdown() {
     .join(' · ');
   logPlay(`耗时：${text}`);
   stageDurations.clear();
-}
-
-/**
- * 汇报浏览器侧某个资源的接收进度。
- *
- * 两个资源并行下载，谁先报都行：这里把它们的字节数加在一起，按 media 阶段上报。
- */
-function reportMediaProgress({ name, received, total, done = false }) {
-  if (done) mediaProgress.delete(name);
-  else mediaProgress.set(name, { received, total });
-  let receivedTotal = 0;
-  let bytesTotal = 0;
-  for (const entry of mediaProgress.values()) {
-    receivedTotal += entry.received;
-    bytesTotal += entry.total;
-  }
-  if (mediaProgress.size === 0) {
-    // 两个资源都收完了：数量已经确定，交给调用方推进到 ready。
-    reportProgress({ phase: 'media', received: bytesTotal, total: bytesTotal, message: '音频与背景就绪', source: 'local' });
-    return;
-  }
-  reportProgress({ phase: 'media', received: receivedTotal, total: bytesTotal, message: '下载音频与背景', source: 'local' });
 }
 
 // ---------------------------------------------------------------------------
@@ -617,7 +474,7 @@ function scheduleTimelineHide() {
 }
 
 // ---------------------------------------------------------------------------
-// WASM 会话与资源
+// WASM 与文件字节
 // ---------------------------------------------------------------------------
 
 async function loadWasm() {
@@ -626,7 +483,6 @@ async function loadWasm() {
     wasmReady = import(/* @vite-ignore */ WASM_URL)
       .then(async (module) => {
         await module.default();
-        // 打击音资源随 wasm 分发，宿主只需要从这里取字节。
         wasmModule = module;
         return module;
       })
@@ -639,21 +495,25 @@ async function loadWasm() {
   return wasmReady;
 }
 
-async function fetchBeatmap(value, { signal } = {}) {
-  const response = await fetch(`/resource/beatmap?bid=${encodeURIComponent(value)}`, { signal });
-  if (!response.ok) throw new Error(await response.text());
-  return new Uint8Array(await response.arrayBuffer());
+/** 从后端下载整份谱面包（`.osz` 字节，带字节进度）。 */
+async function fetchFile(value, { signal } = {}) {
+  return fetchWithProgress(`/resource/file?bid=${encodeURIComponent(value)}`, {
+    signal,
+    onProgress: ({ received, total }) => reportProgress({
+      phase: 'transfer', received, total, message: '传输到客户端', source: 'local',
+    }),
+  });
 }
 
 /**
- * 读取谱面内部信息。
+ * 读取谱面内部信息与难度清单。
  *
- * WASM 只按传入的 `.osu` 字节解析（它没有网络能力），`bid` → 字节这一步由后端的
- * `/resource/beatmap` 完成。失败只记日志，不影响预览本身。
+ * WASM 只按传入的文件字节解析（`.osu` 或 `.osz` 都行），`selector` 决定 `.osz` 里
+ * 选哪个难度。失败只记日志，不影响预览本身。
  */
-function readBeatmapInfo(wasm, bytes) {
+function readBeatmapInfo(wasm, bytes, selector) {
   try {
-    return wasm.beatmapInfo(bytes);
+    return wasm.beatmapInfo(bytes, selector);
   } catch (error) {
     logPlay(`谱面信息解析失败：${errorText(error)}`);
     return null;
@@ -664,11 +524,22 @@ function readBeatmapInfo(wasm, bytes) {
 // 本地文件（.osu / .osz）
 // ---------------------------------------------------------------------------
 
+/** 本地输入文件类型（按扩展名，不区分大小写）；WASM 再按内容复核。 */
+function localFileKind(name) {
+  const text = String(name ?? '');
+  const dot = text.lastIndexOf('.');
+  const extension = dot >= 0 ? text.slice(dot + 1).toLowerCase() : '';
+  if (extension === 'osu') return 'osu';
+  if (extension === 'osz') return 'osz';
+  return null;
+}
+
 /**
  * 选择本地文件，回到加载页时调用（文件输入框的 change 处理）。
  *
- * `.osz` 会顺手把难度清单解析出来供界面选择；填了 BID 时默认选中对应
- * `BeatmapID` 的难度。文件不合法直接抛错，由加载页显示。
+ * `.osz` 会顺手把难度清单解析出来供界面选择（清单来自 WASM 的 `beatmapInfo`，
+ * 解包规则与 CLI 同一套）；填了 BID 时默认选中对应 `BeatmapID` 的难度。
+ * 文件不合法直接抛错，由加载页显示。
  *
  * @param {File} file 用户选中的文件
  */
@@ -676,25 +547,16 @@ export async function selectLocalFile(file) {
   const kind = localFileKind(file?.name ?? '');
   if (!kind) throw new Error('只支持 .osu 或 .osz 文件');
   localFile = file;
+  localBytes = new Uint8Array(await file.arrayBuffer());
   state.localFileName = file.name;
   state.localKind = kind;
   state.localDifficulties = [];
   state.localDifficulty = '';
   if (kind !== 'osz') return;
-  const buffer = new Uint8Array(await file.arrayBuffer());
-  const entries = readZipIndex(buffer);
-  const candidates = beatmapEntries(entries);
-  if (!candidates.length) throw new Error(`${file.name} 里找不到 .osu 谱面文件`);
-  const difficulties = [];
-  for (const entry of candidates) {
-    const bytes = await extractEntry(buffer, entry);
-    const meta = parseBeatmapText(decodeBeatmapText(bytes));
-    difficulties.push({
-      entry: entry.name,
-      label: difficultyLabel(meta, entry.name),
-      beatmapId: beatmapIdOf(meta),
-    });
-  }
+  const wasm = await loadWasm();
+  const info = readBeatmapInfo(wasm, localBytes, {});
+  const difficulties = Array.isArray(info?.difficulties) ? info.difficulties : [];
+  if (!difficulties.length) throw new Error(`${file.name} 里找不到 .osu 谱面文件`);
   state.localDifficulties = difficulties;
   const bid = state.bid.trim();
   const matched = bid ? difficulties.find((item) => String(item.beatmapId) === bid) : null;
@@ -704,197 +566,11 @@ export async function selectLocalFile(file) {
 /** 清除本地文件选择，回到按 BID 加载。 */
 export function clearLocalFile() {
   localFile = null;
+  localBytes = null;
   state.localFileName = '';
   state.localKind = '';
   state.localDifficulties = [];
   state.localDifficulty = '';
-}
-
-/**
- * 读取本地来源的谱面与媒体资源。
- *
- * `.osu` 直接作为谱面字节（没有音频与背景）；`.osz` 先按规则挑出要预览的 `.osu`，
- * 再从同一个压缩包里取出该难度声明的音频（必需，与后端一致）、背景（可选）与
- * 自带打击音。判定规则见 `local-file.js`。
- */
-async function readLocalSource() {
-  const buffer = new Uint8Array(await localFile.arrayBuffer());
-  if (state.localKind === 'osu') {
-    return { beatmap: buffer, audio: null, background: null, samples: [] };
-  }
-  const entries = readZipIndex(buffer);
-  const candidates = beatmapEntries(entries);
-  if (!candidates.length) throw new Error(`${localFile.name} 里找不到 .osu 谱面文件`);
-  // 候选 .osu 都很小：逐个解出读元数据（选难度要显示名称，bid 匹配要读 BeatmapID）。
-  const parsed = [];
-  for (const entry of candidates) {
-    const bytes = await extractEntry(buffer, entry);
-    parsed.push({ entry: entry.name, bytes, meta: parseBeatmapText(decodeBeatmapText(bytes)) });
-  }
-  const picked = pickLocalDifficulty(parsed);
-  state.localDifficulty = picked.entry;
-  const meta = picked.meta;
-  // 音频必需：没有声音的整包预览没有意义，找不到直接报错（与后端一致）。
-  const audioEntry = meta.audioFilename ? findEntry(entries, meta.audioFilename) : null;
-  if (!audioEntry) {
-    throw new Error(`OSZ 中找不到音频：${meta.audioFilename || '(谱面未指定 AudioFilename)'}`);
-  }
-  const audio = await extractEntry(buffer, audioEntry);
-  let background = null;
-  const backgroundEntry = meta.backgroundFilename ? findEntry(entries, meta.backgroundFilename) : null;
-  if (meta.backgroundFilename && !backgroundEntry) {
-    logLoad(`压缩包里找不到背景：${meta.backgroundFilename}，将使用纯色背景`);
-  } else if (backgroundEntry) {
-    background = await extractEntry(buffer, backgroundEntry);
-  }
-  const samples = await extractLocalSamples(buffer, entries, audioEntry.name);
-  return { beatmap: picked.bytes, audio, background, samples };
-}
-
-/**
- * 从候选 `.osu` 里挑出要预览的难度。
- *
- * 填了 BID 就按 `BeatmapID` 匹配，匹配不到直接报错（找不到就不猜）；
- * 没填则用加载页选中的难度，没选就取第一个顶层 `.osu`。
- */
-function pickLocalDifficulty(parsed) {
-  const bid = state.bid.trim();
-  if (bid) {
-    const matched = parsed.find(({ meta }) => String(beatmapIdOf(meta)) === bid);
-    if (!matched) {
-      const seen = parsed
-        .map(({ meta, entry }) => `${entry} (BeatmapID=${beatmapIdOf(meta) ?? 'none'})`)
-        .join(', ');
-      throw new Error(`找不到 bid 为 ${bid} 的 .osu（压缩包内 BeatmapID：${seen}）`);
-    }
-    return matched;
-  }
-  return parsed.find(({ entry }) => entry === state.localDifficulty) ?? parsed[0];
-}
-
-/** 取出谱面自带打击音并转成 blob URL，供打击音播放器按候选名取用。 */
-async function extractLocalSamples(buffer, entries, audioEntryName) {
-  const samples = [];
-  for (const { name, entry } of sampleEntries(entries, audioEntryName)) {
-    try {
-      const bytes = await extractEntry(buffer, entry);
-      const url = URL.createObjectURL(new Blob([bytes]));
-      localObjectUrls.push(url);
-      samples.push({ name, url });
-    } catch (error) {
-      // 单个条目损坏只影响这一个音效（播放器会退回内嵌皮肤），不让整张谱面失败。
-      logLoad(`跳过无法解出的谱面音效 ${name}：${errorText(error)}`);
-    }
-  }
-  return samples;
-}
-
-/**
- * 挂上本地来源的媒体资源。
- *
- * 本地 `.osz` 用压缩包里的音频与背景；本地 `.osu` 没有这两样：背景退化成纯色，
- * 音频用一段静音 WAV 充当播放时钟（见 `local-file.js` 的 `silentWavBytes`）——
- * 画面、倍速与打击音都走这条时钟，只是听不到音乐。
- */
-async function prepareLocalMedia(media) {
-  state.preparingMedia = true;
-  try {
-    const silent = media.audio === null;
-    const audioBytes = media.audio
-      ?? silentWavBytes((absoluteStart + state.duration) / 1000 + SILENT_TAIL_SECONDS);
-    try {
-      await applyAudioBytes(audioBytes);
-      state.status = silent ? '无音频（本地 .osu）' : '就绪';
-    } catch (error) {
-      state.status = '无音频';
-      logPlay(`音频加载失败，将只播放画面：${errorText(error)}`);
-    }
-    if (media.background) {
-      try {
-        await applyBackgroundBytes(media.background);
-      } catch (error) {
-        logPlay(`背景加载失败，将使用黑色背景：${errorText(error)}`);
-      }
-    }
-  } finally {
-    state.preparingMedia = false;
-  }
-}
-
-/** `.osu` 文本解码；谱面文件按 UTF-8 解释（与后端 `readBeatmapText` 一致）。 */
-function decodeBeatmapText(bytes) {
-  return new TextDecoder('utf-8').decode(bytes);
-}
-
-/** `.osu` 元数据里的 `BeatmapID`；缺失或非正数时返回 `null`。 */
-function beatmapIdOf(meta) {
-  const parsed = Number(meta.metadata.get('BeatmapID'));
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-/** 难度显示名：`Artist - Title [Version]`，字段缺失时退回条目名。 */
-function difficultyLabel(meta, entryName) {
-  const artist = meta.metadata.get('Artist')?.trim();
-  const title = meta.metadata.get('Title')?.trim();
-  const version = meta.metadata.get('Version')?.trim();
-  if (!title && !version) return entryName;
-  return `${artist ? `${artist} - ` : ''}${title ?? ''}${version ? ` [${version}]` : ''}`;
-}
-
-// ---------------------------------------------------------------------------
-// 加载进度
-// ---------------------------------------------------------------------------
-
-let progressTimer = 0;
-
-/**
- * 合并服务端上报的进度。
- *
- * 服务端只知道「自己下到哪了 / 解包到哪了 / 开始发包了」，浏览器接收字节的进度由
- * 前端自己统计（media 阶段），因此这里不能反过来覆盖掉本地阶段：谁的信息更靠后
- * 就以谁为准，`PHASE_ORDER` 就是这个先后关系。
- */
-function applyProgress(payload) {
-  const phase = typeof payload?.phase === 'string' ? payload.phase : 'idle';
-  if (phase === 'idle' || phase === 'ready' || phase === 'error') {
-    // ready 由前端在真正进入播放页时自己上报，避免服务端提前把进度条推到终点。
-    if (phase === 'error') reportProgress({ phase: 'error', message: String(payload?.message ?? '') });
-    return;
-  }
-  // 前端已经自己推进过阶段（例如开始下载音频）时，服务端轮询回来的旧阶段一律忽略。
-  if (lastProgressSource === 'local') return;
-  if (phaseOrder(phase) < phaseOrder(state.progress.phase)) return;
-  reportProgress({
-    phase,
-    received: Math.max(0, Number(payload?.received) || 0),
-    total: Math.max(0, Number(payload?.total) || 0),
-    message: typeof payload?.message === 'string' ? payload.message : '',
-  });
-}
-
-/** 阶段先后顺序：越靠后表示加载越接近完成。 */
-const PHASE_ORDER = ['idle', 'osu', 'osz', 'extract', 'transfer', 'media', 'ready', 'error'];
-const phaseOrder = (phase) => {
-  const index = PHASE_ORDER.indexOf(phase);
-  return index < 0 ? 0 : index;
-};
-
-function startProgressPolling(bid) {
-  stopProgressPolling();
-  const poll = () => {
-    fetch(`/resource/progress?bid=${encodeURIComponent(bid)}`)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((payload) => { if (payload) applyProgress(payload); })
-      // 轮询只是锦上添花，失败不能影响真正的加载流程。
-      .catch(() => {});
-  };
-  poll();
-  progressTimer = window.setInterval(poll, PROGRESS_INTERVAL);
-}
-
-function stopProgressPolling() {
-  window.clearInterval(progressTimer);
-  progressTimer = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -953,104 +629,60 @@ async function fetchWithProgress(url, { signal, onProgress } = {}) {
   return merged;
 }
 
-/** 把背景图字节解码、暗化后交给 WASM 合成。 */
-async function applyBackgroundBytes(bytes) {
-  const bitmap = await createImageBitmap(new Blob([bytes]));
-  if (backgroundBitmap) backgroundBitmap.close();
-  backgroundBitmap = bitmap;
-  paintBackground();
+// ---------------------------------------------------------------------------
+// 会话与音频输出
+// ---------------------------------------------------------------------------
+
+/** 会话重建（加载、切 Mod）后同步时长与时间轴换算基准。 */
+function applySessionMetrics() {
+  state.duration = Math.max(1, session.durationMs());
+  absoluteStart = session.absoluteStartMs();
 }
 
-async function loadBackground(value, { signal } = {}) {
-  try {
-    const bytes = await fetchWithProgress(`/resource/background?bid=${encodeURIComponent(value)}`, {
-      signal,
-      onProgress: ({ received, total }) => reportMediaProgress({ name: 'background', received, total }),
-    });
-    await applyBackgroundBytes(bytes);
-  } finally {
-    // 失败也要注销，否则进度条会一直等着一个永远不会到的资源。
-    reportMediaProgress({ name: 'background', done: true });
-  }
-}
-
-/** 把背景按当前画布尺寸解码、暗化后交给 WASM 合成。 */
-function paintBackground() {
-  if (!session || !backgroundBitmap) return;
-  const decoder = document.createElement('canvas');
-  decoder.width = session.width();
-  decoder.height = session.height();
-  const decoderContext = decoder.getContext('2d', { willReadFrequently: true });
-  decoderContext.drawImage(backgroundBitmap, 0, 0, decoder.width, decoder.height);
-  const rgba = decoderContext.getImageData(0, 0, decoder.width, decoder.height).data;
-  const brightness = 1 - BACKGROUND_DIM;
-  for (let index = 0; index < rgba.length; index += 4) {
-    rgba[index] = Math.round(rgba[index] * brightness);
-    rgba[index + 1] = Math.round(rgba[index + 1] * brightness);
-    rgba[index + 2] = Math.round(rgba[index + 2] * brightness);
-  }
-  session.set_background_rgba(decoder.width, decoder.height, rgba);
+/** 数字模式 → `hitsoundDefaults` 的模式 key。 */
+function modeKeyOf(mode) {
+  return MODE_KEYS[Number(mode) | 0] ?? 'standard';
 }
 
 /**
- * 把音频字节挂到音频元素上并等待元数据。
+ * 读取共享配置里该模式「是否启用打击音」与「是否使用谱面自带音效」的默认值。
  *
- * 用 blob URL 而不是直接给 `audio.src` 指向接口：blob 已经在你机器上，
- * 之后反复 seek 不会每次再向服务器要一遍几 MiB（尤其是播放页的倒带）。
- * 代价是要先下完才能播，所以调用方把它放在关键路径之外。
+ * 走 WASM 转出的 `hitsoundDefaults`（内部来自 `assets/shared_config.yml`），
+ * 读不到就沿用前端常量，保证页面仍能正常工作。**必须在会话创建之前调用**：
+ * 「是否使用谱面自带音效」决定 WASM 装载哪些样本，创建之后改不了。
+ *
+ * 音量**不**取配置里的值：CLI 输出视频时背景音乐与打击音都是满音量（100%），
+ * 而网页的音乐默认是 [`DEFAULT_VOLUME`]（50%），打击音跟着取同一个刻度听感才平衡，
+ * 因此这里保持 [`DEFAULT_HITSOUND_VOLUME`]，只同步开关。
  */
-async function applyAudioBytes(bytes) {
-  if (!bytes.byteLength) throw new Error('音频资源为空');
-  const blob = new Blob([bytes]);
-  releaseAudioUrl();
-  audioObjectUrl = URL.createObjectURL(blob);
-  audio.src = audioObjectUrl;
-  resetAudioClock();
-  audio.load();
-  await new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      cleanup();
-      reject(new Error('音频元数据加载超时'));
-    }, AUDIO_METADATA_TIMEOUT);
-    const ready = () => { cleanup(); resolve(); };
-    const failed = () => { cleanup(); reject(new Error(audio.error?.message || '音频无法解码或播放')); };
-    const cleanup = () => {
-      window.clearTimeout(timer);
-      audio.removeEventListener('loadedmetadata', ready);
-      audio.removeEventListener('canplay', ready);
-      audio.removeEventListener('error', failed);
-    };
-    audio.addEventListener('loadedmetadata', ready, { once: true });
-    audio.addEventListener('canplay', ready, { once: true });
-    audio.addEventListener('error', failed, { once: true });
-  });
-}
-
-/** 从后端下载音频（带字节进度）并挂到音频元素上。 */
-async function loadAudioBlob(value, { signal } = {}) {
-  let bytes;
+function applyHitsoundDefaults(wasm, mode) {
+  let defaults = null;
   try {
-    bytes = await fetchWithProgress(`/resource/audio?bid=${encodeURIComponent(value)}`, {
-      signal,
-      onProgress: ({ received, total }) => reportMediaProgress({ name: 'audio', received, total }),
-    });
-  } finally {
-    reportMediaProgress({ name: 'audio', done: true });
+    defaults = wasm.hitsoundDefaults?.(mode) ?? null;
+  } catch (error) {
+    logPlay(`打击音默认配置读取失败：${errorText(error)}`);
   }
-  await applyAudioBytes(bytes);
+  if (!defaults) return;
+  state.hitsound = Boolean(defaults.enabled);
+  // 旧版 wasm 没有这个字段：缺省按「启用谱面自带音效」处理（与配置默认值一致）。
+  state.hitsoundBeatmap = defaults.beatmapEnabled !== false;
 }
 
-function releaseAudioUrl() {
-  if (!audioObjectUrl) return;
-  URL.revokeObjectURL(audioObjectUrl);
-  audioObjectUrl = null;
+/** 释放音频输出与它的 AudioContext，音频线程不残留。 */
+function releaseAudioOutput() {
+  if (!audioOutput) return;
+  audioOutput.setPlaying(false);
+  audioOutput.close();
+  audioOutput.context?.close().catch(() => {});
+  audioOutput = null;
 }
 
-/** 会话重建（加载、切 Mod、切分辨率）后同步时长与时间轴换算基准。 */
-function applySessionMetrics() {
-  state.duration = Math.max(1, session.duration_ms_number());
-  absoluteStart = session.absolute_start_ms_number();
-  beatmapSpeed = session.beatmap_speed_number();
+/** 会话整体释放（换谱面、退回加载页）。 */
+function teardownSession() {
+  releaseAudioOutput();
+  session = null;
+  state.rendered = false;
+  state.renderError = '';
 }
 
 // ---------------------------------------------------------------------------
@@ -1097,348 +729,14 @@ export function attachStage({ viewport, canvas }) {
 }
 
 // ---------------------------------------------------------------------------
-// 打击音
-// ---------------------------------------------------------------------------
-
-/**
- * 当前谱面时间（谱面绝对时间，毫秒）。
- *
- * 打击音的事件时间轴是「谱面时间」，而画面用的是「游戏时间（0 = 首个物件）」，
- * 两者相差 `absoluteStart`；换算只在这里做一次。
- */
-function chartTimeMs() {
-  return absoluteStart + (Number.isFinite(state.position) ? state.position : 0);
-}
-
-/** 释放打击音输出；切谱面、退回加载页、关闭开关都走这里。 */
-function releaseHitsound() {
-  hitsoundGeneration += 1;
-  if (!hitsoundPlayer) return;
-  hitsoundPlayer.setPlaying(false);
-  hitsoundPlayer.close();
-  // AudioContext 由播放器持有，这里一并关闭，避免每次换谱面都留下一个音频线程。
-  hitsoundPlayer.context?.close().catch(() => {});
-  hitsoundPlayer = null;
-}
-
-/** 丢弃当前谱面的自带音效清单；换谱面时调用，避免命中上一张谱面的样本。 */
-function releaseBeatmapSamples() {
-  beatmapSampleIndex = new Map();
-  beatmapSampleHits = 0;
-  state.hitsoundBeatmapLoaded = 0;
-  // 本地音效的 blob URL 只服务这一次加载，一起回收，避免内存越攒越多。
-  for (const url of localObjectUrls) URL.revokeObjectURL(url);
-  localObjectUrls.length = 0;
-  localSamples = [];
-}
-
-/**
- * 音效只能跟随 HTML 音频的真实播放状态。
- *
- * 页面进入播放态并不代表音乐已经出声：自动播放可能被拦截，音频也可能仍在
- * seek 或缓冲。此时若让 AudioWorklet 继续消费环形缓冲，音效会先跑掉，音乐
- * 开始后两条时间线就不再重合。
- */
-function syncHitsoundPlayback({ seek = false } = {}) {
-  if (!hitsoundPlayer) return;
-  const shouldPlay = state.playing
-    && !audio.paused
-    && !audioEnded
-    && !audioSeekPending
-    && absoluteTime() >= 0;
-  hitsoundPlayer.setPlaying(shouldPlay);
-  if (shouldPlay && seek) {
-    hitsoundPlayer.seekGameTime(state.position, { seekMixer: true });
-    updateHitsound();
-  }
-}
-
-/**
- * 按当前设置建立打击音输出并加载样本。
- *
- * WASM 只负责「什么时候响、多大声」，这里只做两件事：把解码好的 PCM 送进 WASM，
- * 以及把音频线程接到 WASM 的混音输出上。任何一步失败都退化成「只有音乐」。
- *
- * 采样率必须先用真实的 `AudioContext` 拿到，再交给 WASM 混音，否则输出会被设备
- * 按错误速率消费，听起来就是走音 + 音画不同步。
- */
-async function setupHitsound(token, { seekToCurrent = false } = {}) {
-  if (!session || !state.hitsound) return;
-  const generation = hitsoundGeneration;
-  const names = session.hitsoundRequiredNames();
-  if (!names.length) {
-    state.hitsoundStatus = '本谱面没有需要播放的打击音';
-    return;
-  }
-  state.hitsoundStatus = '加载打击音...';
-  // 谱面自带音效的清单先取回来：拿不到就只用内嵌皮肤，不影响其它音效。
-  beatmapSampleHits = 0;
-  await loadBeatmapSampleIndex(token);
-  if (token !== loadToken || generation !== hitsoundGeneration) return;
-
-  const context = await createHitsoundContext(HITSOUND_WORKLET_URL);
-  if (!context) {
-    state.hitsoundStatus = '当前浏览器不支持打击音（需要 AudioWorklet 与 SharedArrayBuffer）';
-    logPlay('打击音不可用：AudioWorklet 或 SharedArrayBuffer 缺失，将继续只播放音乐');
-    return;
-  }
-  if (token !== loadToken || generation !== hitsoundGeneration) {
-    await context.close().catch(() => {});
-    return;
-  }
-
-  try {
-    session.enableHitsound(state.hitsoundVolume, context.sampleRate);
-  } catch (error) {
-    await context.close().catch(() => {});
-    state.hitsoundStatus = `打击音启用失败：${errorText(error)}`;
-    return;
-  }
-
-  const player = createHitsoundOutput({ session, context, absoluteStart });
-  if (!player) {
-    session.disableHitsound();
-    await context.close().catch(() => {});
-    state.hitsoundStatus = '当前浏览器不支持打击音（AudioWorklet 节点创建失败）';
-    return;
-  }
-  hitsoundPlayer = player;
-  hitsoundUnderrunLogged = false;
-  player.setRate(playbackRate());
-  // 样本尚未加载完成前禁止 Worklet 消费；否则播放页可能先推进音效时间轴，
-  // 待解码完成后才开始的声音就会与音乐错位。
-  player.setPlaying(false);
-  if (seekToCurrent) player.seekGameTime(state.position, { seekMixer: true });
-
-  const loaded = await loadHitsoundSamples({
-    player,
-    names,
-    readAsset: readHitsoundAsset,
-  });
-  if (token !== loadToken || generation !== hitsoundGeneration) {
-    // 已经切到别的谱面：这里建立的输出属于旧会话，关掉即可。
-    if (hitsoundPlayer === player) {
-      releaseHitsound();
-    } else {
-      player.setPlaying(false);
-      player.close();
-      if (player.context) await player.context.close().catch(() => {});
-    }
-    return;
-  }
-  state.hitsoundLoaded = loaded;
-  state.hitsoundBeatmapLoaded = beatmapSampleHits;
-  if (loaded === 0) {
-    state.hitsoundStatus = '打击音资源不可用，已静音';
-    logPlay('打击音资源全部加载失败，已按静音处理');
-  } else {
-    state.hitsoundStatus = hitsoundStatusText(loaded);
-    if (beatmapSampleHits > 0) logPlay(`打击音：${beatmapSampleHits} 个来自谱面自带音效`);
-  }
-  // 解码期间音频可能已经前进；重建时间轴后始终从当前真实位置重新开始预读。
-  player.seekGameTime(state.position, { seekMixer: true });
-  syncHitsoundPlayback({ seek: true });
-  // 初次加载可能在用户激活结束后才创建 AudioContext；保留手势监听，
-  // 让用户下一次点击可以恢复这个独立上下文。
-  if (player.context.state !== 'running') addGestureHints();
-}
-
-/**
- * 取回一个打击音样本的字节。
- *
- * 优先用谱面自带的同名条目（后端从 OSZ 里解出来的），取不到再回落到 WASM 内嵌皮肤：
- * 谱面自定义的音效应当盖过默认音色，与 CLI 导出的优先级一致。允许返回 Promise——
- * 谱面音效要走网络，内嵌资源仍是同步的。
- */
-async function readHitsoundAsset(name) {
-  const url = beatmapSampleIndex.get(String(name).toLowerCase());
-  if (url) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) {
-        beatmapSampleHits += 1;
-        return new Uint8Array(await response.arrayBuffer());
-      }
-      logPlay(`谱面音效读取失败（${name}）：HTTP ${response.status}`);
-    } catch (error) {
-      // 单个样本取不到只影响这一个音效，仍然回退到内嵌皮肤。
-      logPlay(`谱面音效读取失败（${name}）：${errorText(error)}`);
-    }
-  }
-  try {
-    return wasmModule?.hitsoundAsset?.(name) ?? null;
-  } catch (error) {
-    logPlay(`打击音资源读取失败（${name}）：${errorText(error)}`);
-    return null;
-  }
-}
-
-/**
- * 取回当前谱面的自带打击音清单并建立查找表。
- *
- * 配置关闭（`ENABLE_BEATMAP_HITSOUND: false`）或清单请求失败时都退化成「只用内嵌皮肤」：
- * 谱面音效是增强项，不能因为它拿不到就让整套打击音不可用。
- */
-async function loadBeatmapSampleIndex(token) {
-  beatmapSampleIndex = new Map();
-  if (!state.hitsoundBeatmap) return;
-  if (localFile) {
-    // 本地 .osz 的自带音效在解包时已经转成 blob URL，直接建立查找表，
-    // 不需要（也没有）后端的 /resource/samples 接口。
-    beatmapSampleIndex = createBeatmapSampleIndex(localSamples);
-    return;
-  }
-  const bid = state.bid.trim();
-  if (!bid) return;
-  try {
-    const response = await fetch(`/resource/samples?bid=${encodeURIComponent(bid)}`);
-    if (!response.ok) throw new Error(await response.text());
-    const payload = await response.json();
-    if (token !== loadToken) return;
-    beatmapSampleIndex = createBeatmapSampleIndex(
-      (payload?.samples ?? []).map((name) => ({
-        name,
-        url: `/resource/sample?bid=${encodeURIComponent(bid)}&name=${encodeURIComponent(name)}`,
-      })),
-    );
-  } catch (error) {
-    if (token !== loadToken) return;
-    logPlay(`谱面自带音效清单读取失败，将只用内嵌音效：${errorText(error)}`);
-  }
-}
-
-/** 打击音状态文案；带上谱面自带音效的数量，便于确认配置有没有生效。 */
-function hitsoundStatusText(loaded) {
-  return beatmapSampleHits > 0
-    ? `已加载 ${loaded} 个音效（${beatmapSampleHits} 个来自谱面）`
-    : `已加载 ${loaded} 个音效`;
-}
-
-/**
- * 按新的会话状态重新加载打击音样本。
- *
- * 切 Mod / 转谱会改变目标模式，需要的音效集合也随之变化（例如 Standard→Mania、
- * 或 Taiko 的音量分档）。这里复用同一个音频输出与已取回的谱面音效清单，只替换
- * WASM 里的样本。
- */
-async function reloadHitsoundSamples(token) {
-  if (!hitsoundPlayer || !session || !state.hitsound) return;
-  const generation = ++hitsoundGeneration;
-  const names = session.hitsoundRequiredNames();
-  hitsoundPlayer.setPlaying(false);
-  hitsoundPlayer.resetSamples();
-  hitsoundPlayer.seekGameTime(state.position, { seekMixer: true });
-  beatmapSampleHits = 0;
-  const loaded = await loadHitsoundSamples({
-    player: hitsoundPlayer,
-    names,
-    readAsset: readHitsoundAsset,
-  });
-  if (token !== loadToken || generation !== hitsoundGeneration) return;
-  state.hitsoundLoaded = loaded;
-  state.hitsoundBeatmapLoaded = beatmapSampleHits;
-  state.hitsoundStatus = loaded > 0 ? hitsoundStatusText(loaded) : '打击音资源不可用，已静音';
-  syncHitsoundPlayback({ seek: true });
-}
-
-/**
- * 推进打击音：把当前位置告诉 WASM，并补齐音频线程要播的缓冲。
- *
- * 每帧调用一次。WASM 内部按这个位置推进事件时间轴，因此画面与声音始终用同一份
- * 位置数据，不存在两处时钟互相追的问题。
- */
-function updateHitsound() {
-  if (!hitsoundPlayer || !state.playing || !hitsoundPlayer.active) return;
-  const chartTime = chartTimeMs();
-  hitsoundPlayer.ensureBuffered(chartTime);
-  if (hitsoundPlayer.context.state === 'suspended') {
-    // 自动播放策略：等用户手势；这里只发起恢复，失败不影响画面。
-    hitsoundPlayer.context.resume().catch(() => {});
-  }
-  // 音频线程读到静音说明主线程没跟上混音，音效会断续。只提示一次：这条日志是排查
-  // 「打击音时有时无」最直接的线索，但持续刷屏没有意义。
-  if (!hitsoundUnderrunLogged && hitsoundPlayer.underrunFrames >= HITSOUND_UNDERRUN_ALERT_FRAMES) {
-    hitsoundUnderrunLogged = true;
-    logPlay('打击音缓冲跟不上播放，音效可能断续。');
-  }
-}
-
-/** 切换是否启用打击音。 */
-export function setHitsoundEnabled(value) {
-  state.hitsound = Boolean(value);
-  if (!state.hitsound) {
-    session?.disableHitsound();
-    releaseHitsound();
-    state.hitsoundStatus = '已关闭';
-    return;
-  }
-  if (!session) return;
-  try {
-    session.enableHitsound(state.hitsoundVolume, hitsoundSampleRate());
-  } catch (error) {
-    state.hitsound = false;
-    state.hitsoundStatus = `打击音启用失败：${errorText(error)}`;
-    return;
-  }
-  const token = loadToken;
-  void setupHitsound(token, { seekToCurrent: true }).catch((error) => {
-    state.hitsoundStatus = `打击音启用失败：${errorText(error)}`;
-    logPlay(state.hitsoundStatus);
-  });
-}
-
-/**
- * 更新打击音音量（0–100）。
- *
- * 只写 WASM 的混音增益，不重建会话、不重新加载样本，滑动过程中即时生效。
- */
-export function setHitsoundVolume(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return;
-  state.hitsoundVolume = Math.min(100, Math.max(0, Math.round(number)));
-  try {
-    session?.setHitsoundVolume(state.hitsoundVolume);
-  } catch (error) {
-    logPlay(`打击音音量设置失败：${errorText(error)}`);
-  }
-}
-
-/** 会话音频设备采样率；还没建立输出时用 48kHz（WASM 默认值）。 */
-function hitsoundSampleRate() {
-  return hitsoundPlayer?.sampleRate ?? session?.hitsoundSampleRate() ?? 48000;
-}
-
-/**
- * 读取共享配置里该模式「是否启用打击音」与「是否使用谱面自带音效」的默认值。
- *
- * 走 WASM 转出的 `hitsoundDefaults`（内部来自 `assets/shared_config.yml`），
- * 读不到就沿用前端常量，保证页面仍能正常工作。
- *
- * 音量**不**取配置里的值：CLI 输出视频时背景音乐与打击音都是满音量（100%），
- * 而网页的音乐默认是 [`DEFAULT_VOLUME`]（50%），打击音跟着取同一个刻度听感才平衡，
- * 因此这里保持 [`DEFAULT_HITSOUND_VOLUME`]，只同步开关。
- */
-function applyHitsoundDefaults(wasm, mode) {
-  let defaults = null;
-  try {
-    defaults = wasm.hitsoundDefaults?.(mode) ?? null;
-  } catch (error) {
-    logPlay(`打击音默认配置读取失败：${errorText(error)}`);
-  }
-  if (!defaults) return;
-  state.hitsound = Boolean(defaults.enabled);
-  // 旧版 wasm 没有这个字段：缺省按「启用谱面自带音效」处理（与配置默认值一致）。
-  state.hitsoundBeatmap = defaults.beatmapEnabled !== false;
-}
-
-// ---------------------------------------------------------------------------
 // 渲染与播放
 // ---------------------------------------------------------------------------
 
+/** 按 WASM 内部时钟渲染一帧（时钟由会话维护，宿主不再算时间）。 */
 function render() {
   if (!session) return;
   try {
-    session.render_number(absoluteTime());
+    session.renderFrame();
     state.rendered = true;
     state.renderError = '';
   } catch (error) {
@@ -1448,299 +746,54 @@ function render() {
   }
 }
 
-/**
- * 把进度换算成音频时间。
- *
- * 这里是移动端音画不同步的关键：`currentTime` 的赋值是异步 seek，手机上真正落地
- * 可能要好几秒，期间音频还在从旧位置出声。所以
- *   1. 只在「确实需要挪动」时才 seek；
- *   2. seek 期间冻结画面时钟（audioSeekPending），让画面等音频而不是反过来；
- *   3. seek 完成后由 tick 里的对齐逻辑接管（见 syncClockFromAudio）。
- *
- * 注意：没有任何「目标进度」状态需要记录。音频元素自己的 currentTime 就是唯一事实，
- * 额外再维护一份副本只会与它走散（曾经就因为拿副本和实时进度比，导致画面被永久冻结）。
- */
-function syncAudioToPosition({ resume = false } = {}) {
-  const time = absoluteTime();
-  audioEnded = false;
-  if (time < 0) {
-    // 谱面开始前的静音段：直接停在 0，等真正进入正片再开始播。
-    audio.pause();
-    if (Number.isFinite(audio.duration)) audio.currentTime = 0;
-    return;
-  }
-  const target = Math.min(time, Number.isFinite(audio.duration) ? audio.duration * 1000 : time);
-  seekAudioTo(target, { resume });
+/** 把画面进度从会话时钟同步过来（时钟是唯一时间权威）。 */
+function syncPositionFromClock() {
+  const position = session.clockMs() - absoluteStart;
+  state.position = Math.min(state.duration, Math.max(0, position));
 }
 
 /**
- * 请求音频 seek 到指定进度。
+ * 让音频输出跟上播放状态。
  *
- * 用 seeked 事件而不是「设完就当完成」：手机上一次 seek 会重新缓冲，只有事件到了
- * 才知道新位置真的生效；期间画面冻结，结束后按需要对上播放状态。
- *
- * 已经在目标附近时什么都不做——播放、恢复、切 mod 都会调用到这里，真去 seek 的话
- * 手机上每按一次「启用/禁用」都会卡一下声音。
+ * 声音只在「画面在播 + AudioContext 在跑」时输出：上下文被自动播放策略挂起时
+ * 环形缓冲照常预混（时钟继续走），恢复后从画面位置接上，不会把暂停期间的声音补播出来。
  */
-function seekAudioTo(targetMs, { resume = false } = {}) {
-  const durationMs = Number.isFinite(audio.duration) ? audio.duration * 1000 : targetMs;
-  const clamped = Math.min(Math.max(0, targetMs), durationMs);
-  // 已经贴近目标：不 seek。正常播放时才不会为了几十毫秒的差距反复卡声音。
-  if (Math.abs(audio.currentTime * 1000 - clamped) <= AUDIO_RESYNC_THRESHOLD) {
-    if (resume && state.playing) startAudio();
-    return;
-  }
-  // 已经有 seek 在飞时保留最新目标；拖动进度条会连续触发 input，不能把最后一次
-  // 位置丢掉。当前 seek 完成后会递归应用这个目标。
-  if (audioSeekPending) {
-    pendingAudioSeek = { target: clamped, resume };
-    return;
-  }
-  // 还没拿到元数据时无法 seek，等 loadedmetadata 后由现有时钟对齐逻辑重试。
-  if (!Number.isFinite(audio.duration)) return;
-  audioSeekPending = true;
-  // 先停住再改 currentTime：手机上 seek 要几百毫秒才落地，期间如果继续出声，
-  // 听到的还是旧位置，而画面已经冻在新位置——那就是「声音和画面对不上」。
-  audio.pause();
-  audio.currentTime = clamped / 1000;
-  hitsoundPlayer?.setPlaying(false);
-  waitForAudioSeek().then(() => {
-    const queued = pendingAudioSeek;
-    pendingAudioSeek = null;
-    audioSeekPending = false;
-    if (queued) {
-      seekAudioTo(queued.target, { resume: queued.resume });
-      audioPlayWhenSeeked = false;
-      return;
+function syncAudioOutput() {
+  if (!audioOutput) return;
+  const context = audioOutput.context;
+  const running = context.state === 'running';
+  const shouldPlay = state.playing && running;
+  audioOutput.setPlaying(shouldPlay);
+  // 「声音没出来」只看上下文是否在跑：恢复后角标必须自己归位。
+  state.audioBlocked = state.playing && !running;
+  if (state.playing && !running) {
+    // 自动播放策略：恢复只能发生在用户手势里（handleUserGesture），这里只是幂等重试。
+    context.resume().catch(() => {});
+    if (!audioBlockLogged) {
+      audioBlockLogged = true;
+      logPlay('浏览器拦截了自动播放，点一下画面或按任意键即可播放声音。');
     }
-    // 期间可能已经被暂停（切分辨率、退回加载页），那就不要擅自出声。
-    if ((resume || audioPlayWhenSeeked) && state.playing) startAudio();
-    audioPlayWhenSeeked = false;
-  }).catch(() => {
-    // 兜底：任何异常都不能把 audioSeekPending 留在 true，否则画面会永久冻结。
-    audioSeekPending = false;
-  });
-}
-
-/** 等到 seek 真正落地（或超时放行）。 */
-function waitForAudioSeek(timeout = AUDIO_SEEK_TIMEOUT) {
-  return new Promise((resolve) => {
-    const done = () => {
-      window.clearTimeout(timer);
-      audio.removeEventListener('seeked', done);
-      resolve();
-    };
-    const timer = window.setTimeout(done, timeout);
-    audio.addEventListener('seeked', done, { once: true });
-  });
-}
-
-/** 重新加载音频资源后清掉 seek 状态。 */
-function resetAudioClock() {
-  audioSeekPending = false;
-  pendingAudioSeek = null;
-  audioPlayWhenSeeked = false;
-}
-
-/**
- * 用音频时钟校正画面进度。
- *
- * 唯一事实是音频元素自己的 `currentTime`（不再维护副本，副本会与它走散）。
- * 差距小：画面贴住音频；差距大：宁可重新 seek 一次也不要长期错位。
- *
- * 调用方只在「seek 没在飞、音频也没暂停」时才进来，所以这里不会和 seek 抢状态。
- */
-function syncClockFromAudio() {
-  const audioPosition = audio.currentTime * 1000 - absoluteStart;
-  if (!Number.isFinite(audioPosition)) return;
-  if (Math.abs(audioPosition - state.position) > AUDIO_RESYNC_MAX_WAIT) {
-    // 已经走散太多：重新 seek，并冻结画面等它落地。
-    seekAudioTo(absoluteTime(), { resume: true });
-    return;
   }
-  state.position = Math.min(state.duration, Math.max(0, audioPosition));
-}
-
-/** 记录音频「已经出声」：清掉静音状态与提示，之后失败也不会再重复写日志。 */
-function markAudioAudible() {
-  state.audioBlocked = false;
-  audioBlockLogged = false;
+  if (running) audioBlockLogged = false;
 }
 
 /**
- * 恢复打击音的独立 AudioContext。
+ * 补足音频缓冲并做欠载诊断：每帧调用一次。
  *
- * HTMLAudioElement 与 AudioContext 的自动播放权限相互独立：前者已经出声时，
- * Worklet 仍可能停在 suspended。这里统一做一次幂等恢复，失败只代表还需要下一次
- * 用户手势，不影响音乐播放。
+ * WASM 内部决定「混到哪、混多少」并把结果直接给出，宿主只负责写进环形缓冲。
  */
-function resumeHitsoundContext() {
-  const context = hitsoundPlayer?.context;
-  if (!context || context.state === 'running' || typeof context.resume !== 'function') {
-    return Promise.resolve(true);
-  }
-  return context.resume()
-    .then(() => context.state === 'running')
-    .catch(() => false);
-}
-
-/**
- * 请求播放音频。
- *
- * 播到结尾、暂停或 seek 都会让上一次尚未落地的 play() 被 pause() 打断，
- * 此时浏览器会抛 AbortError。这属于正常流程，只有真正播不出来才写日志。
- *
- * 返回值告诉手势恢复逻辑这次请求的结果：`{ rejected, blocked }`，
- * `blocked` 专指被自动播放策略拒绝。
- */
-function requestAudioPlay() {
-  if (!audio.src) return Promise.resolve({ rejected: false, blocked: false });
-  // 同一时刻只留一个未落地的 play()：并行请求只会互相打断并抛 AbortError。
-  if (pendingAudioRequest) return pendingAudioRequest;
-  lastAudioStartAttempt = performance.now();
-  let request;
-  try {
-    request = audio.play();
-  } catch (error) {
-    return Promise.resolve({ rejected: true, blocked: false, error });
-  }
-  if (!request) return Promise.resolve({ rejected: false, blocked: false });
-  const guarded = request.then(
-    () => ({ rejected: false, blocked: false }),
-    (error) => {
-      // 暂停、seek 或新的 seek 打断 play() 都属于正常流程：只有画面还在播时才算真正的失败。
-      if (!state.playing || error?.name === 'AbortError' || audioSeekPending) {
-        return { rejected: false, blocked: false };
-      }
-      const blocked = error?.name === 'NotAllowedError';
-      if (blocked) {
-        // 自动播放策略一旦拒绝就会一直拒绝，所以只写一次日志并提示用户点一下。
-        state.audioBlocked = true;
-        if (!audioBlockLogged) {
-          audioBlockLogged = true;
-          logPlay('浏览器拦截了自动播放，点一下画面或按任意键即可播放声音。');
-        }
-        return { rejected: true, blocked: true };
-      }
-      if (!audioBlockLogged) {
-        audioBlockLogged = true;
-        logPlay(`音频播放失败，继续播放画面：${errorText(error)}`);
-      }
-      return { rejected: true, blocked: false };
-    },
-  );
-  pendingAudioRequest = guarded.finally(() => { pendingAudioRequest = null; });
-  return pendingAudioRequest;
-}
-
-/** 画面时间可用时请求播放音频；seek 到 0 之前或已经播完则不必请求。 */
-function startAudio() {
-  if (absoluteTime() < 0 || audioEnded) return Promise.resolve(false);
-  return Promise.all([requestAudioPlay(), resumeHitsoundContext()]).then(([{ rejected }, hitsoundRunning]) => {
-    // 某些浏览器已经把 play() Promise resolve，但不会再派发新的 playing 事件；
-    // 这里显式接通音效，避免初次加载时音效一直停在等待状态。
-    if (!rejected && hitsoundRunning && !audio.paused && state.playing) {
-      syncHitsoundPlayback({ seek: true });
-      return true;
-    }
-    return false;
-  });
-}
-
-/**
- * 在用户手势里恢复音频。
- *
- * 自动播放被拦下后，只有用户激活（指针 / 触摸 / 键盘）里的 play() 才会被放行，
- * 定时器里的重试永远会被拒。手势恢复成功时记下时刻，让紧随其后的 click 不要
- * 顺手把画面暂停掉。
- */
-function resumeAudioFromGesture() {
-  if (!state.playing) return Promise.resolve(false);
-  // 即使音乐已经在播放，也必须在用户手势里恢复独立 AudioContext；否则只有
-  // 再次切换开关才会创建一个恰好处于 running 的上下文，音效就会显得微弱或消失。
-  return Promise.all([requestAudioPlay(), resumeHitsoundContext()]).then(([{ rejected }, hitsoundRunning]) => {
-    // play() 被拒绝也可能只是又被 pause() 打断，真正算数的是音频是否已经在响。
-    if (rejected || audio.paused || !hitsoundRunning) return false;
-    markAudioAudible();
-    syncHitsoundPlayback({ seek: true });
-    audioResumedAt = performance.now();
-    return true;
-  });
-}
-
-/**
- * 首次真实输入（指针 / 触摸 / 键盘）时恢复音频。
- *
- * 用捕获阶段监听：手势必须在事件处理的最前面把 play() 发出去，才能算「由用户
- * 激活触发的播放」，后面的 click 也来不及把这次激活用掉。
- */
-function handleUserGesture() {
-  if (!state.playing || audio.ended) return;
-  // AudioContext 的恢复与 HTML 音频播放是两条独立权限链；即使 HTML 音频已经在播，
-  // 也要消费这次手势来恢复 Worklet。
-  resumeAudioFromGesture().then((resumed) => {
-    // 恢复成功就解除监听：音频回到暂停只可能是用户自己按的暂停，
-    // 那时再自动重播会对着干。
-    if (resumed) removeGestureHints();
-  });
-}
-
-function addGestureHints() {
-  for (const type of GESTURE_EVENTS) window.addEventListener(type, handleUserGesture, { capture: true, passive: true });
-}
-
-function removeGestureHints() {
-  for (const type of GESTURE_EVENTS) window.removeEventListener(type, handleUserGesture, { capture: true });
-}
-
-/**
- * 把画面进度对齐到音频当前所在的位置。
- *
- * 暂停时必须做这一步：`state.position` 是上一次 rAF 时更新的，而 `audio.pause()`
- * 是立即生效的，两者最多差一个渲染帧；如果暂停时不对齐，恢复播放时时钟一交回
- * 音频，画面就会往回跳一帧（就是「暂停再播放跳帧」）。
- *
- * 只用「离当前进度 80ms 以内」的读数：seek 途中或两边已经错位时，音频的瞬时值
- * 不可信（比如刚拖完进度条、或手势恢复后又被这次点击暂停），宁可不动。
- */
-function alignPositionToAudio() {
-  if (audioSeekPending || !Number.isFinite(audio.duration)) return;
-  const audioPosition = audio.currentTime * 1000 - absoluteStart;
-  if (!Number.isFinite(audioPosition) || Math.abs(audioPosition - state.position) > PAUSE_ALIGN_TOLERANCE) return;
-  state.position = Math.min(state.duration, Math.max(0, audioPosition));
-}
-
-function playState(next) {
-  state.playing = next;
-  lastTick = 0;
-  lastRenderTime = 0;
-  hasRenderedFrame = false;
-  cancelAnimationFrame(animation);
-  audio.playbackRate = playbackRate();
-  // 打击音跟着播放状态走：暂停时停止消费环形缓冲，位置保持不变，恢复时不会补播
-  // 暂停期间「本该响」的声音。
-  if (next) {
-    syncAudioToPosition();
-    // 恢复播放时也对齐一次：暂停期间画面可能因为标签页/主线程节流而落后于音频，
-    // 不对齐的话恢复瞬间会先跳一下再被音频时钟拉回来。
-    alignPositionToAudio();
-    startAudio();
-    // 重新开始时把打击音位置也对到当前位置（暂停期间的 seek 可能已经改过它）。
-    syncHitsoundPlayback({ seek: true });
-    updateHitsound();
-    animation = requestAnimationFrame(tick);
-  } else {
-    // 先把进度钉在音频当下所在的位置再暂停，恢复时才不会跳回上一帧。
-    const before = state.position;
-    alignPositionToAudio();
-    audio.pause();
-    syncHitsoundPlayback();
-    // 定格的那一帧要和音频停下的位置一致，否则暂停画面本身就是旧的一帧。
-    if (before !== state.position) render();
+function updateAudio() {
+  if (!audioOutput || !state.playing) return;
+  audioOutput.ensureBuffered();
+  // 音频线程读到静音说明主线程没跟上混音，声音会断续。只提示一次：这条日志是排查
+  // 「音效时有时无」最直接的线索，但持续刷屏没有意义。
+  if (audioOutput.underrunFrames >= AUDIO_UNDERRUN_ALERT_FRAMES) {
+    audioOutput.underrunFrames = 0;
+    logPlay('音频缓冲跟不上播放，声音可能断续。');
   }
 }
 
-/** 播到结尾：停在最后一帧，音频停住，等用户再点播放。 */
+/** 播到结尾：停在最后一帧，等用户再点播放。 */
 function finishPlayback() {
   state.position = state.duration;
   if (state.playing) playState(false);
@@ -1748,43 +801,39 @@ function finishPlayback() {
 
 /** 从结尾重新开始时先把时钟拨回开头，否则第一帧又会判定结束。 */
 function restartPlayback() {
-  state.position = 0;
-  audioEnded = false;
-  syncAudioToPosition();
+  session.seek(absoluteStart);
+  syncPositionFromClock();
   render();
+}
+
+function playState(next) {
+  state.playing = next;
+  lastRenderTime = 0;
+  hasRenderedFrame = false;
+  cancelAnimationFrame(animation);
+  if (!session) return;
+  if (next) {
+    session.play();
+    syncAudioOutput();
+    updateAudio();
+    animation = requestAnimationFrame(tick);
+  } else {
+    // 先把进度钉在时钟当下所在的位置再暂停，恢复时才不会跳回上一帧。
+    session.pause();
+    syncPositionFromClock();
+    syncAudioOutput();
+    render();
+  }
 }
 
 function tick(now) {
   if (!state.playing) return;
-  if (!lastTick) lastTick = now;
-  const delta = now - lastTick;
-  lastTick = now;
+  if (!session) return;
 
-  // seek 还没落地（移动端要几秒）：画面停在原地等，否则等这一下结束时两边已经错开，
-  // 正好是「跳进度条 / 切 mod / 切帧率之后不同步」的来源。
-  if (audioSeekPending || renderPending) {
-    state.position = Math.min(state.duration, Math.max(0, state.position));
-  } else if (absoluteTime() < 0 || audio.paused || audioEnded) {
-    // 音频没在出声（等用户激活、缓冲中、或已经播完）：画面按墙钟继续走。
-    state.position = Math.min(state.duration, state.position + delta * playbackRate());
-    // 音频还在缓冲或等待用户激活时，定期重试播放。
-    //
-    // 自动播放被拦下时这里的重试一定还是会被拒（定时器里没有用户激活），真正的
-    // 恢复靠 handleUserGesture，这里只负责缓冲结束和 seek 之后的自动续播。
-    if (absoluteTime() >= 0 && audio.paused && !audioEnded
-      && now - lastAudioStartAttempt >= AUDIO_RETRY_INTERVAL) {
-      startAudio();
-    }
-  } else {
-    syncClockFromAudio();
-  }
-
-  // 打击音与画面共用上面刚算出的 `state.position`：WASM 按这个位置推进事件时间轴，
-  // 因此不存在两处时钟互相追的问题。
-  // 音频状态变化不一定同步派发事件（例如后台恢复或 seek 超时），每帧再做一次
-  // 幂等校正，确保 Worklet 不会在音乐暂停时继续消费，也不会恢复后一直保持静音。
-  syncHitsoundPlayback();
-  updateHitsound();
+  // 时钟是唯一时间权威：画面、音频、进度条都从这里取值。
+  syncPositionFromClock();
+  syncAudioOutput();
+  updateAudio();
 
   // 始终按显示刷新率推进时钟，但只按所选帧率提交渲染。用目标帧间隔
   // 累加而不是直接用 `now` 覆盖，避免 144Hz 等显示器上 60FPS 被降到 48FPS。
@@ -1813,124 +862,109 @@ function tick(now) {
 /**
  * 加载一份谱面并进入播放页。
  *
- * 关键路径只保留「取谱面 → 建会话 → 拿背景」：背景是画面的一部分，等它是值得的；
- * 音频通常几十 MiB，让它和播放并行下载——想听声音的用户等这几秒，想先看画面的
- * 用户不必等。每个 await 之后都用 loadToken 确认自己还是当前这次加载。
+ * 输入只有一份文件：本地 `.osu` / `.osz` 直接读字节，BID 由后端下载整包。文件进了
+ * WASM 之后，解包、解码、会话建立都在里面完成，因此这里没有「先出画面再补音频」的
+ * 并行阶段。每个 await 之后都用 loadToken 确认自己还是当前这次加载。
  */
 export async function loadPreview() {
   if (state.loading) return;
+  const bid = state.bid.trim();
+  if (!localFile && !/^\d+$/.test(bid)) {
+    logLoad('请输入数字 BID，或选择本地 .osu / .osz 文件');
+    return;
+  }
   state.loadLogs = [];
   state.loading = true;
-  state.info = null;
-  cancelArrowHold();
-  // 上一次加载可能还在后台拉音频/背景：先取消，避免两套请求互相覆盖状态。
   loadAbort?.abort();
-  const controller = new AbortController();
-  loadAbort = controller;
+  loadAbort = new AbortController();
   const token = ++loadToken;
-  const current = () => token === loadToken;
-  resetProgress('osu');
-  state.preparingMedia = false;
+  resetProgress(localFile ? 'transfer' : 'osu');
+  teardownSession();
+  state.hitsoundStatus = '';
   try {
-    const bid = state.bid.trim();
-    if (!localFile && !bid) throw new Error('请输入谱面 BID，或选择本地 .osu / .osz 文件');
-    if (!canvasEl) throw new Error('画布尚未就绪，请刷新页面重试');
-    state.bid = bid;
-    // 上一次会话的打击音输出属于旧谱面：先释放，避免残留的音频线程继续出声。
-    releaseHitsound();
-    releaseBeatmapSamples();
-    // 本地来源与 BID 来源只在「.osu 字节与媒体资源从哪来」上有区别，后续流程完全一致。
-    const isLocal = Boolean(localFile);
-    let media = null;
+    const wasm = await loadWasm();
+    if (token !== loadToken) return;
+
+    // 1. 取一份文件的字节。
     let bytes;
-    let wasm;
-    if (isLocal) {
-      // 文件已经在本地：解包取资源与加载 wasm 并行即可，没有网络等待。
-      [wasm, media] = await Promise.all([loadWasm(), readLocalSource()]);
-      bytes = media.beatmap;
-      localSamples = media.samples;
+    if (localFile) {
+      bytes = localBytes ?? new Uint8Array(await localFile.arrayBuffer());
+      reportProgress({
+        phase: 'transfer',
+        received: bytes.byteLength,
+        total: bytes.byteLength,
+        message: '读取本地文件',
+        source: 'local',
+      });
     } else {
-      [wasm, bytes] = await Promise.all([
-        loadWasm(),
-        fetchBeatmap(bid, { signal: controller.signal }),
-      ]);
+      startProgressPolling(bid);
+      bytes = await fetchFile(bid, { signal: loadAbort.signal });
     }
-    if (!current()) return;
-    state.info = readBeatmapInfo(wasm, bytes);
-    const resolution = RESOLUTIONS[state.resolution];
-    const options = {
+    if (token !== loadToken) return;
+
+    // 2. 难度选择：本地 `.osz` 用下拉选中的条目，BID 按 `BeatmapID` 匹配。
+    const selector = localFile
+      ? (state.localDifficulty ? { difficulty: state.localDifficulty } : {})
+      : { bid };
+    state.info = readBeatmapInfo(wasm, bytes, selector);
+    // 3. 打击音默认值要在创建会话前就位：它决定 WASM 装载哪些样本。
+    applyHitsoundDefaults(wasm, modeKeyOf(state.info?.mode));
+
+    // 4. 音频输出先建好：设备采样率要交给 WASM，混音结果才能直接播放。
+    const audioContext = await createAudioContext(AUDIO_WORKLET_URL);
+    if (token !== loadToken) {
+      await audioContext?.close().catch(() => {});
+      return;
+    }
+
+    // 5. 文件进 WASM：解包、解码、混音、时钟都在里面。
+    state.status = '准备会话...';
+    const { width, height } = RESOLUTIONS[state.resolution];
+    session = await wasm.WebGpuSession.create(bytes, canvasEl, {
+      ...selector,
       convert: state.convert || undefined,
-      // Mod 只通过播放页的可选控件设置，避免手写 token 与当前模式不匹配。
       mods: [],
-      // WASM 会话和 core 的 RealtimeOptions 都使用这组输出宽高。
-      width: resolution.width,
-      height: resolution.height,
-    };
-    session = await wasm.WebGpuSession.create(bytes, canvasEl, options);
-    if (!current()) return;
+      width,
+      height,
+      sampleRate: audioContext?.sampleRate ?? 48000,
+      hitsoundEnabled: state.hitsound,
+      hitsoundVolume: state.hitsoundVolume,
+      musicVolume: Math.round(state.volume * 100),
+      beatmapHitsound: state.hitsoundBeatmap,
+    });
+    if (token !== loadToken) {
+      await audioContext?.close().catch(() => {});
+      return;
+    }
     appliedMods = [];
     state.mods = [];
     state.renderError = '';
     state.rendered = false;
     state.audioBlocked = false;
     audioBlockLogged = false;
-    audioResumedAt = 0;
-    audioEnded = false;
-    lastAudioStartAttempt = 0;
     applySessionMetrics();
+    session.setRate(userRate());
     state.position = 0;
-    // 打击音开关来自 `assets/shared_config.yml`（由 WASM 转出），与 CLI 同一份默认值；
-    // 音量固定用网页自己的默认值，理由见 applyHitsoundDefaults 的注释。
-    applyHitsoundDefaults(wasm, session.mode());
-    state.hitsoundLoaded = 0;
-    state.hitsoundBeatmapLoaded = 0;
-    state.hitsoundStatus = state.hitsound ? '准备打击音...' : '已关闭';
     state.modeKey = session.mode();
     state.mode = state.modeKey.toUpperCase();
-    state.status = '准备音频与背景...';
+    state.status = hasMusic() ? '就绪' : '无音乐（.osu 单文件）';
+
+    // 6. 接上音频输出；不可用就退化成只有画面。
+    audioOutput = audioContext ? createAudioOutput({ session, context: audioContext }) : null;
+    if (audioContext && !audioOutput) {
+      await audioContext.close().catch(() => {});
+      state.hitsoundStatus = '音频输出不可用（AudioWorklet 节点创建失败）';
+      logPlay('音频输出不可用，将继续只播放画面');
+    } else if (!audioContext) {
+      state.hitsoundStatus = '当前浏览器不支持音频输出（需要 AudioWorklet 与 SharedArrayBuffer）';
+      logPlay('音频输出不可用：AudioWorklet 或 SharedArrayBuffer 缺失，将继续只播放画面');
+    } else {
+      audioOutput.setRate(session.rate());
+      state.hitsoundStatus = state.hitsound ? '已启用' : '已关闭';
+    }
 
     canvasEl.width = session.width();
     canvasEl.height = session.height();
-    syncAudioToPosition();
-    // 会话已经就绪，先渲染一帧：背景还没到时 composer 会用兜底色，画面不是黑屏。
-    render();
-    // 打击音资源是本地静态文件，和音频/背景并行准备；失败只记日志，不影响播放。
-    const hitsoundLoad = state.hitsound
-      ? setupHitsound(token).catch((error) => {
-        if (!current()) return;
-        state.hitsoundStatus = `打击音准备失败：${errorText(error)}`;
-        logPlay(state.hitsoundStatus);
-      })
-      : Promise.resolve();
-    let audioLoad = Promise.resolve();
-    if (isLocal) {
-      // 本地资源都在内存里：直接挂上（音频 / 静音时钟 / 背景），没有服务端阶段可轮询。
-      await prepareLocalMedia(media);
-      if (current()) logStageBreakdown();
-    } else {
-      // 资源准备通常慢在这里（服务端下载 + 解包），进度阶段由轮询推进到 transfer/media。
-      startProgressPolling(bid);
-      // 音频与背景一起发起，但只等背景：服务端此时已经把两个文件都解出来了。
-      state.preparingMedia = true;
-      const background = loadBackground(bid, { signal: controller.signal });
-      audioLoad = loadAudioBlob(bid, { signal: controller.signal })
-        .then(() => {
-          if (!current()) return;
-          state.status = '就绪';
-          logStageBreakdown();
-        })
-        .catch((error) => {
-          if (!current()) return;
-          state.status = '无音频';
-          logPlay(`音频加载失败，将只播放画面：${errorText(error)}`);
-          logStageBreakdown();
-        })
-        .finally(() => { if (current()) state.preparingMedia = false; });
-      await background.catch((error) => {
-        if (current()) logPlay(`背景加载失败，将使用黑色背景：${errorText(error)}`);
-      });
-    }
-    if (!current()) return;
     state.page = 'play';
     state.sheetOpen = false;
     // 等播放页真正显示出来再量尺寸，否则 clientWidth/Height 还是 0。
@@ -1939,32 +973,84 @@ export async function loadPreview() {
     showTimeline();
     render();
     reportProgress({ phase: 'ready', source: 'local' });
-    // 加载完成后直接进入播放状态并尝试带声音自动播放：已经在页面上点过「加载
-    // 预览」时这次 play() 算用户激活，能直接出声。浏览器若因自动播放策略拒绝，
-    // 画面时钟仍由 requestAnimationFrame 继续推进，并由手势监听等待用户激活
-    // （首次点击 / 触摸 / 按键）后重试播放声音。音频还没下完时 startAudio() 会
-    // 被 play() 的 pending 状态挡住，等元数据事件到达后由 tick 里的重试接手。
+    logStageBreakdown();
+    // 加载完成后直接进入播放状态：已经在页面上点过「加载预览」时这次激活允许出声，
+    // 浏览器若仍按自动播放策略拦下 AudioContext，画面时钟照常推进，并由手势监听
+    // 等待用户激活（首次点击 / 触摸 / 按键）后恢复声音。
     playState(true);
     addGestureHints();
     // 本地文件没有可分享的深链，地址栏保持不变。
-    if (!isLocal) syncUrl();
-    void audioLoad;
-    void hitsoundLoad;
+    if (!localFile) syncUrl();
   } catch (error) {
     // 取消或已经被新的一次加载取代：错误属于旧请求，不该报给用户。
-    if (!current() || error?.name === 'AbortError') return;
+    if (token !== loadToken || error?.name === 'AbortError') return;
     logLoad(error);
   } finally {
     // 被新加载取代或退回了加载页时不能碰 state：那两个入口自己会收拾。
-    if (current()) {
+    if (token === loadToken) {
       stopProgressPolling();
       state.loading = false;
     }
   }
 }
 
+/** 当前来源有没有音乐：`.osz` 与 BID 的整包里都有，单独的 `.osu` 没有。 */
+function hasMusic() {
+  return !(localFile && state.localKind === 'osu');
+}
+
+function startProgressPolling(bid) {
+  stopProgressPolling();
+  const poll = () => {
+    fetch(`/resource/progress?bid=${encodeURIComponent(bid)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => { if (payload) applyProgress(payload); })
+      // 轮询只是锦上添花，失败不能影响真正的加载流程。
+      .catch(() => {});
+  };
+  poll();
+  progressTimer = window.setInterval(poll, PROGRESS_INTERVAL);
+}
+
+function stopProgressPolling() {
+  window.clearInterval(progressTimer);
+  progressTimer = 0;
+}
+
 /**
- * 判断这次播放 / 暂停操作是不是「刚刚被用来开启声音的那一次」，是则消费掉。
+ * 合并服务端上报的进度。
+ *
+ * 服务端只知道「自己下到哪了」，浏览器接收字节的进度由前端自己统计（transfer 阶段），
+ * 因此这里不能反过来覆盖掉本地阶段：谁的信息更靠后就以谁为准，`PHASE_ORDER`
+ * 就是这个先后关系。
+ */
+function applyProgress(payload) {
+  const phase = typeof payload?.phase === 'string' ? payload.phase : 'idle';
+  if (phase === 'idle' || phase === 'ready' || phase === 'error') {
+    // ready 由前端在真正进入播放页时自己上报，避免服务端提前把进度条推到终点。
+    if (phase === 'error') reportProgress({ phase: 'error', message: String(payload?.message ?? '') });
+    return;
+  }
+  // 前端已经自己推进过阶段（例如开始接收字节）时，服务端轮询回来的旧阶段一律忽略。
+  if (lastProgressSource === 'local') return;
+  if (phaseOrder(phase) < phaseOrder(state.progress.phase)) return;
+  reportProgress({
+    phase,
+    received: Math.max(0, Number(payload?.received) || 0),
+    total: Math.max(0, Number(payload?.total) || 0),
+    message: typeof payload?.message === 'string' ? payload.message : '',
+  });
+}
+
+/** 阶段先后顺序：越靠后表示加载越接近完成。 */
+const PHASE_ORDER = ['idle', 'osu', 'osz', 'transfer', 'ready', 'error'];
+const phaseOrder = (phase) => {
+  const index = PHASE_ORDER.indexOf(phase);
+  return index < 0 ? 0 : index;
+};
+
+/**
+ * 判断这次播放 / 暂停操作是否是「刚刚被用来开启声音的那一次」，是则消费掉。
  *
  * 恢复发生在 pointerdown / keydown 的捕获阶段，紧随其后的 click（点画面）或
  * keydown（空格）会走到播放 / 暂停：用户此刻想要的是有声音，不该顺带把画面暂停。
@@ -1982,8 +1068,7 @@ export function togglePlay() {
     playState(false);
     return;
   }
-  // 播到结尾后再点播放要从头开始：否则第一帧就会再次判定结束并立刻暂停，
-  // 让刚发出的 play() 被 pause() 打断（AbortError: interrupted by a call to pause）。
+  // 播到结尾后再点播放要从头开始：否则第一帧就会再次判定结束并立刻暂停。
   if (state.position >= state.duration - 1) restartPlayback();
   playState(true);
 }
@@ -1992,33 +1077,11 @@ export function seekTo(nextPosition) {
   if (!session) return;
   const resume = state.playing;
   if (resume) playState(false);
-  state.position = Math.min(state.duration, Math.max(0, nextPosition));
-  // 进度条拖动即使发生在暂停状态，也必须同步重置 WASM 音效游标；否则恢复播放时
-  // 音频已经到了新位置，音效流却仍从旧位置预读，表现为拖动后音效完全消失或错位。
-  hitsoundPlayer?.setPlaying(false);
-  hitsoundPlayer?.seekGameTime(state.position, { seekMixer: true });
-  // resume：seek 会让音频元素短暂暂停（见 seekAudioTo），完成后要自己恢复出声，
-  // 否则用户跳一次进度条就变成了静音播放。
-  syncAudioToPosition({ resume });
+  const target = Math.min(state.duration, Math.max(0, nextPosition));
+  session.seek(absoluteStart + target);
+  syncPositionFromClock();
   render();
-  if (resume) {
-    // 不要在 audio seek 尚未完成时再次调用 playState(true)：那会让播放请求从旧
-    // 位置启动，随后又被 seek 打断，音效环形缓冲也会跟着丢失。保留播放状态并让
-    // tick 等待 seek 完成，seekAudioTo 的完成回调负责恢复音频，startAudio() 会
-    // 在 Promise resolve 后重新接通音效。
-    state.playing = true;
-    lastTick = 0;
-    lastRenderTime = 0;
-    hasRenderedFrame = false;
-    hitsoundPlayer?.setPlaying(false);
-    // 目标落在当前音频附近时 seekAudioTo 会直接返回，不会触发 seeked 回调；
-    // 但上面的 playState(false) 已经暂停了音频，所以这里必须显式恢复。
-    if (!audioSeekPending) {
-      void startAudio();
-      syncHitsoundPlayback({ seek: true });
-    }
-    animation = requestAnimationFrame(tick);
-  }
+  if (resume) playState(true);
 }
 
 export const seekBy = (offset) => seekTo(state.position + offset);
@@ -2067,20 +1130,20 @@ export function cancelArrowHold() {
   if (!state.fastForwarding) return;
   state.fastForwarding = false;
   speedOverride = null;
-  audio.playbackRate = playbackRate();
+  applyRate();
 }
 
 function startFastForward() {
   state.fastForwarding = true;
   speedOverride = FAST_FORWARD_SPEED;
-  audio.playbackRate = playbackRate();
+  applyRate();
 }
 
 function stopFastForward() {
   if (!state.fastForwarding) return;
   state.fastForwarding = false;
   speedOverride = null;
-  audio.playbackRate = playbackRate();
+  applyRate();
 }
 
 /** 倒带时先停住播放：每步都是一次 seek，继续出声只会变成噪音。 */
@@ -2107,40 +1170,45 @@ function stopRewind() {
  * 在改渲染参数期间冻结时钟。
  *
  * 切帧率 / 分辨率都会让移动端主线程卡住几百毫秒（GPU 资源重建、背景重新上传），
- * 而音频不会停下来——不冻结的话操作结束后画面已经跑到音频前面，接着就是一次
- * 补 seek 和一次声音卡顿。所以这里统一「停画面 → 改参数 → 重新对齐时钟 → 恢复」。
+ * 而墙钟不会停下来——不冻结的话操作结束后画面已经跑到前面。时钟在 WASM 里，
+ * 所以这里直接「暂停 → 改参数 → 恢复」，没有任何额外对齐。
  */
 function withFrozenClock(mutate) {
   const resume = state.playing;
   if (resume) playState(false);
-  renderPending = true;
   try {
     mutate();
   } finally {
-    renderPending = false;
-    // 恢复播放会让 clock 重新对齐（画布尺寸、mod 都可能改变时间轴）。
     if (resume) playState(true);
   }
 }
 
+/** 倍速变化：会话换速（内部乘上谱面变速），音频线程按新的总倍速消费。 */
+function applyRate() {
+  if (!session) return;
+  session.setRate(userRate());
+  audioOutput?.setRate(session.rate());
+}
+
 export function setSpeed(value) {
   state.speed = value;
-  audio.playbackRate = playbackRate();
-  // 倍速同样作用于打击音：内核按这个倍率消费缓冲，与音乐保持一致。
-  hitsoundPlayer?.setRate(playbackRate());
+  applyRate();
 }
 
 /**
- * 调整音量。
+ * 调整音乐音量。
  *
- * 音量是即时生效的，不需要像 Mod 那样重建会话或冻结时钟，所以滑动过程中直接写
- * 音频元素即可。`audio.volume` 只接受 0–1，越界会抛异常，因此先夹紧再赋值。
+ * 音量即时生效，写 WASM 的音乐增益即可；0–1 先夹紧再换算成百分比。
  */
 export function setVolume(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return;
   state.volume = Math.min(1, Math.max(0, number));
-  audio.volume = state.volume;
+  try {
+    session?.setMusicVolume(Math.round(state.volume * 100));
+  } catch (error) {
+    logPlay(`音乐音量设置失败：${errorText(error)}`);
+  }
 }
 
 export function setFps(value) {
@@ -2171,13 +1239,42 @@ export function setResolution(key) {
       canvasEl.width = width;
       canvasEl.height = height;
       fitCanvasToViewport();
-      paintBackground();
       render();
     } catch (error) {
       state.resolution = previous;
       logPlay(`分辨率切换失败：${errorText(error)}`);
     }
   });
+}
+
+/** 切换是否启用打击音；关闭时音乐照常输出。 */
+export function setHitsoundEnabled(value) {
+  state.hitsound = Boolean(value);
+  if (!session) return;
+  try {
+    session.setHitsoundEnabled(state.hitsound);
+  } catch (error) {
+    state.hitsound = false;
+    state.hitsoundStatus = `打击音启用失败：${errorText(error)}`;
+    return;
+  }
+  state.hitsoundStatus = state.hitsound ? '已启用' : '已关闭';
+}
+
+/**
+ * 更新打击音音量（0–100）。
+ *
+ * 只写 WASM 的混音增益，不重建会话、不重新加载样本，滑动过程中即时生效。
+ */
+export function setHitsoundVolume(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return;
+  state.hitsoundVolume = Math.min(100, Math.max(0, Math.round(number)));
+  try {
+    session?.setHitsoundVolume(state.hitsoundVolume);
+  } catch (error) {
+    logPlay(`打击音音量设置失败：${errorText(error)}`);
+  }
 }
 
 // DA 需要参数；界面暴露 AR/CS 两个滑杆，勾选 DA 后生成 DAAR<value>CS<value>。
@@ -2219,18 +1316,13 @@ function applyMods() {
     .filter((token) => token !== 'DA')
     .concat(requested.includes('DA') ? [activeDaToken()] : []);
   try {
+    // 转谱会改变时间轴、总倍速与所需样本，样本由 WASM 内部按新谱面重新装载。
     session.set_mods(submitted);
     appliedMods = requested;
     applySessionMetrics();
-    audio.playbackRate = playbackRate();
     state.position = Math.min(state.position, state.duration);
-    syncAudioToPosition();
+    applyRate();
     render();
-    // 转谱/改键数后需要的音效集合可能变了：重新加载样本，复用同一个音频输出。
-    void reloadHitsoundSamples(loadToken).catch((error) => {
-      state.hitsoundStatus = `打击音重载失败：${errorText(error)}`;
-      logPlay(state.hitsoundStatus);
-    });
   } catch (error) {
     logPlay(`Mod 切换失败：${errorText(error)}`);
     state.mods = appliedMods.slice();
@@ -2248,29 +1340,18 @@ export function backToLoad() {
   cancelArrowHold();
   cancelAnimationFrame(animation);
   removeGestureHints();
-  // 打击音输出属于当前会话：连同它的 AudioContext 一起释放，音频线程不会残留。
-  releaseHitsound();
-  releaseBeatmapSamples();
-  state.hitsoundLoaded = 0;
-  state.hitsoundStatus = '';
-  // 还在后台拉音频/背景的请求要一并中止：否则它们回来时会往已经清空的播放页写状态。
+  teardownSession();
+  // 还在飞的下载要一并中止：否则它回来时会往已经清空的播放页写状态。
   loadAbort?.abort();
   loadAbort = null;
   loadToken += 1;
   stopProgressPolling();
   resetProgress();
   state.loading = false;
-  state.preparingMedia = false;
   audioResumedAt = 0;
   state.audioBlocked = false;
   audioBlockLogged = false;
-  releaseAudioUrl();
-  audio.removeAttribute('src');
-  audio.load();
-  if (backgroundBitmap) {
-    backgroundBitmap.close();
-    backgroundBitmap = null;
-  }
+  state.hitsoundStatus = '';
   if (canvasEl) {
     canvasEl.style.width = '';
     canvasEl.style.height = '';
@@ -2278,54 +1359,62 @@ export function backToLoad() {
   state.playLogs = [];
   state.sheetOpen = false;
   state.info = null;
-  session = null;
   state.page = 'load';
   // 回到加载页就清掉深链参数，避免刷新时又自动进入上一个预览。
   window.history.replaceState(null, '', window.location.pathname);
 }
 
-/** 音频开始出声：静音状态与手势监听都在这里收尾，保证角标和真实播放状态一致。 */
-audio.addEventListener('playing', () => {
-  markAudioAudible();
-  // 音乐开始播放不代表独立的打击音上下文也已恢复。上下文仍挂起时必须保留
-  // 手势监听，否则用户只能通过反复切换开关触发重新创建才能听到声音。
-  if (!hitsoundPlayer || hitsoundPlayer.context.state === 'running') removeGestureHints();
-  // 以音频真正开始出声的时刻为准，重新建立音效缓冲锚点。
-  syncHitsoundPlayback({ seek: true });
-});
-
-audio.addEventListener('pause', () => {
-  syncHitsoundPlayback();
-});
-
-/** 标签页切回前台时尝试续播：后台标签的音频会被浏览器挂起。 */
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible' || !state.playing || audioEnded) return;
-  if (!audio.paused) return;
-  startAudio();
-});
-
-/** 显示页在加载后自动播放：音频事件只用来推进「是不是已经放完」这一状态。 */
-audio.addEventListener('ended', () => {
-  // 音频可能比谱面短，结束后继续用 requestAnimationFrame 驱动画面时钟。
-  audioEnded = true;
-  syncHitsoundPlayback();
-});
+/**
+ * 在用户手势里恢复音频。
+ *
+ * 自动播放被拦下后，只有用户激活（指针 / 触摸 / 键盘）里的 `resume()` 才会被放行。
+ * 恢复成功时记下时刻，让紧随其后的 click 不要顺手把画面暂停掉。
+ */
+function resumeAudioFromGesture() {
+  const context = audioOutput?.context;
+  if (!context || !state.playing) return Promise.resolve(false);
+  if (context.state === 'running') return Promise.resolve(true);
+  return context.resume()
+    .then(() => {
+      const running = context.state === 'running';
+      if (running) {
+        state.audioBlocked = false;
+        audioBlockLogged = false;
+        syncAudioOutput();
+        audioResumedAt = performance.now();
+      }
+      return running;
+    })
+    .catch(() => false);
+}
 
 /**
- * 元数据到位后按当前画面进度对齐一次音频。
+ * 首次真实输入（指针 / 触摸 / 键盘）时恢复音频。
  *
- * 只在没有 seek 在飞时补，避免插队打断一个还没落地的 seek。
+ * 用捕获阶段监听：手势必须在事件处理的最前面把恢复请求发出去，才能算「由用户
+ * 激活触发的播放」，后面的 click 也来不及把这次激活用掉。
  */
-audio.addEventListener('loadedmetadata', () => {
-  if (!session || audioSeekPending) return;
-  syncAudioToPosition();
-});
+function handleUserGesture() {
+  if (!state.playing) return;
+  resumeAudioFromGesture().then((resumed) => {
+    // 恢复成功就解除监听：音频回到暂停只可能是用户自己按的暂停，
+    // 那时再自动恢复会对着干。
+    if (resumed) removeGestureHints();
+  });
+}
 
-audio.addEventListener('error', () => {
-  if (!audio.src) return;
-  state.status = '音频错误';
-  logPlay(`音频失败：${audio.error?.message || '音频无法解码或播放'}`);
+function addGestureHints() {
+  for (const type of GESTURE_EVENTS) window.addEventListener(type, handleUserGesture, { capture: true, passive: true });
+}
+
+function removeGestureHints() {
+  for (const type of GESTURE_EVENTS) window.removeEventListener(type, handleUserGesture, { capture: true });
+}
+
+/** 标签页切回前台时尝试续播：后台标签的音频上下文会被浏览器挂起。 */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !state.playing) return;
+  resumeAudioFromGesture();
 });
 
 targetFps = state.fps;

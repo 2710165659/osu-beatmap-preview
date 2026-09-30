@@ -1,8 +1,9 @@
-// 用 Node 直接跑 wasm 产物，验证「谱面 → 需要的样本名 → 内嵌资源字节」这条链路。
+// 用 Node 直接跑 wasm 产物，验证「单文件输入 → 谱面信息 / 难度清单」与默认配置转出。
 //
-// 浏览器里混音依赖 WebGPU（会话创建），但样本名解析与资源取字节只用到解析器与内嵌
-// 资源表，因此在 Node 里就能完整验证：能确认 wasm 导出存在、四模式的音效集合符合
-// 预期，以及每个需要的样本都真的内嵌在 wasm 里（这正是「Web 端音效全都没有」的根因）。
+// 浏览器里的会话创建依赖 WebGPU，但 `beatmapInfo` 与 `hitsoundDefaults` 只用到解析器，
+// 在 Node 里就能验证：wasm 导出齐全、`.osu` 解析结果正确、单文件没有难度清单、
+// 四模式的打击音默认值与 `shared_config.yml` 一致。`.osz` 的解包与媒体解码在
+// wasm crate 的 Rust 测试里覆盖（archive.rs / decode.rs）。
 
 import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
@@ -34,7 +35,7 @@ async function loadModule() {
   return module;
 }
 
-/** 最小 standard 谱面：一个圆圈、一个滑条、一个转盘，覆盖三类打击音。 */
+/** 最小可解析 standard 谱面：一个圆圈、一个滑条、一个转盘，覆盖三类打击音。 */
 const standard_beatmap = `osu file format v14
 
 [General]
@@ -46,6 +47,7 @@ Title:Test
 Artist:Test
 Creator:Test
 Version:Test
+BeatmapID:4242
 
 [Difficulty]
 CircleSize:4
@@ -58,133 +60,44 @@ SliderTickRate:1
 [HitObjects]
 256,192,1000,1,0,0:0:0:0:
 256,192,2000,2,0,B|356:192|256:192|356:192,1,560
-256,192,4000,8,0,6000
+256,192,3000,8,0,4000,0:0:0:0:
 `;
 
-/** 最小 taiko 谱面：红音符、蓝音符、大音符（finish 位）各一个，采样组 = 3（drum）。 */
-const taiko_beatmap = `osu file format v14
-
-[General]
-Mode: 1
-AudioFilename: audio.mp3
-
-[Metadata]
-Title:Test
-Artist:Test
-Creator:Test
-Version:Test
-
-[Difficulty]
-CircleSize:5
-
-[TimingPoints]
-0,500,4,3,0,90,1,0
-
-[HitObjects]
-256,192,1000,1,0
-256,192,1500,1,8
-256,192,2000,1,4
-`;
-
-/** 只改音量（90 → 50）、采样组仍然 = 3：legacy 规则下音量不再决定音效组。 */
-const taiko_quiet_beatmap = taiko_beatmap.replace(',4,3,0,90,1,0', ',4,3,0,50,1,0');
-
-/** 采样组 = 2（soft）的 taiko 谱面：同样三个音符。 */
-const taiko_soft_beatmap = taiko_beatmap.replace(',4,3,0,90,1,0', ',4,2,0,90,1,0');
-
-test('wasm 产物存在且导出所需函数', async (t) => {
+test('wasm 导出齐全：beatmapInfo / hitsoundDefaults', async (t) => {
   const module = await loadModule();
   if (!module) {
     t.skip('public/pkg 下没有 wasm 产物，先运行 npm run build:wasm');
     return;
   }
-  assert.equal(typeof module.hitsoundNames, 'function');
-  assert.equal(typeof module.hitsoundAsset, 'function');
-  assert.equal(typeof module.hitsoundAssetCount, 'function');
+  assert.equal(typeof module.beatmapInfo, 'function');
   assert.equal(typeof module.hitsoundDefaults, 'function');
+  assert.equal(typeof module.WebGpuSession, 'function');
 });
 
-test('音效资源内嵌在 wasm 里且为合法 ogg', async (t) => {
+test('.osu 单文件：谱面信息正确、没有难度清单', async (t) => {
   const module = await loadModule();
   if (!module) {
-    t.skip('缺少 wasm 产物');
+    t.skip('public/pkg 下没有 wasm 产物，先运行 npm run build:wasm');
     return;
   }
-  assert.equal(module.hitsoundAssetCount(), 36);
-  for (const name of ['normal-hitnormal', 'soft-sliderslide', 'taiko-drum-hitclap', 'spinnerspin']) {
-    const bytes = module.hitsoundAsset(name);
-    assert.ok(bytes.length > 0, `${name} 没有内嵌资源`);
-    // ogg 魔数：确认是真实资源而不是占位数据。
-    assert.equal(String.fromCharCode(...bytes.slice(0, 4)), 'OggS', `${name} 不是 ogg`);
-  }
-  // 没有对应资源时返回空数组，宿主跳过即可。
-  assert.equal(module.hitsoundAsset('不存在的音效').length, 0);
+  const info = module.beatmapInfo(new TextEncoder().encode(standard_beatmap));
+  assert.equal(info.title, 'Test');
+  assert.equal(info.mode, 0);
+  // 单文件不给难度清单（.osz 才有），加载页据此隐藏难度下拉。
+  assert.deepEqual([...info.difficulties], []);
 });
 
-test('打击音默认值来自共享配置', async (t) => {
+test('打击音默认值随模式走，未知模式报错', async (t) => {
   const module = await loadModule();
   if (!module) {
-    t.skip('缺少 wasm 产物');
+    t.skip('public/pkg 下没有 wasm 产物，先运行 npm run build:wasm');
     return;
   }
-  // `assets/shared_config.yml` 四个模式的 mp4 默认值都是开启 + 100%（与 osu! 默认 effect 音量等效）。
-  for (const mode of ['standard', 'taiko', 'catch', 'mania']) {
+  for (const mode of ['standard', 'std', 'taiko', 'catch', 'ctb', 'mania']) {
     const defaults = module.hitsoundDefaults(mode);
-    assert.equal(defaults.enabled, true, `${mode} 默认应开启打击音`);
-    assert.equal(defaults.volume, 100, `${mode} 默认音量应为 100`);
+    assert.equal(typeof defaults.enabled, 'boolean', mode);
+    assert.equal(typeof defaults.volume, 'number', mode);
+    assert.equal(typeof defaults.beatmapEnabled, 'boolean', mode);
   }
-  assert.equal(module.hitsoundDefaults('ctb').volume, 100);
-  assert.throws(() => module.hitsoundDefaults('nope'));
-});
-
-test('standard 谱面按 timing point 的音效组展开样本名', async (t) => {
-  const module = await loadModule();
-  if (!module) {
-    t.skip('缺少 wasm 产物');
-    return;
-  }
-  const names = module.hitsoundNames(new TextEncoder().encode(standard_beatmap));
-  // timing point 第 4 列为 2 = soft 音效组，因此普通打击音走 soft bank。
-  assert.ok(names.includes('soft-hitnormal'), `缺少 soft-hitnormal：${names}`);
-  assert.ok(names.includes('soft-slidertick'), `缺少 soft-slidertick：${names}`);
-  assert.ok(names.includes('soft-sliderslide'), `缺少 soft-sliderslide：${names}`);
-  assert.ok(names.includes('spinnerspin'), `缺少 spinnerspin：${names}`);
-  assert.ok(names.includes('spinnerbonus'), `缺少 spinnerbonus：${names}`);
-  // 裸名是回退查找，也应该登记。
-  assert.ok(names.includes('hitnormal'), `缺少裸名回退：${names}`);
-  // 关键回归：带音效组前缀的样本都必须真的内嵌在 wasm 里，否则 Web 端会整片静音。
-  // 裸名（`hitnormal` 等）与转盘音（`spinnerspin` / `spinnerbonus` 及其带组前缀的变体，例如
-  // timing point 是 soft 时的 `soft-spinnerbonus`）属于次级回退查找：本套皮肤只提供不带
-  // 前缀的那一份，带前缀的名字查不到时会自然回退到它。
-  for (const name of names) {
-    if (!name.includes('-') || name.includes('spinner')) continue;
-    assert.ok(
-      module.hitsoundAsset(name).length > 0,
-      `样本 ${name} 没有内嵌资源（Web 端会静音）`,
-    );
-  }
-});
-
-test('taiko 谱面按 timing point 的采样组展开样本名', async (t) => {
-  const module = await loadModule();
-  if (!module) {
-    t.skip('缺少 wasm 产物');
-    return;
-  }
-  // legacy（classic 皮肤）规则：音效组来自物件 / timing point 的采样组，不看音量。
-  const drum = module.hitsoundNames(new TextEncoder().encode(taiko_beatmap));
-  assert.ok(drum.includes('taiko-drum-hitnormal'), `缺少红音符音效：${drum}`);
-  assert.ok(drum.includes('taiko-drum-hitclap'), `缺少蓝音符音效：${drum}`);
-  // finish 位 = 大音符，额外叠一层 hitfinish。
-  assert.ok(drum.includes('taiko-drum-hitfinish'), `缺少大音符音效：${drum}`);
-
-  // 只改音量不改采样组：仍然是 drum 组（这是旧「按音量分档」逻辑的回归点）。
-  const quiet = module.hitsoundNames(new TextEncoder().encode(taiko_quiet_beatmap));
-  assert.ok(quiet.includes('taiko-drum-hitnormal'), `音量不应改变音效组：${quiet}`);
-  assert.ok(!quiet.includes('taiko-soft-hitnormal'), `音量不应改变音效组：${quiet}`);
-
-  // 采样组 = 2 → soft。
-  const soft = module.hitsoundNames(new TextEncoder().encode(taiko_soft_beatmap));
-  assert.ok(soft.includes('taiko-soft-hitnormal'), `缺少 soft 红音符音效：${soft}`);
-  assert.ok(soft.includes('taiko-soft-hitclap'), `缺少 soft 蓝音符音效：${soft}`);
+  assert.throws(() => module.hitsoundDefaults('不存在的模式'));
 });

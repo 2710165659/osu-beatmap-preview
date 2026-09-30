@@ -2,20 +2,22 @@
 
 [返回项目首页](../../README.md) | [CLI 使用说明](../osu-beatmap-preview-cli/README.md) | [架构说明](../../docs/architecture.md)
 
-WASM 产物把 core 的实时会话和 renderer 的 WGPU 绘制接到浏览器，让宿主网页在本地 GPU 上逐帧绘制谱面。它不下载文件、不返回像素数据，也不通过 HTTP 轮询渲染结果：`.osu` 字节、Canvas、音频和播放控制都由 JavaScript 宿主负责。
+WASM 产物把 core 的实时会话和 renderer 的 WGPU 绘制接到浏览器，让宿主网页在本地 GPU 上逐帧绘制谱面。它的输入只有**一份文件**——`.osu` 字节（只有谱面与内嵌音效）或 `.osz` 整包字节（音乐、背景、自带音效都在包里）；解包、解码、混音与时钟全部在 WASM 内完成。它不下载文件、不返回像素数据，也不通过 HTTP 轮询渲染结果。
 
 ## 职责边界
 
 | WASM 负责 | 宿主（JavaScript）负责 |
 | --- | --- |
-| 解析 `.osu` 字节、Mod、转谱和时间轴 | 获取 `.osu` / OSZ / 背景 / 音频并解码 |
-| 按绝对时间生成单帧场景（`FrameScene`） | 维护播放时钟、暂停、seek、倍速 |
-| 在浏览器 WebGPU Canvas 上绘制并呈现 | 提供 `<canvas>`、控制 UI 和音频输出 |
-| 打击音的事件时间轴、倍速换算与混音（PCM） | 下载并解码打击音样本、按音频硬件时钟输出 PCM |
-| 会话内的 Mod 热切换与画布尺寸变更 | 处理按键、指针等输入事件 |
-| 从 `.osu` 字节汇总谱面内部信息（`beatmapInfo`） | 按 bid 取回 `.osu` 字节并展示信息 |
+| `.osz` 解包（zip crate）与难度选择 | 获取一份文件的字节（本地文件或后端下载） |
+| 音乐 / 背景 / 自带音效解码（symphonia、image） | 提供 `<canvas>` 与控制 UI |
+| 解析 `.osu`、Mod、转谱和时间轴 | 建立 `AudioContext` + AudioWorklet 音频输出 |
+| **时钟**：播放、暂停、seek、倍速、当前位置 | 把 `pullAudio` 的混音结果写进音频环形缓冲 |
+| 音乐与打击音的统一混音（PCM） | 把音频线程的消费位置回报给 `onAudioClock` |
+| 按内部时钟生成并绘制单帧（`renderFrame`） | 处理按键、指针等输入事件 |
+| 会话内的 Mod 热切换与画布尺寸变更 | |
+| 谱面信息与 `.osz` 难度清单（`beatmapInfo`） | 展示信息、渲染难度下拉 |
 
-WASM 不返回 RGBA 缓冲，因此宿主拿不到像素结果；需要图片或视频文件时请使用 [CLI](../osu-beatmap-preview-cli/README.md)。在官方 [Web 包](../osu-beatmap-preview-web/README.md) 里，表右侧的下载职责由 Node.js 后端完成，音频播放、背景解码和播放控制由页面脚本完成。
+WASM 不返回 RGBA 缓冲，因此宿主拿不到像素结果；需要图片或视频文件时请使用 [CLI](../osu-beatmap-preview-cli/README.md)。在官方 [Web 包](../osu-beatmap-preview-web/README.md) 里，表右侧的下载职责由 Node.js 后端完成，音频输出与控制 UI 由页面脚本完成。
 
 ## 获取
 
@@ -64,7 +66,7 @@ npm start
 
 ## 最小示例
 
-用一个静态服务器托管 `pkg/` 与下面的页面，浏览器需要支持 WebGPU（Chrome / Edge 113+ 等）。`.osu` 字节由宿主自己获取；只想快速跑通时直接用 [Web 包](../osu-beatmap-preview-web/README.md)，它已经带好了静态站点和下载后端。
+用一个静态服务器托管 `pkg/` 与下面的页面，浏览器需要支持 WebGPU（Chrome / Edge 113+ 等）。文件字节由宿主自己获取；只想快速跑通时直接用 [Web 包](../osu-beatmap-preview-web/README.md)，它已经带好了静态站点和下载后端。
 
 ```html
 <canvas id="stage"></canvas>
@@ -73,25 +75,21 @@ npm start
 
   await init();
   const canvas = document.getElementById("stage");
-  // .osu 需要同源可访问：Web 包的 /resource/beatmap?bid=738063 就是为此准备的。
-  const bytes = new Uint8Array(await (await fetch("./738063.osu")).arrayBuffer());
+  // 一份文件的字节：.osu 或 .osz 都行（.osz 里的音乐/背景/音效由 WASM 解出）。
+  const bytes = new Uint8Array(await (await fetch("./738063.osz")).arrayBuffer());
 
-  // 第 3 个参数是可选选项：convert、mods、width、height
+  // 第 3 个参数是可选选项：difficulty/bid、convert、mods、width、height、sampleRate……
   const session = await WebGpuSession.create(bytes, canvas, {
-    convert: "mania",
-    mods: ["4K", "DT"],
     width: 1280,
     height: 720,
+    sampleRate: audioContext.sampleRate,
   });
 
-  // 游戏时间轴（转谱后首个可玩物件为 0:00）→ 绝对时间
-  const absoluteStart = session.absolute_start_ms_number();
-  const duration = session.duration_ms_number();
-
-  const startedAt = performance.now();
-  function frame(now) {
-    const gameTime = (now - startedAt) % duration;
-    session.render_number(absoluteStart + gameTime);
+  session.play();
+  function frame() {
+    session.renderFrame();          // 按 WASM 内部时钟绘制当前帧
+    const pcm = session.pullAudio(4096); // 音乐 + 打击音统一混音，写进音频环形缓冲
+    writeRingBuffer(pcm);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -100,104 +98,102 @@ npm start
 
 ## JavaScript API
 
-导出一个类型与三个函数，所有时间都用毫秒。
+导出两个类型与两个函数，所有时间都用毫秒（谱面绝对时间，0 = 音频文件 0 点）。
 
-`WebGpuSession`：
+### `WebGpuSession`
 
 | 成员 | 说明 |
 | --- | --- |
-| `WebGpuSession.create(bytes, canvas, options?)` | 异步创建会话。`bytes` 为 `.osu` 文件字节，`canvas` 为目标 `HTMLCanvasElement`，会话创建时会把 Canvas 宽高设为选项中的输出尺寸 |
-| `render_number(absoluteTimeMs)` | 把该绝对时间的一帧绘制到 Canvas；时间必须为有限数字 |
-| `duration_ms_number()` | 预览时长（含最后一个物件后的 2s 余韵），用于进度条和循环边界 |
-| `absolute_start_ms_number()` | 游戏时间 `0:00` 对应的绝对时间；游戏时间到绝对时间即 `absoluteStart + gameTime` |
-| `beatmap_speed_number()` | 当前谱面倍速（DT/HT 等），用于同步音频播放速率 |
+| `WebGpuSession.create(bytes, canvas, options?)` | 异步创建会话。`bytes` 为 `.osu` 或 `.osz` 的文件字节，`canvas` 为目标 `HTMLCanvasElement`（宽高设为输出尺寸）。`.osz` 的解包、音乐/背景/音效的解码都在这一步完成 |
+| `play()` / `pause()` | 开始 / 暂停推进时钟；幂等 |
+| `seek(chartTimeMs)` | 跳到谱面绝对时间：换时钟锚、丢弃正在播放的声音、重置输出流（见 `audioEpoch()`） |
+| `setRate(userRate)` | 设置用户倍速（不含 DT/HT）；总倍速 = 用户倍速 × 谱面变速，由会话换算 |
+| `rate()` | 当前总倍速，即音频线程的消费速率 |
+| `clockMs()` | 当前谱面绝对时间；画面按它渲染，UI 的「游戏时间」= `clockMs() - absoluteStartMs()` |
+| `playing()` | 时钟是否在推进 |
+| `renderFrame()` | 按内部时钟把当前帧绘制到 Canvas |
+| `pullAudio(maxFrames)` | 补一段「音乐 + 打击音」统一混音，返回交错立体声 `Float32Array`（帧数 × 2，可能为空）；补多少由 WASM 的预读窗口决定 |
+| `onAudioClock(consumedFrames)` | 转发音频线程回报的消费位置（相对帧号）：有音频输出时它是画面时钟的锚点 |
+| `audioEpoch()` | 输出流的重置纪元；变化表示整条流已重置，宿主必须把环形缓冲读写指针一起归零并通知音频线程从头重读 |
+| `setMusicVolume(percent)` / `setHitsoundVolume(percent)` | 音乐 / 打击音音量（0–100），即时生效 |
+| `setHitsoundEnabled(bool)` | 打开/关闭打击音；关闭时音乐照常输出 |
+| `set_mods(mods)` | 热切换 Mod，数组每项是一个独立 token；转谱后所需样本由 WASM 重新装载，`absoluteStartMs()` 可能变化，需要重新读取 |
+| `resize(width, height)` | 同时更新 surface 与 core 的合成尺寸；只改 Canvas 不会改变渲染尺寸 |
+| `durationMs()` | 预览时长（含最后一个物件后的 2s 余韵），用于进度条和结束判定 |
+| `absoluteStartMs()` | 游戏时间 `0:00` 对应的绝对时间 |
+| `beatmapSpeed()` | 当前谱面倍速（DT/HT 等） |
+| `audioSampleRate()` | 混音输出采样率（创建时给定的 `sampleRate`） |
 | `width()` / `height()` | 当前输出尺寸 |
 | `mode()` | 解析和转谱后的目标模式，小写字符串，如 `standard`、`mania` |
-| `set_mods(mods)` | 热切换 Mod，数组每项是一个独立 token；切换后 `absolute_start_ms_number()` 可能变化，需要重新读取 |
-| `set_background_rgba(width, height, rgba)` | 传入已解码的背景图 RGBA 数据；不调用时使用模式默认背景 |
-| `resize(width, height)` | 同时更新 surface 与 core 的合成尺寸；只改 Canvas 不会改变渲染尺寸 |
 
-### 音频时间轴与起点
+`options` 的字段都是可选的：
 
-- **音频文件的 0 点就是谱面时间轴的 0 点**：`audio.currentTime * 1000` 直接就是谱面
-  绝对时间，宿主不需要、也不应该再叠加 `AudioLeadIn`——它只决定「从多早开始播放」，
-  不改变音频与物件时间的对应关系。
-- `absolute_start_ms_number()` 是预览起点：首个物件前 2000ms，谱面 `AudioLeadIn` 更大
-  时按它提前；首物件很早时该值会是负数。游戏时间与绝对时间的关系是
-  `绝对时间 = absoluteStart + 游戏时间`，起点变化后必须重新读取（`set_mods` 之后同理）。
-- 绝对时间 `< 0` 的前置段没有音频可播（音频文件从 0 开始）：宿主应停住音频、只让画面
-  时钟继续走，等绝对时间 `>= 0` 再开始播放。
-- 打击音的时间轴同样使用谱面绝对时间，因此它和音乐天然共用这一套换算。
-
-### 打击音（hit sound）
-
-音频时间轴（什么时候播放哪个样本、多大声、倍速与 seek 怎么换算）全部在 WASM 内，
-宿主只做两件事：把解码好的 PCM 送进来，把混音结果按音频硬件时钟送出去。因此画面与
-声音始终使用同一份位置数据，不需要两处时钟互相对齐。
-
-| 成员 | 说明 |
+| 字段 | 说明 |
 | --- | --- |
-| `enableHitsound(volumePercent, sampleRate)` | 打开打击音。`sampleRate` 必须是宿主音频设备的采样率（`AudioContext.sampleRate`），否则输出会被按错误速率消费 |
-| `disableHitsound()` | 关闭打击音，之后所有混音接口返回静音 |
-| `hitsoundEnabled()` | 是否已打开 |
-| `hitsoundRequiredNames()` | 当前谱面需要宿主提供 PCM 的样本名（按优先级，含裸名回退） |
-| `hitsoundHasSamples()` | 是否已经放入过可用样本 |
-| `hitsoundSampleRate()` | 当前混音采样率 |
-| `setHitsoundSample(name, channels, sampleRate, loopLength, samples)` | 放入一段已解码的 PCM。`channels` 为 1 或 2，`loopLength` 是循环长度（采样帧，0 表示不循环），滑条滑行音与转盘旋转音需要传样本总帧数 |
-| `rebuildHitsoundTimeline()` | 样本**全部放完后调用一次**；逐个样本调用会反复遍历整张谱面 |
-| `setHitsoundVolume(volumePercent)` | 更新音量（0–100），按 osu! 的 `10^((v - 100) / 25)` 曲线换算 |
-| `positionHitsound(chartTimeMs)` | 把混音位置对齐到谱面绝对时间，不清空正在播放的声音 |
-| `seekHitsound(chartTimeMs)` | 跳到指定位置并丢弃正在播放的声音 |
-| `hitsoundPositionMs()` | 当前混音位置（谱面毫秒） |
-| `renderHitsound(frames)` | 从当前位置渲染 `frames` 个立体声采样帧，返回可读取的帧数（未启用时为 0） |
-| `takeHitsoundBuffer()` | 取回上一批混音结果，返回交错立体声 `Float32Array`（长度 = 帧数 × 2） |
-| `resetHitsoundSamples()` | 清空样本并重建时间轴（切 Mod/转谱后重新加载时使用），保留音量与采样率 |
+| `difficulty` | `.osz` 里要预览的难度条目名（如 `Hard.osu`）；优先级最高 |
+| `bid` | 按 `[Metadata] BeatmapID` 在 `.osz` 里选难度（数字或数字字符串）；都没有时取第一个顶层 `.osu` |
+| `convert` | 转谱模式（`mania`/`ctb`/`taiko`/`standard`/`std`） |
+| `mods` | Mod token 数组，语法与 CLI 一致，见 [CLI 的 Mod 支持](../osu-beatmap-preview-cli/README.md#mod-支持) |
+| `width` / `height` | 输出尺寸 |
+| `sampleRate` | **音频设备采样率**（`AudioContext.sampleRate`）：混音输出按它生成，必须一致 |
+| `hitsoundEnabled` / `hitsoundVolume` / `musicVolume` | 打击音开关（默认 true）、打击音音量（默认 100）、音乐音量（默认 50） |
+| `beatmapHitsound` | 是否采用谱面自带的自定义音效（`ENABLE_BEATMAP_HITSOUND`，默认 true）；**创建时生效**，决定装载哪些样本 |
 
-推荐的使用顺序（官方 Web 页面的做法），音效字节优先取谱面自带的同名条目，取不到再用 WASM 内嵌资源：
+### 时钟与时间轴
+
+- **时钟在 WASM 里**：`play` / `pause` / `seek` / `setRate` / `clockMs` 全部由会话维护，宿主不再计算时间，也没有「静音 WAV + `<audio>` 元素」这类假时钟。
+- **音频文件的 0 点就是谱面时间轴的 0 点**：宿主不需要、也不应该再叠加 `AudioLeadIn`——它只决定「从多早开始播放」（体现在 `absoluteStartMs()` 里）。
+- `absoluteStartMs()` 是预览起点：首个物件前 2000ms，谱面 `AudioLeadIn` 更大时按它提前；首物件很早时该值会是负数。绝对时间 `< 0` 的前置段音乐还没开始（混音位置允许为负，输出静音），画面与音效照常。
+- **有音频输出时画面贴着「此刻听到的位置」走**：音频线程每约 11ms 报告一次消费位置（`onAudioClock`），时钟向它平滑锚定；没有音频输出（或被自动播放策略拦下）时时钟按墙钟推进，画面不冻结。音频恢复后输出流自动重置到画面位置继续。
+- 倍速**音乐与音效一起变速变调**（与 CLI MP4 导出一致）。
+
+### 音频输出（音乐 + 打击音统一混音）
+
+WASM 把**音乐与打击音混成一条 PCM 流**，宿主只做搬运：
 
 ```js
-const session = await WebGpuSession.create(bytes, canvas, options);
-const names = session.hitsoundRequiredNames();        // 需要哪些音效
-session.enableHitsound(50, audioContext.sampleRate);   // 音频设备采样率
-for (const name of names) {
-  // 谱面自带的自定义音效要先从后端取（OSZ 里的同名条目），内嵌资源只是兜底。
-  const bytes = (await fetchBeatmapSample(name)) ?? hitsoundAsset(name);
-  if (!bytes.length) continue;
-  const buffer = await decodeOgg(bytes);               // 宿主只用 Web Audio 解码
-  session.setHitsoundSample(name, channels, buffer.sampleRate, loopFrames, pcm);
+const session = await WebGpuSession.create(bytes, canvas, {
+  sampleRate: audioContext.sampleRate,   // 设备采样率，必须一致
+});
+
+let written = 0;                 // 环形写入位置（相对帧号）
+let epoch = session.audioEpoch();
+session.play();
+audioOutput.setPlaying(true);
+
+function pump() {
+  const pcm = session.pullAudio(4096);          // 交错立体声 Float32Array
+  if (session.audioEpoch() !== epoch) {          // 输出流整体重置（seek / 走散重对齐）
+    epoch = session.audioEpoch();
+    written = 0;
+    workletNode.port.postMessage({ command: 'readFrame', value: 0 });
+  }
+  writeRingBuffer(pcm, written);                 // 接在环形写入前沿之后
+  written += pcm.length / 2;
+  Atomics.store(control, 0, written);
 }
-session.rebuildHitsoundTimeline();                     // 全部放完后重建一次
-session.setPlaying(true);                              // 由宿主驱动
-session.positionHitsound(chartTimeMs);                 // 每帧对齐位置
-const frames = session.renderHitsound(4096);           // 取一段混音结果
-const pcm = session.takeHitsoundBuffer();              // 交错立体声 Float32Array
+// 音频线程的回报（readPosition）也要转发回来：
+workletNode.port.onmessage = (event) => session.onAudioClock(event.data.readPosition);
 ```
 
-`hitsoundNames(bytes)`：按 `.osu` 字节返回打击音需要的样本名，可在会话创建前调用。
+音乐与音效的装载完全不需要宿主参与：`.osz` 里的音乐、背景、自带音效在 `create` 时就解好了，自带音效按「同名条目 > 内嵌皮肤」取用；单独的 `.osu` 没有音乐与背景，内嵌皮肤照常发声。
 
-`hitsoundAsset(name)`：按样本名返回内嵌的 ogg 字节（空数组表示没有对应资源）。
+### 自由函数
 
-`hitsoundAssetCount()`：内嵌资源数量（36），便于宿主自检。
-
-`hitsoundDefaults(mode)`：返回该模式在 `assets/shared_config.yml` 里的打击音默认值
-（`{ enabled, volume, beatmapEnabled }`；`beatmapEnabled` 对应 `ENABLE_BEATMAP_HITSOUND`，
-表示是否使用谱面自带的自定义音效）。CLI 读同一份配置，网页端用它保证默认值一致。
-
-`beatmapInfo(bytes)`：按传入的 `.osu` 字节返回谱面内部信息对象（全量字段）。它不下载文件，也不依赖 WebGPU，可以在创建会话之前调用：
+`beatmapInfo(bytes, options?)`：按传入的文件字节（`.osu` 或 `.osz`）返回谱面内部信息对象（全量字段）与难度清单。它不下载文件，也不依赖 WebGPU，可以在创建会话之前调用：
 
 ```js
 import init, { beatmapInfo, WebGpuSession } from "./pkg/osu_beatmap_preview_wasm.js";
 
 await init();
-const bytes = new Uint8Array(await (await fetch("/resource/beatmap?bid=738063")).arrayBuffer());
+const bytes = new Uint8Array(await (await fetch("/resource/file?bid=738063")).arrayBuffer());
 
-const info = beatmapInfo(bytes);
-info.title;    // 'No title'
-info.version;  // "Lust's Insane"（难度名）
-info.modeName; // 'standard'
-info.bpm;      // 200
-info.ar;       // 9.3
-info.metadata; // [Metadata] 全量键值
+const info = beatmapInfo(bytes);  // options 与 create 相同（bid / difficulty 选难度）
+info.title;         // 'No title'
+info.version;       // "Lust's Insane"（难度名）
+info.modeName;      // 'standard'
+info.bpm;           // 200
+info.difficulties;  // .osz 的难度清单 [{ entry, label, beatmapId }]；单文件 .osu 为空数组
 ```
 
 | 分组 | 字段 |
@@ -207,20 +203,24 @@ info.metadata; // [Metadata] 全量键值
 | 统计 | `hitObjectCount`、`firstObjectMs`、`lastObjectEndMs`、`chartDurationMs`、`bpm`、`timingPointCount`、`breakPeriodCount`、`comboColors` |
 | 难度 | `ar`、`cs`、`hp`、`od` |
 | 全量区段 | `general`、`metadata`、`difficulty`（`.osu` 里对应区段的每个键值） |
+| 难度清单 | `difficulties`（`.osz` 里每个顶层 `.osu` 的 `{ entry, label, beatmapId }`；单独的 `.osu` 为空数组） |
 
 缺失的字段是 `null`（不是空字符串），`chartDurationMs` 等派生值在谱面没有音符时同样为 `null`。
 
-`options` 的字段都是可选的：`convert`（`mania`/`ctb`/`taiko`/`standard`/`std`）、`mods`（字符串数组）、`width`、`height`（输出尺寸）。Mod 语法与 CLI 一致，见 [CLI 的 Mod 支持](../osu-beatmap-preview-cli/README.md#mod-支持)。
+`hitsoundDefaults(mode)`：返回该模式在 `assets/shared_config.yml` 里的打击音默认值
+（`{ enabled, volume, beatmapEnabled }`；`beatmapEnabled` 对应 `ENABLE_BEATMAP_HITSOUND`，
+表示是否使用谱面自带的自定义音效）。CLI 读同一份配置，网页端用它保证默认值一致；
+它应在 `create` 之前调用（`beatmapHitsound` 决定装载哪些样本）。
 
 ## 使用限制
 
 - 只支持 WebGPU 后端；浏览器或设备不支持时 `create` 直接返回错误，不会回退到 WebGL 或 CPU 绘制。
-- 本 crate 只在 `wasm32` 目标下导出上述类型；为其他目标编译时是空库，请在宿主页面使用 wasm 产物。
-- 不解析回放、不切分 MP4；倍速与 seek 由宿主把「当前游戏时间」告诉 WASM（`positionHitsound` / `seekHitsound`），音频事件时间轴与混音都在 WASM 内。
-- 打击音资源内嵌在 wasm 里（36 个 ogg，约 240 KiB，压缩后 wasm 约 1.2 MiB），宿主只需用 Web Audio 解码；还需要 `SharedArrayBuffer`（跨源隔离）才能把混音结果交给音频线程，环境不具备时页面应退化成「只播音乐」，而不是报错。
-- 每帧都直接在 GPU 上绘制，宿主应按目标帧率调用 `render_number`，不要在同一帧重复提交。
-- 背景图需要宿主自行解码成 RGBA 后通过 `set_background_rgba` 传入。
-- `beatmapInfo` / `hitsoundNames` 只解析传入的字节，不认识 `bid`：`.osu` 的下载由宿主负责（Web 包里是 Node 后端的 `/resource/beatmap?bid=`）。
+- 本 crate 的 wasm 导出只在 `wasm32` 目标下生成；解包/解码模块（`archive.rs`、`decode.rs`）不依赖 wasm 运行时，`cargo test` 可直接在宿主上跑它们的用例。
+- 不解析回放、不切分 MP4；时钟由 WASM 维护，宿主只在音频线程回报时把消费位置转发回来（`onAudioClock`）。
+- 音乐、音效与背景的解码（symphonia / image）在 `create` 时一次性完成：大谱面包（长图、大音乐）会多花一些内存与几百毫秒加载时间。打击音皮肤内嵌在 wasm 里（36 个 ogg，约 240 KiB）；解包/解码依赖（zip / symphonia / image）加上皮肤后 wasm 约 2.2 MiB（gzip 后约 0.9 MiB）。
+- 音频输出还需要 `SharedArrayBuffer`（跨源隔离）与 `AudioWorklet`，环境不具备时页面应退化成「只有画面」，而不是报错。
+- 每帧都直接在 GPU 上绘制，宿主应按目标帧率调用 `renderFrame`，不要在同一帧重复提交。
+- `beatmapInfo` / `create` 只解析传入的字节，不认识 `bid` 的下载：文件获取由宿主负责（Web 包里是 Node 后端的 `/resource/file?bid=`）。
 
 ## 相关文档
 

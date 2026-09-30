@@ -45,6 +45,21 @@ pub fn volume_gain(volume: i32) -> f64 {
 /// 宿主没有提供采样率时使用的默认混音采样率。
 pub const SAMPLE_RATE: u32 = 48_000;
 
+/// 循环音样本的循环长度（采样帧）：滑条滑行音与转盘旋转音需要首尾衔接，整段样本
+/// 循环；其余样本播一遍即止，返回 0。
+///
+/// 这是「哪些样本要循环」的唯一判定，CLI 解码与 Web 的 WASM 解码都调它，宿主不再
+/// 各自猜名字正则；判定按子串匹配，因为样本名带 bank 前缀或自定义音效索引后缀
+/// （`normal-spinnerspin`、`soft-sliderslide7`）同样要循环。
+pub fn sample_loop_len(name: &str, frames: usize) -> usize {
+    let name = name.to_ascii_lowercase();
+    if name.contains("sliderslide") || name.contains("spinnerspin") {
+        frames
+    } else {
+        0
+    }
+}
+
 /// 根据谱面与目标模式生成完整的打击音时间轴。
 ///
 /// 模式取 `beatmap.mode()`：0/1/2/3 分别对应 standard/taiko/catch/mania。
@@ -99,7 +114,7 @@ fn build_with<R: SampleResolver>(beatmap: &Beatmap, resolver: &mut R) -> Hitsoun
 #[cfg(test)]
 mod tests {
     use super::test_support::{beatmap_with, library_with, object_sample};
-    use super::{build_timeline, referenced_names, volume_gain, SampleLibrary};
+    use super::{build_timeline, referenced_names, sample_loop_len, volume_gain, SampleLibrary};
     use crate::domain::models::{HitAddition, HitObjects, HitSample, SampleBank, StandardHitObject};
 
     /// 滑条的音效参数取自正确的列。
@@ -327,6 +342,17 @@ mod tests {
         assert!(names.contains(&"soft-hitnormal".to_string()), "names={names:?}");
         // 1 不带后缀，`soft-hitnormal1` 不是合法候选名。
         assert!(!names.contains(&"soft-hitnormal1".to_string()), "names={names:?}");
+    }
+
+    /// 循环长度判定覆盖 bank 前缀与自定义音效索引后缀。
+    #[test]
+    fn loop_length_covers_bank_and_index_suffixes() {
+        assert_eq!(sample_loop_len("normal-sliderslide", 42), 42);
+        assert_eq!(sample_loop_len("soft-sliderslide7", 42), 42);
+        assert_eq!(sample_loop_len("spinnerspin", 42), 42);
+        assert_eq!(sample_loop_len("normal-spinnerspin", 42), 42);
+        assert_eq!(sample_loop_len("normal-hitnormal", 42), 0);
+        assert_eq!(sample_loop_len("hitclap", 42), 0);
     }
 
     /// taiko 的候选名同样带索引后缀。

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.3.4] - 2026.09.29
+
+### Added
+
+- WASM 输入改为单文件（`.osu` / `.osz` 字节）：`.osz` 的解包与音乐/背景/音效解码全部移入 wasm，本地文件与 BID 走同一条链路。
+- WASM 新增时钟接口（`play` / `pause` / `seek` / `setRate` / `clockMs`）与统一混音输出（`pullAudio` / `onAudioClock` / `audioEpoch`）：音乐与音效混成一条 PCM 流，时钟由 WASM 维护。
+
+### Changed
+
+- Web 移除 `<audio>` 元素与静音 WAV 假时钟；WASM 接口大幅精简（样本装载、时间轴重建、预读对齐全部内化）；后端收敛为 `/resource/file` 与 `/resource/progress`。
+- 倍速下音乐与音效一起变速变调（与 CLI 一致）。
+
+### Fixed
+
+- 带 bank 前缀的转盘旋转音（如 `normal-spinnerspin`）此前不按循环音播放。
+
+---
+
 ## [1.3.3] - 2026.09.26
 
 ### Added

@@ -245,11 +245,8 @@ fn decode_sample(name: &str, bytes: &[u8], extension: Option<&str>) -> Result<Sa
         sample_rate = default_sample_rate();
     }
     let frames = stereo.len() / 2;
-    let loop_length = if name.contains("sliderslide") || name == "spinnerspin" {
-        frames
-    } else {
-        0
-    };
+    // 哪些样本要循环由 core 统一判定（与 Web 的 WASM 解码共用同一规则）。
+    let loop_length = osu_beatmap_preview_core::hitsound::sample_loop_len(name, frames);
     Ok(SampleData::stereo(stereo, sample_rate).with_loop(loop_length))
 }
 

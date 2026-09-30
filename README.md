@@ -1,6 +1,17 @@
+<div align="center">
+
 # osu! Beatmap Preview
 
-[中文](README.md) | [English](docs/README.en.md)
+[![Release](https://img.shields.io/github/v/release/2710165659/osu-beatmap-preview?logo=github&logoColor=white&color=FF6600)](https://github.com/2710165659/osu-beatmap-preview/releases)
+[![License](https://img.shields.io/badge/License-MIT-2EA44F?logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![WebGPU](https://img.shields.io/badge/WebGPU-%E5%AE%9E%E6%97%B6%E9%A2%84%E8%A7%88-7C3AED)](crates/osu-beatmap-preview-web/README.md)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-4A5568)](https://github.com/2710165659/osu-beatmap-preview/releases)
+
+[![中文](https://img.shields.io/badge/-%E4%B8%AD%E6%96%87-E60023)](README.md)
+[![English](https://img.shields.io/badge/-English-1D4ED8)](docs/README.en.md)
+
+</div>
 
 独立的 osu! 谱面预览工具，支持 osu!standard、osu!taiko、osu!catch、osu!mania 四种模式：既可以把谱面导出成 PNG、GIF 和带原曲音频的 MP4，也可以在浏览器里用 WebGPU 实时播放谱面。
 
@@ -8,10 +19,10 @@
 
 ## 功能亮点
 
-- **Mod 支持**：`EZ` `HR` `HD` `DA` `TC` `SW` `CS` `DS` `IN` `HO` 以及 `1K`–`10K` 键数可自由组合；`DT`、`HT` 支持自定义倍速（`1.01`–`2.00x`、`0.50`–`0.99x`），`DA` 还能按 `cs`/`ar`/`od`/`hp` 逐项改难度。重复的、互相冲突的（如 `EZ` 配 `HR`）或当前模式不支持的 Mod 会直接报错，不会静默忽略。
-- **转谱**：Standard 谱面可转到 Taiko、Catch 或 Mania；转 Mania 时 `1K`–`10K`、`DS`、`IN`、`HO` 会参与转谱结果，目标模式与源模式相同时按不转谱处理。
+- **Mod 支持**：`EZ` `HR` `HD` `DA` `TC` `SW` `CS` `DS` `IN` `HO` 以及 `1K`–`10K` 键数可自由组合；`DT`、`HT` 支持自定义倍速（`1.01`–`2.00x`、`0.50`–`0.99x`）。
+- **转谱**：Standard 谱面可转到 Taiko、Catch 或 Mania，并在此基础上可以应用 mod。
 - **四种模式**：osu!standard、osu!taiko、osu!catch、osu!mania 各有独立的布局、皮肤和配色，都能输出 PNG 概览、GIF 分段预览和带原曲音频的 H.264 MP4。
-- **浏览器实时预览**：Web 包解压后 `node backend/server.js`（或 `npm start`）就能在浏览器里播放谱面，支持 Mod 热切换、转谱、seek、倍速、音量（默认 50%）、分辨率（480P/720P/1080P）与 30/60/120 FPS 切换；也能用 `/?bid=<BID>` 直接进入预览。后端只做跨域下载与缓存并向页面报告下载进度，每一帧都在本地 WebGPU 中完成。
+- **浏览器实时预览**：Web 包解压后 `node backend/server.js`（或 `npm start`）就能在浏览器里播放谱面，支持 Mod 热切换、转谱、seek、倍速、音量（默认 50%）、分辨率（480P/720P/1080P）与 30/60/120 FPS 切换。
 - **高性能、低占用**：帧渲染按配置分块并行，并按单帧字节数动态限制批次，降低大画布的临时内存峰值；GIF 复用帧编码缓冲区，Standard MP4 预计算每帧可见物件索引，滑条 tick、鼓滚 tick 等使用程序化精灵缓存。实测数据见[批量渲染报告](docs/report.md)。
 - **独立、无外部依赖的 CLI**：单个可执行文件内嵌皮肤、字体、H.264 和 AAC 编码器，运行时不需要 FFmpeg、额外动态库或资源文件；Windows 会自动尝试 NVENC / AMF，缺失时回退内置 CPU 编码器（`OSU_PREVIEW_NO_GPU=1` 可强制 CPU）。下载缓存、输出缓存和日志都在本机复用，不同配置使用独立输出目录。
 
@@ -90,11 +101,11 @@ npm test             # 后端回归测试
 npm start            # 访问 http://127.0.0.1:8787
 ```
 
-Windows 上可以用 `crates\osu-beatmap-preview-web\run_web.ps1` 一步跑完「装依赖 → 构建 wasm → 构建前端 → 启动服务器」（在任意目录调用都行，脚本会切到自己的目录），后端参数如 `--port`/`--https` 原样转发；`-NoWasm`/`-NoBuild`/`-NoInstall`/`-NoServe` 可跳过对应步骤，`-Help` 看选项；执行策略受限时用 `powershell -ExecutionPolicy Bypass -File .\run_web.ps1`。
+Windows 上可以用 `crates\osu-beatmap-preview-web\run_web.ps1` 一步跑完「装依赖 → 构建 wasm → 构建前端 → 启动服务器」。
 
 细节见 [Web 站点说明](crates/osu-beatmap-preview-web/README.md) 与 [WASM 使用说明](crates/osu-beatmap-preview-wasm/README.md)。
 
-Web 服务要部署到服务器时，`Docker/Dockerfile-web` 可以把 wasm、前端和后端一起构建成镜像（宿主机不需要 Node 或 Rust，构建时在仓库根目录执行）：
+Web 服务要部署到服务器时，`Docker/Dockerfile-web` 可以把 wasm、前端和后端一起构建成镜像：
 
 ```bash
 docker build -f Docker/Dockerfile-web -t osu-beatmap-preview-web .

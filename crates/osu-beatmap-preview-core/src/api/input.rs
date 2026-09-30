@@ -3,12 +3,13 @@
 use std::sync::Arc;
 
 use crate::gameplay::GameplayOptions;
+use crate::hitsound::SAMPLE_RATE;
 use crate::{config, Beatmap};
 
 /// 会话创建时可以提供的谱面与背景资源。
 ///
-/// 音乐不在这里：预览由宿主自己播放（Web 的 `<audio>` 元素），导出由宿主解码后与
-/// 打击音混音，core 只负责「什么时候、多大声」的打击音部分。
+/// 音乐不在这里：音乐由宿主解码后经 [`crate::api::session::RealtimeSession::set_music`]
+/// 放进混音器，与打击音同流输出（实时预览）或由宿主自行与打击音合成（离线导出）。
 #[derive(Debug, Clone, Default)]
 pub struct ResourceBundle {
     pub beatmap: Option<Beatmap>,
@@ -57,6 +58,30 @@ impl RenderConfig {
     }
 }
 
+/// 音频输出配置：音乐与打击音由 core 统一混音，宿主只把混音结果送到音频设备。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioConfig {
+    /// 混音输出采样率，必须等于宿主音频设备的实际采样率，混音结果才能直接播放。
+    pub sample_rate: u32,
+    /// 是否启用打击音；关闭时音乐照常输出，事件时间轴为空。
+    pub hitsound_enabled: bool,
+    /// 打击音音量百分比（0..=100，越界按边界处理）。
+    pub hitsound_volume: i32,
+    /// 音乐音量百分比（0..=100，越界按边界处理）。
+    pub music_volume: i32,
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: SAMPLE_RATE,
+            hitsound_enabled: true,
+            hitsound_volume: 100,
+            music_volume: 50,
+        }
+    }
+}
+
 /// 实时预览会话的渲染、转换和核心配置。
 #[derive(Debug, Clone)]
 pub struct RealtimeOptions {
@@ -65,6 +90,8 @@ pub struct RealtimeOptions {
     pub render: RenderConfig,
     pub video_style: crate::render::wgpu::VideoStyle,
     pub core_config: Arc<config::CoreConfig>,
+    /// 音频输出配置（采样率、开关与初始音量）。
+    pub audio: AudioConfig,
     /// 游玩/回放配置。
     ///
     /// 目前只保留配置位（默认 `GameplayMode::Preview`，不改变任何现有行为）：
@@ -81,6 +108,7 @@ impl Default for RealtimeOptions {
             render: RenderConfig::default(),
             video_style: crate::render::wgpu::VideoStyle::default(),
             core_config: Arc::new(config::CoreConfig::default()),
+            audio: AudioConfig::default(),
             gameplay: GameplayOptions::default(),
         }
     }

@@ -1,6 +1,6 @@
 //! 打击音混音器：把时间轴上的事件混合成 PCM。
 
-use super::{HitsoundTimeline, PlayFrequency, SampleLibrary};
+use super::{HitsoundTimeline, PlayFrequency, SampleData, SampleLibrary};
 
 /// 正在播放的一个声音。
 #[derive(Debug, Clone, Copy)]
@@ -36,12 +36,20 @@ pub struct LoopHandle(u64);
 ///
 /// 声音有两个来源：时间轴事件（预览/导出）与显式触发（游玩、回放由输入驱动）。
 /// 两者写进同一张声音列表，因此增益、限幅与回收逻辑只有一份。
+///
+/// 背景音乐是第三个声部：它不在声音列表里（没有事件、不回收），逐帧按位置采样叠加，
+/// 与打击音共用同一条时间轴——实时预览里音乐与音效因此是**同一条混音流**，倍速、
+/// seek、暂停只有一处位置计算。离线导出（CLI）不设置音乐，行为不变。
 #[derive(Debug, Clone)]
 pub struct HitsoundMixer {
     library: SampleLibrary,
     timeline: HitsoundTimeline,
     sample_rate: u32,
     master_gain: f64,
+    /// 背景音乐（可选）：谱面时间 0 对应音乐第 0 帧，整段只播一次、不循环。
+    music: Option<SampleData>,
+    /// 音乐线性增益；与打击音主音量分开（两组独立滑杆）。
+    music_gain: f64,
     /// 当前混音位置（谱面毫秒）。
     position_ms: f64,
     voices: Vec<Voice>,
@@ -58,6 +66,8 @@ impl HitsoundMixer {
             timeline,
             sample_rate: sample_rate.max(1),
             master_gain: 1.0,
+            music: None,
+            music_gain: 1.0,
             position_ms: 0.0,
             voices: Vec::new(),
             next_event: 0,
@@ -75,11 +85,25 @@ impl HitsoundMixer {
 
     /// 设置主音量（线性增益）。非有限值按静音处理。
     pub fn set_master_gain(&mut self, gain: f64) {
-        self.master_gain = if gain.is_finite() {
-            gain.clamp(0.0, 8.0)
-        } else {
-            0.0
-        };
+        self.master_gain = sanitize_gain(gain);
+    }
+
+    /// 设置背景音乐（`None` 表示没有音乐，混音退化为纯打击音）。
+    pub fn set_music(&mut self, music: Option<SampleData>) {
+        self.music = music;
+    }
+
+    pub fn music(&self) -> Option<&SampleData> {
+        self.music.as_ref()
+    }
+
+    /// 设置音乐音量（线性增益）。非有限值按静音处理。
+    pub fn set_music_gain(&mut self, gain: f64) {
+        self.music_gain = sanitize_gain(gain);
+    }
+
+    pub fn music_gain(&self) -> f64 {
+        self.music_gain
     }
 
     pub fn timeline(&self) -> &HitsoundTimeline {
@@ -325,10 +349,22 @@ impl HitsoundMixer {
         }
 
         let master = self.master_gain;
+        let music_gain = self.music_gain as f32;
         for (index, pair) in output.chunks_exact_mut(2).enumerate() {
             let frame_time = window_start + index as f64 * ms_per_frame;
             let mut left = 0.0_f32;
             let mut right = 0.0_f32;
+
+            // 背景音乐：音乐帧 = 谱面毫秒 × 音乐采样率 / 1000。谱面时间轴本身已含
+            // DT/HT 变速，倍速只作用于整条流的推进速率，因此这里不做倍速换算——与
+            // CLI 导出的下标换算一致。负时间（首个物件前的预卷）与曲末之后由
+            // `frame_at` 的越界语义自然给静音，音乐不需要按事件管理。
+            if let Some(music) = &self.music {
+                let position = frame_time * music.sample_rate as f64 / 1000.0;
+                let (music_left, music_right) = music.frame_at(position);
+                left += music_left * music_gain;
+                right += music_right * music_gain;
+            }
 
             for voice in &self.voices {
                 if frame_time < voice.start_ms || frame_time >= voice.end_ms {
@@ -386,7 +422,8 @@ impl HitsoundMixer {
     }
 }
 
-/// 触发用的增益：非有限值按静音处理，其余夹到与主音量一致的范围内。
+/// 增益消毒（打击音主音量、音乐音量、显式触发共用）：非有限值按静音处理，
+/// 其余夹到可接受范围内，坏输入不能让混音输出变 NaN 或瞬间爆音。
 fn sanitize_gain(gain: f64) -> f64 {
     if gain.is_finite() {
         gain.clamp(0.0, 8.0)
@@ -707,5 +744,83 @@ mod tests {
         assert_eq!(mixer.master_gain(), 0.0);
         mixer.set_master_gain(-1.0);
         assert_eq!(mixer.master_gain(), 0.0);
+    }
+
+    /// 4 帧的递增音乐（每帧值 = 帧号），1kHz 输出下 1 帧 = 1ms。
+    fn ramp_music() -> SampleData {
+        SampleData::stereo(vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0], 1000)
+    }
+
+    /// 音乐按「谱面毫秒 × 采样率 / 1000」逐帧采样，音量走独立的音乐增益。
+    #[test]
+    fn music_mixes_at_chart_time_with_its_own_gain() {
+        let mut mixer = HitsoundMixer::new(SampleLibrary::new(), HitsoundTimeline::default(), 1000);
+        mixer.set_music(Some(ramp_music()));
+        mixer.set_music_gain(0.5);
+
+        let output = mixer.render(4);
+        for (index, pair) in output.chunks_exact(2).enumerate() {
+            let expected = soft_limit(index as f32 * 0.5);
+            assert!((pair[0] - expected).abs() < 1e-6, "frame {index}: {}", pair[0]);
+            assert!((pair[1] - expected).abs() < 1e-6, "frame {index}: {}", pair[1]);
+        }
+    }
+
+    /// 音乐在负时间（预卷）与曲末之后都是静音；seek 后从对应帧继续。
+    #[test]
+    fn music_is_silent_outside_and_follows_seek() {
+        let mut mixer = HitsoundMixer::new(SampleLibrary::new(), HitsoundTimeline::default(), 1000);
+        mixer.set_music(Some(ramp_music()));
+
+        // 预卷段：谱面时间 -2ms ~ 0ms，音乐还没开始。
+        mixer.seek(-2.0);
+        let pre_roll = mixer.render(2);
+        assert!(pre_roll.iter().all(|value| *value == 0.0), "{pre_roll:?}");
+
+        // seek 到 2ms：从音乐第 2 帧继续（输出经软限幅）。
+        mixer.seek(2.0);
+        let resumed = mixer.render(2);
+        assert!((resumed[0] - soft_limit(2.0)).abs() < 1e-6, "{}", resumed[0]);
+        assert!((resumed[2] - soft_limit(3.0)).abs() < 1e-6, "{}", resumed[2]);
+
+        // 曲末之后继续静音，不越界、不循环。
+        mixer.seek(5.0);
+        let after_end = mixer.render(2);
+        assert!(after_end.iter().all(|value| *value == 0.0), "{after_end:?}");
+    }
+
+    /// 音乐与打击音叠加后再统一限幅。
+    #[test]
+    fn music_and_hitsound_sum_before_limiting() {
+        let mut library = SampleLibrary::new();
+        library.insert("click", SampleData::stereo(vec![1.0; 4], 1000));
+        let timeline = HitsoundTimeline {
+            events: vec![PlayEvent {
+                start_ms: 0.0,
+                duration_ms: 0.0,
+                source_id: 0,
+                gain: 0.25,
+                looping: false,
+                frequency: PlayFrequency::UNITY,
+            }],
+        };
+        let mut mixer = HitsoundMixer::new(library, timeline, 1000);
+        mixer.set_music(Some(SampleData::stereo(vec![1.0; 4], 1000)));
+        mixer.set_music_gain(0.5);
+
+        let output = mixer.render(1);
+        let expected = soft_limit(0.25 + 0.5);
+        assert!((output[0] - expected).abs() < 1e-6, "{}", output[0]);
+        assert!((output[1] - expected).abs() < 1e-6, "{}", output[1]);
+    }
+
+    /// 音乐增益与主音量一样拒绝非有限值。
+    #[test]
+    fn music_gain_rejects_non_finite_values() {
+        let mut mixer = HitsoundMixer::new(SampleLibrary::new(), HitsoundTimeline::default(), 1000);
+        mixer.set_music_gain(f64::NAN);
+        assert_eq!(mixer.music_gain(), 0.0);
+        mixer.set_music_gain(f64::INFINITY);
+        assert_eq!(mixer.music_gain(), 0.0);
     }
 }

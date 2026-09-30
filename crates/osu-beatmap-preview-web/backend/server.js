@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // osu! 谱面预览 Web 站点与下载后端。
 //
-// 后端只做浏览器做不到的事：跨域下载 `.osu` 与 `.osz`、从 OSZ 里取出音频、背景与
-// 谱面自带的打击音、缓存结果，然后把静态站点（含 wasm 产物）发给浏览器。渲染完全在
-// 浏览器 WebGPU 中完成，后端不参与任何一帧的绘制。
+// 后端只做浏览器做不到的事：跨域下载 `.osu` 与 `.osz`、缓存结果，然后把整包字节
+// 与静态站点（含 wasm 产物）发给浏览器。解包、音乐/背景/音效的解码与混音全部在
+// 浏览器的 WASM 里完成；渲染也在浏览器 WebGPU 中完成，后端不参与任何一帧的绘制。
 
 import http from 'node:http';
 import https from 'node:https';
@@ -13,7 +13,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Cache, resolveCacheDir } from './cache.js';
-import { DEFAULT_HOST, DEFAULT_PORT } from './config.js';
+import { DEFAULT_HOST, DEFAULT_PORT, mimeFor } from './config.js';
 import { ResourceProvider } from './resources.js';
 import { StaticFiles, parseByteRange } from './static.js';
 
@@ -121,54 +121,25 @@ async function sendResource(request, response, route, url) {
     return;
   }
 
-  if (route === '/resource/beatmap') {
-    const beatmapPath = await resources.beatmapPath(bid, { fresh: options.noCache });
-    const body = await fsp.readFile(beatmapPath);
-    sendBuffer(response, 'text/plain; charset=utf-8', body, request.headers.range);
-    return;
-  }
-
   // 加载进度：.osz 动辄几十 MiB，前端轮询这个接口画进度条。
   if (route === '/resource/progress') {
     sendJson(response, resources.progress(bid));
     return;
   }
 
-  // 谱面自带打击音：清单给条目名，具体字节按名逐个取（浏览器只请求 wasm 说需要的那几个）。
-  if (route === '/resource/samples') {
-    const media = await resources.media(bid, { fresh: options.noCache });
-    sendJson(response, { samples: (media.samples ?? []).map((entry) => entry.name) });
+  // 一份文件的字节：完整的 .osz 谱面包。解包、音乐/背景/音效的解码与混音全部在
+  // 浏览器的 WASM 里完成，后端不看压缩包内部。
+  if (route === '/resource/file') {
+    const oszPath = await resources.file(bid, { fresh: options.noCache });
+    const body = await fsp.readFile(oszPath);
+    // 读盘到响应这段在云端是实打实的耗时（几十 MiB 的发包时间）：先把阶段推到
+    // 「传输到客户端」，再写响应，浏览器的进度条才不会停在服务端阶段上。
+    resources.reportTransfer(bid, { total: body.length });
+    sendBuffer(response, mimeFor(oszPath), body, request.headers.range);
     return;
   }
 
-  if (route === '/resource/sample') {
-    const name = url.searchParams.get('name') ?? '';
-    const target = await resources.sample(bid, name);
-    if (!target) {
-      sendText(response, 404, '未知的谱面音效');
-      return;
-    }
-    sendBuffer(response, target.mime, await fsp.readFile(target.path), null);
-    return;
-  }
-
-  const media = await resources.media(bid, { fresh: options.noCache });
-  const target =
-    route === '/resource/audio'
-      ? media.audio
-      : route === '/resource/background'
-        ? media.background
-        : null;
-  if (!target) {
-    sendText(response, 404, '未知资源请求');
-    return;
-  }
-  const body = await fsp.readFile(target.path);
-  // 读盘到响应这段在云端是实打实的耗时（几十 MiB 的发包时间）：先把阶段推到
-  // 「传输到客户端」，再写响应，浏览器的进度条才不会停在「解析资源」上。
-  resources.reportTransfer(bid, { total: body.length });
-  // 音频元素需要 byte range 才能在不完整下载时 seek，缺少它 seekable 会一直是 0。
-  sendBuffer(response, target.mime, body, request.headers.range);
+  sendText(response, 404, '未知资源请求');
 }
 
 function sendBuffer(response, contentType, body, rangeHeader) {

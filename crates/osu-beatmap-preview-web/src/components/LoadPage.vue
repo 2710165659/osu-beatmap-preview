@@ -92,7 +92,8 @@ function removeFile() {
         <p v-if="state.localFileName" class="-mt-2 flex items-start gap-2 text-[12px] text-neutral-500">
           <span class="min-w-0 flex-1">
             已选择：{{ state.localFileName }}（本地文件优先于 BID；填 BID 仅用于在 .osz 内指定难度）
-            <span v-if="state.localKind === 'osu'">本地 .osu 没有音频与背景，纯画面预览。</span>
+            <span v-if="state.localKind === 'osu'">本地 .osu 只有谱面与内嵌音效，没有音乐与背景。</span>
+            <span v-else-if="state.localKind === 'osz'">音乐、背景与自带音效都在 .osz 里，由 WASM 解包后统一播放。</span>
           </span>
           <button
             type="button"

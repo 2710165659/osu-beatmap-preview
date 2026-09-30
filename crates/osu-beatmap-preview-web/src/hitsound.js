@@ -1,202 +1,103 @@
-// 网页端的打击音播放器。
+// 音频输出：AudioContext + AudioWorklet + SharedArrayBuffer 环形缓冲。
 //
-// 职责边界（对应任务的架构要求）：
-// - WASM 负责「什么时候播放哪个样本、多大声」：事件时间轴、倍速换算、混音都在里面；
-// - 本文件只负责「把样本 PCM 送进 WASM」和「把混音结果按音频硬件时钟送出去」；
-// - 下载仍走原有的 `/resource/*` 接口，音频线程只读共享环形缓冲区。
+// 职责边界：WASM 会话负责「什么时候响、多大声」——事件时间轴、音乐、倍速换算与混音
+// 都在里面（`pullAudio` 直接给出「音乐 + 打击音」的统一混音结果）；本文件只做搬运：
 //
-// 位置的说法统一如下：`gameMilliseconds` 是游戏时间轴上的毫秒（0 = 首个物件），
-// WASM 的打击音位置用「谱面绝对时间」，两者相差 `absoluteStart`，由调用方传入。
+// - 每帧把 `session.pullAudio()` 的结果写进环形缓冲；
+// - 音频线程按硬件时钟消费并回报「已读到哪」，这个位置转发回 `session.onAudioClock()`
+//   ——它是画面时钟的锚点，音画同步的根基；
+// - 输出流整体重置（seek、走散重对齐）由 `session.audioEpoch()` 的纪元变化驱动：
+//   纪元一变就把环形读写指针一起归零，并通知音频线程从头重读。
+//
+// 位置统一用「相对帧号」（自上次重置起的采样帧），主线程写入与音频线程读取同一坐标系，
+// 因此环形绕回不影响比较。协议见 `public/hitsound-worklet.js`：
+// - 主线程 → 内核：`{ ring, control, mask, readFrame, playing, rate }`
+// - 主线程 → 内核：`{ command: 'readFrame', value }`（重置读取指针）
+// - 内核 → 主线程：`{ readPosition, frames, underrunFrames }`
 
-import { samplePcmForWasm } from './hitsound-core.js';
-import { createHitsoundStream } from './hitsound-stream.js';
+import { createRingConfig, writeChunk } from './hitsound-core.js';
 
-/**
- * 把样本推给 WASM 的并发上限。
- *
- * 每个样本都要过一次 `setHitsoundSample`；并发太高会让主线程长时间被占用，
- * 太低又拉长准备时间，4 是一个折中。
- */
-const SAMPLE_DECODE_CONCURRENCY = 4;
-
-/**
- * 把解码出的 AudioBuffer 交给 WASM。
- *
- * 返回是否成功放入；放入失败只影响这一个音效，不影响其它样本。
- */
-function pushSample(session, name, buffer, loopLength) {
-  const { channels, samples } = samplePcmForWasm(buffer);
-  if (!samples.length) return false;
-  session.setHitsoundSample(name, channels, buffer.sampleRate, loopLength, samples);
-  return true;
-}
-
-/** 从 WASM 取出上一批混音结果；WASM 未启用打击音时返回 null。 */
-function takeMixedFrames(session) {
-  const samples = session.takeHitsoundBuffer?.();
-  if (!samples?.length) return null;
-  return samples;
-}
+/** 一次最多向 WASM 要多少帧（48kHz 下约 85ms），限制单帧的混音与拷贝开销。 */
+const MAX_PULL_FRAMES = 4096;
 
 /**
- * 一个后端条目名能命中的候选名（全部小写）。
+ * 一条「音乐 + 打击音」的音频输出。
  *
- * 与 core 的 `sample_entry_matches` 是同一套规则：候选名要么是不带扩展名的样本名
- * （`soft-hitnormal` ↔ 条目 `soft-hitnormal.ogg`），要么是 `hitSample` 里写死的文件名
- * （`custom-hit.ogg` ↔ 条目 `sub/custom-hit.ogg`）。因此完整条目名、文件名与去掉扩展名
- * 的文件名都可能等于候选名。`test/hitsound-samples.test.js` 用同一张用例表钉住两边。
+ * 混音结果已经在 WASM 里按同一条时间轴合成，这里没有独立时钟：暂停、倍速、seek
+ * 全部通过会话完成，输出只跟随。
  */
-export function sampleLookupKeys(entryName) {
-  const name = String(entryName ?? '').trim().replaceAll('\\', '/').toLowerCase();
-  if (!name) return [];
-  const keys = [name];
-  const fileName = name.split('/').pop();
-  if (fileName !== name) keys.push(fileName);
-  const dot = fileName.lastIndexOf('.');
-  // 前导点（`.ogg` 这种隐藏文件）没有可用的主干名，只有完整名字可用。
-  if (dot > 0) keys.push(fileName.slice(0, dot));
-  return keys;
-}
-
-/**
- * 把后端给出的谱面音效清单变成「候选名 → 条目 URL」的查找表。
- *
- * @param {{name: string, url: string}[]} entries 后端 `/resource/samples` 的结果
- * @returns {Map<string, string>} 键是候选名的小写形式
- */
-export function createBeatmapSampleIndex(entries) {
-  const index = new Map();
-  for (const entry of entries ?? []) {
-    if (!entry?.name || !entry.url) continue;
-    for (const key of sampleLookupKeys(entry.name)) {
-      // 同名条目在正规谱包里不会重复；真重复时保留先出现的那个，保证结果稳定。
-      if (!index.has(key)) index.set(key, entry.url);
-    }
-  }
-  return index;
-}
-
-/** 用 AudioContext 解码一段 ogg；失败返回 null（按静音处理）。 */
-async function decodeSample(context, bytes) {
-  if (!bytes?.byteLength) return null;
-  try {
-    return await context.decodeAudioData(bytes.slice(0).buffer);
-  } catch (_) {
-    return null;
-  }
-}
-
-export class HitsoundPlayer {
+export class AudioOutput {
   /**
    * @param {object} options
-   * @param {object} options.session WASM 会话（需要已调用 enableHitsound）
+   * @param {object} options.session WASM 会话（含混音与时钟）
    * @param {AudioContext} options.context 已创建的 AudioContext
    * @param {AudioWorkletNode} options.node 已连接的 worklet 节点
    * @param {Float32Array} options.ring 环形采样缓冲（交错立体声 f32）
    * @param {Int32Array} options.control 与音频线程共享的控制字
-   * @param {number} options.sampleRate 音频设备采样率
-   * @param {number} options.absoluteStart 游戏时间 0 对应的谱面绝对时间
+   * @param {number} options.mask 环形掩码
    */
-  constructor(options) {
-    this.session = options.session;
-    this.context = options.context;
-    this.node = options.node;
-    this.absoluteStart = options.absoluteStart;
-    this.sampleRate = options.sampleRate;
-    this.active = false;
-    this.rate = 1;
-
-    // 坐标系与索引换算全部交给 HitsoundStream，播放器只负责 Web Audio 侧。
-    this.stream = createHitsoundStream({
-      sampleRate: options.sampleRate,
-      ring: options.ring,
-      control: options.control,
-      render: (startMs, frames) => this.renderAt(startMs, frames),
-      onPosition: (positionMs, restartVoices) => {
-        if (restartVoices) this.session.seekHitsound(positionMs);
-        else this.session.positionHitsound(positionMs);
-      },
-      post: (message) => this.post(message),
-    });
+  constructor({ session, context, node, ring, control, mask }) {
+    this.session = session;
+    this.context = context;
+    this.node = node;
+    this.ring = ring;
+    this.control = control;
+    this.mask = mask;
+    /** 已写入环形的相对帧数（音频线程用同一坐标系比较）。 */
+    this.writtenFrames = 0;
+    /** 上一次看到的输出流纪元；变化表示整条流已重置。 */
+    this.epoch = session.audioEpoch();
+    /** 音频线程因为来不及混音而输出静音的累计帧数（诊断用）。 */
+    this.underrunFrames = 0;
+    this.playing = false;
 
     this.node.port.onmessage = (event) => {
       const data = event.data;
       if (!data) return;
-      // 音频线程回报的是「自上次重置起已消费的帧数」与本次区间内读到静音的帧数，
-      // 与写入位置同一坐标系；流靠前者把写入前沿保持在音频线程之前，后者只作诊断。
-      this.stream.onReadFrame(data.readPosition, { underrunFrames: data.underrunFrames });
+      // 音频线程的消费位置就是「此刻听到的谱面位置」，转发给 WASM 锚定画面时钟。
+      if (Number.isFinite(data.readPosition)) this.session.onAudioClock(data.readPosition);
+      if (Number.isFinite(data.underrunFrames) && data.underrunFrames > 0) {
+        this.underrunFrames += data.underrunFrames;
+      }
     };
   }
 
-  /** 环形里还有多少帧没被消费（诊断用）。 */
-  get bufferedAhead() {
-    return this.stream.bufferedAhead;
-  }
-
-  /** 音频线程因为来不及混音而输出静音的累计帧数（诊断用；正常播放应当很小）。 */
-  get underrunFrames() {
-    return this.stream.underrunFrames;
-  }
-
-  /** 让内核开始/停止出声；暂停时停止消费，保持两边位置一致。 */
+  /** 让音频线程开始/停止消费；暂停时停止消费，保持两边位置一致。 */
   setPlaying(playing) {
     const next = Boolean(playing);
-    if (this.active === next) return;
-    this.active = next;
-    this.post({ playing: next });
+    if (this.playing === next) return;
+    this.playing = next;
+    this.node.port.postMessage({ playing: next });
   }
 
-  /** 设置播放倍速；内核据此决定每个输出帧消耗多少游戏采样帧。 */
+  /** 设置消费速率（总倍速 = 用户倍速 × 谱面变速，取 `session.rate()`）。 */
   setRate(rate) {
     if (!Number.isFinite(rate) || rate <= 0) return;
-    this.rate = rate;
-    this.post({ rate });
+    this.node.port.postMessage({ rate });
   }
 
   /**
-   * 对齐位置：把「游戏时间」告诉 WASM，并让环形缓冲从对应采样帧重新开始。
+   * 补足环形缓冲：宿主每帧调用一次即可。
    *
-   * 只有明确的 seek 才允许重置环形；普通播放时让音频线程自己走时钟，
-   * 避免每帧拨动造成抖动。
+   * 先混音后对账：`pullAudio` 内部可能因走散重置输出流，返回的那段数据属于新纪元，
+   * 必须先归零写入指针再写，音频线程才读得到。
    */
-  seekGameTime(gameMilliseconds, { seekMixer = false } = {}) {
-    this.stream.reset(this.chartTime(gameMilliseconds), { restartVoices: seekMixer });
-  }
-
-  /** 游戏时间 → 谱面绝对时间（毫秒）。 */
-  chartTime(gameMilliseconds) {
-    const value = Number.isFinite(gameMilliseconds) ? gameMilliseconds : 0;
-    return this.absoluteStart + value;
-  }
-
-  /** 补足环形缓冲：宿主每帧调用一次即可。 */
-  ensureBuffered(chartTimeMs) {
-    this.stream.ensureBuffered(chartTimeMs);
-  }
-
-  /** 让 WASM 从 `startMs` 起混出 `frames` 帧（位置由 `HitsoundStream` 负责对齐）。 */
-  renderAt(startMs, frames) {
-    // 锚点由流在重置时设定；这里只需保证 WASM 的位置与该段数据的起点一致。
-    this.session.positionHitsound(startMs);
-    const rendered = this.session.renderHitsound(frames);
-    if (rendered <= 0) return null;
-    // `takeHitsoundBuffer` 会取走缓冲，长度即本次渲染的帧数 × 2。
-    return this.session.takeHitsoundBuffer?.() ?? null;
-  }
-
-  /**
-   * 丢弃当前所有样本与已解析的数据。
-   *
-   * 切 Mod / 转谱后目标模式可能变化，需要的样本集合也随之变化；此时把 WASM 里的
-   * 样本清空并重置环形缓冲，再重新加载，避免继续用旧模式的音效。
-   */
-  resetSamples() {
-    this.session.resetHitsoundSamples();
-    this.stream.reset(this.absoluteStart);
-  }
-
-  post(message) {
-    this.node.port.postMessage(message);
+  ensureBuffered() {
+    const samples = this.session.pullAudio(MAX_PULL_FRAMES);
+    const epoch = this.session.audioEpoch();
+    if (epoch !== this.epoch) {
+      this.epoch = epoch;
+      this.writtenFrames = 0;
+      Atomics.store(this.control, 0, 0);
+      // 重置消息必须和写入指针一起落地，否则音频线程会把旧位置当新纪元读。
+      this.node.port.postMessage({ command: 'readFrame', value: 0 });
+    }
+    const written = writeChunk(this.ring, this.mask, this.writtenFrames, samples);
+    if (written > 0) {
+      this.writtenFrames += written;
+      // 控制字发布「已写入的相对帧数」；音频线程用同坐标系的读取位置与它比较。
+      Atomics.store(this.control, 0, this.writtenFrames);
+    }
   }
 
   close() {
@@ -208,19 +109,20 @@ export class HitsoundPlayer {
     }
   }
 }
+
 /**
- * 创建网页端的音频上下文并加载播放内核。
+ * 创建音频上下文并加载播放内核。
  *
- * 采样率必须来自真实的 `AudioContext`，所以宿主需要先拿到它，再告诉 WASM 用哪个
- * 采样率混音。返回 `null` 表示当前环境不支持（没有 AudioWorklet 或
- * SharedArrayBuffer），调用方应当退化成「只播画面与音乐」。
+ * 采样率必须来自真实的 `AudioContext`，宿主拿它交给 WASM 的 `create`（混音输出
+ * 采样率与设备一致，结果才能直接播放）。返回 `null` 表示当前环境不支持
+ * （没有 AudioWorklet 或 SharedArrayBuffer），调用方应当退化成「只播放画面」。
  */
-export async function createHitsoundContext(workletUrl) {
+export async function createAudioContext(workletUrl) {
   if (typeof AudioContext === 'undefined' && typeof window === 'undefined') return null;
   const AudioContextClass = typeof AudioContext !== 'undefined' ? AudioContext : window?.webkitAudioContext;
   if (!AudioContextClass) return null;
   // 环形缓冲需要跨线程共享；没有 SharedArrayBuffer 时（例如缺少 COOP/COEP 头）
-  // 直接放弃打击音，而不是退化成主线程逐帧写缓冲区（那会引入新的音画不同步）。
+  // 直接放弃音频输出，而不是退化成主线程逐帧写缓冲区（那会引入新的音画不同步）。
   if (typeof SharedArrayBuffer === 'undefined' || typeof AudioWorkletNode === 'undefined') return null;
 
   let context;
@@ -239,27 +141,17 @@ export async function createHitsoundContext(workletUrl) {
 }
 
 /**
- * 在已创建的音频上下文上建立打击音输出。
+ * 在已创建的音频上下文上建立音频输出。
  *
- * 返回 `null` 表示节点创建失败；此时调用方应关闭上下文并退化成无打击音。
+ * 返回 `null` 表示节点创建失败；此时调用方应关闭上下文并退化成无声音。
  */
-export function createHitsoundOutput({ session, context, absoluteStart }) {
+export function createAudioOutput({ session, context }) {
   if (!session || !context || typeof AudioWorkletNode === 'undefined') return null;
   if (typeof SharedArrayBuffer === 'undefined') return null;
-  const stream = createHitsoundStream({
-    sampleRate: context.sampleRate,
-    ring: null,
-    control: null,
-    render: () => null,
-    onPosition: () => {},
-    post: () => {},
-  });
+  const config = createRingConfig(context.sampleRate);
   // 环形缓冲与控制字必须放进 SharedArrayBuffer，音频线程才能直接读。
-  const ringBuffer = new SharedArrayBuffer(stream.ring.length * 4);
-  const controlBuffer = new SharedArrayBuffer(4);
-  const ring = new Float32Array(ringBuffer);
-  const control = new Int32Array(controlBuffer);
-  const mask = stream.ringFrames - 1;
+  const ring = new Float32Array(new SharedArrayBuffer(config.length * 2 * 4));
+  const control = new Int32Array(new SharedArrayBuffer(4));
 
   let node;
   try {
@@ -272,61 +164,14 @@ export function createHitsoundOutput({ session, context, absoluteStart }) {
     return null;
   }
   node.connect(context.destination);
-  node.port.postMessage({ ring, control, mask, playing: false, rate: 1, readFrame: 0 });
-
-  return new HitsoundPlayer({
-    session,
-    context,
-    node,
+  node.port.postMessage({
     ring,
     control,
-    sampleRate: stream.sampleRate,
-    absoluteStart,
+    mask: config.mask,
+    playing: false,
+    rate: session.rate(),
+    readFrame: 0,
   });
-}
 
-/**
- * 加载全套打击音资源。
- *
- * 字节由宿主提供：谱面自带的自定义音效优先（后端从 OSZ 里解出来的同名条目），
- * 没有就回落到 WASM 内嵌的资源表（`hitsoundAsset`），宿主只负责用 Web Audio 解码成
- * PCM 再送回 WASM。
- *
- * @param {object} options
- * @param {HitsoundPlayer} options.player
- * @param {string[]} options.names 需要加载的样本名
- * @param {(name: string) => Uint8Array|Promise<Uint8Array|null>|null} options.readAsset
- *   按名字取回样本字节。允许返回 Promise：谱面自带的音效要走网络从后端取（OSZ 里的
- *   同名条目），读取是异步的；内嵌资源仍然同步返回。
- * @returns {Promise<number>} 成功放入的样本数
- */
-export async function loadHitsoundSamples({ player, names, readAsset, onProgress }) {
-  const queue = [];
-  let loaded = 0;
-
-  const run = async () => {
-    while (queue.length) {
-      const name = queue.shift();
-      const bytes = await readAsset(name);
-      const buffer = bytes?.length ? await decodeSample(player.context, bytes) : null;
-      if (buffer) {
-        // 整段循环的音效：滑行音需要首尾衔接，转盘旋转音同理。
-        const loopLength = /sliderslide|spinnerspin/.test(name)
-          ? Math.floor(buffer.duration * buffer.sampleRate)
-          : 0;
-        if (pushSample(player.session, name, buffer, loopLength)) loaded++;
-      }
-      onProgress?.(loaded, names.length);
-    }
-  };
-
-  queue.push(...names);
-  const workers = [];
-  for (let index = 0; index < Math.min(SAMPLE_DECODE_CONCURRENCY, queue.length); index++) {
-    workers.push(run());
-  }
-  await Promise.all(workers);
-  // 全部样本放完后只重建一次事件时间轴：逐个样本重建会遍历整张谱面，样本多时很浪费。
-  if (loaded > 0) player.session.rebuildHitsoundTimeline();
-  return loaded;
+  return new AudioOutput({ session, context, node, ring, control, mask: config.mask });
 }

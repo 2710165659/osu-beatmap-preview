@@ -185,20 +185,20 @@ crates/osu-beatmap-preview-web/
 
 ## 前端
 
-- **框架**：Vue 3 单文件组件，没有路由、没有状态管理库；`src/preview.js` 用一份模块级单例状态承载会话、音频、播放时钟与 Mod，组件只画界面。
+- **框架**：Vue 3 单文件组件，没有路由、没有状态管理库；`src/preview.js` 用一份模块级单例状态承载会话、音频输出、播放时钟与 Mod，组件只画界面。
 - **样式**：Tailwind CSS v4（`@tailwindcss/vite`），全部是构建期生成的静态 CSS，运行时不请求任何 CDN。
 - **深链**：`/?bid=<BID>` 直接进入预览，可选 `&convert=taiko`；加载成功后地址栏会写回这两个参数，刷新或分享都能回到同一个预览，点「返回加载」时清除。
-- **本地文件**：加载页可以选择本地 `.osu` / `.osz`，文件不出浏览器（不经后端、不上传）。`.osz` 在浏览器里解开（`src/zip.js`，与后端 `backend/zip.js`、CLI 的 `application/local.rs` 同一套规则，由 `test/local-zip.test.js`、`test/local-file.test.js` 钉住）：只认压缩包顶层的 `.osu`（stable / osu!lazer 的导入规则），多个难度在加载页上选择（填了 BID 时按 `.osu` 的 `BeatmapID` 匹配，找不到直接报错），音频、背景图与谱面自带打击音都取自同一个压缩包，效果与 BID 预览一致。本地 `.osu` 没有音频与背景：背景退化成纯色，音乐位置用一段静音 WAV 充当播放时钟（`src/local-file.js` 的 `silentWavBytes`），画面、打击音、倍速与 seek 全部照常工作（CLI 侧对应规则：`.osu` 只允许 PNG / GIF，`.osz` 才支持 MP4）。本地文件没有可分享的深链，加载成功后地址栏不写参数。
+- **本地文件**：加载页可以选择本地 `.osu` / `.osz`，文件不出浏览器（不经后端、不上传）。两种文件都整份交给 WASM（`src/preview.js` → `WebGpuSession.create`），`.osz` 的解包与音乐/背景/自带音效的解码都在 WASM 内完成，规则与 CLI 的 `application/local.rs` 同一张用例表（由 wasm crate 的 Rust 测试钉住）：只认压缩包顶层的 `.osu`（stable / osu!lazer 的导入规则），多个难度在加载页上选择（填了 BID 时按 `.osu` 的 `BeatmapID` 匹配，找不到直接报错）。本地 `.osu` 只有谱面与内嵌音效：没有音乐与背景，背景退化成纯色、时钟由 WASM 自驱（**没有静音 WAV、没有 `<audio>` 元素**），画面、音效、倍速与 seek 全部照常工作（CLI 侧对应规则：`.osu` 只允许 PNG / GIF，`.osz` 才支持 MP4）。本地文件没有可分享的深链，加载成功后地址栏不写参数。
 - **默认视图**：只保留一行谱面信息、视频和进度条，视频区域最大。进度条在鼠标移动或触摸时显示，停下约 1 秒后淡出；淡出只改透明度，进度条原来的位置始终占着，所以画面不会上下位移。画面参数（30/60/120 FPS、480P/720P/1080P、0.5x–2x 倍速）、音量（0–100%，默认 50%）、Mod 与运行日志都收在右上角齿轮打开的抽屉里。
 - **谱面信息**：名称与难度取自 WASM 的 `beatmapInfo`（见下）。
 - **操作**：点击画面播放/暂停，空格同样；`Esc` 关闭抽屉。左右方向键短按在**松开时**跳转 ±5 秒（按下不跳），长按右键进入 3 倍速播放、长按左键持续向前倒带，两种情况都会在画面上显示角标。
-- **打击音（hit sound）**：默认开启、音量 50%，与音乐音量分开调节（抽屉里的「打击音」一组）。音效按模式选用：Standard / Catch / Mania 用 argon pro (2022)，Taiko 用 osu! "classic" (2013)；谱面音效组与音量按 osu! 规则从 timing point 读取，滑条 tick、滑行音、转盘旋转音、果汁流小果都会还原（转盘旋转音按 autoplay 转速换算进度做音高调制，奖励音每转满一圈响一次）。**谱面自带的自定义音效优先**：后端的 `/resource/samples` 给出该谱面包里的音效条目，前端按候选名匹配并逐个取用（`/resource/sample`），取不到才回落到 WASM 内嵌的资源（`hitsoundAsset`）；候选名包含自定义音效索引后缀（timing point 的 `sampleIndex` / 物件 `hitSample` 的 `index`，如 `soft-hitclap20`），因此按 `{bank}-{name}{index}` 命名的音效也能正确发声。是否采用谱面音效由 `assets/shared_config.yml` 的 `ENABLE_BEATMAP_HITSOUND` 决定（默认启用，切换需重建 wasm）。浏览器只负责用 Web Audio 解码成 PCM，之后由 WASM 按音频硬件时钟推进时间轴并混音，因此画面与声音共用同一条时间轴；某个样本读不出来时按静音处理，不影响播放。
+- **音频（音乐 + 打击音）**：默认开启打击音、音量 50%，与音乐音量分开调节（抽屉里的「打击音」一组）。音乐与音效由 WASM **混成一条 PCM 流**输出：`.osz` 里的音乐与自带音效在会话创建时解好，音效按「谱面自带同名条目 > 内嵌皮肤」取用（内嵌皮肤按模式选用：Standard / Catch / Mania 用 argon pro (2022)，Taiko 用 osu! "classic" (2013)）；谱面音效组与音量按 osu! 规则从 timing point 读取，滑条 tick、滑行音、转盘旋转音、果汁流小果都会还原（转盘旋转音按 autoplay 转速换算进度做音高调制，奖励音每转满一圈响一次），候选名包含自定义音效索引后缀（如 `soft-hitclap20`）。是否采用谱面自带音效由 `assets/shared_config.yml` 的 `ENABLE_BEATMAP_HITSOUND` 决定（默认启用）。某个样本读不出来时按静音处理，不影响播放；倍速下音乐与音效一起变速变调（与 CLI MP4 导出一致）。
 
-  音效的送出一条链路：WASM 按 `state.position` 混出 PCM → `src/hitsound-stream.js` 写入与音频线程共享的环形缓冲（两端统一使用相对帧数，写入位置始终领先音频线程约 170ms）→ `public/hitsound-worklet.js` 按硬件时钟消费。预读窗口按「音频线程已读位置」而不是只按画面时钟计算：音频线程由音频硬件时钟驱动、稳定地领先画面时钟几十毫秒，只按画面时钟预读会让它一路追到写入前沿、读到的全是静音（表现为打击音时有时无）。锚点、坐标系、预读窗口与 seek 对齐的回归测试在 `test/hitsound-stream.test.js`。
+  音频的送出一条链路：WASM 按会话时钟混出「音乐 + 打击音」PCM（`pullAudio`）→ `src/hitsound.js` 写入与音频线程共享的环形缓冲（两端统一使用相对帧数，写入前沿始终领先音频线程约 170ms）→ `public/hitsound-worklet.js` 按硬件时钟消费，并把「已读到哪」回报给 `session.onAudioClock()`——它是画面时钟的锚点。预读窗口与走散重对齐（seek、音频停滞后恢复）在 WASM 内部（core 的 `api/stream.rs`，Rust 单测覆盖）；宿主只在输出流纪元（`audioEpoch`）变化时把环形读写指针一起归零。
 
-### 打击音与跨源隔离
+### 音频输出与跨源隔离
 
-打击音需要 `SharedArrayBuffer` 把 WASM 的混音结果交给音频线程，而浏览器只在跨源隔离下
+音频输出需要 `SharedArrayBuffer` 把 WASM 的混音结果交给音频线程，而浏览器只在跨源隔离下
 允许使用它，因此后端与开发服务器都会发送：
 
 ```text
@@ -206,8 +206,8 @@ Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-站点自身的字体、贴图、wasm 与打击音音效全部同源，开启隔离不影响页面加载。如果你的部署
-在前面又套了一层反向代理，需要把这两个响应头一起透传；缺少时打击音会自动退化成静音
+站点自身的字体、贴图与 wasm 全部同源，开启隔离不影响页面加载。如果你的部署
+在前面又套了一层反向代理，需要把这两个响应头一起透传；缺少时音频会自动退化成无声
 （抽屉里会显示原因），页面其余部分照常工作。
 
 ## 后端接口
@@ -217,19 +217,15 @@ Cross-Origin-Embedder-Policy: require-corp
 | 路由 | 说明 |
 | --- | --- |
 | `GET /`、`/assets/<哈希>` | `dist/` 下的静态站点页面、脚本与样式 |
-| `GET /pkg/<文件>` | wasm 产物（`.js`、`.wasm`、`.d.ts`），打击音音效也内嵌在 `.wasm` 里 |
-| `GET /hitsound-worklet.js` | 打击音播放内核（AudioWorklet） |
+| `GET /pkg/<文件>` | wasm 产物（`.js`、`.wasm`、`.d.ts`），打击音皮肤内嵌在 `.wasm` 里 |
+| `GET /hitsound-worklet.js` | 音频播放内核（AudioWorklet） |
 | `GET /gpu-check.html` | WebGPU 自检页 |
-| `GET /resource/beatmap?bid=<BID>` | 该难度的 `.osu` 文本，命中缓存时直接返回本地文件 |
-| `GET /resource/audio?bid=<BID>` | 从 OSZ 中取出的音频，支持 `Range` 请求（进度条 seek 需要） |
-| `GET /resource/background?bid=<BID>` | 从 OSZ 中取出的背景图；谱面未声明背景（或压缩包里没有）时返回 `404`，前端退化成纯色背景 |
-| `GET /resource/samples?bid=<BID>` | 谱面自带打击音的条目名清单（JSON：`{ samples: [...] }`）；解包时已顺带解出并缓存 |
-| `GET /resource/sample?bid=<BID>&name=<条目名>` | 按条目名取一个谱面自带音效；名字不在清单里时返回 `404` |
+| `GET /resource/file?bid=<BID>` | 该谱面的完整 `.osz` 字节（解包与解码都在浏览器的 WASM 里完成），支持 `Range` |
 | `GET /resource/progress?bid=<BID>` | 加载进度快照（JSON）：`phase`、`received`、`total` |
 
 `bid` 必须是纯数字，否则返回 `400`；下载或解析失败返回 `502` 并附带原因文本，前端会把它显示在日志里。
 
-`/resource/progress` 的阶段依次是 `osu`（取谱面）→ `osz`（下载谱面包，带字节进度）→ `extract`（解包音频、背景与谱面音效）→ `ready`，失败时为 `error`。前端在加载期间每 400 ms 轮询一次，`total` 未知时显示不确定态进度条。进度快照按 bid 保留 10 分钟。
+`/resource/progress` 的阶段依次是 `osu`（定位谱面）→ `osz`（下载谱面包，带字节进度）→ `transfer`（传输到客户端）→ `ready`，失败时为 `error`。前端在加载期间每 400 ms 轮询一次，`total` 未知时显示不确定态进度条。进度快照按 bid 保留 10 分钟。
 
 ## 下载与缓存
 
@@ -239,7 +235,7 @@ Cross-Origin-Embedder-Policy: require-corp
 - `.osz` 在 sayobot、osu.direct、nekoha、catboy 之间竞速，最多 3 个尝试同时进行；尝试失败立即补位，出现「3 秒没有首字节」或「5 秒窗口内低于 128 KiB/s」时触发回退，必要时取消最慢的尝试。
 - 单个尝试先用 `Range: bytes=0-0` 探测分块支持，支持则按 4 块并行下载，失败回退单流；超过 `Content-Length`、超过 50 MiB 或不是有效 ZIP 的结果都会被拒绝。
 - osu.direct 会从 Cloudflare 网段采样候选 IP，先测 TCP 再测 HTTPS，胜者写入缓存并在 24 小时内复用。
-- 同一 `bid` 的并发请求（音频 + 背景）会合并成一次下载，不会重复拉包。
+- 同一 `bid` 的并发请求会合并成一次下载，不会重复拉包。
 
 缓存布局：
 
@@ -248,25 +244,25 @@ Cross-Origin-Embedder-Policy: require-corp
 | `.osu` | `<缓存目录>/osu-download-cache/<bid>.osu` |
 | OSZ | `<缓存目录>/osz-download-cache/<setId>.osz` |
 | osu.direct 优选 IP | `<缓存目录>/osu-direct-preferred-ip.json` |
-| 解包后的音频与背景 | `<缓存目录>/media/<bid>/audio.<ext>`、`background.<ext>` |
 
 缓存不会自动清理，空间占用过大时可以直接删除整个缓存目录。所有写入都先落临时文件再改名，中断不会留下半个文件。
 
 ## WASM 接口：谱面内部信息
 
-`beatmapInfo(bytes)` 按传入的 `.osu` 字节返回谱面内部信息（WASM 没有网络能力，`bid` → 字节由宿主的 `/resource/beatmap` 完成）：
+`beatmapInfo(bytes, options?)` 按传入的文件字节（`.osu` 或 `.osz`）返回谱面内部信息与 `.osz` 难度清单（WASM 没有网络能力，`bid` → 字节由宿主的 `/resource/file` 或本地文件完成；`options` 的 `bid` / `difficulty` 决定 `.osz` 里选哪个难度）：
 
 ```js
 const module = await import('/pkg/osu_beatmap_preview_wasm.js');
 await module.default();
-const bytes = new Uint8Array(await (await fetch('/resource/beatmap?bid=738063')).arrayBuffer());
-const info = module.beatmapInfo(bytes);
+const bytes = new Uint8Array(await (await fetch('/resource/file?bid=738063')).arrayBuffer());
+const info = module.beatmapInfo(bytes, { bid: 738063 });
 info.title;          // 'No title'
 info.version;        // "Lust's Insane"（难度名）
+info.difficulties;   // [{ entry: 'Hard.osu', label: '... [Lust's Insane]', beatmapId: 738063 }]
 info.metadata;       // [Metadata] 全量键值
 ```
 
-返回值覆盖概览字段（`title`、`titleUnicode`、`artist`、`artistUnicode`、`creator`、`version`、`source`、`tags`、`beatmapId`、`beatmapSetId`、`mode`、`modeName`、`formatVersion`、`audioFilename`、`audioLeadInMs`、`stackLeniency`、`backgroundFilename`、`beatDivisor`）、统计（`hitObjectCount`、`firstObjectMs`、`lastObjectEndMs`、`chartDurationMs`、`bpm`、`timingPointCount`、`breakPeriodCount`、`comboColors`）、难度（`ar`、`cs`、`hp`、`od`）以及 `general`、`metadata`、`difficulty` 三个区段的全量键值。当前界面只用到名称与难度，其余字段保留给后续展示。
+返回值覆盖概览字段（`title`、`titleUnicode`、`artist`、`artistUnicode`、`creator`、`version`、`source`、`tags`、`beatmapId`、`beatmapSetId`、`mode`、`modeName`、`formatVersion`、`audioFilename`、`audioLeadInMs`、`stackLeniency`、`backgroundFilename`、`beatDivisor`）、统计（`hitObjectCount`、`firstObjectMs`、`lastObjectEndMs`、`chartDurationMs`、`bpm`、`timingPointCount`、`breakPeriodCount`、`comboColors`）、难度（`ar`、`cs`、`hp`、`od`）、`general` / `metadata` / `difficulty` 三个区段的全量键值，以及 `.osz` 的难度清单 `difficulties`（单独的 `.osu` 为空数组）。当前界面只用到名称、难度与清单，其余字段保留给后续展示。
 
 ## 开发
 
