@@ -31,6 +31,12 @@ fn wall_ms() -> f64 {
         .unwrap_or_else(js_sys::Date::now)
 }
 
+/// 连续拿不到 surface 超过这个时长就报错，不再静默黑屏。
+///
+/// 取帧偶尔超时（GPU 忙、窗口在切换）是正常的，一秒左右还拿不到才算真的坏了。
+#[cfg(target_arch = "wasm32")]
+const SURFACE_FAILURE_LIMIT_MS: f64 = 1000.0;
+
 /// 直接渲染到浏览器 WebGPU Canvas 的会话。
 ///
 /// 创建时一次性收下整份文件；音乐与打击音在 WASM 内统一混音，画面与声音共用同一条
@@ -46,6 +52,12 @@ pub struct WebGpuSession {
     custom_samples: Vec<(String, Vec<u8>)>,
     /// 是否采用谱面自带音效（`ENABLE_BEATMAP_HITSOUND`）。
     use_beatmap_samples: bool,
+    /// 连续拿不到 surface 的起始墙钟时间；拿得到时清空。
+    ///
+    /// 只用来把「画布一直画不出来」变成宿主能看到的错误：以前这种情况是每帧
+    /// `Ok(())` 静默跳过，画面永远停在黑色（或旧帧）而音频照常在放，
+    /// 用户只看到黑屏且日志里没有任何线索。
+    surface_failure_since: Option<f64>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -182,6 +194,7 @@ impl WebGpuSession {
             renderer,
             custom_samples: content.samples,
             use_beatmap_samples,
+            surface_failure_since: None,
         })
     }
 
@@ -235,33 +248,84 @@ impl WebGpuSession {
     // ── 输出 ───────────────────────────────────────────────────────────
 
     /// 按内部时钟渲染一帧到 Canvas。
+    ///
+    /// 返回 `false` 表示这一帧没画：画布被浏览器标记为不可见（窗口被遮挡/最小化）
+    /// 或 GPU 暂时取不到帧。宿主据此可以说明「为什么画面是黑的」，而不是让用户
+    /// 面对一块没有线索的黑画布。
     #[wasm_bindgen(js_name = renderFrame)]
-    pub fn render_frame(&mut self) -> Result<(), JsValue> {
+    pub fn render_frame(&mut self) -> Result<bool, JsValue> {
         let scene = self
             .inner
             .scene_at_absolute(self.inner.clock_ms(wall_ms()).round() as i64)
             .map_err(js_error)?;
-        let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return Ok(())
-            }
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.surface
-                    .configure(self.renderer.device(), &self.surface_config);
-                return Ok(());
-            }
-            wgpu::CurrentSurfaceTexture::Validation => {
-                return Err(JsValue::from_str("WebGPU surface 获取当前帧时发生验证错误"));
-            }
+        let Some(frame) = self.acquire_surface()? else {
+            return Ok(false);
         };
         let view = frame.texture.create_view(&Default::default());
         self.renderer
             .render_to_view(&scene, &view)
             .map_err(js_error)?;
         frame.present();
-        Ok(())
+        Ok(true)
+    }
+
+    /// 取一帧可绘制的 surface 纹理；`None` 表示这一帧跳过。
+    ///
+    /// `Outdated` / `Lost` 表示 surface 配置与画布已经不一致（换分辨率、窗口迁移、
+    /// 设备回收），这里重新配置后**立刻重试一次**：以前直接返回会白白黑掉一帧，
+    /// 而状态一直不变时就变成永久黑屏。
+    ///
+    /// `Occluded`（页面被遮挡）跳过是正常的；其余状态连续失败超过
+    /// [`SURFACE_FAILURE_LIMIT_MS`] 就报错，让宿主停下来提示用户，
+    /// 而不是留下一块黑画布继续放声音。
+    fn acquire_surface(&mut self) -> Result<Option<wgpu::SurfaceTexture>, JsValue> {
+        let mut last_reason = "surface 不可用";
+        for attempt in 0..2 {
+            match self.surface.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(frame)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                    self.surface_failure_since = None;
+                    return Ok(Some(frame));
+                }
+                wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                    last_reason = "surface 过期或丢失";
+                    self.surface
+                        .configure(self.renderer.device(), &self.surface_config);
+                    if attempt == 1 {
+                        break;
+                    }
+                }
+                wgpu::CurrentSurfaceTexture::Timeout => {
+                    last_reason = "GPU 取帧超时";
+                    if attempt == 1 {
+                        break;
+                    }
+                }
+                // 页面被遮挡时没有可显示的目标（窗口最小化、切到别的标签页）：
+                // 跳过这一帧是预期行为，时钟与音频继续推进，恢复可见后自动续上。
+                wgpu::CurrentSurfaceTexture::Occluded => {
+                    self.surface_failure_since = None;
+                    return Ok(None);
+                }
+                wgpu::CurrentSurfaceTexture::Validation => {
+                    return Err(JsValue::from_str("WebGPU surface 获取当前帧时发生验证错误"));
+                }
+            }
+        }
+        let now = wall_ms();
+        let Some(since) = self.surface_failure_since else {
+            self.surface_failure_since = Some(now);
+            return Ok(None);
+        };
+        if now - since >= SURFACE_FAILURE_LIMIT_MS {
+            self.surface_failure_since = None;
+            return Err(JsValue::from_str(&format!(
+                "WebGPU 画布已连续 {:.1} 秒无法出帧（{last_reason}），画面已停止；\
+                 请刷新页面重新加载预览",
+                (now - since) / 1000.0
+            )));
+        }
+        Ok(None)
     }
 
     /// 补一段「音乐 + 打击音」统一混音，返回交错立体声 f32（帧数 × 2，可能为空）。

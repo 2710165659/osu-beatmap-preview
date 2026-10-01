@@ -243,6 +243,8 @@ let audioBlockLogged = false;
 let audioResumedAt = 0;
 let modSwitching = false;
 let appliedMods = [];
+/** 连续没画出来的帧数：用来在画布被浏览器标记为不可见时给出提示。 */
+let skippedFrames = 0;
 /**
  * 加载令牌：每次 `loadPreview()` 递增。
  *
@@ -703,6 +705,7 @@ function teardownSession() {
   state.renderError = '';
   // 列表随会话一起失效：下一次加载会按新模式的矩阵重新取。
   state.modOptions = [];
+  skippedFrames = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -752,13 +755,26 @@ export function attachStage({ viewport, canvas }) {
 // 渲染与播放
 // ---------------------------------------------------------------------------
 
+/** 连续多少帧没画出来才提示「画面无法显示」（约 1.5 秒，按目标帧率折算）。 */
+const SKIPPED_FRAME_HINT = 90;
+
 /** 按 WASM 内部时钟渲染一帧（时钟由会话维护，宿主不再算时间）。 */
 function render() {
   if (!session) return;
   try {
-    session.renderFrame();
-    state.rendered = true;
-    state.renderError = '';
+    // 返回 false = 这一帧没画（画布被浏览器标记为不可见 / GPU 暂时取不到帧）。
+    // 不报错也不暂停，但连着跳过一段时间必须说清原因：否则用户只看到黑屏，
+    // 日志里也只有音频的线索。
+    if (session.renderFrame()) {
+      skippedFrames = 0;
+      state.rendered = true;
+      state.renderError = '';
+      return;
+    }
+    skippedFrames += 1;
+    if (skippedFrames >= SKIPPED_FRAME_HINT && state.playing && !document.hidden) {
+      state.renderError = '画面暂时无法显示：浏览器把画布标记为不可见（窗口被遮挡或最小化），恢复后会自动继续';
+    }
   } catch (error) {
     playState(false);
     state.renderError = '渲染失败，请查看日志';

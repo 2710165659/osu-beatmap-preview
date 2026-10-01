@@ -729,6 +729,47 @@ mod tests {
     };
     use crate::render::geometry::OutputFormat;
 
+    /// FL 光圈在任何时刻都必须真实存在：半径有限且为正，光圈中心处保留 `dim` 透明度。
+    ///
+    /// 这条不变量防的是「整屏全黑」——遮罩只有在光圈消失（半径非正/非有限）或中心也被
+    /// 涂满时才会盖住整个画面。断到很大的时间点、休息段、负时间都要成立。
+    #[test]
+    fn flashlight_keeps_a_visible_hole_at_every_time() {
+        let beatmap = edge_circle_beatmap();
+        let mods = crate::domain::mods::ModSettings {
+            flashlight: true,
+            ..crate::domain::mods::ModSettings::new()
+        };
+        let context = build_video_render_context(
+            &beatmap,
+            beatmap.hit_objects.as_standard().unwrap().to_vec(),
+            Some(&mods),
+            TimeAxis::new(0),
+            OutputFormat::Mp4,
+        );
+        let flashlight = context.flashlight.as_ref().unwrap().get(&context);
+        for time in [-10_000, 0, 5_000, 5_200, 30_000, 600_000, i64::MAX / 4] {
+            let mask = flashlight.at(&context, time);
+            assert!(
+                mask.radius.is_finite() && mask.radius > 0.0,
+                "time={time} 的 FL 半径必须为正有限数：{}",
+                mask.radius
+            );
+            assert!(
+                mask.center.iter().all(|value| value.is_finite()),
+                "time={time} 的 FL 中心必须有限：{:?}",
+                mask.center
+            );
+            // 光圈中心：非滑条时段应完全透明，滑条时段保留 dim（80%）暗化。
+            let center_alpha = mask.opacity_at(mask.center[0], mask.center[1]);
+            assert!(
+                (center_alpha as f64 - mask.dim * 255.0).abs() <= 1.0,
+                "time={time} 光圈中心 alpha={center_alpha}，应为 {:.0}",
+                mask.dim * 255.0
+            );
+        }
+    }
+
     #[test]
     fn flashlight_follows_objects_in_scaled_and_centered_video_layouts() {
         let beatmap = edge_circle_beatmap();

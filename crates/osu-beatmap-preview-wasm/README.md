@@ -112,7 +112,7 @@ npm start
 | `rate()` | 当前总倍速，即音频线程的消费速率 |
 | `clockMs()` | 当前谱面绝对时间；画面按它渲染，进度条的「已播放时长」= `clockMs() - absoluteStartMs()` |
 | `playing()` | 时钟是否在推进 |
-| `renderFrame()` | 按内部时钟把当前帧绘制到 Canvas |
+| `renderFrame()` | 按内部时钟把当前帧绘制到 Canvas；返回 `false` 表示这一帧没画（画布被浏览器标记为不可见，或 GPU 暂时取不到帧），连续拿不到帧超过 1 秒会抛错让宿主提示用户 |
 | `pullAudio(maxFrames)` | 补一段「音乐 + 打击音」统一混音，返回交错立体声 `Float32Array`（帧数 × 2，可能为空）；补多少由 WASM 的预读窗口决定 |
 | `onAudioClock(consumedFrames)` | 转发音频线程回报的消费位置（相对帧号）：有音频输出时它是画面时钟的锚点 |
 | `audioEpoch()` | 输出流的重置纪元；变化表示整条流已重置，宿主必须把环形缓冲读写指针一起归零并通知音频线程从头重读 |
@@ -232,7 +232,7 @@ session.set_mods(mods.filter((token) => token === 'HD' || token === 'FL'));
 - 不解析回放、不切分 MP4；时钟由 WASM 维护，宿主只在音频线程回报时把消费位置转发回来（`onAudioClock`）。
 - 音乐、音效与背景的解码（symphonia / image）在 `create` 时一次性完成：大谱面包（长图、大音乐）会多花一些内存与几百毫秒加载时间。打击音皮肤内嵌在 wasm 里（36 个 ogg，约 240 KiB）；解包/解码依赖（zip / symphonia / image）加上皮肤后 wasm 约 2.2 MiB（gzip 后约 0.9 MiB）。
 - 音频输出还需要 `SharedArrayBuffer`（跨源隔离）与 `AudioWorklet`，环境不具备时页面应退化成「只有画面」，而不是报错。
-- 每帧都直接在 GPU 上绘制，宿主应按目标帧率调用 `renderFrame`，不要在同一帧重复提交。
+- 每帧都直接在 GPU 上绘制，宿主应按目标帧率调用 `renderFrame`，不要在同一帧重复提交。返回 `false`（画布被遮挡、GPU 取帧超时）时不要当错误处理：时钟与音频继续推进，恢复后自动续上；连续 1 秒拿不到帧才会抛错。
 - `beatmapInfo` / `create` 只解析传入的字节，不认识 `bid` 的下载：文件获取由宿主负责（Web 包里是 Node 后端的 `/resource/file?bid=`）。
 
 ## 相关文档
