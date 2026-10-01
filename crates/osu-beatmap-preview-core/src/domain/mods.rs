@@ -133,7 +133,7 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
             let keys: i32 = num
                 .parse()
                 .map_err(|_| PreviewError::new(format!("mania keys must be 1-10, got {num}")))?;
-            if !(1..=10).contains(&keys) {
+            if !MANIA_KEY_MOD_RANGE.contains(&keys) {
                 return Err(PreviewError::new(format!(
                     "mania keys must be 1-10, got {keys}"
                 )));
@@ -487,9 +487,77 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
     filtered
 }
 
+/// Mania 键数 Mod 的可选范围（`1K`–`10K`）；解析与面板展示共用同一处定义。
+const MANIA_KEY_MOD_RANGE: std::ops::RangeInclusive<i32> = 1..=10;
+
+/// 实时预览 / 动画导出下某模式应当展示的可切换 Mod token 列表。
+///
+/// 顺序与 CLI README 的「GIF / MP4」列一致；键数 Mod 在支持矩阵里是一组 `K`，
+/// 这里展开成 `1K`…`10K`，方便上层逐个渲染成按钮。实时会话用
+/// `validate_mods(..., Some("mp4"))` 校验，所以列表里的每一项都能被会话接受：
+/// `DA` 需要调用方替换成带参数的 token（网页端用 `DAAR<值>CS<值>`）。
+/// 网页端不再自带一份列表，避免两侧走偏（与 `hitsoundDefaults` 同样的思路）。
+pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
+    match mode {
+        0 => ["EZ", "HR", "HD", "FL", "DA", "TC", "DT", "HT"]
+            .map(str::to_string)
+            .to_vec(),
+        1 => ["EZ", "HR", "HD", "FL", "SW", "CS", "DT", "HT"]
+            .map(str::to_string)
+            .to_vec(),
+        2 => ["EZ", "HR", "HD", "FL", "DT", "HT"]
+            .map(str::to_string)
+            .to_vec(),
+        3 => {
+            let mut tokens = ["HD", "FL", "CS", "DT", "HT"].map(str::to_string).to_vec();
+            tokens.extend(MANIA_KEY_MOD_RANGE.map(|keys| format!("{keys}K")));
+            tokens.extend(["DS", "IN", "HO"].map(str::to_string));
+            tokens
+        }
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supported_mod_tokens_match_the_realtime_matrix() {
+        for mode in 0..=3 {
+            let tokens = supported_mod_tokens(mode);
+            // PR #6 之后四种模式的实时链路都支持 HD/FL，面板必须能选到。
+            for required in ["HD", "FL", "DT", "HT"] {
+                assert!(
+                    tokens.iter().any(|token| token == required),
+                    "mode={mode} 缺少 {required}：{tokens:?}"
+                );
+            }
+            // 列表里的每一项都必须能被实时会话接受；DA 由调用方补参数。
+            for token in &tokens {
+                let raw = if token == "DA" {
+                    "DAAR9CS4".to_string()
+                } else {
+                    token.clone()
+                };
+                let settings =
+                    parse_mods(std::slice::from_ref(&raw)).expect("面板 token 必须可解析");
+                assert!(
+                    validate_mods(&settings, Some(mode), Some("mp4")).is_empty(),
+                    "mode={mode}, token={raw} 不被实时会话接受"
+                );
+            }
+            // 反向：支持矩阵里的每一类可切换 Mod 都要出现在面板里（K 展开成 1K）。
+            for &supported in supported_switch_mods("gif", mode) {
+                let expected = if supported == "K" { "1K" } else { supported };
+                assert!(
+                    tokens.iter().any(|token| token == expected),
+                    "mode={mode} 面板缺少支持矩阵里的 {supported}：{tokens:?}"
+                );
+            }
+        }
+        assert!(supported_mod_tokens(9).is_empty(), "未知模式不给面板项");
+    }
 
     #[test]
     fn hidden_and_flashlight_support_all_animation_rulesets() {

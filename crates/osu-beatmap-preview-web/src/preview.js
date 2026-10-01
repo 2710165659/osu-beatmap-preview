@@ -33,14 +33,6 @@ export const CONVERT_MODES = ['standard', 'taiko', 'catch', 'mania'];
 /** 数字模式 → 谱面模式 key（`hitsoundDefaults` 的参数）。 */
 const MODE_KEYS = ['standard', 'taiko', 'catch', 'mania'];
 
-/** README「Mod 支持」表：Standard / Taiko / Catch / Mania 的 GIF & MP4 支持项。 */
-export const MOD_OPTIONS = Object.freeze({
-  standard: ['EZ', 'HR', 'HD', 'DA', 'TC', 'DT', 'HT'],
-  taiko: ['EZ', 'HR', 'SW', 'CS', 'DT', 'HT'],
-  catch: ['EZ', 'HR', 'HD', 'DT', 'HT'],
-  mania: ['CS', 'DT', 'HT', '1K', '2K', '3K', '4K', '5K', '6K', '7K', '8K', '9K', '10K', 'DS', 'IN', 'HO'],
-});
-
 /**
  * 默认音量 50%。
  *
@@ -153,6 +145,13 @@ export const state = reactive({
   hitsoundBeatmap: true,
   /** 界面上勾选的 Mod token；DA 提交时会展开成 DAAR..CS..。 */
   mods: [],
+  /**
+   * 当前模式可选的 Mod token，来自 core 的支持矩阵（`supportedMods`）。
+   *
+   * 以前这里放着一份手抄的支持表，新增 HD/FL 后没跟上，网页就点不到。
+   * 现在由会话建立时按实际模式取一次，前端不再自带列表。
+   */
+  modOptions: [],
   daAr: 9,
   daCs: 4,
   sheetOpen: false,
@@ -207,8 +206,8 @@ export const progressPercent = computed(() => {
 /** 速率与剩余时间：服务端和浏览器两侧的字节流都用同一套格式。 */
 export const progressDetail = computed(() => formatProgressDetail(state.progress));
 
-/** 当前模式支持的 Mod；加载完成前按 standard 展示，避免控件闪烁。 */
-export const modTokens = computed(() => MOD_OPTIONS[state.modeKey] ?? []);
+/** 当前模式支持的 Mod；会话建立前为空，不显示任何按钮。 */
+export const modTokens = computed(() => state.modOptions);
 /** DA 参数只在勾选 DA 后展开：默认隐藏，避免占掉抽屉里一大块位置。 */
 export const daVisible = computed(() => modTokens.value.includes('DA') && state.mods.includes('DA'));
 
@@ -677,12 +676,33 @@ function releaseAudioOutput() {
   audioOutput = null;
 }
 
+/**
+ * 取当前模式可选的 Mod 列表。列表由 core 的支持矩阵转出，前端不再自带一份：
+ * 以前手抄的支持表在新增 HD/FL 之后没跟上，网页就点不到这两个 Mod。
+ *
+ * 会话创建之后调用（`mode` 取 `session.mode()`，即转谱后的真实模式）。
+ * `supportedMods` 缺失表示 wasm 产物比页面旧，此时列表为空并留下可操作的日志。
+ */
+function applyModOptions(wasm, mode) {
+  try {
+    state.modOptions = Array.from(wasm.supportedMods?.(mode) ?? []);
+  } catch (error) {
+    logPlay(`Mod 列表读取失败：${errorText(error)}`);
+    state.modOptions = [];
+  }
+  if (state.modOptions.length === 0) {
+    logPlay(`当前 wasm 产物没有 ${mode} 的 Mod 列表（supportedMods），请重新构建 pkg`);
+  }
+}
+
 /** 会话整体释放（换谱面、退回加载页）。 */
 function teardownSession() {
   releaseAudioOutput();
   session = null;
   state.rendered = false;
   state.renderError = '';
+  // 列表随会话一起失效：下一次加载会按新模式的矩阵重新取。
+  state.modOptions = [];
 }
 
 // ---------------------------------------------------------------------------
@@ -947,6 +967,8 @@ export async function loadPreview() {
     state.position = 0;
     state.modeKey = session.mode();
     state.mode = state.modeKey.toUpperCase();
+    // Mod 面板按实际模式（含转谱结果）取一次；HD/FL 是否可选由 core 决定。
+    applyModOptions(wasm, state.modeKey);
     state.status = hasMusic() ? '就绪' : '无音乐（.osu 单文件）';
 
     // 6. 接上音频输出；不可用就退化成只有画面。

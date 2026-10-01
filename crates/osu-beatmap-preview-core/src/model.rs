@@ -11,7 +11,9 @@ pub mod beatmap {
 }
 
 pub mod mods {
-    pub use crate::domain::mods::{mods_for_mode, parse_mods, validate_mods, ModSettings};
+    pub use crate::domain::mods::{
+        mods_for_mode, parse_mods, supported_mod_tokens, validate_mods, ModSettings,
+    };
 }
 
 pub mod info {
@@ -23,4 +25,4 @@ pub use beatmap::{
     ManiaHitObject, SampleBank, StandardHitObject, TaikoHitObject, TimingPoint,
 };
 pub use info::BeatmapInfo;
-pub use mods::{mods_for_mode, parse_mods, validate_mods, ModSettings};
+pub use mods::{mods_for_mode, parse_mods, supported_mod_tokens, validate_mods, ModSettings};

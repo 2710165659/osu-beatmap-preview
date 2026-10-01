@@ -15,6 +15,7 @@ WASM 产物把 core 的实时会话和 renderer 的 WGPU 绘制接到浏览器�
 | 音乐与打击音的统一混音（PCM） | 把音频线程的消费位置回报给 `onAudioClock` |
 | 按内部时钟生成并绘制单帧（`renderFrame`） | 处理按键、指针等输入事件 |
 | 会话内的 Mod 热切换与画布尺寸变更 | |
+| 各模式可选的 Mod 清单（`supportedMods`） | 渲染 Mod 按钮、收集勾选项 |
 | 谱面信息与 `.osz` 难度清单（`beatmapInfo`） | 展示信息、渲染难度下拉 |
 
 WASM 不返回 RGBA 缓冲，因此宿主拿不到像素结果；需要图片或视频文件时请使用 [CLI](../osu-beatmap-preview-cli/README.md)。在官方 [Web 包](../osu-beatmap-preview-web/README.md) 里，表右侧的下载职责由 Node.js 后端完成，音频输出与控制 UI 由页面脚本完成。
@@ -211,6 +212,18 @@ info.difficulties;  // .osz 的难度清单 [{ entry, label, beatmapId }]；单�
 （`{ enabled, volume, beatmapEnabled }`；`beatmapEnabled` 对应 `ENABLE_BEATMAP_HITSOUND`，
 表示是否使用谱面自带的自定义音效）。CLI 读同一份配置，网页端用它保证默认值一致；
 它应在 `create` 之前调用（`beatmapHitsound` 决定装载哪些样本）。
+
+`supportedMods(mode)`：返回该模式在实时预览里可选的 Mod token 数组，顺序即界面展示顺序。
+列表来自 core 的支持矩阵（与 GIF/MP4 校验同一套规则），网页端直接拿它渲染 Mod 按钮，
+不必自己维护一份支持表——两边各写一份很容易在新增 Mod 后走偏。`mode` 接受
+`standard` / `taiko` / `catch` / `mania`（也接受 `std` 与 `ctb`），未知模式抛错：
+
+```js
+const mods = supportedMods('mania');
+// ['HD','FL','CS','DT','HT','1K','2K','3K','4K','5K','6K','7K','8K','9K','10K','DS','IN','HO']
+// HD/FL 在四种模式下都可用；DA 需要补参数后提交（如 DAAR9CS4）。
+session.set_mods(mods.filter((token) => token === 'HD' || token === 'FL'));
+```
 
 ## 使用限制
 

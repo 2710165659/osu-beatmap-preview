@@ -579,6 +579,34 @@ pub fn hitsound_defaults(mode: &str) -> Result<JsValue, JsValue> {
     Ok(object.into())
 }
 
+/// 返回某个模式在实时预览里可选的 Mod token 列表（展示顺序即数组顺序）。
+///
+/// 列表来自 core 的支持矩阵，网页端直接拿它渲染 Mod 面板：两边各写一份很容易
+/// 在新增 Mod（例如 HD/FL）后走偏。列表中 `DA` 需要调用方补参数后提交，
+/// 键数 Mod 已经展开成 `1K`…`10K`。
+/// `mode` 接受 `standard` / `taiko` / `catch` / `mania`（也接受 `std` 与 `ctb`）。
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = supportedMods)]
+pub fn supported_mods(mode: &str) -> Result<js_sys::Array, JsValue> {
+    let key = mode.trim().to_ascii_lowercase();
+    let mode_index = match key.as_str() {
+        "standard" | "std" => 0,
+        "taiko" => 1,
+        "catch" | "ctb" => 2,
+        "mania" => 3,
+        _ => {
+            return Err(JsValue::from_str(&format!(
+                "未知模式 '{mode}'，可选 standard/taiko/catch/mania"
+            )))
+        }
+    };
+    let list = js_sys::Array::new();
+    for token in osu_beatmap_preview_core::model::mods::supported_mod_tokens(mode_index) {
+        list.push(&JsValue::from_str(&token));
+    }
+    Ok(list)
+}
+
 #[cfg(target_arch = "wasm32")]
 fn js_error(error: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&error.to_string())
