@@ -6,6 +6,10 @@ pub struct ModSettings {
     pub speed_multiplier: f64,
     pub double_time: bool,
     pub half_time: bool,
+    /// Nightcore：速度与 DT 同区间，但音乐音高固定 +1.5 倍，并叠加节拍鼓点。
+    pub nightcore: bool,
+    /// Daycore：速度与 HT 同区间，音乐音高固定 0.75 倍（没有鼓点）。
+    pub daycore: bool,
 
     pub da_cs: Option<f64>,
     pub da_ar: Option<f64>,
@@ -40,6 +44,25 @@ impl ModSettings {
 
     pub fn has_da(&self) -> bool {
         self.da_cs.is_some() || self.da_ar.is_some() || self.da_od.is_some() || self.da_hp.is_some()
+    }
+
+    /// 是否启用了任何「只改倍速」的 Mod（DT / HT / NC / DC）。
+    pub fn has_rate_mod(&self) -> bool {
+        self.double_time || self.half_time || self.nightcore || self.daycore
+    }
+
+    /// 音乐音高倍率：DT/HT 保持原音高，NC/DC 与游戏一致地固定为 1.5 / 0.75。
+    ///
+    /// 游戏里 NC 的 `Frequency` 取 `SpeedChange.Default`（1.5）、DC 取 0.75，与用户设置的
+    /// 速度值无关；整体速度仍由 [`ModSettings::speed_multiplier`] 决定。
+    pub fn music_pitch(&self) -> f64 {
+        if self.nightcore {
+            1.5
+        } else if self.daycore {
+            0.75
+        } else {
+            1.0
+        }
     }
 
     pub fn has_any_mod(&self) -> bool {
@@ -91,40 +114,37 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         return parse_da_token(tail, s);
     }
 
-    // DT/HT 可带可选速度值。
-    if token.starts_with("DT") || token.starts_with("HT") {
-        let (kind, rest) = token.split_at(2);
-        if rest.is_empty() || rest.chars().all(|c| c.is_ascii_digit() || c == '.') {
-            let raw_val = if rest.is_empty() { None } else { Some(rest) };
-            if kind == "DT" {
-                let val = match raw_val {
-                    Some(r) => parse_float(r, token)?,
-                    None => 1.5,
-                };
-                if !(1.01..=2.00).contains(&val) {
-                    return Err(PreviewError::new(format!(
-                        "DT speed must be in [1.01, 2.0], got {}",
-                        fmt_float(val)
-                    )));
-                }
-                s.speed_multiplier = val;
-                s.double_time = true;
-            } else {
-                let val = match raw_val {
-                    Some(r) => parse_float(r, token)?,
-                    None => 0.75,
-                };
-                if !(0.5..=0.99).contains(&val) {
-                    return Err(PreviewError::new(format!(
-                        "HT speed must be in [0.5, 0.99], got {}",
-                        fmt_float(val)
-                    )));
-                }
-                s.speed_multiplier = val;
-                s.half_time = true;
-            }
-            return Ok(());
+    // DT/HT/NC/DC 可带可选速度值。
+    if let Some((kind, raw_val)) = split_rate_mod(token) {
+        // 加速类与减速类的取值范围来自游戏里各 Mod 的 SpeedChange 边界：
+        // DT/NC 为 1.01–2.00，HT/DC 为 0.50–0.99。
+        let (default, range) = if matches!(kind, "DT" | "NC") {
+            (1.5, RATE_UP_RANGE)
+        } else {
+            (0.75, RATE_DOWN_RANGE)
+        };
+        let val = match raw_val {
+            Some(raw) => parse_float(raw, token)?,
+            None => default,
+        };
+        if !range.contains(&val) {
+            let (min, max) = (*range.start(), *range.end());
+            return Err(PreviewError::new(format!(
+                "{kind} speed must be in [{}, {}], got {}",
+                fmt_float(min),
+                fmt_float(max),
+                fmt_float(val)
+            )));
         }
+        s.speed_multiplier = val;
+        match kind {
+            "DT" => s.double_time = true,
+            "HT" => s.half_time = true,
+            "NC" => s.nightcore = true,
+            "DC" => s.daycore = true,
+            _ => unreachable!(),
+        }
+        return Ok(());
     }
 
     // <n>K。
@@ -164,6 +184,28 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// DT/NC（加速类）与 HT/DC（减速类）允许的速度区间，来自游戏里各 Mod 的 SpeedChange 边界。
+const RATE_UP_RANGE: std::ops::RangeInclusive<f64> = 1.01..=2.00;
+const RATE_DOWN_RANGE: std::ops::RangeInclusive<f64> = 0.5..=0.99;
+
+/// 拆出 DT/HT/NC/DC 的两字符前缀与可选速度后缀。
+///
+/// 前缀后面必须是空串或纯数字/小数点，否则返回 `None` 交给后面的分支报「未知 Mod」，
+/// 这样 `DTX` 这类拼写错误不会被当成 DT。
+fn split_rate_mod(token: &str) -> Option<(&'static str, Option<&str>)> {
+    const KINDS: [&str; 4] = ["DT", "HT", "NC", "DC"];
+    let kind = KINDS.into_iter().find(|kind| token.starts_with(kind))?;
+    let rest = &token[kind.len()..];
+    if rest.is_empty() {
+        return Some((kind, None));
+    }
+    if rest.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        Some((kind, Some(rest)))
+    } else {
+        None
+    }
 }
 
 fn parse_da_token(tail: &str, s: &mut ModSettings) -> Result<()> {
@@ -257,8 +299,8 @@ pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str
         errors.extend(validate_da_ranges(settings, mode));
     }
 
-    if settings.double_time && settings.half_time {
-        errors.push("DT and HT cannot be used together".to_string());
+    if rate_mod_count(settings) > 1 {
+        errors.push("only one of DT, HT, NC, DC may be used at a time".to_string());
     }
     if settings.easy && settings.hard_rock {
         errors.push("EZ and HR cannot be used together".to_string());
@@ -371,8 +413,8 @@ fn validate_supported_mods(settings: &ModSettings, mode: i32, fmt: &str) -> Vec<
         return vec![format!("unknown output format: {fmt}")];
     }
     let mut errors = Vec::new();
-    if fmt_key == "png" && (settings.double_time || settings.half_time) {
-        errors.push("DT/HT are only supported for GIF output, not PNG".to_string());
+    if fmt_key == "png" && settings.has_rate_mod() {
+        errors.push("DT/HT/NC/DC are only supported for GIF output, not PNG".to_string());
     }
     let supported = supported_switch_mods(&fmt_key, mode);
     for (code, label) in active_switch_mods(settings) {
@@ -449,6 +491,8 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         speed_multiplier: settings.speed_multiplier,
         double_time: settings.double_time,
         half_time: settings.half_time,
+        nightcore: settings.nightcore,
+        daycore: settings.daycore,
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
         tokens: settings.tokens.clone(),
@@ -490,6 +534,19 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
 /// Mania 键数 Mod 的可选范围（`1K`–`10K`）；解析与面板展示共用同一处定义。
 const MANIA_KEY_MOD_RANGE: std::ops::RangeInclusive<i32> = 1..=10;
 
+/// 已启用的「只改倍速」Mod 数量；游戏的 `ModRateAdjust` 之间互斥，因此最多只能有一个。
+fn rate_mod_count(settings: &ModSettings) -> usize {
+    [
+        settings.double_time,
+        settings.half_time,
+        settings.nightcore,
+        settings.daycore,
+    ]
+    .iter()
+    .filter(|active| **active)
+    .count()
+}
+
 /// 实时预览 / 动画导出下某模式应当展示的可切换 Mod token 列表。
 ///
 /// 顺序与 CLI README 的「GIF / MP4」列一致；键数 Mod 在支持矩阵里是一组 `K`，
@@ -499,17 +556,19 @@ const MANIA_KEY_MOD_RANGE: std::ops::RangeInclusive<i32> = 1..=10;
 /// 网页端不再自带一份列表，避免两侧走偏（与 `hitsoundDefaults` 同样的思路）。
 pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
     match mode {
-        0 => ["EZ", "HR", "HD", "FL", "DA", "TC", "DT", "HT"]
+        0 => ["EZ", "HR", "HD", "FL", "DA", "TC", "DT", "HT", "NC", "DC"]
             .map(str::to_string)
             .to_vec(),
-        1 => ["EZ", "HR", "HD", "FL", "SW", "CS", "DT", "HT"]
+        1 => ["EZ", "HR", "HD", "FL", "SW", "CS", "DT", "HT", "NC", "DC"]
             .map(str::to_string)
             .to_vec(),
-        2 => ["EZ", "HR", "HD", "FL", "DT", "HT"]
+        2 => ["EZ", "HR", "HD", "FL", "DT", "HT", "NC", "DC"]
             .map(str::to_string)
             .to_vec(),
         3 => {
-            let mut tokens = ["HD", "FL", "CS", "DT", "HT"].map(str::to_string).to_vec();
+            let mut tokens = ["HD", "FL", "CS", "DT", "HT", "NC", "DC"]
+                .map(str::to_string)
+                .to_vec();
             tokens.extend(MANIA_KEY_MOD_RANGE.map(|keys| format!("{keys}K")));
             tokens.extend(["DS", "IN", "HO"].map(str::to_string));
             tokens
@@ -624,6 +683,102 @@ mod tests {
         let settings = parse_mods(&tokens).unwrap();
         assert_eq!(settings.tokens, vec!["HD", "DT1.25"]);
         assert!((settings.speed_multiplier - 1.25).abs() < f64::EPSILON);
+    }
+
+    /// NC/DC 与 DT/HT 共用语法：默认倍速、可带自定义倍速、区间按加速/减速两类。
+    #[test]
+    fn parses_nightcore_and_daycore() {
+        let nc = parse_mods(&["nc".into()]).unwrap();
+        assert!(nc.nightcore);
+        assert!((nc.speed_multiplier - 1.5).abs() < f64::EPSILON);
+        assert!((nc.music_pitch() - 1.5).abs() < f64::EPSILON);
+
+        let nc_custom = parse_mods(&["NC1.4".into()]).unwrap();
+        assert!(nc_custom.nightcore);
+        assert!((nc_custom.speed_multiplier - 1.4).abs() < f64::EPSILON);
+        // 音高与速度设置无关：始终是游戏里 NC 的默认 1.5 倍。
+        assert!((nc_custom.music_pitch() - 1.5).abs() < f64::EPSILON);
+
+        let dc = parse_mods(&["dc".into()]).unwrap();
+        assert!(dc.daycore);
+        assert!((dc.speed_multiplier - 0.75).abs() < f64::EPSILON);
+        assert!((dc.music_pitch() - 0.75).abs() < f64::EPSILON);
+
+        let dc_custom = parse_mods(&["dc0.6".into()]).unwrap();
+        assert!((dc_custom.speed_multiplier - 0.6).abs() < f64::EPSILON);
+        assert!((dc_custom.music_pitch() - 0.75).abs() < f64::EPSILON);
+
+        // DT/HT 保调。
+        assert!((parse_mods(&["dt".into()]).unwrap().music_pitch() - 1.0).abs() < f64::EPSILON);
+        assert!((parse_mods(&["ht".into()]).unwrap().music_pitch() - 1.0).abs() < f64::EPSILON);
+        assert!((ModSettings::new().music_pitch() - 1.0).abs() < f64::EPSILON);
+    }
+
+    /// NC/DC 的倍速区间与 DT/HT 一致，越界与拼写错误都要报错。
+    #[test]
+    fn rate_mod_ranges_are_enforced() {
+        for token in ["NC1.0", "NC2.01", "DC0.49", "DC1.0"] {
+            assert!(parse_mods(&[token.into()]).is_err(), "{token} 应被拒绝");
+        }
+        for token in ["NC1.01", "NC2.0", "DC0.5", "DC0.99"] {
+            assert!(parse_mods(&[token.into()]).is_ok(), "{token} 应被接受");
+        }
+        // 前缀后面不是数字后缀时按「未知 Mod」处理，不会误判成 DT/NC。
+        for token in ["DTX", "NCX", "DC1.5x"] {
+            assert!(parse_mods(&[token.into()]).is_err(), "{token} 应被拒绝");
+        }
+    }
+
+    /// DT/HT/NC/DC 四者互斥（游戏里同属 ModRateAdjust）。
+    #[test]
+    fn rate_mods_are_mutually_exclusive() {
+        for tokens in [
+            ["DT", "HT"],
+            ["DT", "NC"],
+            ["DT", "DC"],
+            ["HT", "NC"],
+            ["HT", "DC"],
+            ["NC", "DC"],
+        ] {
+            let settings = parse_mods(&tokens.map(str::to_string)).expect("单独都能解析");
+            let errors = validate_mods(&settings, Some(0), Some("gif"));
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.contains("only one of DT, HT, NC, DC")),
+                "{tokens:?}: {errors:?}"
+            );
+        }
+        // 与其它类别的 Mod 可以共存。
+        let settings = parse_mods(&["NC".into(), "HD".into(), "HR".into()]).unwrap();
+        assert!(validate_mods(&settings, Some(0), Some("gif")).is_empty());
+    }
+
+    /// NC/DC 与 DT/HT 一样只支持动画输出。
+    #[test]
+    fn rate_mods_are_rejected_for_png() {
+        for token in ["DT", "HT", "NC", "DC"] {
+            let settings = parse_mods(&[token.into()]).unwrap();
+            assert!(
+                validate_mods(&settings, Some(0), Some("png"))
+                    .iter()
+                    .any(|error| error.contains("only supported for GIF output")),
+                "{token} 在 PNG 下应被拒绝"
+            );
+        }
+    }
+
+    /// 模式过滤保留 NC/DC 的标记与倍速。
+    #[test]
+    fn mode_filter_keeps_rate_mods() {
+        let settings = parse_mods(&["NC1.3".into()]).unwrap();
+        for mode in 0..=3 {
+            let filtered = mods_for_mode(&settings, mode);
+            assert!(filtered.nightcore, "mode={mode}");
+            assert!(!filtered.daycore);
+            assert!((filtered.speed_multiplier - 1.3).abs() < f64::EPSILON);
+            assert!((filtered.music_pitch() - 1.5).abs() < f64::EPSILON);
+        }
     }
 
     #[test]

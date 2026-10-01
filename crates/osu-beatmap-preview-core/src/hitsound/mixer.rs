@@ -1,5 +1,6 @@
 //! 打击音混音器：把时间轴上的事件混合成 PCM。
 
+use super::music::{MusicPlayer, MusicRate};
 use super::{HitsoundTimeline, PlayFrequency, SampleData, SampleLibrary};
 
 /// 正在播放的一个声音。
@@ -48,6 +49,12 @@ pub struct HitsoundMixer {
     master_gain: f64,
     /// 背景音乐（可选）：谱面时间 0 对应音乐第 0 帧，整段只播一次、不循环。
     music: Option<SampleData>,
+    /// 音乐的变速保调：重采样 + WSOLA 时间伸缩。默认恒等（不做任何处理）。
+    music_rate: MusicRate,
+    /// 音乐的有状态播放器；倍率与位置都由它自己维护。
+    music_player: MusicPlayer,
+    /// 音乐窗口缓冲（交错立体声）：时间伸缩是有状态的过程，必须整窗口渲染后再逐帧相加。
+    music_scratch: Vec<f32>,
     /// 音乐线性增益；与打击音主音量分开（两组独立滑杆）。
     music_gain: f64,
     /// 当前混音位置（谱面毫秒）。
@@ -61,12 +68,16 @@ pub struct HitsoundMixer {
 
 impl HitsoundMixer {
     pub fn new(library: SampleLibrary, timeline: HitsoundTimeline, sample_rate: u32) -> Self {
+        let sample_rate = sample_rate.max(1);
         Self {
             library,
             timeline,
-            sample_rate: sample_rate.max(1),
+            sample_rate,
             master_gain: 1.0,
             music: None,
+            music_rate: MusicRate::IDENTITY,
+            music_player: MusicPlayer::new(sample_rate),
+            music_scratch: Vec::new(),
             music_gain: 1.0,
             position_ms: 0.0,
             voices: Vec::new(),
@@ -95,6 +106,18 @@ impl HitsoundMixer {
 
     pub fn music(&self) -> Option<&SampleData> {
         self.music.as_ref()
+    }
+
+    /// 设置音乐的变速保调倍率；默认 `MusicRate::IDENTITY`（不做处理）。
+    ///
+    /// 倍率变化会清空时间伸缩状态，下一次渲染按当前混音位置重新起段。
+    pub fn set_music_rate(&mut self, rate: MusicRate) {
+        self.music_rate = rate;
+        self.music_player.set_rate(rate);
+    }
+
+    pub fn music_rate(&self) -> MusicRate {
+        self.music_rate
     }
 
     /// 设置音乐音量（线性增益）。非有限值按静音处理。
@@ -350,21 +373,27 @@ impl HitsoundMixer {
 
         let master = self.master_gain;
         let music_gain = self.music_gain as f32;
+
+        // 背景音乐先整窗口渲染到 scratch：时间伸缩（WSOLA）是有状态的过程，必须按输出帧
+        // 顺序推进，不能像打击音那样逐帧随机取位置。音乐帧 = 谱面毫秒 × 音乐采样率 / 1000，
+        // 谱面时间轴本身已含 DT/HT 变速；倍速只作用于整条流的推进速率（`MusicRate` 负责
+        // 保调），负时间（预卷）与曲末之后由取样越界语义自然给静音。
+        self.music_scratch.clear();
+        self.music_scratch.resize(frames * 2, 0.0);
+        if let Some(music) = &self.music {
+            self.music_player.render_at(
+                window_start,
+                music,
+                music.sample_rate,
+                frames,
+                &mut self.music_scratch,
+            );
+        }
+
         for (index, pair) in output.chunks_exact_mut(2).enumerate() {
             let frame_time = window_start + index as f64 * ms_per_frame;
-            let mut left = 0.0_f32;
-            let mut right = 0.0_f32;
-
-            // 背景音乐：音乐帧 = 谱面毫秒 × 音乐采样率 / 1000。谱面时间轴本身已含
-            // DT/HT 变速，倍速只作用于整条流的推进速率，因此这里不做倍速换算——与
-            // CLI 导出的下标换算一致。负时间（首个物件前的预卷）与曲末之后由
-            // `frame_at` 的越界语义自然给静音，音乐不需要按事件管理。
-            if let Some(music) = &self.music {
-                let position = frame_time * music.sample_rate as f64 / 1000.0;
-                let (music_left, music_right) = music.frame_at(position);
-                left += music_left * music_gain;
-                right += music_right * music_gain;
-            }
+            let mut left = self.music_scratch[index * 2] * music_gain;
+            let mut right = self.music_scratch[index * 2 + 1] * music_gain;
 
             for voice in &self.voices {
                 if frame_time < voice.start_ms || frame_time >= voice.end_ms {
@@ -822,5 +851,127 @@ mod tests {
         assert_eq!(mixer.music_gain(), 0.0);
         mixer.set_music_gain(f64::INFINITY);
         assert_eq!(mixer.music_gain(), 0.0);
+    }
+
+    /// 设置时间伸缩倍率后，音乐内容按倍率推进（保调），而不是被重采样。
+    #[test]
+    fn music_rate_stretches_the_content() {
+        // 1kHz：1 帧 = 1ms。源是 4 秒（4000 帧）的线性斜坡，每帧值 = 帧号 / 10000，
+        // 值小到软限幅近似线性，便于直接断言内容位置。
+        let samples: Vec<f32> = (0..4_000)
+            .flat_map(|index| {
+                let value = index as f32 / 10_000.0;
+                [value, value]
+            })
+            .collect();
+        let mut mixer = HitsoundMixer::new(SampleLibrary::new(), HitsoundTimeline::default(), 1000);
+        mixer.set_music(Some(SampleData::stereo(samples, 1000)));
+        mixer.set_music_rate(MusicRate {
+            resample: 1.0,
+            stretch: 2.0,
+        });
+        assert_eq!(
+            mixer.music_rate(),
+            MusicRate {
+                resample: 1.0,
+                stretch: 2.0
+            }
+        );
+
+        let output = mixer.render(3_000);
+        // 输出第 N 帧应该读到内容第 2N 帧（相似度搜索只允许几十帧的局部偏移）。
+        for frame in [10_usize, 500, 1_000, 1_500] {
+            let expected = soft_limit(frame as f32 * 2.0 / 10_000.0);
+            assert!(
+                (output[frame * 2] - expected).abs() < 0.01,
+                "输出帧 {frame}：{} vs {expected}",
+                output[frame * 2]
+            );
+        }
+        // 4 秒内容在 2 倍速下 2 秒后结束，之后是静音。
+        let tail = output[2_200 * 2..]
+            .iter()
+            .fold(0.0_f32, |acc, value| acc.max(value.abs()));
+        assert!(tail < 1e-3, "内容结束后仍有 {tail} 的残留");
+
+        // 恒等倍率下同样的源要 4 秒才结束，证明上面确实在做时间伸缩。
+        let mut identity =
+            HitsoundMixer::new(SampleLibrary::new(), HitsoundTimeline::default(), 1000);
+        identity.set_music(Some(SampleData::stereo(
+            (0..4_000)
+                .flat_map(|index| {
+                    let value = index as f32 / 10_000.0;
+                    [value, value]
+                })
+                .collect(),
+            1000,
+        )));
+        let plain = identity.render(3_000);
+        assert!(
+            plain[2_500 * 2] > 0.2,
+            "恒等倍率下 2500ms 处应当仍有内容：{}",
+            plain[2_500 * 2]
+        );
+    }
+
+    /// 实时链路（图表域 + 宿主按总倍率重采样）下 DT 保调。
+    ///
+    /// 混音器输出的是图表域信号（`chart_domain`），AudioWorklet 再按总倍率线性重采样；
+    /// 这里按同样的顺序复原一遍，用 1kHz 正弦确认最终音高仍是 1kHz（而不是 1.5kHz）。
+    #[test]
+    fn realtime_chart_domain_keeps_dt_pitch() {
+        let rate = 48_000_u32;
+        // 2 秒的 1kHz 正弦（源采样率 = 输出采样率，便于断言）。
+        let source = SampleData::stereo(
+            (0..rate as usize * 2)
+                .flat_map(|index| {
+                    let value = (2.0 * std::f64::consts::PI * 1000.0 * index as f64 / rate as f64)
+                        .sin() as f32;
+                    [value, value]
+                })
+                .collect(),
+            rate,
+        );
+        let mut mixer = HitsoundMixer::new(SampleLibrary::new(), HitsoundTimeline::default(), rate);
+        mixer.set_music(Some(source));
+        // DT：总倍率 1.5 由宿主重采样，图表域要求「内容 1:1、音高 1/1.5」。
+        mixer.set_music_rate(MusicRate::chart_domain(1.5, 1.0));
+
+        let ring = mixer.render(rate as usize * 2);
+        // 交给宿主：按总倍率线性重采样（与 `hitsound-worklet.js` 的消费方式一致）。
+        // 2 秒的图表域内容在 1.5 倍速下对应 1.33 秒实时音频。
+        let ring_frames = ring.len() / 2;
+        let target = (ring_frames as f64 / 1.5) as usize;
+        let mut played = Vec::with_capacity(target);
+        let mut cursor = 0.0_f64;
+        while played.len() < target {
+            let base = (cursor.floor() as usize).min(ring_frames - 2);
+            let next = (base + 1).min(ring_frames - 1);
+            let fraction = (cursor - base as f64) as f32;
+            let left = ring[base * 2] + (ring[next * 2] - ring[base * 2]) * fraction;
+            played.push(left);
+            cursor += 1.5;
+        }
+
+        // 取中段（跳过伸缩起步的十几毫秒）做单频点幅度比较。
+        let window = &played[played.len() / 2 - 12_000..played.len() / 2 + 12_000];
+        let at_1000 = tone_magnitude(window, 1000.0, rate as f64);
+        let at_1500 = tone_magnitude(window, 1500.0, rate as f64);
+        assert!(
+            at_1000 > at_1500 * 8.0,
+            "DT 实时链路音高不保：1kHz={at_1000}, 1.5kHz={at_1500}"
+        );
+    }
+
+    /// 单个频点上的幅度（测试用，直接用 cos/sin 相关求和）。
+    fn tone_magnitude(samples: &[f32], frequency: f64, sample_rate: f64) -> f64 {
+        let omega = 2.0 * std::f64::consts::PI * frequency / sample_rate;
+        let (mut real, mut imaginary) = (0.0_f64, 0.0_f64);
+        for (index, value) in samples.iter().enumerate() {
+            let phase = omega * index as f64;
+            real += *value as f64 * phase.cos();
+            imaginary += *value as f64 * phase.sin();
+        }
+        (real * real + imaginary * imaginary).sqrt() / samples.len().max(1) as f64
     }
 }

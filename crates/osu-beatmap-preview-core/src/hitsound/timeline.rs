@@ -115,6 +115,41 @@ impl HitsoundTimeline {
     pub fn len(&self) -> usize {
         self.events.len()
     }
+
+    /// 归并另一条同样按开始时间升序的时间轴（例如 NC 的节拍鼓点）。
+    ///
+    /// 两者都已有序，因此线性归并；同一时刻保持「自己的事件在前、`other` 的在后」，
+    /// 与拼接后再稳定排序的结果一致，但复杂度是 O(n + m)，且不会因重排打乱同刻事件
+    /// 原有的先后关系（混音器的事件游标只要求整体有序）。
+    pub fn merge(&mut self, other: HitsoundTimeline) {
+        if other.events.is_empty() {
+            return;
+        }
+        if self.events.is_empty() {
+            self.events = other.events;
+            return;
+        }
+        let mut merged = Vec::with_capacity(self.events.len() + other.events.len());
+        let mut left = std::mem::take(&mut self.events).into_iter().peekable();
+        let mut right = other.events.into_iter().peekable();
+        loop {
+            let take_left = match (left.peek(), right.peek()) {
+                (Some(a), Some(b)) => a
+                    .start_ms
+                    .partial_cmp(&b.start_ms)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    != std::cmp::Ordering::Greater,
+                (Some(_), None) => true,
+                (None, Some(_)) => false,
+                (None, None) => break,
+            };
+            let next = if take_left { left.next() } else { right.next() };
+            if let Some(event) = next {
+                merged.push(event);
+            }
+        }
+        self.events = merged;
+    }
 }
 
 /// 只收集候选名的解析器，用于宿主预解码前的依赖分析。
@@ -589,4 +624,42 @@ mod tests {
         );
     }
 
+    fn event(start_ms: f64, source_id: usize) -> PlayEvent {
+        PlayEvent {
+            start_ms,
+            duration_ms: 0.0,
+            source_id,
+            gain: 1.0,
+            looping: false,
+            frequency: PlayFrequency::UNITY,
+        }
+    }
+
+    /// 归并后整体有序，同刻事件保持「自己的在前」。
+    #[test]
+    fn merge_keeps_events_ordered() {
+        let mut timeline = HitsoundTimeline {
+            events: vec![event(0.0, 0), event(500.0, 0), event(1000.0, 0)],
+        };
+        timeline.merge(HitsoundTimeline {
+            events: vec![event(250.0, 1), event(500.0, 1), event(2000.0, 1)],
+        });
+        let times: Vec<f64> = timeline.events.iter().map(|event| event.start_ms).collect();
+        assert_eq!(times, vec![0.0, 250.0, 500.0, 500.0, 1000.0, 2000.0]);
+        // 同刻：自己的事件在前（source_id 0 是原时间轴的样本）。
+        assert_eq!(timeline.events[2].source_id, 0);
+        assert_eq!(timeline.events[3].source_id, 1);
+
+        // 空的一侧不改变另一侧，也不影响原顺序。
+        let mut only_self = HitsoundTimeline {
+            events: vec![event(100.0, 0)],
+        };
+        only_self.merge(HitsoundTimeline::default());
+        assert_eq!(only_self.events, vec![event(100.0, 0)]);
+        let mut only_other = HitsoundTimeline::default();
+        only_other.merge(HitsoundTimeline {
+            events: vec![event(100.0, 1)],
+        });
+        assert_eq!(only_other.events, vec![event(100.0, 1)]);
+    }
 }

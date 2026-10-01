@@ -7,6 +7,7 @@
 use crate::export::canvas::{Img, Rgba};
 use crate::media::audio::AudioSourceJob;
 use crate::media::{resolve_video_time_range, save_mp4_streamed};
+use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::Beatmap;
 use osu_beatmap_preview_core::processing::parse::round_half_even;
@@ -60,6 +61,9 @@ pub(crate) fn render_mania_video(
     }
 
     let speed = mods.map_or(1.0, |m| m.speed_multiplier);
+    // 音乐在输出域的重采样/时间伸缩倍率：DT/HT 保调，NC/DC 固定 1.5 / 0.75 音高。
+    let music = MusicRate::output_domain(speed, mods.map_or(1.0, ModSettings::music_pitch));
+    let nightcore = mods.is_some_and(|m| m.nightcore);
     let first = original_objects
         .iter()
         .map(|h| h.start_time)
@@ -217,6 +221,8 @@ pub(crate) fn render_mania_video(
         start,
         last,
         speed,
+        music,
+        nightcore,
         render,
         output_path,
         fps,

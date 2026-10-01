@@ -23,6 +23,7 @@ use crate::export::canvas::Img;
 use crate::export::text::{draw_text, text_size};
 use crate::media::audio::{encode_audio_segment, AudioSourceJob};
 use bytes::Bytes;
+use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::Beatmap;
 use osu_beatmap_preview_core::processing::parse::round_half_even;
 use osu_beatmap_preview_core::processing::timeline::{preview_start_ms, TimeAxis};
@@ -288,6 +289,8 @@ pub(crate) fn save_mp4_streamed(
     chart_start_ms: i64,
     last_object_ms: i64,
     speed: f64,
+    music: MusicRate,
+    nightcore: bool,
     render: impl Fn(usize) -> Result<(Img, i64)> + Send + Sync,
     output_path: &Path,
     fps: u32,
@@ -316,7 +319,7 @@ pub(crate) fn save_mp4_streamed(
     }
 
     let audio_deadline = deadline.clone();
-    let hitsound = hitsound_settings(mode);
+    let hitsound = hitsound_settings(mode).with_nightcore(nightcore);
     let mut audio_task = JoinedAudioTask::new(
         std::thread::spawn(move || {
             audio_deadline.check()?;
@@ -329,6 +332,7 @@ pub(crate) fn save_mp4_streamed(
                 frame_count,
                 fps,
                 speed,
+                music,
                 &audio_deadline,
             )?;
             crate::logging::event(

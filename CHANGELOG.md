@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- 新增 `NC`（Nightcore）与 `DC`（Daycore）：速度与 `DT`/`HT` 同区间，音乐音高固定为 `1.5x` / `0.75x`（与游戏的 `ModNightcore` / `ModDaycore` 一致）；`NC` 还会按游戏的节拍规则叠加 kick / clap / hat / finish 鼓点，并内嵌 4 个 `nightcore-*` 采样。
+
+### Changed
+
+- `DT`/`HT` 改为**保调**变速（游戏里 `AdjustPitch` 默认关、等价 `AdjustableProperty.Tempo`）：音乐按倍率变快/变慢而音高不变。实时预览与 MP4 导出都通过 WSOLA 时间伸缩实现；无 Mod 与 `NC`/`DC` 默认速度仍走原来的无状态重采样快路径，输出逐位不变。
+- 打击音与 NC 鼓点继续按倍速重采样（对应游戏 `ModRateAdjust.ApplyToSample` 的 `Frequency = SpeedChange`）；网页端的「倍速」chips 仍与游戏的 `UserPlaybackRate` 一样变调。
+
+---
+
 ## [1.3.4] - 2026.09.30
 
 ### Added

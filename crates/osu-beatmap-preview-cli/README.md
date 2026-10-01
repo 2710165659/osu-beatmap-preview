@@ -183,14 +183,14 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 
 | 模式 | GIF / MP4 | PNG |
 | --- | --- | --- |
-| Standard | `EZ` `HR` `HD` `FL` `DA` `TC` `DT` `HT` | `EZ` `HR` `HD` `FL` `DA` `TC` |
-| Taiko | `EZ` `HR` `HD` `FL` `SW` `CS` `DT` `HT` | `EZ` `HR` `SW` |
-| Catch | `EZ` `HR` `HD` `FL` `DT` `HT` | `EZ` `HR` |
-| Mania | `HD` `FL` `CS` `DT` `HT` `1K`-`10K` `DS` `IN` `HO` | `1K`-`10K` `DS` `IN` `HO` |
+| Standard | `EZ` `HR` `HD` `FL` `DA` `TC` `DT` `HT` `NC` `DC` | `EZ` `HR` `HD` `FL` `DA` `TC` |
+| Taiko | `EZ` `HR` `HD` `FL` `SW` `CS` `DT` `HT` `NC` `DC` | `EZ` `HR` `SW` |
+| Catch | `EZ` `HR` `HD` `FL` `DT` `HT` `NC` `DC` | `EZ` `HR` |
+| Mania | `HD` `FL` `CS` `DT` `HT` `NC` `DC` `1K`-`10K` `DS` `IN` `HO` | `1K`-`10K` `DS` `IN` `HO` |
 
 主要规则如下：
 
-- `DT` 与 `HT` 互斥。`DT` 默认 `1.5x`，可设为 `1.01` 至 `2.00`；`HT` 默认 `0.75x`，可设为 `0.50` 至 `0.99`，例如 `--mod=dt1.25`。
+- `DT`、`HT`、`NC`、`DC` 四者互斥（游戏里同属 `ModRateAdjust`）。加速类默认 `1.5x`、可设为 `1.01` 至 `2.00`；减速类默认 `0.75x`、可设为 `0.50` 至 `0.99`，例如 `--mod=dt1.25`、`--mod=nc1.4`。
 - `EZ` 与 `HR`、`TC` 与 `HD`、`IN` 与 `HO` 分别互斥。
 - Mania 的 `HD` 与 `FL` 互斥，其余三种模式允许 `HD+FL`。
 - Taiko HD 让普通音符和连打刻度渐隐，保留连打条与气球；Mania HD 对音符头与长按主体统一渐隐，遮罩随连击扩大，判定线、键道和 SV 提示保留。
@@ -199,8 +199,18 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 - 预览没有玩家输入或回放：FL 轨迹由物件间插值估算，连击按无 miss 进度计算；Standard 跟随延迟使用连续阻尼近似，Catch 香蕉雨沿用相邻水果的插值路线。
 - `DA` 仅适用于 Standard，不能与 `EZ` 或 `HR` 同时使用。格式为 `da<参数><值>`，参数支持 `cs`、`ar`、`od`、`hp`，例如 `--mod=dacs5ar9.5`。
 - `1K` 至 `10K` 互斥；`DS` 和键数 Mod 只会在 Standard 转 Mania 时改变转谱结果。
-- `DT` 和 `HT` 不适用于 PNG；MP4 使用与 GIF 相同的 Mod 支持规则。
+- `DT`、`HT`、`NC`、`DC` 不适用于 PNG；MP4 使用与 GIF 相同的 Mod 支持规则。
 - 重复的 Mod 或不受当前模式、格式支持的 Mod 会直接报错，不会静默忽略。
+
+### 变速与音高
+
+四种倍速 Mod 的音乐处理与游戏一致（`ModDoubleTime` / `ModHalfTime` / `ModNightcore` / `ModDaycore`）：
+
+- `DT` / `HT` 是**保调**变速（游戏里 `AdjustPitch` 默认关，等价 `AdjustableProperty.Tempo`）：音乐按倍率变快/变慢，音高不变；
+- `NC` / `DC` 在变速的同时把音乐音高**固定**为加速类的 `1.5x` / 减速类的 `0.75x`（游戏里 `Frequency` 取 `SpeedChange.Default`），与自定义倍速无关：`--mod=nc2` 是 2 倍速 + 1.5 倍音高；
+- 打击音（含 NC 鼓点）与游戏 `ModRateAdjust.ApplyToSample` 一致，按倍速重采样：既变快也变调；
+- `NC` 还会叠加节拍鼓点：每半拍触发一次，4/4 为 kick(1、3 拍) / clap(2、4 拍) / hat(反拍)，3/4 为 kick(每 3 拍) / clap(第 2 拍反拍) / hat(反拍)，每 4 小节在段首加一声 finish，`OmitFirstBarLine` 会让整条网格后移半拍；`SliderTickRate` 不是偶数时不放 hat（与游戏一致）。`DC` 没有鼓点；
+- 鼓点属于 Mod，不受 `ENABLE_HITSOUND` 影响（关闭打击音后仍会播放，只受 `HITSOUND_VOLUME` 控制）；`ENABLE_BEATMAP_HITSOUND` 仍决定是否采用谱面包里的同名 `nightcore-*.ogg`。
 
 ## 配置
 

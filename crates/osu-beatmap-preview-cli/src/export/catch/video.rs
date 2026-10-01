@@ -7,6 +7,7 @@
 use crate::export::canvas::Img;
 use crate::media::audio::AudioSourceJob;
 use crate::media::{resolve_video_time_range, save_mp4_streamed};
+use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::Beatmap;
 use osu_beatmap_preview_core::processing::timeline::TimeAxis;
@@ -45,6 +46,9 @@ pub(crate) fn render_catch_video(
         .then(|| CatchFlashlight::new(&render_objects, &beatmap.break_periods));
 
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
+    // 音乐在输出域的重采样/时间伸缩倍率：DT/HT 保调，NC/DC 固定 1.5 / 0.75 音高。
+    let music = MusicRate::output_domain(speed, mods.map_or(1.0, ModSettings::music_pitch));
+    let nightcore = mods.is_some_and(|m| m.nightcore);
     let first = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let last = hit_objects.iter().map(|h| h.end_time).max().unwrap_or(0);
     let range = resolve_video_time_range(beatmap, first, last, start_time, duration_time, speed)?;
@@ -98,6 +102,8 @@ pub(crate) fn render_catch_video(
         start,
         last,
         speed,
+        music,
+        nightcore,
         render,
         output_path,
         fps,

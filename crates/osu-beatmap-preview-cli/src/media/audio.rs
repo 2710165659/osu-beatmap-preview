@@ -1,5 +1,8 @@
 use crate::export::canvas::Img;
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
+use osu_beatmap_preview_core::hitsound::{
+    self, HitsoundTimeline, MusicPlayer, MusicRate, StereoSource,
+};
 use osu_beatmap_preview_core::model::Beatmap;
 use osu_beatmap_preview_core::processing::media::{normalize_entry_path, BeatmapMedia, MediaEntry};
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
@@ -325,6 +328,12 @@ pub(crate) fn load_background_image(
     }))
 }
 
+/// 把音乐与打击音混合成 AAC。
+///
+/// `music` 是本次 Mod 组合下音乐的重采样/时间伸缩倍率（DT/HT 保调、NC/DC 固定音高偏移）；
+/// `speed` 同时决定谱面时间推进与打击音的重采样（游戏里 `ModRateAdjust.ApplyToSample`
+/// 给样本加的是 `Frequency = SpeedChange`）。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn encode_audio_segment(
     source: &AudioSource,
     beatmap: &Beatmap,
@@ -333,6 +342,7 @@ pub(crate) fn encode_audio_segment(
     frame_count: usize,
     fps: u32,
     speed: f64,
+    music: MusicRate,
     deadline: &RequestDeadline,
 ) -> Result<EncodedAudio> {
     deadline.check()?;
@@ -385,19 +395,36 @@ pub(crate) fn encode_audio_segment(
     let mut input = vec![0_i16; samples_per_frame * 2];
     let mut output = vec![0_u8; max_output_bytes];
     let mut frames = Vec::with_capacity(target_frame_count);
+    // 音乐是有状态的时间伸缩流：按块顺序渲染，块起点带上编码器延迟补偿（与旧下标换算式
+    // `output_index + encoder_delay_samples` 等价）。
+    let mut music_player = MusicPlayer::new(sample_rate);
+    music_player.set_rate(music);
+    let mut music_block = vec![0.0_f32; samples_per_frame * 2];
 
     // FDK 在内部缓冲编码器前瞻数据，因此请求输入区间结束后可能还需执行几次补零调用，
     // 才能取出全部访问单元。
     let max_calls = target_frame_count + 16;
     for input_frame_index in 0..max_calls {
         deadline.check()?;
+        let block_start = input_frame_index * samples_per_frame;
+        music_player.render_at(
+            block_content_ms(
+                chart_start_ms,
+                block_start,
+                encoder_delay_samples,
+                speed,
+                sample_rate,
+            ),
+            &decoded,
+            decoded.sample_rate,
+            samples_per_frame,
+            &mut music_block,
+        );
         fill_audio_frame(
             &mut input,
-            input_frame_index * samples_per_frame,
+            block_start,
             target_samples,
-            &decoded,
-            chart_start_ms,
-            speed,
+            &music_block,
             encoder_delay_samples,
             hitsound.as_deref(),
         );
@@ -434,6 +461,8 @@ pub(crate) struct HitsoundSettings {
     pub volume: i32,
     /// 是否使用谱面自带的自定义打击音（`ENABLE_BEATMAP_HITSOUND`）。
     pub beatmap: bool,
+    /// 是否启用 NC 的节拍鼓点（来自 Mod，与上面的开关无关）。
+    pub nightcore: bool,
     /// 谱面自带打击音所在的 OSZ；`None` 表示只用内嵌皮肤。
     pub beatmap_samples: Option<PathBuf>,
 }
@@ -441,13 +470,21 @@ pub(crate) struct HitsoundSettings {
 impl HitsoundSettings {
     /// 从配置构造；`beatmap` 对应 `ENABLE_BEATMAP_HITSOUND`。此处的样本来源为空，
     /// 音频准备完成后由 [`HitsoundSettings::with_beatmap_samples`] 补上压缩包路径。
+    /// NC 鼓点开关由调用方按当前 Mod 设置。
     pub(crate) fn new(enabled: bool, volume: i32, beatmap: bool) -> Self {
         Self {
             enabled,
             volume,
             beatmap,
+            nightcore: false,
             beatmap_samples: None,
         }
+    }
+
+    /// 设置 NC 的节拍鼓点开关。
+    pub(crate) fn with_nightcore(mut self, nightcore: bool) -> Self {
+        self.nightcore = nightcore;
+        self
     }
 
     /// 附带谱面自带音效所在的 OSZ；传 `None` 时只用内嵌皮肤。
@@ -459,12 +496,13 @@ impl HitsoundSettings {
 
 /// 按视频输出时间轴混出整段打击音。
 ///
-/// 返回 `None` 表示本次导出没有启用打击音（配置关闭或没有任何可用样本）。
+/// 返回 `None` 表示本次导出既没有启用打击音、也没有需要发声的事件（配置关闭且没有 NC）。
 ///
-/// 缓冲区下标即输出帧下标，与音乐（`source_frame_position`）共用同一时间换算：
+/// 缓冲区下标即输出帧下标，与音乐（`MusicPlayer`）共用同一时间换算：
 /// 第 i 帧对应的谱面时间是 `chart_start_ms + i * 1000 * speed / sample_rate`。
 /// 倍速通过「混音器的内部采样率取 `sample_rate / speed`」实现，音高随之变化，
-/// 与 Web 端音频线程的倍速播放一致。
+/// 与游戏里 `ModRateAdjust.ApplyToSample`（`Frequency = SpeedChange`）一致。
+/// NC 的节拍鼓点属于 Mod：即使 `ENABLE_HITSOUND` 关闭，鼓点也会照常混进来。
 fn render_hitsound_segment(
     beatmap: &Beatmap,
     settings: Option<HitsoundSettings>,
@@ -474,14 +512,24 @@ fn render_hitsound_segment(
     speed: f64,
     sample_rate: u32,
 ) -> Result<Option<Vec<f32>>> {
-    let Some(settings) = settings.filter(|settings| settings.enabled) else {
+    let Some(settings) = settings.filter(|settings| settings.enabled || settings.nightcore) else {
         return Ok(None);
     };
-    let library = super::hitsound::build_library(beatmap, settings.beatmap_samples.as_deref());
+    let library =
+        super::hitsound::build_library(beatmap, settings.beatmap_samples.as_deref(), settings.nightcore);
     if library.is_empty() {
         return Ok(None);
     }
-    let timeline = osu_beatmap_preview_core::hitsound::build_timeline(beatmap, &library);
+    let mut timeline = if settings.enabled {
+        hitsound::build_timeline(beatmap, &library)
+    } else {
+        HitsoundTimeline::default()
+    };
+    if settings.nightcore {
+        // 本次混音窗口的结尾（谱面绝对毫秒）：鼓点只需覆盖到这里。
+        let end_ms = chart_start_ms as f64 + frame_count as f64 * 1000.0 * speed / fps as f64;
+        timeline.merge(hitsound::nightcore_events(beatmap, &library, end_ms));
+    }
     if timeline.is_empty() {
         return Ok(None);
     }
@@ -494,11 +542,8 @@ fn render_hitsound_segment(
     // 混音器采样率必须取整：奇数倍速会有最多半帧的换算误差（整段漂移几毫秒，
     // 打击音听不出来），而 0.75 / 1.5 / 2.0 这些常见倍速都是整除的。
     let mixer_rate = ((sample_rate as f64 / speed).round() as u32).max(1);
-    let mut mixer =
-        osu_beatmap_preview_core::hitsound::HitsoundMixer::new(library, timeline, mixer_rate);
-    mixer.set_master_gain(osu_beatmap_preview_core::hitsound::volume_gain(
-        settings.volume.clamp(0, 100),
-    ));
+    let mut mixer = hitsound::HitsoundMixer::new(library, timeline, mixer_rate);
+    mixer.set_master_gain(hitsound::volume_gain(settings.volume.clamp(0, 100)));
     // 视频区间起点可能为负（首个物件前 2000ms 的预卷）：混音位置允许为负，
     // 缓冲区第 0 帧必须对应该起点，否则整段打击音会提前 |起点|。
     mixer.seek(chart_start_ms as f64);
@@ -516,14 +561,16 @@ fn render_hitsound_segment(
     Ok(Some(buffer))
 }
 
+/// 把本编码块的音乐与打击音相加写入 `output`（交错 i16）。
+///
+/// `music` 是本块已经渲染好的音乐（交错 f32，长度 = 本块帧数 × 2），它已经包含编码器
+/// 延迟补偿；打击音缓冲区仍按输出帧下标读取（`output_index + encoder_delay_samples`）。
 #[allow(clippy::too_many_arguments)]
 fn fill_audio_frame(
     output: &mut [i16],
     output_frame_start: usize,
     target_samples: u64,
-    decoded: &DecodedAudio,
-    chart_start_ms: i64,
-    speed: f64,
+    music: &[f32],
     encoder_delay_samples: usize,
     hitsound: Option<&[f32]>,
 ) {
@@ -533,14 +580,8 @@ fn fill_audio_frame(
             stereo.fill(0);
             continue;
         }
-        let source_frame = source_frame_position(
-            output_index,
-            encoder_delay_samples,
-            decoded.sample_rate,
-            chart_start_ms,
-            speed,
-        );
-        let [left, right] = sample_stereo(decoded, source_frame);
+        let music_left = music.get(frame_offset * 2).copied().unwrap_or(0.0);
+        let music_right = music.get(frame_offset * 2 + 1).copied().unwrap_or(0.0);
         // 打击音与音乐在同一输出下标处相加：两者都按同一时间轴换算，
         // 所以即使倍速播放也保持同步。
         let (hit_left, hit_right) = match hitsound {
@@ -553,34 +594,46 @@ fn fill_audio_frame(
             }
             None => (0.0, 0.0),
         };
-        stereo[0] = mix_i16(left, hit_left);
-        stereo[1] = mix_i16(right, hit_right);
+        stereo[0] = mix_sample(music_left, hit_left);
+        stereo[1] = mix_sample(music_right, hit_right);
     }
 }
 
-/// 把线性 PCM 与 f32 打击音相加并夹紧到 i16。
-fn mix_i16(music: i16, hitsound: f32) -> i16 {
-    if hitsound == 0.0 {
-        return music;
-    }
-    let mixed = music as f32 + hitsound * i16::MAX as f32;
-    mixed.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
-}
-
-fn source_frame_position(
-    output_index: usize,
-    encoder_delay_samples: usize,
-    source_sample_rate: u32,
+/// 一个编码块起点的音乐内容毫秒。
+///
+/// `speed` 是本次 Mod 组合的总倍速：输出帧按实时帧推进，内容按 `1000 * speed / sample_rate`
+/// 毫秒每帧推进（与画面、打击音共用同一条被压缩过的谱面时间轴）。
+/// `encoder_delay_samples` 抵消 AAC 编码器的前瞻延迟，等价于旧实现里的
+/// `output_index + encoder_delay_samples` 下标补偿。
+fn block_content_ms(
     chart_start_ms: i64,
+    block_start: usize,
+    encoder_delay_samples: usize,
     speed: f64,
+    sample_rate: u32,
 ) -> f64 {
-    let chart_time_ms = chart_start_ms as f64
-        + (output_index + encoder_delay_samples) as f64 * 1000.0 * speed
-            / crate::config::current()
-                .advance
-                .video_audio
-                .AUDIO_SAMPLE_RATE as f64;
-    chart_time_ms * source_sample_rate as f64 / 1000.0
+    chart_start_ms as f64
+        + (block_start + encoder_delay_samples) as f64 * 1000.0 * speed / sample_rate as f64
+}
+
+/// 把 f32 音乐与 f32 打击音相加并夹紧到 i16。
+///
+/// 音乐的 f32 值来自整数量化（`i16 / 32767.0`），乘回 `32767` 再 `round` 后与原值逐位
+/// 相同，因此无 Mod（`hitsound = 0`）时输出与改动前的 i16 路径一致。
+fn mix_sample(music: f32, hitsound: f32) -> i16 {
+    let scaled = (music + hitsound) * i16::MAX as f32;
+    scaled.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
+}
+
+/// 让 [`MusicPlayer`] 直接读取解码后的音乐：位置按源采样帧插值。
+impl StereoSource for DecodedAudio {
+    fn sample_at(&self, frame: f64) -> (f32, f32) {
+        let [left, right] = sample_stereo(self, frame);
+        (
+            left as f32 / i16::MAX as f32,
+            right as f32 / i16::MAX as f32,
+        )
+    }
 }
 
 fn sample_stereo(decoded: &DecodedAudio, source_frame: f64) -> [i16; 2] {
@@ -926,7 +979,7 @@ mod tests {
         let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
             .expect("fixture 必须可解析");
 
-        let library = crate::media::hitsound::build_library(&beatmap, None);
+        let library = crate::media::hitsound::build_library(&beatmap, None, false);
         assert!(!library.is_empty(), "内嵌资源没有解码出任何样本");
 
         let settings = Some(HitsoundSettings::new(true, 100, false));
@@ -1137,46 +1190,195 @@ mod tests {
         }
     }
 
+    /// 音乐按「内容毫秒 × 源采样率 / 1000」取样；倍速决定内容推进速率（保调）。
     #[test]
-    fn timeline_sampling_honours_lead_in_and_speed() {
+    fn music_sampling_honours_lead_in_rate_and_pitch() {
+        // 1kHz 源、1kHz 输出：1 帧 = 1ms。线性斜坡便于直接断言内容位置（线性函数插值无损）。
         let decoded = DecodedAudio {
             sample_rate: 1_000,
-            stereo_samples: (0..2_000_i16).flat_map(|v| [v, v]).collect(),
+            stereo_samples: (0..2_000_i16)
+                .flat_map(|index| {
+                    let value = index * 2;
+                    [value, value]
+                })
+                .collect(),
         };
-        let mut output = [0_i16; 6];
-        fill_audio_frame(&mut output, 0, 3, &decoded, -500, 2.0, 0, None);
-        assert_eq!(output, [0, 0, 0, 0, 0, 0]);
+        let value_of = |content: f64| content * 2.0;
 
-        fill_audio_frame(&mut output, 0, 3, &decoded, 1_000, 2.0, 0, None);
-        assert_eq!(output[0], 1_000);
-        assert_eq!(source_frame_position(0, 0, 1_000, 1_000, 1.0), 1_000.0);
-        assert_eq!(source_frame_position(48_000, 0, 1_000, 1_000, 1.5), 2_500.0);
-        assert_eq!(
-            source_frame_position(48_000, 0, 1_000, 1_000, 0.75),
-            1_750.0
-        );
-        assert_eq!(source_frame_position(0, 0, 1_000, -500, 1.0), -500.0);
-        assert_eq!(source_frame_position(0, 48_000, 1_000, 1_000, 1.0), 2_000.0);
+        // 恒等倍率：内容位置 = 起点 + 帧号。
+        let mut player = MusicPlayer::new(1_000);
+        let mut output = vec![0.0_f32; 4 * 2];
+        player.render_at(1_000.0, &decoded, 1_000, 4, &mut output);
+        for (frame, pair) in output.chunks_exact(2).enumerate() {
+            let expected = value_of(1_000.0 + frame as f64);
+            assert!(
+                (pair[0] as f64 * i16::MAX as f64 - expected).abs() < 12.0,
+                "帧 {frame}: {} 对不上内容位置 {expected}",
+                pair[0]
+            );
+        }
+
+        // DT（输出域 1.5x 保调）：内容平均按 1.5 帧/输出帧推进。
+        //
+        // 时间伸缩的内容位置是「每跳前进 hop·stretch、段内 1:1」的锯齿，且相似度搜索允许
+        // 几毫秒的局部偏移，因此这里只看**平均速率**（长窗口 + 宽松容差）：倍率写错时偏差
+        // 会随帧数线性增长，很快越过容差。
+        let mut dt = MusicPlayer::new(1_000);
+        dt.set_rate(MusicRate::output_domain(1.5, 1.0));
+        let stretched_frames = 400;
+        let mut stretched = vec![0.0_f32; stretched_frames * 2];
+        dt.render_at(1_000.0, &decoded, 1_000, stretched_frames, &mut stretched);
+        for frame in [8_usize, 100, 200, 399] {
+            let expected = value_of(1_000.0 + frame as f64 * 1.5);
+            let value = stretched[frame * 2] as f64 * i16::MAX as f64;
+            assert!(
+                (value - expected).abs() < 40.0,
+                "帧 {frame}: {value} 对不上平均内容位置 {expected}"
+            );
+        }
+
+        // HT（输出域 0.75x 保调）：内容平均按 0.75 帧/输出帧推进。
+        let mut ht = MusicPlayer::new(1_000);
+        ht.set_rate(MusicRate::output_domain(0.75, 1.0));
+        let mut slowed = vec![0.0_f32; stretched_frames * 2];
+        ht.render_at(1_000.0, &decoded, 1_000, stretched_frames, &mut slowed);
+        for frame in [8_usize, 100, 200, 399] {
+            let expected = value_of(1_000.0 + frame as f64 * 0.75);
+            let value = slowed[frame * 2] as f64 * i16::MAX as f64;
+            assert!(
+                (value - expected).abs() < 40.0,
+                "帧 {frame}: {value} 对不上平均内容位置 {expected}"
+            );
+        }
+
+        // 负起点（首个物件前的预卷）：内容小于 0 时整段静音。
+        let mut pre_roll = MusicPlayer::new(1_000);
+        let mut silent = vec![1.0_f32; 3 * 2];
+        pre_roll.render_at(-500.0, &decoded, 1_000, 3, &mut silent);
+        assert!(silent.iter().all(|value| *value == 0.0), "{silent:?}");
     }
 
+    /// 导出链路按编码块推进音乐：两个静音标记之间的距离必须等于「标记间隔 / 内容速率」。
+    ///
+    /// 1kHz 源、1kHz 输出：1 帧 = 1ms；源在 1000ms 与 3000ms 处各有一段 100ms 静音。
+    /// 时间伸缩的内容位置是锯齿（段内 1:1、每次跳进 `hop·(stretch-1)`），单个标记的绝对位置
+    /// 会因此有几毫秒到十几毫秒的偏差，但两个标记的**间距**不受锯齿影响，正好反映平均速率。
     #[test]
-    fn negative_chart_start_is_silent_until_audio_time_zero() {
+    fn export_music_blocks_follow_the_rate() {
+        let frames = 6_000;
+        let gaps = [(1_000_usize, 1_100_usize), (3_000, 3_100)];
         let decoded = DecodedAudio {
             sample_rate: 1_000,
-            stereo_samples: (0..100_i16)
-                .flat_map(|value| {
-                    let sample = 100 + value * 100;
+            stereo_samples: (0..frames)
+                .flat_map(|index| {
+                    let silent = gaps.iter().any(|(start, end)| (*start..*end).contains(&index));
+                    let value = if silent {
+                        0.0
+                    } else {
+                        (index as f64 * 0.2).sin()
+                    };
+                    let sample = (value * i16::MAX as f64) as i16;
                     [sample, sample]
                 })
                 .collect(),
         };
-        let mut output = [0_i16; 8];
 
-        fill_audio_frame(&mut output, 23_999, 24_003, &decoded, -500, 1.0, 0, None);
+        // (speed, pitch, 内容速率)：DT 保调、HT 保调、NC/DC 的固定音高、以及非默认倍速。
+        let cases = [
+            (1.5_f64, 1.0_f64, 1.5_f64),
+            (0.75, 1.0, 0.75),
+            (1.5, 1.5, 1.5),
+            (0.75, 0.75, 0.75),
+            (2.0, 1.5, 2.0),
+        ];
+        let block = 256_usize;
+        for (speed, pitch, content_rate) in cases {
+            let mut player = MusicPlayer::new(1_000);
+            player.set_rate(MusicRate::output_domain(speed, pitch));
+            let mut output = vec![0.0_f32; (frames as f64 / content_rate) as usize * 2 + block * 4];
+            let mut block_buffer = vec![0.0_f32; block * 2];
+            let blocks = output.len() / 2 / block;
+            for index in 0..blocks {
+                let start = index * block;
+                player.render_at(
+                    block_content_ms(0, start, 0, speed, 1_000),
+                    &decoded,
+                    1_000,
+                    block,
+                    &mut block_buffer,
+                );
+                output[start * 2..(start + block) * 2].copy_from_slice(&block_buffer);
+            }
 
-        assert_eq!(&output[..2], &[0, 0]);
-        assert_eq!(&output[2..4], &[100, 100]);
-        assert!(output[4] > 100);
+            let silent: Vec<usize> = output
+                .chunks_exact(2)
+                .enumerate()
+                .filter(|(_, pair)| pair[0].abs() < 1e-6)
+                .map(|(index, _)| index)
+                .collect();
+            let mut runs: Vec<(usize, usize)> = Vec::new();
+            for index in silent {
+                match runs.last_mut() {
+                    Some(last) if last.1 + 1 == index => last.1 = index,
+                    _ => runs.push((index, index)),
+                }
+            }
+            // 正弦过零点只有 1 帧，源播完后的静音在最后：只取前两个成型（≥ 20 帧）的静音段。
+            let markers: Vec<usize> = runs
+                .iter()
+                .filter(|(start, end)| end - start >= 20)
+                .map(|(start, _)| *start)
+                .take(2)
+                .collect();
+            assert_eq!(
+                markers.len(),
+                2,
+                "speed={speed}, pitch={pitch}：没有找到两个静音标记（{runs:?}）"
+            );
+            let expected = (2_000.0 / content_rate) as isize;
+            let measured = markers[1] as isize - markers[0] as isize;
+            assert!(
+                (measured - expected).abs() <= 20,
+                "speed={speed}, pitch={pitch}：标记 {markers:?} 间距 {measured}，预期 {expected}"
+            );
+            // 单个标记的绝对位置只允许锯齿范围内的偏差。
+            let expected_first = 1_000.0 / content_rate;
+            assert!(
+                (markers[0] as f64 - expected_first).abs() <= 25.0,
+                "speed={speed}, pitch={pitch}：首个标记 {}，预期 {expected_first}",
+                markers[0]
+            );
+        }
+    }
+
+    /// `fill_audio_frame` 按输出帧下标取打击音（含编码器延迟），超出目标长度的帧清零。
+    #[test]
+    fn fill_audio_frame_applies_encoder_delay_and_zero_fills_the_tail() {
+        // 音乐与打击音都是交错立体声：打击音第 1 帧（下标 2、3）为 0.5。
+        let music = [0.25_f32; 10];
+        let hitsound = [0.0_f32, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let music_only = (0.25 * i16::MAX as f32).round() as i16;
+        let with_hitsound = ((0.25 + 0.5) * i16::MAX as f32).round() as i16;
+
+        // 无延迟：输出帧 1 取到打击音第 1 帧；帧 4 超出 target_samples 被清零。
+        let mut plain = [0_i16; 10];
+        fill_audio_frame(&mut plain, 0, 4, &music, 0, Some(&hitsound));
+        assert_eq!(plain[0], music_only);
+        assert_eq!(plain[2], with_hitsound);
+        assert_eq!(plain[4], music_only);
+        assert_eq!(&plain[8..10], &[0, 0]);
+
+        // 延迟 1 帧：打击音整体提前一格（补偿编码器前瞻）。
+        let mut delayed = [0_i16; 10];
+        fill_audio_frame(&mut delayed, 0, 4, &music, 1, Some(&hitsound));
+        assert_eq!(delayed[0], with_hitsound);
+        assert_eq!(delayed[2], music_only);
+
+        // 从输出帧 1 开始：下标继续按绝对帧号走，帧 1 取到打击音第 1 帧。
+        let mut offset = [0_i16; 4];
+        fill_audio_frame(&mut offset, 1, 3, &music, 0, Some(&hitsound));
+        assert_eq!(offset[0], with_hitsound);
+        assert_eq!(offset[2], music_only);
     }
 
     /// 只在测试构建中观测实际送进混音器的窗口；各测试线程独立计数。

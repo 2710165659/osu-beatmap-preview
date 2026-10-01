@@ -6,13 +6,16 @@
 //!
 //! 分工：`sample` 管样本与名字解析，`timeline` 管事件与构建器，`common` 放各模式共用的
 //! 取样辅助，`standard`/`taiko`/`catch`/`mania` 按 osu! 规则展开各自的物件，
-//! `mixer` 把时间轴混成 PCM。
+//! `mixer` 把时间轴混成 PCM，`music` 负责音乐的变速保调（重采样 + WSOLA 时间伸缩），
+//! `nightcore` 生成 NC 的节拍鼓点事件。
 
 mod assets;
 mod catch;
 mod common;
 mod mania;
 mod mixer;
+mod music;
+mod nightcore;
 mod sample;
 mod standard;
 mod taiko;
@@ -25,6 +28,8 @@ pub use assets::{
     asset_bytes, asset_count, asset_names, has_embedded_asset, HITSOUND_ASSETS,
 };
 pub use mixer::{HitsoundMixer, LoopHandle};
+pub use music::{MusicPlayer, MusicRate, StereoSource};
+pub use nightcore::{nightcore_events, NIGHTCORE_SAMPLE_NAMES};
 pub use sample::{Channels, SampleData, SampleLibrary, SampleResolver};
 pub use timeline::{CollectNames, HitsoundTimeline, PlayEvent, PlayFrequency};
 

@@ -108,7 +108,7 @@ npm start
 | `WebGpuSession.create(bytes, canvas, options?)` | 异步创建会话。`bytes` 为 `.osu` 或 `.osz` 的文件字节，`canvas` 为目标 `HTMLCanvasElement`（宽高设为输出尺寸）。`.osz` 的解包、音乐/背景/音效的解码都在这一步完成 |
 | `play()` / `pause()` | 开始 / 暂停推进时钟；幂等 |
 | `seek(chartTimeMs)` | 跳到谱面绝对时间：换时钟锚、丢弃正在播放的声音、重置输出流（见 `audioEpoch()`） |
-| `setRate(userRate)` | 设置用户倍速（不含 DT/HT）；总倍速 = 用户倍速 × 谱面变速，由会话换算 |
+| `setRate(userRate)` | 设置用户倍速（不含 DT/HT）；总倍速 = 用户倍速 × 谱面变速，由会话换算。与游戏里的 `UserPlaybackRate` 一样按 `Frequency` 处理：用户倍速本身会让音乐与打击音一起变调 |
 | `rate()` | 当前总倍速，即音频线程的消费速率 |
 | `clockMs()` | 当前谱面绝对时间；画面按它渲染，进度条的「已播放时长」= `clockMs() - absoluteStartMs()` |
 | `playing()` | 时钟是否在推进 |
@@ -122,7 +122,7 @@ npm start
 | `resize(width, height)` | 同时更新 surface 与 core 的合成尺寸；只改 Canvas 不会改变渲染尺寸 |
 | `durationMs()` | 预览时长（含最后一个物件后的 2s 余韵），用于进度条和结束判定 |
 | `absoluteStartMs()` | 预览起点（进度条 `0:00`）对应的谱面绝对时间；与游戏时间轴（首个可玩物件为 `0:00`）不同 |
-| `beatmapSpeed()` | 当前谱面倍速（DT/HT 等） |
+| `beatmapSpeed()` | 当前谱面倍速（`DT`/`HT`/`NC`/`DC` 等） |
 | `audioSampleRate()` | 混音输出采样率（创建时给定的 `sampleRate`） |
 | `width()` / `height()` | 当前输出尺寸 |
 | `mode()` | 解析和转谱后的目标模式，小写字符串，如 `standard`、`mania` |
@@ -220,8 +220,9 @@ info.difficulties;  // .osz 的难度清单 [{ entry, label, beatmapId }]；单�
 
 ```js
 const mods = supportedMods('mania');
-// ['HD','FL','CS','DT','HT','1K','2K','3K','4K','5K','6K','7K','8K','9K','10K','DS','IN','HO']
+// ['HD','FL','CS','DT','HT','NC','DC','1K','2K','3K','4K','5K','6K','7K','8K','9K','10K','DS','IN','HO']
 // HD/FL 在四种模式下都可用；DA 需要补参数后提交（如 DAAR9CS4）。
+// DT/HT 保调，NC/DC 固定 1.5x / 0.75x 音高并叠加 NC 节拍鼓点，详见 CLI README。
 session.set_mods(mods.filter((token) => token === 'HD' || token === 'FL'));
 ```
 
@@ -230,7 +231,7 @@ session.set_mods(mods.filter((token) => token === 'HD' || token === 'FL'));
 - 只支持 WebGPU 后端；浏览器或设备不支持时 `create` 直接返回错误，不会回退到 WebGL 或 CPU 绘制。
 - 本 crate 的 wasm 导出只在 `wasm32` 目标下生成；解包/解码模块（`archive.rs`、`decode.rs`）不依赖 wasm 运行时，`cargo test` 可直接在宿主上跑它们的用例。
 - 不解析回放、不切分 MP4；时钟由 WASM 维护，宿主只在音频线程回报时把消费位置转发回来（`onAudioClock`）。
-- 音乐、音效与背景的解码（symphonia / image）在 `create` 时一次性完成：大谱面包（长图、大音乐）会多花一些内存与几百毫秒加载时间。打击音皮肤内嵌在 wasm 里（36 个 ogg，约 240 KiB）；解包/解码依赖（zip / symphonia / image）加上皮肤后 wasm 约 2.2 MiB（gzip 后约 0.9 MiB）。
+- 音乐、音效与背景的解码（symphonia / image）在 `create` 时一次性完成：大谱面包（长图、大音乐）会多花一些内存与几百毫秒加载时间。打击音皮肤内嵌在 wasm 里（40 个 ogg，含 4 个 NC 节拍鼓点，约 280 KiB）；解包/解码依赖（zip / symphonia / image）加上皮肤后 wasm 约 2.2 MiB（gzip 后约 0.9 MiB）。
 - 音频输出还需要 `SharedArrayBuffer`（跨源隔离）与 `AudioWorklet`，环境不具备时页面应退化成「只有画面」，而不是报错。
 - 每帧都直接在 GPU 上绘制，宿主应按目标帧率调用 `renderFrame`，不要在同一帧重复提交。返回 `false`（画布被遮挡、GPU 取帧超时）时不要当错误处理：时钟与音频继续推进，恢复后自动续上；连续 1 秒拿不到帧才会抛错。
 - `beatmapInfo` / `create` 只解析传入的字节，不认识 `bid` 的下载：文件获取由宿主负责（Web 包里是 Node 后端的 `/resource/file?bid=`）。

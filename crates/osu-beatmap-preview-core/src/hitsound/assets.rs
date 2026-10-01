@@ -45,10 +45,10 @@ mod tests {
         SampleBank, StandardHitObject, TaikoHitObject, TimingPoint,
     };
 
-    /// 内嵌资源覆盖四模式全部音效。
+    /// 内嵌资源覆盖四模式全部音效与 NC 的节拍鼓点。
     #[test]
     fn embedded_assets_cover_all_modes() {
-        assert_eq!(asset_count(), 36);
+        assert_eq!(asset_count(), 40);
         for name in [
             "normal-hitnormal",
             "soft-hitnormal",
@@ -65,6 +65,11 @@ mod tests {
         ] {
             let bytes = asset_bytes(name).unwrap_or_else(|| panic!("缺少内嵌资源 {name}"));
             // ogg 以 `OggS` 开头：确认取到的是真资源而不是空切片。
+            assert_eq!(&bytes[..4], b"OggS", "{name} 不是 ogg 数据");
+        }
+        // NC 鼓点：名字与游戏 `Gameplay/nightcore-*` 一致，宿主按候选名装载。
+        for name in crate::hitsound::NIGHTCORE_SAMPLE_NAMES {
+            let bytes = asset_bytes(name).unwrap_or_else(|| panic!("缺少内嵌资源 {name}"));
             assert_eq!(&bytes[..4], b"OggS", "{name} 不是 ogg 数据");
         }
         assert!(asset_bytes("不存在").is_none());

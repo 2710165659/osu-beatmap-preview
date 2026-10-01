@@ -7,7 +7,9 @@ use super::input::{ImageData, RealtimeOptions, ResourceBundle};
 use super::output::{RealtimeMode, TimelineInfo};
 use super::stream::{AudioStream, RESEEK_TOLERANCE_MS};
 use crate::config;
-use crate::hitsound::{self, HitsoundMixer, HitsoundTimeline, SampleData, SampleLibrary};
+use crate::hitsound::{
+    self, HitsoundMixer, HitsoundTimeline, MusicRate, SampleData, SampleLibrary,
+};
 use crate::model::mods::{parse_mods, validate_mods, ModSettings};
 use crate::model::{Beatmap, HitObjects};
 use crate::processing::conversion::{catch_convert, mania_convert, taiko_convert};
@@ -36,6 +38,8 @@ pub struct RealtimeSession {
     mixer: HitsoundMixer,
     /// 打击音开关；关闭时事件时间轴为空，混音输出只剩音乐。
     hitsound_enabled: bool,
+    /// 当前 Mod 设置：决定音乐音高倍率与 NC 的节拍鼓点。
+    settings: ModSettings,
     /// 用户倍速（不含 DT/HT）；总倍速 = 用户倍速 × `timeline.beatmap_speed`。
     user_rate: f64,
     /// 预览时钟：画面与音频共用的时间权威。
@@ -98,6 +102,9 @@ impl RealtimeSession {
         );
         mixer.set_master_gain(hitsound::volume_gain(audio.hitsound_volume));
         mixer.set_music_gain(hitsound::volume_gain(audio.music_volume));
+        // 音乐变速保调：图表域下输出帧按谱面时间 1:1，宿主音频线程再按总倍率重采样，
+        // 因此这里把 Mod 的音高倍率换算成「图表域」的要求（DT/HT 保调、NC/DC 固定偏移）。
+        mixer.set_music_rate(MusicRate::chart_domain(speed, settings.music_pitch()));
         let mut clock = PreviewClock::new();
         // 总倍速 = 用户倍速（初始 1.0）× 谱面变速；换 mod 时由 `set_mods` 重算。
         clock.set_rate(speed, 0.0);
@@ -117,6 +124,7 @@ impl RealtimeSession {
             background_image,
             mixer,
             hitsound_enabled: audio.hitsound_enabled,
+            settings,
             user_rate: 1.0,
             clock,
             stream,
@@ -178,6 +186,10 @@ impl RealtimeSession {
         self.resources.beatmap = Some(beatmap);
         self.source = source;
         self.clock.set_rate(self.user_rate * speed, wall_ms);
+        // 换 Mod 会改变音乐音高倍率（DT/HT 保调、NC/DC 固定偏移）与 NC 鼓点的开关。
+        self.mixer
+            .set_music_rate(MusicRate::chart_domain(speed, settings.music_pitch()));
+        self.settings = settings;
         self.rebuild_hitsound_timeline();
         Ok(())
     }
@@ -242,8 +254,13 @@ impl RealtimeSession {
     /// 当前谱面需要样本库提供的样本名（按优先级排列，含裸名回退）。
     ///
     /// 宿主只装载它拿得到的名字；缺失的样本在混音时按静音处理。
+    /// NC 生效时额外带上 4 个节拍鼓点样本名（鼓点属于 Mod，与打击音开关无关）。
     pub fn hitsound_required_names(&self) -> Vec<String> {
-        hitsound::referenced_names(&self.beatmap)
+        let mut names = hitsound::referenced_names(&self.beatmap);
+        if self.settings.nightcore {
+            names.extend(hitsound::NIGHTCORE_SAMPLE_NAMES.map(str::to_string));
+        }
+        names
     }
 
     /// 放入一段已解码的样本 PCM。
@@ -268,13 +285,23 @@ impl RealtimeSession {
 
     /// 用当前样本库重建打击音事件时间轴（样本全部放完后调用一次）。
     ///
-    /// 打击音关闭时事件时间轴置空；重建会清空正在播放的声音，只在装载阶段调用。
+    /// 打击音关闭时事件时间轴只留 NC 的节拍鼓点（鼓点是 Mod 的一部分，游戏里同样不受
+    /// 「谱面自带打击音」开关影响）。重建会清空正在播放的声音，只在装载阶段调用。
     pub fn rebuild_hitsound_timeline(&mut self) {
-        let timeline = if self.hitsound_enabled {
+        let mut timeline = if self.hitsound_enabled {
             hitsound::build_timeline(&self.beatmap, self.mixer.library())
         } else {
             HitsoundTimeline::default()
         };
+        if self.settings.nightcore {
+            let end_ms =
+                (self.timeline.absolute_start_ms + self.timeline.duration_ms) as f64;
+            timeline.merge(hitsound::nightcore_events(
+                &self.beatmap,
+                self.mixer.library(),
+                end_ms,
+            ));
+        }
         self.mixer.rebuild_timeline_events(timeline);
     }
 
@@ -792,6 +819,91 @@ mod tests {
         assert!((session.rate() - 1.5).abs() < 1e-9, "rate={}", session.rate());
         session.set_rate(0.0, 2.0);
         assert!((session.rate() - 3.0).abs() < 1e-9, "rate={}", session.rate());
+    }
+
+    /// NC/DC 的图表域倍率、固定音高偏移与节拍鼓点。
+    #[test]
+    fn nightcore_and_daycore_follow_the_game_semantics() {
+        let mut session = session();
+
+        // DT：保调。图表域要把宿主的总倍率抵消掉，因此音高倍率是 1/1.5。
+        session
+            .set_mods(vec!["DT".to_string()], 0.0)
+            .expect("DT 必须合法");
+        assert_eq!(
+            session.mixer.music_rate(),
+            MusicRate {
+                resample: 1.0 / 1.5,
+                stretch: 1.5
+            }
+        );
+
+        // NC 默认速度：图表域是恒等（宿主的 1.5 倍重采样正好给出 +1.5 倍音高）。
+        session
+            .set_mods(vec!["NC".to_string()], 0.0)
+            .expect("NC 必须合法");
+        assert_eq!(session.mixer.music_rate(), MusicRate::IDENTITY);
+        let names = session.hitsound_required_names();
+        for name in hitsound::NIGHTCORE_SAMPLE_NAMES {
+            assert!(names.contains(&name.to_string()), "缺少鼓点样本名 {name}");
+        }
+
+        // 鼓点属于 Mod：即使打击音关闭也要出声，因此时间轴里必须有事件。
+        session.set_hitsound_enabled(false);
+        for name in hitsound::NIGHTCORE_SAMPLE_NAMES {
+            session.set_hitsound_sample(
+                name,
+                hitsound::Channels::Stereo(vec![1.0, 1.0, 1.0, 1.0]),
+                1000,
+                0,
+            );
+        }
+        session.rebuild_hitsound_timeline();
+        let drum_events = session
+            .mixer
+            .timeline()
+            .events
+            .iter()
+            .filter(|event| {
+                session
+                    .mixer
+                    .library()
+                    .name_of(event.source_id)
+                    .is_some_and(|name| name.starts_with("nightcore-"))
+            })
+            .count();
+        assert!(drum_events >= 2, "NC 鼓点事件数不对：{drum_events}");
+
+        // 切走 NC 之后不再要求鼓点样本，时间轴里也不该再有鼓点。
+        session.set_mods(Vec::new(), 0.0).expect("空 Mod 必须合法");
+        assert!(
+            !session
+                .hitsound_required_names()
+                .iter()
+                .any(|name| name.starts_with("nightcore-")),
+            "未启用 NC 却要求了鼓点样本"
+        );
+        assert!(
+            session.mixer.timeline().events.iter().all(|event| session
+                .mixer
+                .library()
+                .name_of(event.source_id)
+                .is_none_or(|name| !name.starts_with("nightcore-"))),
+            "未启用 NC 仍有鼓点事件"
+        );
+
+        // DC：音高固定 0.75，图表域同样是恒等；没有鼓点。
+        session
+            .set_mods(vec!["DC".to_string()], 0.0)
+            .expect("DC 必须合法");
+        assert_eq!(session.mixer.music_rate(), MusicRate::IDENTITY);
+        assert!(
+            !session
+                .hitsound_required_names()
+                .iter()
+                .any(|name| name.starts_with("nightcore-")),
+            "DC 不该要求鼓点样本"
+        );
     }
 
     /// 音频消费位置走散后输出流整体重置到画面位置，并通过纪元通知宿主。

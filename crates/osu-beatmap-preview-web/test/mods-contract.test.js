@@ -36,11 +36,11 @@ async function loadModule() {
 
 /** 与 CLI README「GIF / MP4」列一致的期望表（转谱后的目标模式）。 */
 const EXPECTED = {
-  standard: ['EZ', 'HR', 'HD', 'FL', 'DA', 'TC', 'DT', 'HT'],
-  taiko: ['EZ', 'HR', 'HD', 'FL', 'SW', 'CS', 'DT', 'HT'],
-  catch: ['EZ', 'HR', 'HD', 'FL', 'DT', 'HT'],
+  standard: ['EZ', 'HR', 'HD', 'FL', 'DA', 'TC', 'DT', 'HT', 'NC', 'DC'],
+  taiko: ['EZ', 'HR', 'HD', 'FL', 'SW', 'CS', 'DT', 'HT', 'NC', 'DC'],
+  catch: ['EZ', 'HR', 'HD', 'FL', 'DT', 'HT', 'NC', 'DC'],
   mania: [
-    'HD', 'FL', 'CS', 'DT', 'HT',
+    'HD', 'FL', 'CS', 'DT', 'HT', 'NC', 'DC',
     '1K', '2K', '3K', '4K', '5K', '6K', '7K', '8K', '9K', '10K',
     'DS', 'IN', 'HO',
   ],
@@ -55,7 +55,7 @@ test('supportedMods 导出齐全', async (t) => {
   assert.equal(typeof module.supportedMods, 'function');
 });
 
-test('四种模式的 Mod 列表与支持矩阵一致，且都含 HD/FL', async (t) => {
+test('四种模式的 Mod 列表与支持矩阵一致，且都含 HD/FL/NC/DC', async (t) => {
   const module = await loadModule();
   if (!module) {
     t.skip('public/pkg 下没有 wasm 产物，先运行 npm run build:wasm');
@@ -65,8 +65,9 @@ test('四种模式的 Mod 列表与支持矩阵一致，且都含 HD/FL', async 
     const tokens = Array.from(module.supportedMods(mode));
     assert.deepEqual(tokens, expected, mode);
     // PR #6 之后实时链路四种模式都支持 HD/FL：面板必须能选到，否则又是「实现有、点不到」。
-    assert.ok(tokens.includes('HD'), `${mode} 缺少 HD`);
-    assert.ok(tokens.includes('FL'), `${mode} 缺少 FL`);
+    for (const required of ['HD', 'FL', 'NC', 'DC']) {
+      assert.ok(tokens.includes(required), `${mode} 缺少 ${required}`);
+    }
   }
 });
 
