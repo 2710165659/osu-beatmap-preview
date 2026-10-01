@@ -167,6 +167,8 @@ Taiko、Catch 和 Mania 可用 `--time-points` 与 `--duration-time` 只渲染�
 
 四种模式均可输出带谱面原始音频的 MP4，支持 MP3、OGG 和 WAV 音源。视频默认读取 OSZ 中 `[Events]` 声明的背景图，并按 `BACKGROUND_DIM=0.7` 暗化；可通过配置关闭背景图。
 
+谱面带背景视频（`[Events]` 的 `Video,<offset>,"file"` 事件）时可打开 `ENABLE_BACKGROUND_VIDEO`（四模式的 `mp4` 小节各一份，**默认关闭**）把视频合成进背景：视频时间 = 谱面时间 − 事件偏移，叠在背景图之上并共用同一个 `BACKGROUND_DIM` 暗化，开始处 500ms 淡入、结束前 500ms 淡出（与 osu! 的 `DrawableStoryboardVideo` 一致）。视频缺失、不是 H.264 mp4 或解码失败时自动回退背景图，不影响导出。
+
 MP4 默认还会把打击音（hit sound）混入音轨，音量 100%：
 
 - Standard / Catch / Mania 使用 argon pro (2022) 音效，Taiko 使用 osu! "classic" (2013) 音效；
@@ -242,7 +244,7 @@ osu-beatmap-preview-cli --bid=738063 --config='{"render":{"standard":{"gif":{"st
 osu-beatmap-preview-cli --bid=738063 --config='{render: {standard: {gif: {structure: {ROW_COUNT: 1}}}}}'
 ```
 
-以下示例关闭 Standard MP4 背景图、调整暗化程度、让 Taiko 只用内嵌皮肤（忽略谱面自带音效）、关闭 Mania 打击音，并分别设置三种格式的整次请求超时：
+以下示例关闭 Standard MP4 背景图、调整暗化程度、为 Standard 打开背景视频、让 Taiko 只用内嵌皮肤（忽略谱面自带音效）、关闭 Mania 打击音，并分别设置三种格式的整次请求超时：
 
 ```yaml
 render:
@@ -250,6 +252,7 @@ render:
     mp4:
       style:
         ENABLE_BACKGROUND_IMAGE: false
+        ENABLE_BACKGROUND_VIDEO: true
         BACKGROUND_DIM: 0.5
         ENABLE_HITSOUND: true
         ENABLE_BEATMAP_HITSOUND: true

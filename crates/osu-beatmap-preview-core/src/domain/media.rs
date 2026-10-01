@@ -14,6 +14,12 @@ use super::models::Beatmap;
 /// 谱面自带打击音允许的扩展名（osu! 常见的三种）。
 pub const SAMPLE_EXTENSIONS: [&str; 3] = ["ogg", "wav", "mp3"];
 
+/// `[Events]` 里 `Video` 事件允许的视频扩展名（与 osu! 的白名单一致）。
+///
+/// 扩展名不在表内的 `Video` 行不算背景视频：老谱面会把背景图写成 `Video,` 行，
+/// osu! 对这种行按背景图处理（见 [`crate::domain::parser`] 的兼容分支）。
+pub const VIDEO_EXTENSIONS: [&str; 7] = ["mp4", "mov", "avi", "flv", "mpg", "wmv", "m4v"];
+
 /// 归一化压缩包内的条目路径。
 ///
 /// 规则与 `backend/zip.js` 的 `normalizeArchivePath` 一致：反斜杠转正斜杠、去掉空段
@@ -57,6 +63,15 @@ pub fn entry_extension(path: &str) -> Option<String> {
     }
 }
 
+/// 条目是否是背景视频（扩展名在 [`VIDEO_EXTENSIONS`] 白名单内）。
+///
+/// 与 osu! 一致按扩展名判断；没有可用扩展名（[`entry_extension`] 返回 `None`）
+/// 时一律不是视频。
+pub fn is_video_entry(path: &str) -> bool {
+    entry_extension(path)
+        .is_some_and(|extension| VIDEO_EXTENSIONS.contains(&extension.as_str()))
+}
+
 /// 压缩包里的一个媒体条目。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaEntry {
@@ -89,6 +104,7 @@ impl MediaEntry {
 ///
 /// - `audio`：`[General] AudioFilename`，必需（预览/视频都要靠它出声）；
 /// - `background`：`[Events]` 的第一张背景图，可选（缺失时宿主退化成纯色背景）；
+/// - `video`：`[Events]` 的背景视频，可选（缺失时按没有背景视频处理）；
 /// - `samples`：谱面可能自带的候选打击音样本名，供宿主去压缩包里按
 ///   [`sample_entry_matches`] 查找同名条目。找到的条目由宿主解码后填进样本库，其优先级
 ///   高于内嵌皮肤（见 [`crate::hitsound::has_embedded_asset`]）：谱面自带音效是谱面
@@ -97,6 +113,7 @@ impl MediaEntry {
 pub struct BeatmapMedia {
     pub audio: Option<MediaEntry>,
     pub background: Option<MediaEntry>,
+    pub video: Option<MediaEntry>,
     pub samples: Vec<MediaEntry>,
 }
 
@@ -109,13 +126,17 @@ impl BeatmapMedia {
                 .background_filename
                 .as_deref()
                 .and_then(MediaEntry::new),
+            video: beatmap.video.as_ref().and_then(|video| MediaEntry::new(&video.filename)),
             samples: sample_entries(beatmap),
         }
     }
 
-    /// 三类条目都为空时返回 `true`。
+    /// 四类条目都为空时返回 `true`。
     pub fn is_empty(&self) -> bool {
-        self.audio.is_none() && self.background.is_none() && self.samples.is_empty()
+        self.audio.is_none()
+            && self.background.is_none()
+            && self.video.is_none()
+            && self.samples.is_empty()
     }
 }
 
@@ -269,6 +290,7 @@ mod tests {
             }]),
             break_periods: Vec::new(),
             background_filename: background.map(str::to_string),
+            video: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         }
@@ -317,6 +339,24 @@ mod tests {
             ]
         );
         assert!(!media.is_empty());
+    }
+
+    /// 背景视频事件归类为 `video` 条目（文件名同样归一化）。
+    #[test]
+    fn video_event_becomes_media_entry() {
+        let mut beatmap = beatmap_with(Vec::new(), Some("bg.jpg"));
+        beatmap.video = Some(crate::domain::models::VideoEvent {
+            filename: r"Backgrounds\intro.mp4".to_string(),
+            start_ms: -500,
+        });
+        let media = BeatmapMedia::from_beatmap(&beatmap);
+        assert_eq!(
+            media.video.as_ref().map(|entry| entry.name.as_str()),
+            Some("Backgrounds/intro.mp4")
+        );
+
+        beatmap.video = None;
+        assert!(BeatmapMedia::from_beatmap(&beatmap).video.is_none());
     }
 
     /// 样本条目按候选名匹配。

@@ -6,11 +6,10 @@
 
 use crate::export::canvas::Img;
 use crate::media::audio::AudioSourceJob;
-use crate::media::{resolve_video_time_range, save_mp4_streamed};
+use crate::media::{frame_time_ms, resolve_video_time_range, save_mp4_streamed, MediaBackground};
 use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::Beatmap;
-use osu_beatmap_preview_core::processing::parse::round_half_even;
 use osu_beatmap_preview_core::processing::timeline::TimeAxis;
 use osu_beatmap_preview_core::processing::validation::TimePoint;
 use osu_beatmap_preview_core::support::error::Result;
@@ -31,7 +30,7 @@ pub(crate) fn render_standard_video(
     start_time: Option<TimePoint>,
     duration_time: Option<f64>,
     output_path: &Path,
-    background: Option<Img>,
+    background: MediaBackground,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
     fps: Option<u32>,
@@ -62,9 +61,7 @@ pub(crate) fn render_standard_video(
     // 避免每帧重复排序完整谱面并分配临时 Vec。索引仅保存 usize，
     // 相比 RGBA 帧缓冲占用很小，且不改变任何帧的物件顺序。
     let snapshot_times: Vec<i64> = (0..frame_count)
-        .map(|frame_index| {
-            start + round_half_even(frame_index as f64 * 1000.0 * speed / fps as f64)
-        })
+        .map(|frame_index| frame_time_ms(start, frame_index, speed, fps))
         .collect();
     let visible_indexes = build_visible_indexes_by_snapshot(
         &context.hit_objects,
@@ -72,8 +69,9 @@ pub(crate) fn render_standard_video(
         context.settings.preempt_ms,
     );
     // 视频背景在最终 16:9 画布上统一处理；playfield 只提供透明对象层，
-    // 避免同一张图在 playfield 和画布中被分别缩放、裁剪。
-    let frame_background = background.as_ref().map(|_| {
+    // 避免同一张图在 playfield 和画布中被分别缩放、裁剪。背景视频同样
+    // 垫在画布上，因此只要有任何背景素材对象层就保持透明。
+    let frame_background = (!background.is_empty()).then(|| {
         Img::new(
             context.frame_layout.frame_width as u32,
             context.frame_layout.frame_height as u32,

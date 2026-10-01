@@ -282,6 +282,7 @@ mod tests {
                         1280,
                         720,
                         Some(&background),
+                        None,
                         VideoStyle::default(),
                     )
                     .unwrap(),

@@ -33,6 +33,11 @@ pub struct RealtimeSession {
     source: crate::render::wgpu::RealtimeFrameSource,
     // 背景纹理在会话生命周期内保持同一 Arc，避免每帧复制像素并触发 GPU 重新上传。
     background_image: Option<Arc<Img>>,
+    /// 背景视频的当前帧与时间信息（宿主按视频时间轴逐帧推送）。
+    ///
+    /// 可见度（osu! 的淡入淡出）在合成时按 `video_time_ms` 算，不随帧存储：
+    /// 同一画面在淡入淡出窗口里无需重复上传像素。
+    background_video: Option<(Arc<Img>, i64, i64)>,
     /// 音乐 + 打击音混音器：与画面共用同一条谱面时间轴，会话生命周期内一直持有
     /// （打击音关闭时音乐仍要出声，开关不能用 `Option` 表达）。
     mixer: HitsoundMixer,
@@ -122,6 +127,7 @@ impl RealtimeSession {
             options,
             source,
             background_image,
+            background_video: None,
             mixer,
             hitsound_enabled: audio.hitsound_enabled,
             settings,
@@ -199,6 +205,40 @@ impl RealtimeSession {
         self.resources.background = Some(background);
         self.background_image = Some(image);
         Ok(())
+    }
+
+    /// 设置背景视频的当前帧；`video_time_ms` 是视频自身时间轴的位置，
+    /// `duration_ms` 是视频总时长，两者决定 osu! 淡入淡出的可见度。
+    ///
+    /// 帧的选取由宿主决定（浏览器 `<video>` 最清楚自己的当前帧）；RGBA 交给
+    /// 会话后**按所有权移入**，不再克隆像素（每帧几 MB 的拷贝经不起实时）。
+    pub fn set_background_video(
+        &mut self,
+        frame: ImageData,
+        video_time_ms: i64,
+        duration_ms: i64,
+    ) -> Result<()> {
+        let expected = frame.width as usize * frame.height as usize * 4;
+        if frame.width == 0 || frame.height == 0 || frame.rgba.len() != expected {
+            return Err(PreviewError::new(
+                "background video frame RGBA length does not match dimensions",
+            ));
+        }
+        self.background_video = Some((
+            Arc::new(Img {
+                w: frame.width,
+                h: frame.height,
+                data: frame.rgba,
+            }),
+            video_time_ms,
+            duration_ms.max(1),
+        ));
+        Ok(())
+    }
+
+    /// 移除背景视频帧，回退静态背景图（视频未开始、已结束或被关闭时调用）。
+    pub fn clear_background_video(&mut self) {
+        self.background_video = None;
     }
 
     /// 更新后续 `scene_at_absolute` 使用的输出尺寸。
@@ -424,6 +464,13 @@ impl RealtimeSession {
             width,
             height,
             self.background_image.as_ref(),
+            self.background_video.as_ref().map(|(frame, video_time, duration)| {
+                (
+                    frame,
+                    crate::render::wgpu::composition::visibility_alpha(*video_time, *duration)
+                        as f32,
+                )
+            }),
             self.options.video_style,
         )
         .map_err(|error| PreviewError::render(error.to_string()))
@@ -620,6 +667,7 @@ mod tests {
             }]),
             break_periods: Vec::new(),
             background_filename: None,
+            video: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         };
@@ -664,6 +712,7 @@ mod tests {
             }]),
             break_periods: Vec::new(),
             background_filename: None,
+            video: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         };

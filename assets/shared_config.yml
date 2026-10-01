@@ -71,6 +71,7 @@ render:
       style:
         FPS: 15 # MP4 帧率
         ENABLE_BACKGROUND_IMAGE: true # 是否启用谱面背景图
+        ENABLE_BACKGROUND_VIDEO: false # 是否启用谱面背景视频（.osz 内 mp4 背景视频，按时间轴逐帧合成；缺失或未开始时回退背景图）
         BACKGROUND_DIM: 0.7 # 谱面背景图暗化程度
         LABEL_COLOR: [232, 232, 232, 255] # 右上角时间标签颜色（RGBA）
         BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成使用的不透明黑色（RGBA）
@@ -163,6 +164,7 @@ render:
         LABEL_PAD: 12 # 时间标签与画布边缘的内边距
       style:
         ENABLE_BACKGROUND_IMAGE: true # 是否启用谱面背景图
+        ENABLE_BACKGROUND_VIDEO: false # 是否启用谱面背景视频（.osz 内 mp4 背景视频，按时间轴逐帧合成；缺失或未开始时回退背景图）
         BACKGROUND_DIM: 0.7 # 谱面背景图暗化程度
         LABEL_COLOR: [232, 232, 232, 255] # 右上角时间标签颜色（RGBA）
         BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成使用的不透明黑色（RGBA）
@@ -254,6 +256,7 @@ render:
         LABEL_PAD: 12 # 时间标签与画布边缘的内边距
       style:
         ENABLE_BACKGROUND_IMAGE: true # 是否启用谱面背景图
+        ENABLE_BACKGROUND_VIDEO: false # 是否启用谱面背景视频（.osz 内 mp4 背景视频，按时间轴逐帧合成；缺失或未开始时回退背景图）
         BACKGROUND_DIM: 0.7 # 谱面背景图暗化程度
         LABEL_COLOR: [232, 232, 232, 255] # 右上角时间标签颜色（RGBA）
         BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成使用的不透明黑色（RGBA）
@@ -350,6 +353,7 @@ render:
         SV_TEXT_FONT_SIZE: 10 # SV 文本字号
       style:
         ENABLE_BACKGROUND_IMAGE: true # 是否启用谱面背景图
+        ENABLE_BACKGROUND_VIDEO: false # 是否启用谱面背景视频（.osz 内 mp4 背景视频，按时间轴逐帧合成；缺失或未开始时回退背景图）
         BACKGROUND_DIM: 0.7 # 谱面背景图暗化程度
         LABEL_COLOR: [232, 232, 232, 255] # 右上角时间标签颜色（RGBA）
         BLACK_OPAQUE: [0, 0, 0, 255] # 视频合成使用的不透明黑色（RGBA）

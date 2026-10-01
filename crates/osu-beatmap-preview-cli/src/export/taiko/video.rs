@@ -6,7 +6,7 @@
 
 use crate::export::canvas::Img;
 use crate::media::audio::AudioSourceJob;
-use crate::media::{resolve_video_time_range, save_mp4_streamed};
+use crate::media::{frame_time_ms, resolve_video_time_range, save_mp4_streamed, MediaBackground};
 use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::Beatmap;
@@ -19,8 +19,8 @@ use std::path::Path;
 
 use super::animation_render::{
     build_multiplier_points, build_video_animation_layout, compute_time_range, draw_hit_objects,
-    draw_row_background, prepare_hit_objects_with_mods, prepare_measure_lines, pyround,
-    taiko_flashlight, taiko_visibility_timeline, AnimationLayout, MultiplierLookup,
+    draw_row_background, prepare_hit_objects_with_mods, prepare_measure_lines, taiko_flashlight,
+    taiko_visibility_timeline, AnimationLayout, MultiplierLookup,
 };
 use super::notes::RenderCache;
 use super::timing::*;
@@ -32,7 +32,7 @@ pub(crate) fn render_taiko_video(
     start_time: Option<TimePoint>,
     duration_time: Option<f64>,
     output_path: &Path,
-    background: Option<Img>,
+    background: MediaBackground,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
     fps: Option<u32>,
@@ -95,7 +95,7 @@ pub(crate) fn render_taiko_video(
             layout.image_height as u32,
             [0, 0, 0, 0],
         );
-        if background.is_none() {
+        if background.is_empty() {
             let content = layout.content;
             bg.fill_rect_size(
                 content.x,
@@ -121,7 +121,7 @@ pub(crate) fn render_taiko_video(
     }
 
     let render = move |frame_index: usize| -> Result<(Img, i64)> {
-        let snapshot_time = start + pyround(frame_index as f64 * 1000.0 * speed / fps as f64);
+        let snapshot_time = frame_time_ms(start, frame_index, speed, fps);
         let mut canvas = static_bg.clone();
         TAIKO_VIDEO_CACHE.with(|cache| {
             draw_hit_objects(

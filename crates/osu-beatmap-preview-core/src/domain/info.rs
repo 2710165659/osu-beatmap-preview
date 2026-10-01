@@ -36,6 +36,10 @@ pub struct BeatmapInfo {
     pub audio_lead_in_ms: i64,
     pub stack_leniency: f64,
     pub background_filename: Option<String>,
+    /// 背景视频文件名（`[Events]` 的 `Video` 事件，已按扩展名白名单过滤）。
+    pub video_filename: Option<String>,
+    /// 背景视频开始时间（毫秒，谱面时间轴）；没有背景视频时为 `None`。
+    pub video_start_ms: Option<i64>,
     pub beat_divisor: i32,
     // ── 统计 ──
     pub hit_object_count: usize,
@@ -81,6 +85,8 @@ impl BeatmapInfo {
             audio_lead_in_ms: beatmap.audio_lead_in_ms(),
             stack_leniency: beatmap.stack_leniency(),
             background_filename: beatmap.background_filename.clone(),
+            video_filename: beatmap.video.as_ref().map(|video| video.filename.clone()),
+            video_start_ms: beatmap.video.as_ref().map(|video| video.start_ms),
             beat_divisor: beatmap.beat_divisor,
             hit_object_count: beatmap.hit_objects.len(),
             first_object_ms: bounds.map(|(first, _)| first),
@@ -184,7 +190,7 @@ fn section_map(section: &KvSection) -> BTreeMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::models::{BreakPeriod, StandardHitObject, TimingPoint};
+    use crate::domain::models::{BreakPeriod, StandardHitObject, TimingPoint, VideoEvent};
 
     fn sample_beatmap() -> Beatmap {
         let mut general = KvSection::default();
@@ -239,6 +245,10 @@ mod tests {
                 end_time: 3000,
             }],
             background_filename: Some("bg.jpg".to_string()),
+            video: Some(VideoEvent {
+                filename: "video.mp4".to_string(),
+                start_ms: -200,
+            }),
             combo_colors: vec![[255, 128, 0]],
             beat_divisor: 4,
         }
@@ -257,6 +267,8 @@ mod tests {
         assert_eq!(info.audio_filename.as_deref(), Some("audio.mp3"));
         assert_eq!(info.audio_lead_in_ms, 1500);
         assert_eq!(info.background_filename.as_deref(), Some("bg.jpg"));
+        assert_eq!(info.video_filename.as_deref(), Some("video.mp4"));
+        assert_eq!(info.video_start_ms, Some(-200));
         assert_eq!(info.hit_object_count, 2);
         assert_eq!(info.first_object_ms, Some(1000));
         assert_eq!(info.last_object_end_ms, Some(4000));

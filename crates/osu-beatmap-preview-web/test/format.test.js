@@ -2,7 +2,12 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseBeatmapText, parseBackgroundFilename } from '../backend/beatmap-meta.js';
+import {
+  isVideoEntry,
+  parseBackgroundFilename,
+  parseBeatmapText,
+  parseVideoEvent,
+} from '../backend/beatmap-meta.js';
 import { beatmapSetIdFromUrl } from '../backend/download-osu.js';
 import { splitRanges } from '../backend/download-osz.js';
 import { parseByteRange, safeRelativePath } from '../backend/static.js';
@@ -35,6 +40,35 @@ test('背景图支持反斜杠路径与无引号写法', () => {
   assert.equal(parseBackgroundFilename(['1,0,"video.avi",0,0']), null);
   assert.equal(parseBackgroundFilename(['0,0,"unterminated']), null);
   assert.equal(parseBackgroundFilename([]), null);
+});
+
+test('视频事件解析：起始偏移、引号路径与旧式别名', () => {
+  assert.deepEqual(parseVideoEvent(['0,0,"bg.jpg",0,0', 'Video,1500,"intro video, final.mp4"']), {
+    filename: 'intro video, final.mp4',
+    startMs: 1500,
+  });
+  assert.deepEqual(parseVideoEvent(['1,-250,clip.mp4']), { filename: 'clip.mp4', startMs: -250 });
+  assert.deepEqual(parseVideoEvent(['Video,12.7,"video.mp4"']), { filename: 'video.mp4', startMs: 12 });
+  assert.deepEqual(parseVideoEvent(['Video,abc,"video.mp4"']), { filename: 'video.mp4', startMs: 0 });
+  assert.equal(parseVideoEvent(['0,0,"bg.jpg",0,0']), null);
+  assert.equal(parseVideoEvent(['Video,0,"",0,0']), null);
+});
+
+test('视频扩展名白名单与老谱面背景回退与 core 一致', () => {
+  assert.equal(isVideoEntry('intro.MP4'), true);
+  assert.equal(isVideoEntry('dir/clip.m4v'), true);
+  assert.equal(isVideoEntry('bg.jpg'), false);
+  assert.equal(isVideoEntry('clip.webm'), false);
+
+  // `Video,` 行指向非视频文件时按背景图处理（老谱面写反的兼容分支）。
+  const legacy = parseBeatmapText('[Events]\nVideo,0,"legacy.jpg"\n');
+  assert.equal(legacy.backgroundFilename, 'legacy.jpg');
+  assert.equal(legacy.videoFilename, null);
+  // 已有正经背景事件时不覆盖；扩展名合法才算背景视频。
+  const both = parseBeatmapText('[Events]\n0,0,"bg.jpg",0,0\nVideo,-250,"dir\\intro.mp4"\n');
+  assert.equal(both.backgroundFilename, 'bg.jpg');
+  assert.equal(both.videoFilename, 'dir/intro.mp4');
+  assert.equal(both.videoStartMs, -250);
 });
 
 test('缺少 BeatmapSetID 时返回 null 交给重定向解析', () => {

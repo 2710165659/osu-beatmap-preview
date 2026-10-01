@@ -7,7 +7,7 @@ pub mod parse {
     pub use crate::domain::parser::{
         default_metadata, parse_background_filename, parse_beatmap_bytes, parse_break_periods,
         parse_combo_colors, parse_format_version, parse_key_value, parse_timing_points,
-        resolve_slider_timing, round_half_even, split_sections,
+        parse_video_event, resolve_slider_timing, round_half_even, split_sections,
     };
 }
 
@@ -25,8 +25,8 @@ pub mod timeline {
 /// 压缩包条目的选择策略：宿主据此决定从 `.osz` 里取哪些文件。
 pub mod media {
     pub use crate::domain::media::{
-        entry_extension, normalize_entry_path, sample_entry_matches, BeatmapMedia, MediaEntry,
-        SAMPLE_EXTENSIONS,
+        entry_extension, is_video_entry, normalize_entry_path, sample_entry_matches, BeatmapMedia,
+        MediaEntry, SAMPLE_EXTENSIONS, VIDEO_EXTENSIONS,
     };
 }
 

@@ -46,6 +46,7 @@ SliderTickRate:1
 
 [Events]
 0,0,"backgrounds\\bg.jpg",0,0
+Video,-250,"backgrounds\\intro.mp4"
 
 [HitObjects]
 256,192,1000,1,0,0:0:0:0:
@@ -55,6 +56,8 @@ SliderTickRate:1
 const CONTRACT_EXPECTED = {
   audioFilename: 'audio/song.mp3',
   backgroundFilename: 'backgrounds/bg.jpg',
+  videoFilename: 'backgrounds/intro.mp4',
+  videoStartMs: -250,
   beatmapSetId: 4242,
   audioLeadInMs: 1500,
 };
@@ -108,12 +111,16 @@ test('同一份完整 .osu 在后端与 wasm 里得到相同字段', async (t) =
   // 先钉住两边的具体值，避免两份实现一起漂移。
   assert.equal(info.audioFilename, CONTRACT_EXPECTED.audioFilename);
   assert.equal(info.backgroundFilename, CONTRACT_EXPECTED.backgroundFilename);
+  assert.equal(info.videoFilename, CONTRACT_EXPECTED.videoFilename);
+  assert.equal(info.videoStartMs, CONTRACT_EXPECTED.videoStartMs);
   assert.equal(info.beatmapSetId, CONTRACT_EXPECTED.beatmapSetId);
   assert.equal(info.audioLeadInMs, CONTRACT_EXPECTED.audioLeadInMs);
 
   // 再钉住两边一致（字段名不同：后端是 camelCase，wasm 的 beatmapInfo 也是 camelCase）。
   assert.equal(backend.audioFilename, info.audioFilename);
   assert.equal(backend.backgroundFilename, info.backgroundFilename);
+  assert.equal(backend.videoFilename, info.videoFilename);
+  assert.equal(backend.videoStartMs, info.videoStartMs);
   assert.equal(backend.beatmapSetId, info.beatmapSetId);
 });
 

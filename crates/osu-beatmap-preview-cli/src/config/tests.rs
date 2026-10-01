@@ -377,13 +377,25 @@ fn video_background_defaults_and_overlays_are_typed() {
     let defaults = load_snapshot(None).unwrap();
     assert!(defaults.render.standard.mp4.style.ENABLE_BACKGROUND_IMAGE);
     assert_eq!(defaults.render.standard.mp4.style.BACKGROUND_DIM, 0.7);
+    // 背景视频默认关闭：四模式的 mp4 小节各自带开关。
+    for enabled in [
+        defaults.render.standard.mp4.style.ENABLE_BACKGROUND_VIDEO,
+        defaults.render.taiko.mp4.style.ENABLE_BACKGROUND_VIDEO,
+        defaults.render.catch.mp4.style.ENABLE_BACKGROUND_VIDEO,
+        defaults.render.mania.mp4.style.ENABLE_BACKGROUND_VIDEO,
+    ] {
+        assert!(!enabled);
+    }
 
     let configured = load_snapshot(Some(
-            r#"{"render":{"standard":{"mp4":{"style":{"ENABLE_BACKGROUND_IMAGE":false,"BACKGROUND_DIM":0.25}}}}}"#,
+            r#"{"render":{"standard":{"mp4":{"style":{"ENABLE_BACKGROUND_IMAGE":false,"ENABLE_BACKGROUND_VIDEO":true,"BACKGROUND_DIM":0.25}}}}}"#,
         ))
         .unwrap();
     assert!(!configured.render.standard.mp4.style.ENABLE_BACKGROUND_IMAGE);
+    assert!(configured.render.standard.mp4.style.ENABLE_BACKGROUND_VIDEO);
     assert_eq!(configured.render.standard.mp4.style.BACKGROUND_DIM, 0.25);
+    // 未覆盖的模式保持默认关闭。
+    assert!(!configured.render.mania.mp4.style.ENABLE_BACKGROUND_VIDEO);
 }
 
 #[test]

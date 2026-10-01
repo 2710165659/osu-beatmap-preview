@@ -22,6 +22,7 @@ use crate::cache::with_atomic_output_deadline;
 use crate::export::canvas::Img;
 use crate::export::text::{draw_text, text_size};
 use crate::media::audio::{encode_audio_segment, AudioSourceJob};
+use crate::media::background_video::{FrameBackgrounds, MediaBackground};
 use bytes::Bytes;
 use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::Beatmap;
@@ -71,6 +72,7 @@ fn encoder_queue_capacity(par_chunk_size: usize) -> usize {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct VideoStyle {
     pub(crate) enable_background_image: bool,
+    pub(crate) enable_background_video: bool,
     pub(crate) background_dim: f64,
     pub(crate) label_color: [u8; 4],
     pub(crate) label_font_size: u32,
@@ -97,6 +99,7 @@ pub(crate) fn video_style(mode: crate::export::geometry::GameMode) -> VideoStyle
             let section = $section;
             VideoStyle {
                 enable_background_image: section.style.ENABLE_BACKGROUND_IMAGE,
+                enable_background_video: section.style.ENABLE_BACKGROUND_VIDEO,
                 background_dim: section.style.BACKGROUND_DIM,
                 label_color: section.style.LABEL_COLOR,
                 label_font_size: section.sizing.LABEL_FONT_SIZE,
@@ -223,6 +226,14 @@ pub(crate) fn resolve_video_time_range(
     })
 }
 
+/// 输出帧号对应的谱面绝对时间（毫秒）。
+///
+/// 四模式的 `render` 回调与背景视频取帧共用这一个公式（banker's 舍入，与
+/// 模式侧的 `pyround` / `rhe` 同一实现），保证玩法层与背景视频帧严格对齐。
+pub(crate) fn frame_time_ms(chart_start_ms: i64, frame_index: usize, speed: f64, fps: u32) -> i64 {
+    chart_start_ms + round_half_even(frame_index as f64 * 1000.0 * speed / fps as f64)
+}
+
 fn validate_video_time_range(range: VideoTimeRange) -> Result<VideoTimeRange> {
     let duration = range
         .end
@@ -283,6 +294,8 @@ pub(super) trait FrameEncoder: Send {
 /// `time_axis` 转换，因此总时长独立于所选导出范围及首尾留白。
 /// 帧分块并行渲染并顺序编码以保持顺序；`fps` 同时作为编码帧率与 MP4 时间尺度
 ///（每帧一个 tick）。
+/// 背景按 [`frame_time_ms`] 的时间轴逐帧合成：静态背景图垫底，背景视频叠在
+/// 上面（含 osu! 式淡入淡出）。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn save_mp4_streamed(
     frame_count: usize,
@@ -296,7 +309,7 @@ pub(crate) fn save_mp4_streamed(
     fps: u32,
     audio_job: AudioSourceJob,
     beatmap: Beatmap,
-    background: Option<Img>,
+    background: MediaBackground,
     time_axis: TimeAxis,
     deadline: &RequestDeadline,
     mode: crate::export::geometry::GameMode,
@@ -365,12 +378,10 @@ pub(crate) fn save_mp4_streamed(
     // 这里绝不能再对已合成的帧调用 `video_canvas_16_9`（它不幂等，会撑大分辨率）。
     let (out_w, out_h) = (pf_w, pf_h);
     let style = video_style(mode);
-    let background = match composition {
-        FrameComposition::Canvas => background
-            .as_ref()
-            .map(|image| prepare_video_background(image, out_w, out_h, style)),
-        FrameComposition::FinalRgba => None,
-    };
+    // 背景（静态图 + 背景视频）只在最终画布上处理一次，避免 playfield 与画布
+    // 分别裁剪同一素材造成画面不连续；`FinalRgba` 回调已自行合成最终帧，
+    // 不会调用 `background_at`，因此这里无需区分对待。
+    let mut backgrounds = FrameBackgrounds::new(background, out_w, out_h, style);
 
     // ── 选择最佳可用编码后端 ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
@@ -397,6 +408,9 @@ pub(crate) fn save_mp4_streamed(
         .clamp(1, crate::config::current().advance.video.PAR_CHUNK_SIZE);
 
     // ── 编码首帧并提取 SPS/PPS，供 MP4 轨道配置使用 ──
+    let first_background = (composition == FrameComposition::Canvas)
+        .then(|| backgrounds.background_at(frame_time_ms(chart_start_ms, 0, speed, fps)))
+        .flatten();
     let first_comp = match composition {
         FrameComposition::Canvas => compose_frame(
             first_frame,
@@ -404,7 +418,7 @@ pub(crate) fn save_mp4_streamed(
             time_axis.to_display(last_object_ms),
             out_w,
             out_h,
-            background.as_ref(),
+            first_background.as_deref(),
             style,
         ),
         FrameComposition::FinalRgba => first_frame,
@@ -527,6 +541,23 @@ pub(crate) fn save_mp4_streamed(
                 break;
             }
             let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
+            // 背景视频只能单向顺序解码：每块先按时间轴预取好各帧背景，再并行合成。
+            // 首个导出区间可能要一次解过很长一段视频，逐帧检查超时并干净退出。
+            let mut chunk_backgrounds: Vec<Option<Arc<Img>>> =
+                Vec::with_capacity(chunk_end - chunk_start);
+            if composition == FrameComposition::Canvas {
+                for frame_index in chunk_start..chunk_end {
+                    if let Err(error) = deadline.check() {
+                        send_failure = Some(Err(error));
+                        break 'pipeline;
+                    }
+                    chunk_backgrounds.push(backgrounds.background_at(
+                        frame_time_ms(chart_start_ms, frame_index, speed, fps),
+                    ));
+                }
+            } else {
+                chunk_backgrounds.resize(chunk_end - chunk_start, None);
+            }
             let t0 = Instant::now();
             let rendered: Result<Vec<Img>> = (chunk_start..chunk_end)
                 .into_par_iter()
@@ -547,7 +578,7 @@ pub(crate) fn save_mp4_streamed(
                             gameplay_total,
                             out_w,
                             out_h,
-                            background.as_ref(),
+                            chunk_backgrounds[fi - chunk_start].as_deref(),
                             style,
                         ),
                         FrameComposition::FinalRgba => pf,

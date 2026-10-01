@@ -137,6 +137,7 @@ mod tests {
             hit_objects: HitObjects::Standard(Vec::new()),
             break_periods: Vec::new(),
             background_filename: None,
+            video: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         };

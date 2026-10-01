@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- 背景视频支持：`.osu` 的 `[Events]` `Video` 事件（`Video,<offset>,"file"`，含旧式 `1,...`）现被解析；MP4 导出会把 `.osz` 里的背景视频按时间轴逐帧合成到背景——视频叠在背景图上、与背景图共用 `BACKGROUND_DIM` 暗化、开始处 500ms 淡入且结束前 500ms 淡出（与 osu! 的 `DrawableStoryboardVideo` 一致），视频缺失、非 H.264 mp4 或解码失败时回退背景图。四模式的 `mp4` 小节各新增 `ENABLE_BACKGROUND_VIDEO` 配置项（默认关闭）。
+- Web 预览的「画面」设置新增「背景视频」开关（默认关闭）：解码管线收在 WASM 内（`wasm/src/video.rs` 驱动浏览器 `<video>` 硬解并逐帧抓帧——wasm 软解实测 720p 需 60～145 ms/帧，达不到实时），逐帧叠到预览画面上，时间对齐与淡入淡出行为和 CLI 导出完全一致。抓帧链路按实时预算优化：分辨率封顶 720p、暗化走 GPU（canvas `filter`）、换帧才上传、像素零多余拷贝。
+- Web 预览新增实时帧率显示：画面右上角角标显示最近 1 秒的**实际**渲染帧率，抽屉「画面」里的「帧率显示」可开关（默认开启）。
 - 新增 `NC`（Nightcore）与 `DC`（Daycore）：速度与 `DT`/`HT` 同区间，音乐音高固定为 `1.5x` / `0.75x`（与游戏的 `ModNightcore` / `ModDaycore` 一致）；`NC` 还会按游戏的节拍规则叠加 kick / clap / hat / finish 鼓点，并内嵌 4 个 `nightcore-*` 采样。
 
 ### Changed

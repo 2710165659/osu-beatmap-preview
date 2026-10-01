@@ -127,6 +127,20 @@ export const state = reactive({
   /** 是否启用打击音（hit sound）。 */
   hitsound: DEFAULT_HITSOUND_ENABLED,
   /**
+   * 是否渲染谱面背景视频。
+   *
+   * 默认关闭：视频解码有实打实的 CPU 开销，且不少谱面（尤其在线镜像下载的
+   * novideo 包）根本没有视频。解码在 WASM 内进行（与 CLI 导出同一套语义），
+   * 前端只负责开关。用户在「画面」里打开后沿用到下一个谱面。
+   */
+  backgroundVideo: false,
+  /** 当前谱面是否有可用背景视频（`.osz` 里取到了可解的 mp4）；控制开关是否可点。 */
+  videoAvailable: false,
+  /** 实时渲染帧率（最近 1 秒成功出帧数）；由 `render()` 滑动窗口统计。 */
+  renderFps: 0,
+  /** 是否显示帧率角标（画面右上角）。 */
+  showFps: true,
+  /**
    * 打击音音量百分比（0–100）。
    *
    * 取值与 `shared_config.yml` 的 `HITSOUND_VOLUME` 同义，但默认值不同：那份配置
@@ -705,6 +719,9 @@ function teardownSession() {
   state.renderError = '';
   // 列表随会话一起失效：下一次加载会按新模式的矩阵重新取。
   state.modOptions = [];
+  state.videoAvailable = false;
+  fpsSamples = [];
+  state.renderFps = 0;
   skippedFrames = 0;
 }
 
@@ -758,6 +775,22 @@ export function attachStage({ viewport, canvas }) {
 /** 连续多少帧没画出来才提示「画面无法显示」（约 1.5 秒，按目标帧率折算）。 */
 const SKIPPED_FRAME_HINT = 90;
 
+/** 最近成功出帧的墙钟时刻，用于帧率统计（1 秒滑动窗口）。 */
+let fpsSamples = [];
+
+/**
+ * 成功出帧后记一次时刻，按最近 1 秒的出帧数算实时帧率。
+ *
+ * 这是「实际画出来的帧率」而不是目标帧率：GPU 忙碌、页面被降速时数字会
+ * 掉下来，正好用来判断画面卡不卡。
+ */
+function updateFpsSample(now) {
+  fpsSamples.push(now);
+  while (fpsSamples.length > 1 && now - fpsSamples[0] > 1000) fpsSamples.shift();
+  const span = Math.max(now - fpsSamples[0], 1);
+  state.renderFps = Math.round(((fpsSamples.length - 1) * 1000) / span);
+}
+
 /** 按 WASM 内部时钟渲染一帧（时钟由会话维护，宿主不再算时间）。 */
 function render() {
   if (!session) return;
@@ -769,6 +802,7 @@ function render() {
       skippedFrames = 0;
       state.rendered = true;
       state.renderError = '';
+      updateFpsSample(performance.now());
       return;
     }
     skippedFrames += 1;
@@ -985,6 +1019,11 @@ export async function loadPreview() {
     state.mode = state.modeKey.toUpperCase();
     // Mod 面板按实际模式（含转谱结果）取一次；HD/FL 是否可选由 core 决定。
     applyModOptions(wasm, state.modeKey);
+    // 背景视频在 WASM 内解码；开关默认关闭，用户上次打开过就沿用
+    //（与音量等设置一致），这份谱面没有可用视频时保持关闭。
+    state.videoAvailable = Boolean(session.hasBackgroundVideo?.());
+    state.backgroundVideo = state.videoAvailable && state.backgroundVideo;
+    session.setBackgroundVideo?.(state.backgroundVideo);
     state.status = hasMusic() ? '就绪' : '无音乐（.osu 单文件）';
 
     // 6. 接上音频输出；不可用就退化成只有画面。
@@ -1283,6 +1322,32 @@ export function setResolution(key) {
       logPlay(`分辨率切换失败：${errorText(error)}`);
     }
   });
+}
+
+/** 切换帧率角标（画面右上角）的显示。 */
+export function setShowFps(value) {
+  state.showFps = Boolean(value);
+}
+
+/**
+ * 开关背景视频（默认关闭）。
+ *
+ * 解码与合成都在 WASM 内（`setBackgroundVideo`），前端只切开关：打开后
+ * 视频按会话时钟逐帧解码、叠在背景图上，时间对齐与淡入淡出和 CLI 导出一致。
+ */
+export function setBackgroundVideo(value) {
+  const enabled = Boolean(value) && state.videoAvailable;
+  state.backgroundVideo = enabled;
+  try {
+    session?.setBackgroundVideo?.(enabled);
+  } catch (error) {
+    state.backgroundVideo = false;
+    logPlay(`背景视频切换失败：${errorText(error)}`);
+  }
+  render();
+  // <video> 的加载与 seek 是异步的：暂停状态下没有渲染循环兜底，
+  // 延后补一帧，画面才能立刻跟上开关。
+  window.setTimeout(render, 300);
 }
 
 /** 切换是否启用打击音；关闭时音乐照常输出。 */

@@ -3,10 +3,10 @@ use crate::application::local::{self, LocalInputKind};
 use crate::application::plan::{OutputFormat, RenderPlan};
 use crate::application::request::ValidatedRequest;
 use crate::cache;
-use crate::export::canvas::Img;
 use crate::export::segment::PngSegment;
 use crate::logging::{self, CacheKind, SummaryRecord};
 use crate::media::audio::{AudioSourceJob, OszLocation};
+use crate::media::MediaBackground;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::{Beatmap, HitObjects};
 use osu_beatmap_preview_core::processing::timeline::{GifRenderOptions, TimeAxis};
@@ -368,7 +368,7 @@ trait ModeRenderer {
     fn render_video(
         &self,
         input: ModeRenderInput<'_>,
-        background: Option<Img>,
+        background: MediaBackground,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf>;
 
@@ -426,7 +426,7 @@ impl ModeRenderer for StandardRenderer {
     fn render_video(
         &self,
         input: ModeRenderInput<'_>,
-        background: Option<Img>,
+        background: MediaBackground,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
         crate::export::standard::render_standard_video(
@@ -482,7 +482,7 @@ impl ModeRenderer for TaikoRenderer {
     fn render_video(
         &self,
         input: ModeRenderInput<'_>,
-        background: Option<Img>,
+        background: MediaBackground,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
         crate::export::taiko::render_taiko_video(
@@ -538,7 +538,7 @@ impl ModeRenderer for CatchRenderer {
     fn render_video(
         &self,
         input: ModeRenderInput<'_>,
-        background: Option<Img>,
+        background: MediaBackground,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
         crate::export::catch::render_catch_video(
@@ -594,7 +594,7 @@ impl ModeRenderer for ManiaRenderer {
     fn render_video(
         &self,
         input: ModeRenderInput<'_>,
-        background: Option<Img>,
+        background: MediaBackground,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
         crate::export::mania::render_mania_video(

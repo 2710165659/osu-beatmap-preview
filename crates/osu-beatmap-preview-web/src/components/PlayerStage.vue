@@ -32,6 +32,13 @@ onMounted(() => attachStage({ viewport: viewport.value, canvas: canvas.value }))
     >
       {{ state.fastForwarding ? '长按右键：3 倍速' : '长按左键：倒带' }}
     </div>
+    <!-- 帧率角标：实时渲染 FPS（抽屉「画面」里的「帧率显示」可关）。 -->
+    <div
+      v-if="state.showFps && state.playing"
+      class="pointer-events-none absolute top-3 right-3 rounded-full bg-black/70 px-3 py-1 text-[11px] text-white"
+    >
+      {{ state.renderFps }} FPS
+    </div>
     <div
       v-if="!state.rendered || state.renderError"
       class="pointer-events-none absolute inset-0 grid place-items-center px-4 text-center text-sm text-neutral-500"

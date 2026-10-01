@@ -16,7 +16,23 @@ js-sys = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 wgpu = { version = "29", features = ["webgpu"] }
-web-sys = { version = "0.3", features = ["HtmlCanvasElement", "Window", "Performance"] }
+# 背景视频管线（`src/video.rs`）用到的浏览器媒体/画布接口：解码走浏览器硬解，
+# wasm 只驱动 <video>、同步时钟并抓帧。
+web-sys = { version = "0.3", features = [
+    "Blob",
+    "CanvasRenderingContext2d",
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlMediaElement",
+    "HtmlVideoElement",
+    "ImageData",
+    "Node",
+    "Performance",
+    "Url",
+    "Window",
+] }
 # 与 CLI 同款纯 Rust 解码/解包依赖：.osz 的解包、音乐与音效解码、背景解码全部在 wasm 内完成。
 symphonia = { version = "0.5.4", default-features = false, features = ["mp3", "ogg", "vorbis", "wav", "pcm"] }
 zip = { version = "2.4", default-features = false, features = ["deflate"] }

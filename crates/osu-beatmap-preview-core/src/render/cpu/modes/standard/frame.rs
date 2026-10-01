@@ -826,6 +826,7 @@ mod tests {
             }]),
             break_periods: Vec::new(),
             background_filename: None,
+            video: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         }
@@ -959,6 +960,7 @@ mod tests {
             hit_objects: HitObjects::Standard(vec![circle(100, 1000), circle(400, 2000)]),
             break_periods: Vec::new(),
             background_filename: None,
+            video: None,
             combo_colors: Vec::new(),
             beat_divisor: 0,
         }

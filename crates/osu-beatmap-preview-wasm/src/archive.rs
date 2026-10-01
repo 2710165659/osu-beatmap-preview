@@ -25,6 +25,9 @@ const MAX_BEATMAP_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_AUDIO_BYTES: u64 = 128 * 1024 * 1024;
 /// 背景图片的最大字节数。
 const MAX_BACKGROUND_BYTES: u64 = 32 * 1024 * 1024;
+/// 背景视频的最大字节数：osu! 素材规范建议 ≤1280×720，超大文件直接放弃
+/// （宿主回退纯色/背景图），避免 WASM 线性内存被单个条目吃光。
+const MAX_VIDEO_BYTES: u64 = 128 * 1024 * 1024;
 /// 单个自带音效的最大字节数；超过它的一定不是打击音。
 const MAX_SAMPLE_BYTES: u64 = 8 * 1024 * 1024;
 /// 自带音效的条目数上限。
@@ -68,6 +71,8 @@ pub struct ArchiveContent {
     pub audio_name: String,
     /// 背景图片字节（可选；谱面未声明或条目缺失时为 `None`）。
     pub background: Option<Vec<u8>>,
+    /// 背景视频字节（可选；供宿主交给浏览器 `<video>` 解码播放）。
+    pub video: Option<Vec<u8>>,
     /// 自带打击音条目（条目名 + 字节），供样本库按候选名匹配。
     pub samples: Vec<(String, Vec<u8>)>,
 }
@@ -191,6 +196,13 @@ fn read_archive(
     if let Some(background) = media.background.as_ref() {
         if let Some(index) = find_entry(&mut archive, &background.name) {
             content.background = read_entry(&mut archive, index, MAX_BACKGROUND_BYTES).ok();
+        }
+    }
+
+    // 背景视频可选：缺失或读取失败只退化成静态背景（与 osu! 的降级一致）。
+    if let Some(video) = media.video.as_ref() {
+        if let Some(index) = find_entry(&mut archive, &video.name) {
+            content.video = read_entry(&mut archive, index, MAX_VIDEO_BYTES).ok();
         }
     }
 

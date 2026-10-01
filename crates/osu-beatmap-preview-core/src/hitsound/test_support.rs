@@ -30,6 +30,7 @@ pub(super) fn beatmap_with(mode: i32, objects: HitObjects) -> Beatmap {
         hit_objects: objects,
         break_periods: Vec::new(),
         background_filename: None,
+        video: None,
         combo_colors: Vec::new(),
         beat_divisor: 0,
     }

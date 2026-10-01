@@ -68,6 +68,7 @@ pub fn taiko_convert(
         hit_objects: HitObjects::Taiko(taiko_objects),
         break_periods: beatmap.break_periods.clone(),
         background_filename: beatmap.background_filename.clone(),
+        video: beatmap.video.clone(),
         combo_colors: beatmap.combo_colors.clone(),
         beat_divisor: beatmap.beat_divisor,
     })

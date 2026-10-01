@@ -14,10 +14,12 @@ use wasm_bindgen::prelude::*;
 
 pub mod archive;
 pub mod decode;
+pub mod video;
 
 #[cfg(target_arch = "wasm32")]
 use osu_beatmap_preview_core::{
-    hitsound, parse_beatmap_bytes, BeatmapInfo, RealtimeOptions, RealtimeSession, ResourceBundle,
+    hitsound, parse_beatmap_bytes, BeatmapInfo, ImageData, RealtimeOptions, RealtimeSession,
+    ResourceBundle,
 };
 #[cfg(target_arch = "wasm32")]
 use osu_beatmap_preview_renderer::{SurfaceConfig, SurfaceRenderer};
@@ -52,6 +54,12 @@ pub struct WebGpuSession {
     custom_samples: Vec<(String, Vec<u8>)>,
     /// 是否采用谱面自带音效（`ENABLE_BEATMAP_HITSOUND`）。
     use_beatmap_samples: bool,
+    /// 背景视频解码器（`.osz` 里的 mp4）；缺失或不受支持时为 `None`。
+    video: Option<video::BackgroundVideo>,
+    /// 背景视频开关（默认关闭）：开启后逐帧解码并叠在静态背景上。
+    video_enabled: bool,
+    /// 背景视频层当前是否已有画面（决定要不要发一次 clear）。
+    video_showing: bool,
     /// 连续拿不到 surface 的起始墙钟时间；拿得到时清空。
     ///
     /// 只用来把「画布一直画不出来」变成宿主能看到的错误：以前这种情况是每帧
@@ -113,6 +121,9 @@ impl WebGpuSession {
             }
         }
         let use_beatmap_samples = option_bool(&options, "beatmapHitsound").unwrap_or(true);
+
+        // 背景视频的时间偏移来自 `Video` 事件；视频本体由会话按需解码。
+        let video_start_ms = beatmap.video.as_ref().map(|video| video.start_ms).unwrap_or(0);
 
         // 背景在 WASM 内解码后直接进合成；解不出来退化成纯色背景。
         let mut bundle = ResourceBundle::new(beatmap);
@@ -187,6 +198,17 @@ impl WebGpuSession {
             },
         )
         .map_err(js_error)?;
+        // 背景视频在 WASM 内驱动浏览器硬解（`video.rs`）；容器/编码不受支持时
+        // 静默回退背景图，与 osu! 的降级一致。抓帧分辨率跟随后端画布并封顶 720p。
+        let mut video = content
+            .video
+            .map(|bytes| {
+                video::BackgroundVideo::open(bytes, video_start_ms, 1.0 - decode::BACKGROUND_DIM)
+            })
+            .and_then(Result::ok);
+        if let Some(video) = video.as_mut() {
+            video.set_capture_limit(width, height);
+        }
         Ok(Self {
             inner: session,
             surface,
@@ -194,6 +216,9 @@ impl WebGpuSession {
             renderer,
             custom_samples: content.samples,
             use_beatmap_samples,
+            video,
+            video_enabled: false,
+            video_showing: false,
             surface_failure_since: None,
         })
     }
@@ -254,9 +279,11 @@ impl WebGpuSession {
     /// 面对一块没有线索的黑画布。
     #[wasm_bindgen(js_name = renderFrame)]
     pub fn render_frame(&mut self) -> Result<bool, JsValue> {
+        let chart_ms = self.inner.clock_ms(wall_ms()).round() as i64;
+        self.update_background_video(chart_ms);
         let scene = self
             .inner
-            .scene_at_absolute(self.inner.clock_ms(wall_ms()).round() as i64)
+            .scene_at_absolute(chart_ms)
             .map_err(js_error)?;
         let Some(frame) = self.acquire_surface()? else {
             return Ok(false);
@@ -400,9 +427,76 @@ impl WebGpuSession {
         self.surface
             .configure(self.renderer.device(), &self.surface_config);
         self.renderer.resize(width, height).map_err(js_error)?;
+        // 抓帧分辨率跟随后端画布（再被 720p 上限截断）。
+        if let Some(video) = self.video.as_mut() {
+            video.set_capture_limit(width, height);
+        }
         // 合成场景的尺寸由 core 的 RealtimeOptions 决定；只调整 surface 会让
         // 画面仍按旧尺寸渲染并贴在左上角，因此需要同步更新 core。
         self.inner.set_render_size(width, height).map_err(js_error)
+    }
+
+    // ── 背景视频（默认关闭；开启后逐帧解码并叠在背景图上） ─────────────
+
+    /// 谱面是否有可用的背景视频（`.osz` 里取到了可解的 mp4）。
+    #[wasm_bindgen(js_name = hasBackgroundVideo)]
+    pub fn has_background_video(&self) -> bool {
+        self.video.is_some()
+    }
+
+    /// 开关背景视频（默认关闭）；这份谱面没有可用视频时保持关闭。
+    #[wasm_bindgen(js_name = setBackgroundVideo)]
+    pub fn set_background_video(&mut self, enabled: bool) {
+        self.video_enabled = enabled && self.video.is_some();
+        if !self.video_enabled && self.video_showing {
+            self.video_showing = false;
+            self.inner.clear_background_video();
+        }
+    }
+
+    /// 按当前时钟推进背景视频层：只在画面真的变化时才写入会话。
+    ///
+    /// 时间对齐由 [`video::BackgroundVideo`] 驱动（与 CLI 导出同一套语义）；
+    /// 像素按所有权移入会话（不额外克隆），淡入淡出的可见度由会话在合成时
+    /// 按帧时间计算——同一画面在淡入淡出窗口里不会重复上传。
+    fn update_background_video(&mut self, chart_ms: i64) {
+        let playing = self.inner.playing();
+        let rate = self.inner.rate();
+        let Some(video) = self.video.as_mut() else {
+            return;
+        };
+        if !self.video_enabled || video.visibility_alpha(chart_ms) <= 0.0 {
+            if self.video_showing {
+                self.video_showing = false;
+                self.inner.clear_background_video();
+            }
+            return;
+        }
+        match video.capture_at(chart_ms - video.start_ms, playing, rate) {
+            video::Capture::New(frame) => {
+                let image = ImageData {
+                    width: frame.width,
+                    height: frame.height,
+                    rgba: frame.rgba,
+                };
+                let video_time_ms = chart_ms - video.start_ms;
+                let duration_ms = video.duration_ms();
+                if self
+                    .inner
+                    .set_background_video(image, video_time_ms, duration_ms)
+                    .is_ok()
+                {
+                    self.video_showing = true;
+                }
+            }
+            video::Capture::Unchanged => {}
+            video::Capture::Missing => {
+                if self.video_showing {
+                    self.video_showing = false;
+                    self.inner.clear_background_video();
+                }
+            }
+        }
     }
 
     // ── 信息 ───────────────────────────────────────────────────────────

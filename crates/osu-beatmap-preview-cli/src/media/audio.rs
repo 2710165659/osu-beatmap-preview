@@ -1,4 +1,5 @@
 use crate::export::canvas::Img;
+use crate::media::background_video::{BackgroundVideo, MediaBackground};
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
 use osu_beatmap_preview_core::hitsound::{
     self, HitsoundTimeline, MusicPlayer, MusicRate, StereoSource,
@@ -81,7 +82,7 @@ impl OszLocation {
 pub(crate) struct AudioSourceJob {
     handle: Option<std::thread::JoinHandle<Result<AudioSource>>>,
     deadline: RequestDeadline,
-    background: Option<Img>,
+    background: MediaBackground,
 }
 
 impl AudioSourceJob {
@@ -107,8 +108,14 @@ impl AudioSourceJob {
             &format!("osz={cache_key} audio={audio_filename}"),
         );
         let media = BeatmapMedia::from_beatmap(&beatmap);
-        let background = if super::video_style(mode).enable_background_image {
+        let style = super::video_style(mode);
+        let image = if style.enable_background_image {
             load_background_image(media.background.as_ref(), &osz_path, &deadline)?
+        } else {
+            None
+        };
+        let video = if style.enable_background_video {
+            load_background_video(&beatmap, &osz_path, &deadline)?
         } else {
             None
         };
@@ -127,12 +134,15 @@ impl AudioSourceJob {
         Ok(Self {
             handle: Some(handle),
             deadline,
-            background,
+            background: MediaBackground { image, video },
         })
     }
 
-    pub(crate) fn take_background(&mut self) -> Option<Img> {
-        self.background.take()
+    pub(crate) fn take_background(&mut self) -> MediaBackground {
+        MediaBackground {
+            image: self.background.image.take(),
+            video: self.background.video.take(),
+        }
     }
 
     pub(crate) fn wait(mut self) -> Result<AudioSource> {
@@ -171,6 +181,10 @@ struct DecodedAudio {
 }
 
 const MAX_BACKGROUND_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// 背景视频条目上限：osu! 素材规范建议 ≤1280×720、体积多在几十 MB，
+/// 超限直接放弃（回退背景图），避免把进程内存吃光。
+const MAX_BACKGROUND_VIDEO_BYTES: u64 = 256 * 1024 * 1024;
 
 /// 从谱面包中解出歌曲音频（带缓存），返回可供解码的本地文件。
 ///
@@ -250,55 +264,17 @@ pub(crate) fn load_background_image(
         );
         return Ok(None);
     };
-    let file = File::open(osz_path)
-        .map_err(|e| PreviewError::download(format!("failed to open osz archive: {e}")))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| PreviewError::download(format!("invalid osz archive: {e}")))?;
     let wanted = entry.name.as_str();
-    let index = (0..archive.len()).find(|&index| {
-        archive
-            .by_index(index)
-            .ok()
-            .and_then(|entry| normalize_entry_path(entry.name()))
-            .is_some_and(|name| name.eq_ignore_ascii_case(wanted))
-    });
-    let Some(index) = index else {
-        crate::logging::event(
-            "background-prepare",
-            "skip",
-            None,
-            &format!("background file was not found in osz: {wanted}"),
-        );
+    let Some(bytes) = read_osz_entry(
+        osz_path,
+        wanted,
+        MAX_BACKGROUND_IMAGE_BYTES,
+        deadline,
+        ("background-prepare", "background image"),
+    )?
+    else {
         return Ok(None);
     };
-    let mut entry = archive
-        .by_index(index)
-        .map_err(|e| PreviewError::download(format!("failed to open background entry: {e}")))?;
-    if entry.is_dir() || entry.size() == 0 || entry.size() > MAX_BACKGROUND_IMAGE_BYTES {
-        crate::logging::event(
-            "background-prepare",
-            "skip",
-            None,
-            "invalid background image size",
-        );
-        return Ok(None);
-    }
-    let mut bytes = Vec::with_capacity(entry.size() as usize);
-    entry
-        .by_ref()
-        .take(MAX_BACKGROUND_IMAGE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| PreviewError::download(format!("failed to extract background image: {e}")))?;
-    if bytes.len() as u64 > MAX_BACKGROUND_IMAGE_BYTES {
-        crate::logging::event(
-            "background-prepare",
-            "skip",
-            None,
-            "background image is too large",
-        );
-        return Ok(None);
-    }
-    deadline.check()?;
     let decoded = match image::load_from_memory(&bytes) {
         Ok(image) => image.to_rgba8(),
         Err(error) => {
@@ -326,6 +302,116 @@ pub(crate) fn load_background_image(
         h,
         data: decoded.into_raw(),
     }))
+}
+
+/// 从 OSZ 中读取并解析谱面背景视频；缺失或不受支持时回退静态背景图。
+///
+/// 解码失败（非 H.264 mp4、容器损坏等）只记日志并返回 `None`：背景视频是
+/// 纯装饰，不能让它挡住 MP4 导出（与 osu! 的降级行为一致）。
+pub(crate) fn load_background_video(
+    beatmap: &Beatmap,
+    osz_path: &Path,
+    deadline: &RequestDeadline,
+) -> Result<Option<BackgroundVideo>> {
+    let media = BeatmapMedia::from_beatmap(beatmap);
+    let Some(entry) = media.video else {
+        crate::logging::event(
+            "video-prepare",
+            "skip",
+            None,
+            "beatmap has no usable background video event",
+        );
+        return Ok(None);
+    };
+    let wanted = entry.name.as_str();
+    let Some(bytes) = read_osz_entry(
+        osz_path,
+        wanted,
+        MAX_BACKGROUND_VIDEO_BYTES,
+        deadline,
+        ("video-prepare", "background video"),
+    )?
+    else {
+        return Ok(None);
+    };
+    // 起始偏移来自 `Video` 事件；解析器保证事件存在时字段齐全。
+    let start_ms = beatmap.video.as_ref().map(|video| video.start_ms).unwrap_or(0);
+    match BackgroundVideo::open(bytes, start_ms) {
+        Ok(video) => {
+            crate::logging::event(
+                "video-prepare",
+                "done",
+                None,
+                &format!(
+                    "loaded {wanted} (duration={}ms, start={}ms)",
+                    video.duration_ms, video.start_ms
+                ),
+            );
+            Ok(Some(video))
+        }
+        Err(error) => {
+            crate::logging::event(
+                "video-prepare",
+                "skip",
+                None,
+                &format!("failed to open background video: {error}"),
+            );
+            Ok(None)
+        }
+    }
+}
+
+/// 从 OSZ 中按名（不区分大小写）读取一个条目的字节。
+///
+/// 条目缺失、尺寸非法或过大都返回 `Ok(None)`（调用方各自降级）；只有压缩包
+/// 本身不可读才是错误。`labels` 是（日志事件名，条目用途文案）。
+fn read_osz_entry(
+    osz_path: &Path,
+    wanted: &str,
+    max_bytes: u64,
+    deadline: &RequestDeadline,
+    labels: (&str, &str),
+) -> Result<Option<Vec<u8>>> {
+    let (event, label) = labels;
+    let file = File::open(osz_path)
+        .map_err(|e| PreviewError::download(format!("failed to open osz archive: {e}")))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| PreviewError::download(format!("invalid osz archive: {e}")))?;
+    let index = (0..archive.len()).find(|&index| {
+        archive
+            .by_index(index)
+            .ok()
+            .and_then(|entry| normalize_entry_path(entry.name()))
+            .is_some_and(|name| name.eq_ignore_ascii_case(wanted))
+    });
+    let Some(index) = index else {
+        crate::logging::event(
+            event,
+            "skip",
+            None,
+            &format!("{label} file was not found in osz: {wanted}"),
+        );
+        return Ok(None);
+    };
+    let mut entry = archive
+        .by_index(index)
+        .map_err(|e| PreviewError::download(format!("failed to open {label} entry: {e}")))?;
+    if entry.is_dir() || entry.size() == 0 || entry.size() > max_bytes {
+        crate::logging::event(event, "skip", None, &format!("invalid {label} size"));
+        return Ok(None);
+    }
+    let mut bytes = Vec::with_capacity(entry.size() as usize);
+    entry
+        .by_ref()
+        .take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| PreviewError::download(format!("failed to extract {label}: {e}")))?;
+    if bytes.len() as u64 > max_bytes {
+        crate::logging::event(event, "skip", None, &format!("{label} is too large"));
+        return Ok(None);
+    }
+    deadline.check()?;
+    Ok(Some(bytes))
 }
 
 /// 把音乐与打击音混合成 AAC。

@@ -21,6 +21,7 @@ fn beatmap_with_preview(preview_time: Option<&str>, lead_in: Option<&str>) -> Be
         hit_objects: HitObjects::Standard(Vec::new()),
         break_periods: Vec::new(),
         background_filename: None,
+        video: None,
         combo_colors: Vec::new(),
         beat_divisor: 0,
     }

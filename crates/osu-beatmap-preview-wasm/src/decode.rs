@@ -50,7 +50,8 @@ pub fn decode_sample(name: &str, bytes: &[u8], extension: Option<&str>) -> Sampl
 ///
 /// 原来由宿主在交给 WASM 前逐像素调暗（Web 端 `BACKGROUND_DIM`），背景解码移进
 /// WASM 后在这里做，与 CLI 导出的 `BACKGROUND_DIM`（`shared_config.yml`）同一语义。
-const BACKGROUND_DIM: f64 = 0.7;
+/// 背景视频（`video.rs`）也用同一个系数。
+pub(crate) const BACKGROUND_DIM: f64 = 0.7;
 
 /// 解码背景图（png / jpeg 等 image crate 支持的格式）为**已暗化**的 RGBA；
 /// 解码失败或尺寸非法返回 `None`，宿主退化成纯色背景。
@@ -61,6 +62,16 @@ pub fn decode_background(bytes: &[u8]) -> Option<ImageData> {
         return None;
     }
     let mut rgba = image.into_raw();
+    dim_rgba(&mut rgba);
+    Some(ImageData {
+        width,
+        height,
+        rgba,
+    })
+}
+
+/// 按 [`BACKGROUND_DIM`] 压暗 RGBA 像素（alpha 保持不变）。
+fn dim_rgba(rgba: &mut [u8]) {
     let brightness = (1.0 - BACKGROUND_DIM) * 255.0;
     for pixel in rgba.chunks_exact_mut(4) {
         for channel in &mut pixel[..3] {
@@ -68,11 +79,6 @@ pub fn decode_background(bytes: &[u8]) -> Option<ImageData> {
             *channel = (*channel as f64 * brightness / 255.0).round() as u8;
         }
     }
-    Some(ImageData {
-        width,
-        height,
-        rgba,
-    })
 }
 
 /// 把一段音频字节解码成交错立体声 f32。

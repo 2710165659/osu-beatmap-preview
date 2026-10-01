@@ -1,4 +1,7 @@
 //! 将 playfield、背景和 HUD 组合为固定 WGPU 画布上的有序场景。
+//!
+//! 层序与 osu! 一致：静态背景图在最底，背景视频叠在其上（`background_video`
+//! 的 alpha 是淡入淡出可见度），playfield 与 HUD 在最上。
 
 use std::sync::Arc;
 
@@ -12,6 +15,21 @@ use crate::render::text::{draw_text, text_size};
 const LABEL_REFERENCE_WIDTH: f64 = 1280.0;
 const LABEL_REFERENCE_HEIGHT: f64 = 720.0;
 
+/// osu! 的视频淡入淡出时长（`DrawableStoryboardVideo` 的 `FadeIn(500)` / `FadeOut(500)`）。
+pub const VIDEO_FADE_MS: i64 = 500;
+
+/// 视频自身时间轴 `video_ms` 处的可见度：开始处 [`VIDEO_FADE_MS`] 淡入、
+/// 结束前 [`VIDEO_FADE_MS`] 淡出，窗口外为 0（短视频短于两段淡入淡出时取
+/// 两者更低值）。CLI 导出的 `media::background_video::visibility_alpha` 同公式。
+pub fn visibility_alpha(video_ms: i64, duration_ms: i64) -> f64 {
+    if video_ms < 0 || video_ms >= duration_ms.max(1) {
+        return 0.0;
+    }
+    let fade_in = video_ms as f64 / VIDEO_FADE_MS as f64;
+    let fade_out = (duration_ms - video_ms) as f64 / VIDEO_FADE_MS as f64;
+    fade_in.min(fade_out).clamp(0.0, 1.0)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn compose_video_scene(
     playfield: FrameScene,
@@ -20,6 +38,7 @@ pub fn compose_video_scene(
     width: u32,
     height: u32,
     background: Option<&Arc<Img>>,
+    background_video: Option<(&Arc<Img>, f32)>,
     style: VideoStyle,
 ) -> crate::domain::errors::Result<FrameScene> {
     let (scale, offset) = fit_playfield(playfield.width(), playfield.height(), width, height)?;
@@ -44,6 +63,19 @@ pub fn compose_video_scene(
                 height: height as f32,
             },
             style.fallback_background,
+        );
+    }
+    // 背景视频叠在背景图上；alpha = 0 等价于不显示，直接不入场景省一次上传。
+    if let Some((frame, alpha)) = background_video.filter(|(_, alpha)| *alpha > 0.0) {
+        builder.sprite(
+            Arc::clone(frame),
+            SceneRect {
+                x: 0.0,
+                y: 0.0,
+                width: width as f32,
+                height: height as f32,
+            },
+            alpha,
         );
     }
     builder.append_scaled(&playfield, offset, scale);
@@ -108,7 +140,7 @@ fn fit_playfield(
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_video_scene, fit_playfield, VideoStyle};
+    use super::{compose_video_scene, fit_playfield, visibility_alpha, VideoStyle};
     use crate::render::scene::{DrawCommand, FrameScene, SceneSize};
 
     /// 物件层铺满画布（cover）：宽高比一致时是 1:1，略有偏差时裁掉多出来的几个像素。
@@ -159,6 +191,7 @@ mod tests {
                 width,
                 height,
                 None,
+                None,
                 VideoStyle::default(),
             )
             .unwrap();
@@ -171,5 +204,54 @@ mod tests {
         assert_eq!(label_height(1280, 720), 18.0);
         assert_eq!(label_height(1920, 1080), 27.0);
         assert_eq!(label_height(854, 480), 12.0);
+    }
+
+    /// 视频淡入淡出可见度：窗口外为 0，窗口内线性，短视频取两者更低值。
+    #[test]
+    fn visibility_alpha_matches_osu_fade_windows() {
+        assert_eq!(visibility_alpha(-1, 10_000), 0.0);
+        assert_eq!(visibility_alpha(0, 10_000), 0.0);
+        assert_eq!(visibility_alpha(250, 10_000), 0.5);
+        assert_eq!(visibility_alpha(500, 10_000), 1.0);
+        assert_eq!(visibility_alpha(5_000, 10_000), 1.0);
+        assert_eq!(visibility_alpha(9_750, 10_000), 0.5);
+        assert_eq!(visibility_alpha(10_000, 10_000), 0.0);
+        assert_eq!(visibility_alpha(250, 400), 0.3);
+        assert_eq!(visibility_alpha(200, 400), 0.4);
+    }
+
+    /// 背景视频叠在背景图上、playfield 之下，携带宿主给定的淡入淡出 alpha。
+    #[test]
+    fn background_video_layers_over_the_background_image() {
+        use crate::render::canvas::Img;
+        use std::sync::Arc;
+
+        let playfield = FrameScene::clear(
+            SceneSize {
+                width: 530,
+                height: 384,
+            },
+            0,
+            [0, 0, 0, 255],
+        );
+        let background = Arc::new(Img::new(2, 2, [10, 10, 10, 255]));
+        let video_frame = Arc::new(Img::new(2, 2, [200, 200, 200, 255]));
+        let scene = compose_video_scene(
+            playfield,
+            0,
+            60_000,
+            1280,
+            720,
+            Some(&background),
+            Some((&video_frame, 0.5)),
+            VideoStyle::default(),
+        )
+        .unwrap();
+        // 命令顺序：背景图 → 背景视频 → playfield → 时间标签。
+        assert!(scene.commands.len() >= 4);
+        let DrawCommand::Sprite { alpha, .. } = &scene.commands[1] else {
+            panic!("第二条命令必须是背景视频精灵");
+        };
+        assert_eq!(*alpha, 0.5);
     }
 }

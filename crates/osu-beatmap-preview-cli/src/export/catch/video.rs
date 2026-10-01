@@ -6,7 +6,7 @@
 
 use crate::export::canvas::Img;
 use crate::media::audio::AudioSourceJob;
-use crate::media::{resolve_video_time_range, save_mp4_streamed};
+use crate::media::{frame_time_ms, resolve_video_time_range, save_mp4_streamed, MediaBackground};
 use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::Beatmap;
@@ -18,7 +18,6 @@ use std::path::Path;
 
 use super::animation::{build_video_animation_layout, render_animation_frame, CatchFlashlight};
 use super::objects::{build_catch_render_objects, effective_difficulty};
-use super::png::rhe;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_catch_video(
@@ -27,7 +26,7 @@ pub(crate) fn render_catch_video(
     start_time: Option<TimePoint>,
     duration_time: Option<f64>,
     output_path: &Path,
-    background: Option<Img>,
+    background: MediaBackground,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
     fps: Option<u32>,
@@ -63,8 +62,9 @@ pub(crate) fn render_catch_video(
         crate::export::geometry::OutputFormat::Mp4,
     )
     .with_hidden_kiai(beatmap, mods);
-    // 视频背景在最终 16:9 画布上统一处理，playfield 只提供透明对象层。
-    let frame_background = background.as_ref().map(|_| {
+    // 视频背景在最终 16:9 画布上统一处理，playfield 只提供透明对象层；
+    // 背景视频同样垫在画布上，因此有任何背景素材时对象层都保持透明。
+    let frame_background = (!background.is_empty()).then(|| {
         Img::new(
             layout.frame_width as u32,
             layout.frame_height as u32,
@@ -75,7 +75,7 @@ pub(crate) fn render_catch_video(
     let start_times: Vec<i64> = render_objects.iter().map(|o| o.start_time).collect();
 
     let render = move |frame_index: usize| -> Result<(Img, i64)> {
-        let snapshot_time = start + rhe(frame_index as f64 * 1000.0 * speed / fps as f64);
+        let snapshot_time = frame_time_ms(start, frame_index, speed, fps);
         let mut frame = render_animation_frame(
             &render_objects,
             &start_times,

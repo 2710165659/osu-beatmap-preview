@@ -12,11 +12,13 @@ import {
   FPS_CHOICES,
   modTokens,
   RESOLUTIONS,
+  setBackgroundVideo,
   setDaValue,
   setFps,
   setHitsoundEnabled,
   setHitsoundVolume,
   setResolution,
+  setShowFps,
   setSheetOpen,
   setSpeed,
   setVolume,
@@ -61,6 +63,34 @@ const chipClass = (active) => (active
         <div class="grid grid-cols-[52px_1fr] items-center gap-2">
           <span class="text-xs text-neutral-400">倍速</span>
           <ChipGroup :model-value="state.speed" :options="speedOptions" @update:model-value="setSpeed" />
+        </div>
+        <!-- 帧率角标：画面右上角的实时渲染 FPS，默认显示。 -->
+        <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
+          <span class="text-xs text-neutral-400">帧率显示</span>
+          <button
+            type="button"
+            class="h-8 w-fit shrink-0 rounded-md border px-2.5 text-xs transition"
+            :class="chipClass(state.showFps)"
+            @click="setShowFps(!state.showFps)"
+          >
+            {{ state.showFps ? '开' : '关' }}
+          </button>
+        </div>
+        <!-- 背景视频默认关闭：WASM 内逐帧解码有 CPU 开销，且不少下载包没有视频。 -->
+        <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
+          <span class="text-xs text-neutral-400">背景视频</span>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="h-8 shrink-0 rounded-md border px-2.5 text-xs transition disabled:opacity-40"
+              :class="chipClass(state.backgroundVideo)"
+              :disabled="!state.videoAvailable"
+              @click="setBackgroundVideo(!state.backgroundVideo)"
+            >
+              {{ state.backgroundVideo ? '开' : '关' }}
+            </button>
+            <span v-if="!state.videoAvailable" class="text-[11px] text-neutral-500">当前谱面没有背景视频</span>
+          </div>
         </div>
       </section>
 
