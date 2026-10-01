@@ -160,6 +160,16 @@ impl FrameSceneBuilder {
         }
     }
 
+    /// 画布宽度；绘制阶段需要据此把越界矩形夹回场景内。
+    pub fn width(&self) -> u32 {
+        self.size.width
+    }
+
+    /// 画布高度；与 [`Self::width`] 一起用于裁剪越界绘制。
+    pub fn height(&self) -> u32 {
+        self.size.height
+    }
+
     pub fn rectangle(&mut self, rect: SceneRect, color: Rgba) {
         self.commands.push(DrawCommand::Rectangle { rect, color });
     }

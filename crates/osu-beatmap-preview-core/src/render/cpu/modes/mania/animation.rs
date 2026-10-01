@@ -1158,6 +1158,35 @@ fn draw_gif_sv_indicators_fast(
 mod tests {
     use super::*;
 
+    /// 多段 GIF 布局下段左边界可以为负（页边距大于段宽）：FL 遮罩必须只作用于
+    /// 画布内的像素，光圈带外压暗、带内保持原样，且负原点不能让下标回绕。
+    #[test]
+    fn flashlight_mask_with_negative_segment_left_stays_inside_canvas() {
+        let layout = test_layout();
+        let timeline = mania_visibility_timeline(&[], &[]);
+        let mut canvas = Img::new(
+            layout.image_width as u32,
+            layout.image_height as u32,
+            [200; 4],
+        );
+        let left = -40;
+        let rect = crate::render::geometry::PixelRect {
+            x: left,
+            y: 0,
+            width: layout.segment_width,
+            height: layout.playfield_height,
+        };
+        mania_flashlight(&timeline, 0, &layout, left).apply(&mut canvas, rect);
+        // 光圈带中心（段中心 = -40 + 50 = 10、y = 20 + 384 = 404）保持原样。
+        assert_eq!(canvas.get(0, 404), [200; 4]);
+        // 带外（画布内仍被覆盖的行）被压暗。
+        assert_eq!(canvas.get(0, 0), [0, 0, 0, 255]);
+        // 段右边界（-40 + 100 = 60）之外不越界写入：更右侧的像素仍是原色。
+        assert_eq!(canvas.get(59, 0), [0, 0, 0, 255]);
+        assert_eq!(canvas.get(60, 0), [200; 4]);
+        assert_eq!(canvas.get(canvas.w - 1, 0), [200; 4]);
+    }
+
     #[test]
     fn hidden_fades_hold_body_and_head_without_covering_judgement_line() {
         let skin = load_mania_skin_config(4, crate::render::geometry::OutputFormat::Gif);

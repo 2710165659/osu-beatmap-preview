@@ -260,27 +260,48 @@ impl Flashlight {
 
     /// 场景后端复用同一遮罩，避免 CPU 导出和 WGPU 预览出现不同的渐变边缘。
     pub fn draw_scene(&self, scene: &mut FrameSceneBuilder, rect: PixelRect) {
-        let mut overlay = Img::new(rect.width as u32, rect.height as u32, [0, 0, 0, 0]);
-        for y in 0..overlay.h {
-            for x in 0..overlay.w {
+        // `rect` 可能整体或部分落在画布外（多段布局的段左边界由
+        // `segment_left` 给出，页边距大于段宽时为负），也可能带非正尺寸。
+        // 先夹到画布再生成遮罩：否则负尺寸会被 `as u32` 回绕成巨量分配，
+        // 画布外的采样也会白做。夹取只裁剪像素，采样仍用世界坐标。
+        let (canvas_w, canvas_h) = (scene.width(), scene.height());
+        let Some((left, top, width, height)) = clamp_rect(rect, canvas_w, canvas_h) else {
+            return;
+        };
+        let mut overlay = Img::new(width, height, [0, 0, 0, 0]);
+        for y in 0..height {
+            for x in 0..width {
                 let index = overlay.idx(x, y) + 3;
                 overlay.data[index] = self.opacity_at(
-                    (rect.x + x as i64) as f64 + 0.5,
-                    (rect.y + y as i64) as f64 + 0.5,
+                    (left + x as i64) as f64 + 0.5,
+                    (top + y as i64) as f64 + 0.5,
                 );
             }
         }
         scene.sprite(
             Arc::new(overlay),
             SceneRect {
-                x: rect.x as f32,
-                y: rect.y as f32,
-                width: rect.width as f32,
-                height: rect.height as f32,
+                x: left as f32,
+                y: top as f32,
+                width: width as f32,
+                height: height as f32,
             },
             1.0,
         );
     }
+}
+
+/// 把世界坐标矩形夹到 `[0, canvas_w) × [0, canvas_h)`；
+/// 完全落在画布外或宽高非正时返回 `None`，调用方据此跳过绘制。
+fn clamp_rect(rect: PixelRect, canvas_w: u32, canvas_h: u32) -> Option<(i64, i64, u32, u32)> {
+    let left = rect.x.max(0);
+    let top = rect.y.max(0);
+    let right = (rect.x + rect.width).min(canvas_w as i64);
+    let bottom = (rect.y + rect.height).min(canvas_h as i64);
+    if left >= right || top >= bottom {
+        return None;
+    }
+    Some((left, top, (right - left) as u32, (bottom - top) as u32))
 }
 
 #[derive(Clone, Copy, Default)]
@@ -292,7 +313,9 @@ pub struct ManiaHidden {
 
 impl ManiaHidden {
     /// ManiaModHidden：768 高坐标下覆盖 160..400 px，每 combo 增长 0.5 px。
-    /// 遮罩只改变音符 alpha；判定线、键道和 SV 提示不受 HD 影响。
+    /// HD 只改变音符层的 alpha（lazer 把 `HitObjectContainer` 包进 cover），
+    /// 判定线、键道和 SV 提示不受影响；FL 是整帧遮罩，不走这条路径，
+    /// 见 [`Flashlight::draw_scene`]。
     pub fn new(
         timeline: &VisibilityTimeline,
         time: i64,
@@ -312,6 +335,10 @@ impl ManiaHidden {
         }
     }
 
+    /// 返回该行音符保留的 alpha 倍率：完全覆盖带 `[covered_top, hit_y]` 为 0（淡出），
+    /// 梯度带 `[fade_start, covered_top]` 由 255 递减到 0，`fade_start` 以上保持 255。
+    /// lazer 的 `GradientVertical(0f -> 1f)` 描述的是遮盖不透明度（越靠下越盖住音符），
+    /// 音符保留的 alpha 是它的补：`1 - t == (covered_top - y) / (covered_top - fade_start)`。
     pub fn alpha_at(&self, y: i64) -> u8 {
         if !self.enabled {
             return 255;
@@ -457,6 +484,142 @@ mod tests {
         assert_eq!(notes.get(1, 600), [30, 120, 220, 0]);
         assert_eq!(notes.get(0, 600), [30, 120, 220, 128]);
         assert!((1..128).contains(&notes.get(1, 400)[3]));
+    }
+
+    /// HD 遮罩方向必须与 lazer `PlayfieldCoveringWrapper` 一致：
+    /// `fade_start`（梯度上边界）保持不透明，越靠近判定线越透明，
+    /// 完全覆盖带内彻底淡出。方向写反时本测试必须失败。
+    #[test]
+    fn hidden_cover_fades_towards_the_judgement_line() {
+        let timeline = VisibilityTimeline::new(std::iter::empty::<f64>(), &[]);
+        // hit_y = 658、playfield_top = 0、coverage = 160：
+        // covered_top = 498，fade_start = 498 - 658 * 0.25 = 333.5。
+        let cover = ManiaHidden::new(&timeline, 0, 0, 658, 1.0);
+        assert_eq!(cover.covered_top, 498.0);
+        assert_eq!(cover.fade_start, 333.5);
+        assert_eq!(cover.alpha_at(0), 255, "梯度上方必须完全不透明");
+        assert_eq!(cover.alpha_at(333), 255, "梯度上边界必须保持不透明");
+        assert_eq!(cover.alpha_at(334), 253, "越过上边界立刻开始变淡");
+        let middle = cover.alpha_at(400);
+        assert!((1..255).contains(&middle), "梯度中段应为半透明：{middle}");
+        assert_eq!(cover.alpha_at(497), 1, "梯度下边界几乎完全淡出");
+        assert_eq!(cover.alpha_at(498), 0, "完全覆盖带起点必须全透明");
+        assert_eq!(cover.alpha_at(658), 0, "判定线处必须全透明");
+        assert!(
+            (0..=700)
+                .map(|y| cover.alpha_at(y))
+                .is_sorted_by(|a, b| a >= b),
+            "保留的 alpha 必须随 y 单调不增"
+        );
+    }
+
+    /// `draw_scene` 必须把画布外的矩形夹回画布：负原点或负尺寸不能越界，
+    /// 且夹取只裁剪像素，遮罩采样仍按世界坐标对齐（不改变渐变位置）。
+    #[test]
+    fn flashlight_scene_clamps_rect_to_canvas_keeping_world_coordinates() {
+        use crate::render::scene::{DrawCommand, FrameScene};
+        let mask = Flashlight {
+            center: [10.0, 10.0],
+            radius: 5.0,
+            band: false,
+            dim: 0.0,
+        };
+        let sprite = |scene: &FrameScene| {
+            assert_eq!(scene.commands.len(), 1, "夹取后只应产出单个精灵");
+            let DrawCommand::Sprite {
+                resource,
+                destination,
+                alpha,
+            } = &scene.commands[0]
+            else {
+                panic!("draw_scene 必须产出精灵命令");
+            };
+            assert_eq!(*alpha, 1.0);
+            (*destination, Arc::clone(&scene.resources[resource]))
+        };
+
+        // 原点为负、右下角仍在画布内：只保留可见部分。
+        let mut builder = FrameSceneBuilder::new(64, 48, 0);
+        mask.draw_scene(
+            &mut builder,
+            PixelRect {
+                x: -8,
+                y: -4,
+                width: 24,
+                height: 20,
+            },
+        );
+        let (destination, overlay) = sprite(&builder.finish());
+        assert_eq!(
+            (
+                destination.x,
+                destination.y,
+                destination.width,
+                destination.height
+            ),
+            (0.0, 0.0, 16.0, 16.0)
+        );
+        assert_eq!((overlay.w, overlay.h), (16, 16));
+        // 夹取后的局部像素 (8, 4) 对应世界坐标 (8.5, 4.5)。
+        assert_eq!(overlay.get(8, 4)[3], mask.opacity_at(8.5, 4.5));
+
+        // 超出右下边界：同样夹到画布边界。
+        let mut builder = FrameSceneBuilder::new(64, 48, 0);
+        mask.draw_scene(
+            &mut builder,
+            PixelRect {
+                x: 56,
+                y: 40,
+                width: 100,
+                height: 100,
+            },
+        );
+        let (destination, overlay) = sprite(&builder.finish());
+        assert_eq!(
+            (
+                destination.x,
+                destination.y,
+                destination.width,
+                destination.height
+            ),
+            (56.0, 40.0, 8.0, 8.0)
+        );
+        assert_eq!((overlay.w, overlay.h), (8, 8));
+
+        // 完全落在画布外或尺寸非正：跳过绘制，不产生命令。
+        for rect in [
+            PixelRect {
+                x: -20,
+                y: -20,
+                width: 8,
+                height: 8,
+            },
+            PixelRect {
+                x: 5,
+                y: 5,
+                width: -30,
+                height: -30,
+            },
+            PixelRect {
+                x: 64,
+                y: 0,
+                width: 8,
+                height: 8,
+            },
+            PixelRect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 8,
+            },
+        ] {
+            let mut builder = FrameSceneBuilder::new(64, 48, 0);
+            mask.draw_scene(&mut builder, rect);
+            assert!(
+                builder.finish().commands.is_empty(),
+                "越界矩形不应绘制：{rect:?}"
+            );
+        }
     }
 
     #[test]

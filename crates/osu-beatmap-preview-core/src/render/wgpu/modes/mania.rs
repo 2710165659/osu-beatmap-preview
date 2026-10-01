@@ -179,6 +179,10 @@ pub fn prepare_realtime(
                     );
                 }
                 if flashlight {
+                    // FL 是整帧遮罩：lazer 的 `ModFlashlight` 把遮罩加到
+                    // `drawableRuleset.Overlays`，压在键道底色、判定线和音符之上；
+                    // GIF/MP4 导出同样画在合成好的背景上。这里不能只压暗音符层，
+                    // 否则实时预览会与 lazer 以及两条导出链路不一致。
                     mania_flashlight(timeline, absolute_time_ms, &layout, left).draw_scene(
                         &mut scene,
                         crate::render::geometry::PixelRect {

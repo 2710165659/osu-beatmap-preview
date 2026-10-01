@@ -241,6 +241,90 @@ mod tests {
         }
     }
 
+    /// Mania 的 HD/FL 分层必须与 lazer 一致：HD 只改音符层的 alpha
+    /// （lazer 把 `HitObjectContainer` 包进 `PlayfieldCoveringWrapper`），
+    /// FL 是整帧遮罩（`ModFlashlight` 把遮罩加到 `drawableRuleset.Overlays`，
+    /// 压在键道底色和判定线之上，GIF/MP4 导出同理）。
+    /// 这条断言同时阻止两种误改：把 FL 改成"只压暗音符层"，或在仅开 FL 时
+    /// 额外建立音符层并叠加 HD 遮罩。
+    #[test]
+    fn mania_realtime_hidden_and_flashlight_layers_match_lazer() {
+        use osu_beatmap_preview_core::{
+            domain::mods::{parse_mods, ModSettings},
+            domain::parser::parse_beatmap_bytes,
+            render::cpu::modes::mania::animation::{build_layout, segment_left},
+            render::cpu::modes::mania::skin::load_mania_skin_config,
+            render::geometry::OutputFormat,
+            render::scene::DrawCommand,
+        };
+        let map = parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\nApproachRate:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n192,192,1500,1,0,0:0:0:0:\n",
+        )
+        .unwrap();
+        let layout = build_layout(
+            &load_mania_skin_config(4, OutputFormat::Mp4),
+            1,
+            false,
+            OutputFormat::Mp4,
+        );
+        let left = segment_left(0, &layout);
+        // 键道左侧面板与判定线都在 FL 可视带（playfield 纵向中点 ± 半径）之外。
+        let panel = (
+            (left + layout.left_panel_width / 2) as u32,
+            (layout.playfield_top + 5) as u32,
+        );
+        let judgement = (
+            (left + 5) as u32,
+            (layout.playfield_top + layout.hit_position_y) as u32,
+        );
+        let render = |mods: Option<&ModSettings>| {
+            CpuRasterizer
+                .render_frame(&realtime_source(&map, mods).render(1000).unwrap())
+                .unwrap()
+        };
+        let baseline = render(None);
+        let hd = render(Some(&parse_mods(&["HD".into()]).unwrap()));
+        let fl = render(Some(&parse_mods(&["FL".into()]).unwrap()));
+
+        // HD 只作用于音符层：键道底色与判定线逐像素不变。
+        assert_eq!(hd.get(panel.0, panel.1), baseline.get(panel.0, panel.1));
+        assert_eq!(
+            hd.get(judgement.0, judgement.1),
+            baseline.get(judgement.0, judgement.1)
+        );
+        assert_ne!(hd.data, baseline.data, "HD 必须改变覆盖带内的音符");
+
+        // FL 是整帧遮罩：键道底色与判定线一起被压暗。
+        assert_eq!(fl.get(panel.0, panel.1), [0, 0, 0, 255]);
+        assert_ne!(
+            fl.get(judgement.0, judgement.1),
+            baseline.get(judgement.0, judgement.1)
+        );
+        assert_eq!(fl.get(judgement.0, judgement.1), [0, 0, 0, 255]);
+
+        // 仅开 FL 时不得额外建立音符层：整帧精灵只有 FL 遮罩本身。
+        let full_frame_sprites = realtime_source(&map, Some(&parse_mods(&["FL".into()]).unwrap()))
+            .render(1000)
+            .unwrap()
+            .commands
+            .iter()
+            .filter(|command| {
+                matches!(
+                    command,
+                    DrawCommand::Sprite { destination, .. }
+                        if destination.x == 0.0
+                            && destination.y == 0.0
+                            && destination.width == layout.image_width as f32
+                            && destination.height == layout.image_height as f32
+                )
+            })
+            .count();
+        assert_eq!(
+            full_frame_sprites, 1,
+            "仅开 FL 时只应有一个整帧精灵（FL 遮罩），不应额外分层叠加 HD 遮罩"
+        );
+    }
+
     #[test]
     fn catch_hidden_kiai_is_visible_in_realtime_and_obeys_flashlight() {
         use osu_beatmap_preview_core::{
