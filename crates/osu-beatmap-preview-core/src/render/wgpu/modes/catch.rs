@@ -4,7 +4,7 @@ use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::Beatmap;
 use crate::domain::mods::ModSettings;
 use crate::render::cpu::modes::catch::animation::{
-    build_animation_layout, object_alpha, AnimationLayout, CatchFlashlight,
+    build_video_animation_layout, object_alpha, AnimationLayout, CatchFlashlight,
 };
 use crate::render::cpu::modes::catch::drawing::object_diameter;
 use crate::render::cpu::modes::catch::objects::{
@@ -29,7 +29,9 @@ pub fn prepare_realtime(
     let flashlight = mods
         .is_some_and(|mods| mods.flashlight)
         .then(|| CatchFlashlight::new(&render_objects, &beatmap.break_periods));
-    let layout = build_animation_layout(difficulty.cs, difficulty.ar, OutputFormat::Mp4)
+    // 与 MP4 导出用同一套画布布局：物件层就是 16:9 画布本身，
+    // 否则 FL 遮罩只盖住 playfield，合成阶段补出的背景不会被压暗。
+    let layout = build_video_animation_layout(difficulty.cs, difficulty.ar, OutputFormat::Mp4)
         .with_hidden_kiai(beatmap, mods);
     render_objects.sort_by_key(|object| std::cmp::Reverse(object.start_time));
     let start_times = render_objects

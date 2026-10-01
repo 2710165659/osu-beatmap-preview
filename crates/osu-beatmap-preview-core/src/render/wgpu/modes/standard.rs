@@ -11,8 +11,8 @@ use crate::render::canvas::Img;
 use crate::render::cpu::modes::standard::alpha::*;
 use crate::render::cpu::modes::standard::constants::*;
 use crate::render::cpu::modes::standard::context::{
-    apply_standard_object_mods, build_render_context, build_visible_indexes_by_snapshot, py_round,
-    stacked_position, standard_objects, to_frame_point, RenderCache, RenderContext,
+    apply_standard_object_mods, build_video_render_context, build_visible_indexes_by_snapshot,
+    py_round, stacked_position, standard_objects, to_frame_point, RenderCache, RenderContext,
 };
 use crate::render::cpu::modes::standard::follow_points::{
     build_sprite, follow_point_height, follow_point_position, follow_point_state,
@@ -55,7 +55,9 @@ pub fn prepare_realtime(
     time_axis: TimeAxis,
 ) -> Result<RealtimeFrameSource> {
     let objects = apply_standard_object_mods(standard_objects(beatmap)?, mods);
-    let context = build_render_context(beatmap, objects, mods, time_axis, OutputFormat::Mp4);
+    // 与 MP4 导出用同一套画布布局：物件层就是 16:9 画布本身。
+    // 内容框布局下 FL 遮罩只盖住 playfield，合成阶段补出的背景不会被压暗。
+    let context = build_video_render_context(beatmap, objects, mods, time_axis, OutputFormat::Mp4);
     if let Some(flashlight) = &context.flashlight {
         flashlight.get(&context);
     }
@@ -944,8 +946,11 @@ mod tests {
         let visible = sprites(&scene);
         // 距离 300 共 7 个跟随点（48 起每 32 一个），各自的存活区间都覆盖 1200ms。
         assert_eq!(visible.len(), 7);
-        let layout =
-            crate::render::cpu::modes::standard::context::build_frame_layout(OutputFormat::Mp4);
+        // 实时物件层与 MP4 导出一样画在 16:9 画布上（内容框居中），
+        // 因此期望坐标也用 video 布局换算。
+        let layout = crate::render::cpu::modes::standard::context::build_video_frame_layout(
+            OutputFormat::Mp4,
+        );
         let center = to_frame_point(148.0, 192.0, &layout);
         assert!(
             visible.iter().any(|quad| {

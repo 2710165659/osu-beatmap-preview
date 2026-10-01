@@ -398,7 +398,6 @@ impl RealtimeSession {
             height,
             self.background_image.as_ref(),
             self.options.video_style,
-            crate::render::wgpu::game_mode(self.mode),
         )
         .map_err(|error| PreviewError::render(error.to_string()))
     }

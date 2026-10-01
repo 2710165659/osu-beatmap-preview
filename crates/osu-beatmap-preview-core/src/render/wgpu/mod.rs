@@ -35,12 +35,3 @@ impl Default for VideoStyle {
         }
     }
 }
-
-pub(crate) fn game_mode(mode: crate::RealtimeMode) -> crate::render::geometry::GameMode {
-    match mode {
-        crate::RealtimeMode::Standard => crate::render::geometry::GameMode::Standard,
-        crate::RealtimeMode::Taiko => crate::render::geometry::GameMode::Taiko,
-        crate::RealtimeMode::Catch => crate::render::geometry::GameMode::Catch,
-        crate::RealtimeMode::Mania => crate::render::geometry::GameMode::Mania,
-    }
-}

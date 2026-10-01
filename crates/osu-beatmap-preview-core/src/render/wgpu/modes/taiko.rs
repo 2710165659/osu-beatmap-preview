@@ -6,11 +6,10 @@ use crate::domain::mods::ModSettings;
 use crate::render::canvas::Img;
 use crate::render::cpu::modes::taiko::animation::{drum_roll_tick_transform, measure_line_alpha};
 use crate::render::cpu::modes::taiko::animation_render::{
-    build_animation_layout_with_segments_and_format, build_multiplier_points, compute_time_range,
-    gif_row_center_y, gif_row_top, hidden_alpha, judgement_line_x, object_x,
-    prepare_hit_objects_with_mods, prepare_measure_lines, taiko_flashlight,
-    taiko_visibility_timeline, AnimationLayout, MultiplierLookup, PreparedAnimationPoint,
-    PreparedTaikoHitObject,
+    build_multiplier_points, build_video_animation_layout, compute_time_range, gif_row_center_y,
+    gif_row_top, hidden_alpha, judgement_line_x, object_x, prepare_hit_objects_with_mods,
+    prepare_measure_lines, taiko_flashlight, taiko_visibility_timeline, AnimationLayout,
+    MultiplierLookup, PreparedAnimationPoint, PreparedTaikoHitObject,
 };
 use crate::render::cpu::modes::taiko::constants::*;
 use crate::render::cpu::modes::taiko::timing::{
@@ -54,8 +53,9 @@ pub fn prepare_realtime(
             .style
             .SHOW_MEASURE_LINES,
     );
-    let layout =
-        build_animation_layout_with_segments_and_format(compute_time_range(), 1, OutputFormat::Mp4);
+    // 与 MP4 导出用同一套画布布局：物件层就是 16:9 画布本身，
+    // 否则 FL 遮罩只盖住 playfield，合成阶段补出的背景不会被压暗。
+    let layout = build_video_animation_layout(compute_time_range(), OutputFormat::Mp4);
     let flashlight = mods
         .is_some_and(|mods| mods.flashlight)
         .then(|| taiko_visibility_timeline(&hit_objects, &beatmap.break_periods));

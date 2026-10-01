@@ -241,6 +241,99 @@ mod tests {
         }
     }
 
+    /// FL 必须压暗整个输出画布：lazer 把遮罩加到 `drawableRuleset.Overlays`（整屏），
+    /// MP4 导出同样在整张 16:9 画布上压暗。实时链路一度把物件层画在内容框里，
+    /// 合成阶段补出的背景（playfield 之外）就不会被压暗——表现为「FL 覆盖不全」；
+    /// 另一条同源问题：物件层按 contain 缩放时会在另一轴留下 1~4px 的缝，
+    /// 那条缝同样压不到，看起来是画面边缘的一条亮边。
+    #[test]
+    fn flashlight_darkens_the_whole_canvas_outside_the_playfield() {
+        use osu_beatmap_preview_core::{
+            domain::mods::parse_mods,
+            domain::parser::parse_beatmap_bytes,
+            render::canvas::Img,
+            render::scene::DrawCommand,
+            render::wgpu::{composition::compose_video_scene, VideoStyle},
+        };
+        use std::sync::Arc;
+
+        let cases = [
+            (0, "80,96,1000,1,0,0:0:0:0:\n300,220,1300,1,0,0:0:0:0:\n"),
+            (1, "80,96,1000,1,0,0:0:0:0:\n300,220,1300,1,0,0:0:0:0:\n"),
+            (2, "80,96,1000,1,0,0:0:0:0:\n300,220,1300,1,0,0:0:0:0:\n"),
+            (3, "64,192,1000,1,0,0:0:0:0:\n192,192,1300,1,0,0:0:0:0:\n"),
+        ];
+        // 纯白背景：补边处只要被压暗，像素就会明显变黑。
+        let background = Arc::new(Img::new(2, 2, [255, 255, 255, 255]));
+        for (mode, objects) in cases {
+            let text = format!(
+                "osu file format v14\n\n[General]\nMode:{mode}\n\n[Difficulty]\nCircleSize:4\nApproachRate:6\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n{objects}"
+            );
+            let beatmap = parse_beatmap_bytes(text.as_bytes()).unwrap();
+            let scene = |mods| {
+                let source = realtime_source(&beatmap, mods);
+                let playfield = source.render(1200).unwrap();
+                let size = (playfield.width(), playfield.height());
+                (
+                    compose_video_scene(
+                        playfield,
+                        1200,
+                        1000,
+                        1280,
+                        720,
+                        Some(&background),
+                        VideoStyle::default(),
+                    )
+                    .unwrap(),
+                    size,
+                )
+            };
+            let flashlight = parse_mods(&["FL".into()]).unwrap();
+            let (plain, _) = scene(None);
+            let (masked, playfield_size) = scene(Some(&flashlight));
+            // 遮罩精灵就是物件层本身（图像尺寸 = 物件层尺寸）：它必须铺满整张画布，
+            // 否则没被盖住的那条缝在 FL 下会露出背景。
+            let mask = masked
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::Sprite {
+                        resource,
+                        destination,
+                        ..
+                    } => Some((&masked.resources[resource], *destination)),
+                    _ => None,
+                })
+                .find(|(image, _)| (image.w, image.h) == playfield_size)
+                .map(|(_, destination)| destination)
+                .expect("FL 必须产出物件层大小的遮罩精灵");
+            assert!(
+                mask.x <= 0.0
+                    && mask.y <= 0.0
+                    && mask.x + mask.width >= 1280.0
+                    && mask.y + mask.height >= 720.0,
+                "mode={mode}：FL 遮罩必须铺满画布，实际 {mask:?}"
+            );
+
+            let frame = |scene| CpuRasterizer.render_frame(&scene).unwrap();
+            let plain = frame(plain);
+            let masked = frame(masked);
+            // 四角都在 playfield 之外（右上角避开合成阶段画上去的时间标签）。
+            for (x, y) in [(4, 4), (1275, 4), (4, 715), (1275, 715)] {
+                assert_eq!(
+                    plain.get(x, y),
+                    [255, 255, 255, 255],
+                    "mode={mode}：基准帧的边缘应是背景原色"
+                );
+                assert_eq!(
+                    masked.get(x, y),
+                    [0, 0, 0, 255],
+                    "mode={mode}：画布边缘必须被 FL 压暗"
+                );
+            }
+        }
+    }
+
     /// Mania 的 HD/FL 分层必须与 lazer 一致：HD 只改音符层的 alpha
     /// （lazer 把 `HitObjectContainer` 包进 `PlayfieldCoveringWrapper`），
     /// FL 是整帧遮罩（`ModFlashlight` 把遮罩加到 `drawableRuleset.Overlays`，
@@ -252,7 +345,7 @@ mod tests {
         use osu_beatmap_preview_core::{
             domain::mods::{parse_mods, ModSettings},
             domain::parser::parse_beatmap_bytes,
-            render::cpu::modes::mania::animation::{build_layout, segment_left},
+            render::cpu::modes::mania::animation::{build_video_layout, segment_left},
             render::cpu::modes::mania::skin::load_mania_skin_config,
             render::geometry::OutputFormat,
             render::scene::DrawCommand,
@@ -261,10 +354,9 @@ mod tests {
             b"osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\nApproachRate:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n192,192,1500,1,0,0:0:0:0:\n",
         )
         .unwrap();
-        let layout = build_layout(
+        // 实时物件层与 MP4 导出一样是 16:9 画布，FL 遮罩因此能盖住整帧。
+        let layout = build_video_layout(
             &load_mania_skin_config(4, OutputFormat::Mp4),
-            1,
-            false,
             OutputFormat::Mp4,
         );
         let left = segment_left(0, &layout);

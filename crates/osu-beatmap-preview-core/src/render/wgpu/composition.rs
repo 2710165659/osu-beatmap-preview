@@ -6,7 +6,6 @@ use super::VideoStyle;
 use crate::domain::errors::PreviewError;
 use crate::domain::parser::round_half_even;
 use crate::render::canvas::Img;
-use crate::render::geometry::GameMode;
 use crate::render::scene::{FrameScene, FrameSceneBuilder, SceneRect};
 use crate::render::text::{draw_text, text_size};
 
@@ -22,10 +21,8 @@ pub fn compose_video_scene(
     height: u32,
     background: Option<&Arc<Img>>,
     style: VideoStyle,
-    mode: GameMode,
 ) -> crate::domain::errors::Result<FrameScene> {
-    let (scale, offset) =
-        fit_playfield(mode, playfield.width(), playfield.height(), width, height)?;
+    let (scale, offset) = fit_playfield(playfield.width(), playfield.height(), width, height)?;
     let mut builder = FrameSceneBuilder::new(width, height, playfield.absolute_time_ms());
     if let Some(background) = background {
         builder.sprite(
@@ -77,8 +74,14 @@ pub fn compose_video_scene(
     Ok(builder.finish())
 }
 
+/// 把物件层等比缩放到铺满画布并居中（cover），多出来的部分由画布裁掉。
+///
+/// 四个模式的实时物件层都是按 [`crate::render::geometry::video_canvas`] 补齐的
+/// 16:9 画布，与输出画布的宽高比只差「补齐到偶数像素」带来的零点几个百分点。
+/// 这里必须用 cover 而不是 contain：contain 会在另一轴留下 1~4px 的缝，
+/// 那条缝属于画布背景而不是物件层，FL 遮罩压不到它——看起来就是画面顶部/底部
+/// （或左右）的一条亮边。裁掉的几个像素在补边区域，不影响物件。
 fn fit_playfield(
-    mode: GameMode,
     playfield_width: u32,
     playfield_height: u32,
     canvas_width: u32,
@@ -91,20 +94,9 @@ fn fit_playfield(
     }
     let width_ratio = canvas_width as f32 / playfield_width as f32;
     let height_ratio = canvas_height as f32 / playfield_height as f32;
-    let scale = match mode {
-        GameMode::Standard | GameMode::Catch => width_ratio.min(height_ratio),
-        GameMode::Taiko => width_ratio,
-        GameMode::Mania => height_ratio,
-    };
-    let scaled_width = (playfield_width as f32 * scale).round();
-    let scaled_height = (playfield_height as f32 * scale).round();
-    if scaled_width > canvas_width as f32 + 0.5 || scaled_height > canvas_height as f32 + 0.5 {
-        return Err(PreviewError::render(format!(
-            "画布尺寸不足，需要 {}x{}",
-            scaled_width.ceil() as u32,
-            scaled_height.ceil() as u32
-        )));
-    }
+    let scale = width_ratio.max(height_ratio);
+    let scaled_width = playfield_width as f32 * scale;
+    let scaled_height = playfield_height as f32 * scale;
     Ok((
         scale,
         [
@@ -117,41 +109,35 @@ fn fit_playfield(
 #[cfg(test)]
 mod tests {
     use super::{compose_video_scene, fit_playfield, VideoStyle};
-    use crate::render::geometry::GameMode;
     use crate::render::scene::{DrawCommand, FrameScene, SceneSize};
 
-    /// standard/catch 按 contain 居中补边。
+    /// 物件层铺满画布（cover）：宽高比一致时是 1:1，略有偏差时裁掉多出来的几个像素。
     #[test]
-    fn standard_and_catch_fit_with_contain() {
-        let (scale, offset) = fit_playfield(GameMode::Standard, 530, 384, 1280, 720).unwrap();
-        assert!((scale - 1.875).abs() < 0.001);
-        assert!((offset[0] - 142.8).abs() < 1.0);
-        assert_eq!(offset[1], 0.0);
-    }
+    fn playfield_covers_the_canvas_without_letterbox() {
+        // 16:9 物件层铺到 16:9 画布：基本 1:1，位移只有补齐误差带来的零点几像素。
+        let (scale, offset) = fit_playfield(684, 384, 1920, 1080).unwrap();
+        assert!((scale - 2.8125).abs() < 0.01);
+        let scaled = (684.0 * scale, 384.0 * scale);
+        assert!(
+            scaled.0 >= 1920.0 - 0.5 && scaled.1 >= 1080.0 - 0.5,
+            "{scaled:?}"
+        );
+        assert!(offset[0].abs() < 5.0 && offset[1].abs() < 5.0, "{offset:?}");
 
-    /// taiko 铺满宽度、上下补边。
-    #[test]
-    fn taiko_fills_width_with_vertical_letterbox() {
-        let (scale, offset) = fit_playfield(GameMode::Taiko, 683, 100, 1280, 720).unwrap();
-        assert!((scale - 1280.0 / 683.0).abs() < 0.001);
+        // taiko 补齐到偶数像素后略偏窄的 684×386 同样铺满，不会留下左右缝。
+        let (scale, offset) = fit_playfield(684, 386, 1920, 1080).unwrap();
+        assert!(684.0 * scale >= 1920.0 - 0.5, "{}", 684.0 * scale);
+        assert!(offset[1] >= -3.0 && offset[1] <= 0.0, "{offset:?}");
+
+        // 非 16:9 物件层：铺满后裁掉多出来的一侧（cover，而不是补边）。
+        let (scale, offset) = fit_playfield(530, 384, 1280, 720).unwrap();
+        assert!((scale - 1280.0 / 530.0).abs() < 0.001);
         assert!(offset[0].abs() < 0.01);
-        assert!(offset[1] > 250.0);
-    }
+        assert!(offset[1] < 0.0, "高度方向应被裁掉而不是补边：{offset:?}");
 
-    /// mania 铺满高度、左右补边。
-    #[test]
-    fn mania_fills_height_with_horizontal_letterbox() {
-        let (scale, offset) = fit_playfield(GameMode::Mania, 272, 384, 1280, 720).unwrap();
-        assert!((scale - 1.875).abs() < 0.001);
-        assert!(offset[0] > 380.0);
-        assert!(offset[1].abs() < 0.01);
-    }
-
-    /// taiko/mania 在补边方向超出画布时报告所需尺寸。
-    #[test]
-    fn taiko_and_mania_report_required_size_when_overflowing() {
-        assert!(fit_playfield(GameMode::Taiko, 100, 100, 1280, 720).is_err());
-        assert!(fit_playfield(GameMode::Mania, 100, 100, 720, 1280).is_err());
+        // 非正尺寸仍然报错。
+        assert!(fit_playfield(0, 100, 1280, 720).is_err());
+        assert!(fit_playfield(100, 0, 1280, 720).is_err());
     }
 
     /// 时间标签随输出分辨率缩放。
@@ -174,7 +160,6 @@ mod tests {
                 height,
                 None,
                 VideoStyle::default(),
-                GameMode::Standard,
             )
             .unwrap();
             let DrawCommand::Sprite { destination, .. } = scene.commands.last().unwrap() else {
