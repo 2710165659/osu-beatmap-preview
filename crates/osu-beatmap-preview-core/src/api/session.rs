@@ -37,7 +37,7 @@ pub struct RealtimeSession {
     ///
     /// 可见度（osu! 的淡入淡出）在合成时按 `video_time_ms` 算，不随帧存储：
     /// 同一画面在淡入淡出窗口里无需重复上传像素。
-    background_video: Option<(Arc<Img>, i64, i64)>,
+    background_video: Option<(VideoLayer, i64, i64)>,
     /// 音乐 + 打击音混音器：与画面共用同一条谱面时间轴，会话生命周期内一直持有
     /// （打击音关闭时音乐仍要出声，开关不能用 `Option` 表达）。
     mixer: HitsoundMixer,
@@ -51,6 +51,14 @@ pub struct RealtimeSession {
     clock: PreviewClock,
     /// 混音输出流：决定下一段混音的起点与长度，并跟踪音频线程的消费进度。
     stream: AudioStream,
+}
+
+/// 背景视频层的载体：像素帧，或渲染器的外部纹理槽位（浏览器视频帧 GPU 直拷，
+/// 视频像素不进 CPU 内存）。
+#[derive(Debug, Clone)]
+enum VideoLayer {
+    Pixels(Arc<Img>),
+    External(u32),
 }
 
 impl RealtimeSession {
@@ -225,15 +233,31 @@ impl RealtimeSession {
             ));
         }
         self.background_video = Some((
-            Arc::new(Img {
+            VideoLayer::Pixels(Arc::new(Img {
                 w: frame.width,
                 h: frame.height,
                 data: frame.rgba,
-            }),
+            })),
             video_time_ms,
             duration_ms.max(1),
         ));
         Ok(())
+    }
+
+    /// 设置背景视频的**外部纹理槽位**：帧像素不进 CPU 内存，渲染器按槽位号
+    /// 从外部源（浏览器视频帧）直接 GPU 拷贝（renderer 的 `copy_external_frame`）。
+    /// 时间参数与 [`Self::set_background_video`] 相同。
+    pub fn set_background_video_external(
+        &mut self,
+        slot: u32,
+        video_time_ms: i64,
+        duration_ms: i64,
+    ) {
+        self.background_video = Some((
+            VideoLayer::External(slot),
+            video_time_ms,
+            duration_ms.max(1),
+        ));
     }
 
     /// 移除背景视频帧，回退静态背景图（视频未开始、已结束或被关闭时调用）。
@@ -464,12 +488,22 @@ impl RealtimeSession {
             width,
             height,
             self.background_image.as_ref(),
-            self.background_video.as_ref().map(|(frame, video_time, duration)| {
-                (
-                    frame,
-                    crate::render::wgpu::composition::visibility_alpha(*video_time, *duration)
-                        as f32,
-                )
+            self.background_video.as_ref().map(|(layer, video_time, duration)| {
+                let alpha = crate::render::wgpu::composition::visibility_alpha(
+                    *video_time,
+                    *duration,
+                ) as f32;
+                match layer {
+                    VideoLayer::Pixels(image) => {
+                        crate::render::wgpu::composition::VideoSource::Pixels(image, alpha)
+                    }
+                    VideoLayer::External(slot) => {
+                        crate::render::wgpu::composition::VideoSource::External {
+                            slot: *slot,
+                            alpha,
+                        }
+                    }
+                }
             }),
             self.options.video_style,
         )

@@ -76,7 +76,7 @@ const chipClass = (active) => (active
             {{ state.showFps ? '开' : '关' }}
           </button>
         </div>
-        <!-- 背景视频默认关闭：WASM 内逐帧解码有 CPU 开销，且不少下载包没有视频。 -->
+        <!-- 背景视频默认关闭：WASM 内驱动浏览器硬解、逐帧取帧有开销。 -->
         <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
           <span class="text-xs text-neutral-400">背景视频</span>
           <div class="flex items-center gap-2">
@@ -89,7 +89,7 @@ const chipClass = (active) => (active
             >
               {{ state.backgroundVideo ? '开' : '关' }}
             </button>
-            <span v-if="!state.videoAvailable" class="text-[11px] text-neutral-500">当前谱面没有背景视频</span>
+            <span v-if="!state.videoAvailable" class="text-[11px] text-neutral-500">{{ state.videoStatus }}</span>
           </div>
         </div>
       </section>

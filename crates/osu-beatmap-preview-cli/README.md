@@ -244,7 +244,7 @@ osu-beatmap-preview-cli --bid=738063 --config='{"render":{"standard":{"gif":{"st
 osu-beatmap-preview-cli --bid=738063 --config='{render: {standard: {gif: {structure: {ROW_COUNT: 1}}}}}'
 ```
 
-以下示例关闭 Standard MP4 背景图、调整暗化程度、为 Standard 打开背景视频、让 Taiko 只用内嵌皮肤（忽略谱面自带音效）、关闭 Mania 打击音，并分别设置三种格式的整次请求超时：
+以下示例关闭 Standard MP4 背景图、调整暗化程度、为 Standard 打开背景视频、让 Taiko 只用内嵌皮肤（忽略谱面自带音效）并关闭 Mania 打击音，同时分别设置三种格式的整次请求超时：
 
 ```yaml
 render:
@@ -274,6 +274,8 @@ timeout:
 `ENABLE_BEATMAP_HITSOUND` 控制是否使用谱面自带的自定义打击音（默认 `true`）：打开时先在该谱面的 OSZ 里找同名条目，找不到再回退到内嵌皮肤；关闭后一律使用内嵌皮肤。
 
 `HITSOUND_VOLUME` 为 0～100 的百分比，按 osu! 的音量曲线 `10^((v - 100) / 25)` 换算为线性增益，因此 50 与游戏内默认音量一致、100 为满音量。
+
+在线下载的谱面包跟随**当前模式的 `ENABLE_BACKGROUND_VIDEO`**：开启背景视频时下载带视频的完整包（背景视频功能需要素材），关闭时下载 novideo 去视频包（明显更省流量）。只有 sayobot / nekoha 提供两种变体，其余镜像本来就是完整包；两种包在缓存里分开存放（`<set_id>-video.osz` / `<set_id>-novideo.osz`），切换开关会自动改用对应缓存。包大小上限 `download.osz.MAX_OSZ_BYTES` 默认 256MB（带视频的包常超过 50MB）。
 
 超时单位为秒且必须是正整数。计时从请求入口开始，覆盖下载、解析、转谱、缓存检查、渲染、音频处理、编码和落盘。
 

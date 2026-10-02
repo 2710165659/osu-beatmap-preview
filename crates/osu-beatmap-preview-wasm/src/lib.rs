@@ -39,6 +39,11 @@ fn wall_ms() -> f64 {
 #[cfg(target_arch = "wasm32")]
 const SURFACE_FAILURE_LIMIT_MS: f64 = 1000.0;
 
+/// 背景视频帧的外部纹理槽位（renderer 的 `copy_external_frame` 按槽位号填纹理，
+/// 帧像素不进 CPU 内存）。
+#[cfg(target_arch = "wasm32")]
+const VIDEO_TEXTURE_SLOT: u32 = 0;
+
 /// 直接渲染到浏览器 WebGPU Canvas 的会话。
 ///
 /// 创建时一次性收下整份文件；音乐与打击音在 WASM 内统一混音，画面与声音共用同一条
@@ -427,9 +432,11 @@ impl WebGpuSession {
         self.surface
             .configure(self.renderer.device(), &self.surface_config);
         self.renderer.resize(width, height).map_err(js_error)?;
-        // 抓帧分辨率跟随后端画布（再被 720p 上限截断）。
+        // 抓帧分辨率跟随后端画布（再被 720p 上限截断）；渲染器重建会丢掉
+        // 外部纹理，强制重新取帧重拷纹理，否则视频层在重建后是空的。
         if let Some(video) = self.video.as_mut() {
             video.set_capture_limit(width, height);
+            video.invalidate_capture();
         }
         // 合成场景的尺寸由 core 的 RealtimeOptions 决定；只调整 surface 会让
         // 画面仍按旧尺寸渲染并贴在左上角，因此需要同步更新 core。
@@ -454,11 +461,11 @@ impl WebGpuSession {
         }
     }
 
-    /// 按当前时钟推进背景视频层：只在画面真的变化时才写入会话。
+    /// 按当前时钟推进背景视频层：只在画面真的变化时才拷贝/写入会话。
     ///
     /// 时间对齐由 [`video::BackgroundVideo`] 驱动（与 CLI 导出同一套语义）；
-    /// 像素按所有权移入会话（不额外克隆），淡入淡出的可见度由会话在合成时
-    /// 按帧时间计算——同一画面在淡入淡出窗口里不会重复上传。
+    /// 新画面走 GPU 直拷（`copy_external_frame`，帧像素不进 CPU），淡入淡出
+    /// 的可见度由会话在合成时按帧时间计算——同一画面不会重复拷贝。
     fn update_background_video(&mut self, chart_ms: i64) {
         let playing = self.inner.playing();
         let rate = self.inner.rate();
@@ -473,7 +480,24 @@ impl WebGpuSession {
             return;
         }
         match video.capture_at(chart_ms - video.start_ms, playing, rate) {
-            video::Capture::New(frame) => {
+            video::Capture::Source(canvas) => {
+                // 主路径：画布直接拷进外部纹理槽位（GPU→GPU），帧像素不进 CPU。
+                let source = wgpu::ExternalImageSource::HTMLCanvasElement(canvas);
+                if self
+                    .renderer
+                    .copy_external_frame(VIDEO_TEXTURE_SLOT, &source)
+                    .is_err()
+                {
+                    return;
+                }
+                let video_time_ms = chart_ms - video.start_ms;
+                let duration_ms = video.duration_ms();
+                self.inner
+                    .set_background_video_external(VIDEO_TEXTURE_SLOT, video_time_ms, duration_ms);
+                self.video_showing = true;
+            }
+            video::Capture::Pixels(frame) => {
+                // 回退路径（老浏览器没有 canvas filter）：像素移入会话合成。
                 let image = ImageData {
                     width: frame.width,
                     height: frame.height,

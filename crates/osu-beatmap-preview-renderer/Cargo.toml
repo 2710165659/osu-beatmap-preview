@@ -6,7 +6,8 @@ publish = false
 
 [dependencies]
 osu-beatmap-preview-core = { path = "../osu-beatmap-preview-core" }
-wgpu = "29"
+# webgpu 特性提供 wasm 侧的 `ExternalImageSource`（背景视频帧 GPU 直拷）。
+wgpu = { version = "29", features = ["webgpu"] }
 bytemuck = { version = "1", features = ["derive"] }
 thiserror = "2"
 

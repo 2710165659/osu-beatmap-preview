@@ -5,13 +5,14 @@
 //! 刻意不用 wasm 软解：实测纯 Rust 解码 720p 需要 60～145 ms/帧（无 SIMD 的
 //! 标量路径，wasm 同款），而 720p30 实时播放要求 ≤33 ms/帧，软解只能放成幻灯片。
 //!
-//! 抓帧链路按实时预算做过优化（目标是不拖慢 60 FPS 渲染循环）：
-//! - **分辨率封顶**：抓帧画布 = 视频原生尺寸与「预览画布、720p 上限」取小——
-//!   每帧的画布回读、拷贝与纹理上传都随像素数线性增长；
+//! 抓帧链路按实时预算做过优化（目标是不拖慢高刷渲染循环）：
+//! - **帧像素不进 CPU**：主路径把画布交给渲染器 `copy_external_frame`
+//!   （WebGPU `copyExternalImageToTexture`，GPU→GPU 直拷）；只有不支持
+//!   canvas `filter` 的老浏览器才走 `getImageData` + 查找表暗化的 CPU 回退；
+//! - **分辨率封顶**：抓帧画布 = 视频原生尺寸与「预览画布、720p 上限」取小；
 //! - **暗化在 GPU 完成**：`drawImage` 挂 canvas `filter: brightness(...)`；
-//!   老浏览器不支持 filter 时回退整数查找表暗化（不是浮点逐像素循环）；
-//! - **只在换帧时抓**：`<video>` 的呈现帧变化才抓一次，未变化返回
-//!   [`Capture::Unchanged`]，调用方不再重复上传像素。
+//! - **只在换帧时取**：`<video>` 的呈现帧变化才拷一次，未变化返回
+//!   [`Capture::Unchanged`]，调用方不重复拷贝/合成。
 //!
 //! 行为语义与 CLI 的 `media/background_video.rs` 一致（对齐 osu! 的
 //! `DrawableStoryboardVideo`）：
@@ -26,10 +27,13 @@ use wasm_bindgen::JsCast;
 const MAX_CAPTURE_WIDTH: u32 = 1280;
 const MAX_CAPTURE_HEIGHT: u32 = 720;
 
-/// 抓取结果：只有画面真的变了才值得走「上传 → 合成」的整条链路。
+/// 抓取结果：只有画面真的变了才值得走「拷贝 → 合成」的整条链路。
 pub enum Capture {
-    /// 有新画面（已按 [`BackgroundVideo`] 的尺寸约定缩放、暗化）。
-    New(VideoFrame),
+    /// 有新画面（已缩放、暗化）：**GPU 直拷源**——渲染器用
+    /// `copy_external_image_to_texture` 从画布拷进纹理，帧像素不进 CPU。
+    Source(web_sys::HtmlCanvasElement),
+    /// CPU 像素回退（浏览器不支持 canvas `filter`、暗化只能逐像素算时）。
+    Pixels(VideoFrame),
     /// 画面没变：沿用已推送的帧。
     Unchanged,
     /// 还没有画面（视频未开始/未就绪/解不出来），调用方回退背景图。
@@ -148,6 +152,14 @@ impl BackgroundVideo {
         );
     }
 
+    /// 强制下一次 `capture_at` 重新取帧。
+    ///
+    /// 渲染器重建（切分辨率）会连同外部纹理一起丢掉，必须重新抓帧、重新
+    /// 拷贝纹理，否则视频层在重建后一直是空的。
+    pub fn invalidate_capture(&mut self) {
+        self.captured_time_s = f64::NAN;
+    }
+
     /// 视频总时长（毫秒）；元数据就绪前为 0。
     pub fn duration_ms(&self) -> i64 {
         let seconds = self.element.duration();
@@ -224,7 +236,7 @@ impl BackgroundVideo {
             self.context
                 .set_filter(&format!("brightness({})", self.dim_brightness));
         }
-        let captured = self
+        if self
             .context
             .draw_image_with_html_video_element_and_dw_and_dh(
                 &self.element,
@@ -233,30 +245,32 @@ impl BackgroundVideo {
                 width as f64,
                 height as f64,
             )
-            .and_then(|_| {
-                self.context
-                    .get_image_data(0.0, 0.0, width as f64, height as f64)
-            })
-            .map(|pixels| pixels.data().to_vec())
-            .map(|mut rgba| {
-                if !self.dim_on_gpu {
-                    dim_rgba_lut(&mut rgba, self.dim_brightness);
-                }
-                VideoFrame {
-                    width,
-                    height,
-                    rgba,
-                }
-            });
-        self.captured_time_s = time_s;
-        match captured {
-            Ok(frame) => {
-                self.has_frame = true;
-                Capture::New(frame)
-            }
+            .is_err()
+        {
             // 画布被跨域内容污染等场景：按「没有帧」处理，继续回退背景图。
-            Err(_) => Capture::Missing,
+            return Capture::Missing;
         }
+        self.captured_time_s = time_s;
+        self.has_frame = true;
+        if self.dim_on_gpu {
+            // 主路径：画布即 GPU 源，帧像素不进 CPU。
+            return Capture::Source(self.canvas.clone());
+        }
+        // 回退路径：老浏览器没有 canvas filter，暗化只能拿到像素后查表算。
+        let pixels = match self
+            .context
+            .get_image_data(0.0, 0.0, width as f64, height as f64)
+        {
+            Ok(pixels) => pixels,
+            Err(_) => return Capture::Missing,
+        };
+        let mut rgba = pixels.data().to_vec();
+        dim_rgba_lut(&mut rgba, self.dim_brightness);
+        Capture::Pixels(VideoFrame {
+            width,
+            height,
+            rgba,
+        })
     }
 
     /// 时间未变时区分「画面没变」与「还没有画面」。

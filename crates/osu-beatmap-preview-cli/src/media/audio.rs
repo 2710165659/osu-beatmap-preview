@@ -47,6 +47,7 @@ impl OszLocation {
         cache_dir: &Path,
         no_cache: bool,
         deadline: &RequestDeadline,
+        download_video: bool,
     ) -> Result<(PathBuf, String)> {
         match self {
             Self::Download { set_id } => {
@@ -56,6 +57,7 @@ impl OszLocation {
                     cache_dir,
                     no_cache,
                     deadline,
+                    download_video,
                 )?;
                 Ok((path, set_id.to_string()))
             }
@@ -99,8 +101,16 @@ impl AudioSourceJob {
         let audio_filename = beatmap
             .audio_filename()
             .ok_or_else(|| PreviewError::parse("missing AudioFilename required for MP4 audio"))?;
-        let (osz_path, cache_key) =
-            osz.materialize(&request_bid, &cache_dir, no_cache, &deadline)?;
+        // 是否下载带视频的完整包由当前模式的 ENABLE_BACKGROUND_VIDEO 决定：
+        // 背景视频开启才需要视频素材，否则用去视频包省流量。
+        let style = super::video_style(mode);
+        let (osz_path, cache_key) = osz.materialize(
+            &request_bid,
+            &cache_dir,
+            no_cache,
+            &deadline,
+            style.enable_background_video,
+        )?;
         crate::logging::event(
             "audio-prepare",
             "start",
@@ -108,7 +118,6 @@ impl AudioSourceJob {
             &format!("osz={cache_key} audio={audio_filename}"),
         );
         let media = BeatmapMedia::from_beatmap(&beatmap);
-        let style = super::video_style(mode);
         let image = if style.enable_background_image {
             load_background_image(media.background.as_ref(), &osz_path, &deadline)?
         } else {

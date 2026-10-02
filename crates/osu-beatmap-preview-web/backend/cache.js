@@ -42,7 +42,9 @@ export class Cache {
   }
 
   oszPath(setId) {
-    return path.join(this.oszDir, `${setId}.osz`);
+    // 文件名区分包变体（与 CLI 的 `<set_id>-video.osz` 约定一致）：Web 端
+    // 固定下载带视频的完整包，旧 novideo 缓存若同名会被误命中。
+    return path.join(this.oszDir, `${setId}-video.osz`);
   }
 
   mediaPath(bid, stem, extension) {

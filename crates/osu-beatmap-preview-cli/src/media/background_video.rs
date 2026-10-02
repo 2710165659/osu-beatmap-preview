@@ -15,7 +15,7 @@ use std::collections::VecDeque;
 use std::io::Cursor;
 use std::sync::Arc;
 
-use openh264::decoder::DecodedYUV;
+use openh264::decoder::{DecodeOptions, DecodedYUV, Flush};
 use openh264::formats::YUVSource;
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 
@@ -156,7 +156,14 @@ impl BackgroundVideo {
             };
             self.pending_times_ms.push(time_ms);
             self.pending_times_ms.sort_unstable();
-            let decoded = match self.decoder.decode(&packet) {
+            // 不要逐次 flush：openh264 的重排缓冲在带 B 帧的流上被提前冲刷会
+            // 直接报错断流（实测某 24fps B 帧视频第 10 个样本即失败，表现为
+            // 视频只动几帧后全程定格）；只在流尾用 flush_remaining 收尾。
+            // 不冲刷时解码器按**显示序**输出画面，与上面按显示时间弹出的映射一致。
+            let decoded = match self.decoder.decode_with_options(
+                &packet,
+                DecodeOptions::new().flush_after_decode(Flush::NoFlush),
+            ) {
                 Ok(decoded) => decoded,
                 Err(_) => return None,
             };
@@ -290,8 +297,11 @@ impl FrameBackgrounds {
 /// 视频画面的顺序解码 + 已准备帧缓存。
 struct VideoFrames {
     video: BackgroundVideo,
-    /// 已消费的最新画面（时间 ≤ 目标）。
+    /// 已消费的最新画面（时间 ≤ 目标，原始未缩放）。
     current: Option<(i64, Arc<Img>)>,
+    /// `current` 的缩放暗化结果；时间未变时直接复用。被超越的中间帧不做
+    /// 缩放暗化——一轮推进常连吃好几帧，逐帧准备纯属浪费。
+    prepared: Option<(i64, Arc<Img>)>,
     /// 已解码但时间还在目标之后的画面。
     next: Option<(i64, Arc<Img>)>,
     finished: bool,
@@ -302,6 +312,7 @@ impl VideoFrames {
         Self {
             video,
             current: None,
+            prepared: None,
             next: None,
             finished: false,
         }
@@ -319,9 +330,8 @@ impl VideoFrames {
         style: VideoStyle,
     ) -> Option<Arc<Img>> {
         while self.next.as_ref().is_none_or(|(time, _)| *time <= video_ms) {
-            if let Some((time, raw)) = self.next.take() {
-                let prepared = prepare_video_background(&raw, width, height, style);
-                self.current = Some((time, Arc::new(prepared)));
+            if let Some(picture) = self.next.take() {
+                self.current = Some(picture);
             }
             if self.finished {
                 break;
@@ -331,7 +341,16 @@ impl VideoFrames {
                 None => self.finished = true,
             }
         }
-        self.current.as_ref().map(|(_, frame)| Arc::clone(frame))
+        let (time, raw) = self.current.as_ref()?;
+        if self
+            .prepared
+            .as_ref()
+            .is_none_or(|(prepared_time, _)| prepared_time != time)
+        {
+            let prepared = prepare_video_background(raw, width, height, style);
+            self.prepared = Some((*time, Arc::new(prepared)));
+        }
+        self.prepared.as_ref().map(|(_, frame)| Arc::clone(frame))
     }
 }
 

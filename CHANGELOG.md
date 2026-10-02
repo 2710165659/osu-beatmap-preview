@@ -9,14 +9,22 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - 背景视频支持：`.osu` 的 `[Events]` `Video` 事件（`Video,<offset>,"file"`，含旧式 `1,...`）现被解析；MP4 导出会把 `.osz` 里的背景视频按时间轴逐帧合成到背景——视频叠在背景图上、与背景图共用 `BACKGROUND_DIM` 暗化、开始处 500ms 淡入且结束前 500ms 淡出（与 osu! 的 `DrawableStoryboardVideo` 一致），视频缺失、非 H.264 mp4 或解码失败时回退背景图。四模式的 `mp4` 小节各新增 `ENABLE_BACKGROUND_VIDEO` 配置项（默认关闭）。
-- Web 预览的「画面」设置新增「背景视频」开关（默认关闭）：解码管线收在 WASM 内（`wasm/src/video.rs` 驱动浏览器 `<video>` 硬解并逐帧抓帧——wasm 软解实测 720p 需 60～145 ms/帧，达不到实时），逐帧叠到预览画面上，时间对齐与淡入淡出行为和 CLI 导出完全一致。抓帧链路按实时预算优化：分辨率封顶 720p、暗化走 GPU（canvas `filter`）、换帧才上传、像素零多余拷贝。
+- Web 预览的「画面」设置新增「背景视频」开关（默认关闭）：解码管线收在 WASM 内（`wasm/src/video.rs` 驱动浏览器 `<video>` 硬解并逐帧取帧——wasm 软解实测 720p 需 60～145 ms/帧，达不到实时），逐帧叠到预览画面上，时间对齐与淡入淡出行为和 CLI 导出完全一致。视频帧由 `copyExternalImageToTexture` **GPU→GPU 直拷进纹理**（帧像素不进 CPU，暗化也挂在 canvas `filter` 上由 GPU 完成），抓帧分辨率封顶 720p、换帧才拷贝，不拖慢高刷渲染循环。
 - Web 预览新增实时帧率显示：画面右上角角标显示最近 1 秒的**实际**渲染帧率，抽屉「画面」里的「帧率显示」可开关（默认开启）。
 - 新增 `NC`（Nightcore）与 `DC`（Daycore）：速度与 `DT`/`HT` 同区间，音乐音高固定为 `1.5x` / `0.75x`（与游戏的 `ModNightcore` / `ModDaycore` 一致）；`NC` 还会按游戏的节拍规则叠加 kick / clap / hat / finish 鼓点，并内嵌 4 个 `nightcore-*` 采样。
 
 ### Changed
 
+- 在线下载按**是否需要背景视频**选择谱面包：Web 端固定下载带视频的完整包；CLI 端跟随当前模式的 `ENABLE_BACKGROUND_VIDEO`——开启背景视频才下载完整包，关闭时用 novideo 去视频包省流量。包大小上限同步提到 256MB（`download.osz.MAX_OSZ_BYTES` / Web 同值），缓存文件名区分两种包变体（`<set_id>-video.osz` / `<set_id>-novideo.osz`）避免互相污染。
+- Web 端「背景视频」开关置灰时会写明具体原因（谱面没有视频 / 包内缺失文件 / 容器浏览器不支持，如 `.avi`），不再一律显示「没有背景视频」。
 - `DT`/`HT` 改为**保调**变速（游戏里 `AdjustPitch` 默认关、等价 `AdjustableProperty.Tempo`）：音乐按倍率变快/变慢而音高不变。实时预览与 MP4 导出都通过 WSOLA 时间伸缩实现；无 Mod 与 `NC`/`DC` 默认速度仍走原来的无状态重采样快路径，输出逐位不变。
 - 打击音与 NC 鼓点继续按倍速重采样（对应游戏 `ModRateAdjust.ApplyToSample` 的 `Frequency = SpeedChange`）；网页端的「倍速」chips 仍与游戏的 `UserPlaybackRate` 一样变调。
+
+### Fixed
+
+- 修复 CLI 背景视频在**带 B 帧**的视频上「只动几帧后全程定格」的问题：openh264 解码器每次取帧后强制 flush 会冲坏重排缓冲、在第 10 个样本附近直接报错断流（实测 24fps B 帧视频 3432 帧只解出 9 帧）；改为只在流尾冲刷收尾，输出严格按显示序推进。同时只对「被选中的画面」做缩放暗化，中间被超越的帧不再浪费处理。
+- Web 渲染循环的帧调度在目标帧率恰好等于屏幕刷新率（如 120FPS @ 120Hz）时，会因 rAF 到达抖动被「≥ 精确间隔」的判定隔帧误砍到一半；阈值改为留 1ms 容差。
+- Web 背景视频的 GPU 直拷纹理缺 `RENDER_ATTACHMENT` usage，`copyExternalImageToTexture` 被 WebGPU 静默拒绝（验证错误不抛异常），视频层完全不显示；先开背景视频再切分辨率还会因渲染器重建清空外部纹理表而 panic（release 构建 `panic = "abort"` 直接杀死 wasm 实例，页面卡死）。现已补上 usage、缺槽位时跳过绘制，并在渲染器重建后强制重新取帧。
 
 ---
 

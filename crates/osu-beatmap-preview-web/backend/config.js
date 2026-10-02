@@ -2,7 +2,13 @@
 // 便于两个前端复用同一套下载行为；单位在名称中标注。
 
 /** 单次 OSZ 下载允许的最大字节数（50 MiB）。 */
-export const MAX_OSZ_BYTES = 50 * 1024 * 1024;
+/**
+ * osz 下载大小上限。
+ *
+ * 带视频的完整包经常超过 50MB（视频是主要体积），上限给到 256MB；
+ * 再大的包宁可拒绝，避免整包驻留浏览器与 WASM 内存。
+ */
+export const MAX_OSZ_BYTES = 256 * 1024 * 1024;
 /** OSZ 分块并行下载的块数。 */
 export const PARALLEL_PARTS = 4;
 /** 同一下载任务允许同时进行的最大尝试数。 */
@@ -78,11 +84,16 @@ export const CLOUDFLARE_IPV4_RANGES = [
   '131.0.72.0/22',
 ];
 
-/** OSZ 镜像候选，顺序即降级顺序；osu.direct 的优选 IP 候选会在运行时插入。 */
+/**
+ * OSZ 镜像候选，顺序即降级顺序；osu.direct 的优选 IP 候选会在运行时插入。
+ *
+ * 全部用**带视频的完整包**：背景视频是预览功能的一部分，早先的 novideo
+ * 去视频包虽然省流量，但会让「背景视频」开关对在线谱面永远不可用。
+ */
 export const MIRRORS = {
-  sayobot: (setId) => `https://txy1.sayobot.cn/beatmaps/download/novideo/${setId}`,
+  sayobot: (setId) => `https://txy1.sayobot.cn/beatmaps/download/${setId}`,
   osuDirect: (setId) => `https://osu.direct/api/d/${setId}`,
-  nekoha: (setId) => `https://mirror.nekoha.moe/api/download/${setId}?noVideo=1`,
+  nekoha: (setId) => `https://mirror.nekoha.moe/api/download/${setId}`,
   catboy: (setId) => `https://catboy.best/d/${setId}`,
 };
 

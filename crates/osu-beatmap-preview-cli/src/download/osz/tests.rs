@@ -186,6 +186,36 @@ fn downloads_and_reassembles_four_http_ranges() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// `download.osz.DOWNLOAD_VIDEO` 决定 sayobot / nekoha 用带视频的完整包
+/// 还是 novideo 去视频包；其余镜像本来就是完整包，不受开关影响。
+#[test]
+fn download_video_flag_selects_package_variant() {
+    assert_eq!(
+        MirrorSource::Sayobot.url(123, true),
+        "https://txy1.sayobot.cn/beatmaps/download/123"
+    );
+    assert_eq!(
+        MirrorSource::Sayobot.url(123, false),
+        "https://txy1.sayobot.cn/beatmaps/download/novideo/123"
+    );
+    assert_eq!(
+        MirrorSource::Nekoha.url(123, true),
+        "https://mirror.nekoha.moe/api/download/123"
+    );
+    assert_eq!(
+        MirrorSource::Nekoha.url(123, false),
+        "https://mirror.nekoha.moe/api/download/123?noVideo=1"
+    );
+    assert_eq!(
+        MirrorSource::Catboy.url(123, false),
+        "https://catboy.best/d/123"
+    );
+    assert_eq!(
+        MirrorSource::OsuDirectDns.url(123, true),
+        "https://osu.direct/api/d/123"
+    );
+}
+
 fn make_test_osz() -> Vec<u8> {
     let cursor = Cursor::new(Vec::new());
     let mut archive = zip::ZipWriter::new(cursor);

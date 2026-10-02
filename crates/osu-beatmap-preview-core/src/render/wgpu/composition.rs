@@ -30,6 +30,18 @@ pub fn visibility_alpha(video_ms: i64, duration_ms: i64) -> f64 {
     fade_in.min(fade_out).clamp(0.0, 1.0)
 }
 
+/// 背景视频层的来源。
+///
+/// 逐帧视频像素不一定要进 CPU 内存：`External` 走渲染器的外部纹理槽位，
+/// 由后端直接从浏览器视频帧 GPU→GPU 拷贝（renderer 的
+/// `copy_external_frame`），只有不具备 GPU 直拷能力的宿主才用 `Pixels`。
+pub enum VideoSource<'a> {
+    /// 像素帧（RGBA）与淡入淡出可见度。
+    Pixels(&'a Arc<Img>, f32),
+    /// 外部纹理槽位与淡入淡出可见度。
+    External { slot: u32, alpha: f32 },
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn compose_video_scene(
     playfield: FrameScene,
@@ -38,7 +50,7 @@ pub fn compose_video_scene(
     width: u32,
     height: u32,
     background: Option<&Arc<Img>>,
-    background_video: Option<(&Arc<Img>, f32)>,
+    background_video: Option<VideoSource<'_>>,
     style: VideoStyle,
 ) -> crate::domain::errors::Result<FrameScene> {
     let (scale, offset) = fit_playfield(playfield.width(), playfield.height(), width, height)?;
@@ -66,17 +78,20 @@ pub fn compose_video_scene(
         );
     }
     // 背景视频叠在背景图上；alpha = 0 等价于不显示，直接不入场景省一次上传。
-    if let Some((frame, alpha)) = background_video.filter(|(_, alpha)| *alpha > 0.0) {
-        builder.sprite(
-            Arc::clone(frame),
-            SceneRect {
-                x: 0.0,
-                y: 0.0,
-                width: width as f32,
-                height: height as f32,
-            },
-            alpha,
-        );
+    let destination = SceneRect {
+        x: 0.0,
+        y: 0.0,
+        width: width as f32,
+        height: height as f32,
+    };
+    match background_video {
+        Some(VideoSource::Pixels(frame, alpha)) if alpha > 0.0 => {
+            builder.sprite(Arc::clone(frame), destination, alpha);
+        }
+        Some(VideoSource::External { slot, alpha }) if alpha > 0.0 => {
+            builder.external_sprite(slot, destination, alpha);
+        }
+        _ => {}
     }
     builder.append_scaled(&playfield, offset, scale);
 
@@ -140,7 +155,7 @@ fn fit_playfield(
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_video_scene, fit_playfield, visibility_alpha, VideoStyle};
+    use super::{compose_video_scene, fit_playfield, visibility_alpha, VideoSource, VideoStyle};
     use crate::render::scene::{DrawCommand, FrameScene, SceneSize};
 
     /// 物件层铺满画布（cover）：宽高比一致时是 1:1，略有偏差时裁掉多出来的几个像素。
@@ -243,7 +258,7 @@ mod tests {
             1280,
             720,
             Some(&background),
-            Some((&video_frame, 0.5)),
+            Some(VideoSource::Pixels(&video_frame, 0.5)),
             VideoStyle::default(),
         )
         .unwrap();
@@ -253,5 +268,34 @@ mod tests {
             panic!("第二条命令必须是背景视频精灵");
         };
         assert_eq!(*alpha, 0.5);
+    }
+
+    /// 外部纹理槽位的视频层发出 `ExternalSprite`（像素不进场景资源表）。
+    #[test]
+    fn external_video_layer_emits_slot_sprite() {
+        let playfield = FrameScene::clear(
+            SceneSize {
+                width: 530,
+                height: 384,
+            },
+            0,
+            [0, 0, 0, 255],
+        );
+        let scene = compose_video_scene(
+            playfield,
+            0,
+            60_000,
+            1280,
+            720,
+            None,
+            Some(VideoSource::External { slot: 7, alpha: 0.25 }),
+            VideoStyle::default(),
+        )
+        .unwrap();
+        let DrawCommand::ExternalSprite { slot, alpha, .. } = &scene.commands[1] else {
+            panic!("第二条命令必须是外部纹理精灵");
+        };
+        assert_eq!(*slot, 7);
+        assert_eq!(*alpha, 0.25);
     }
 }

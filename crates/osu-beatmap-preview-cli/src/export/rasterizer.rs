@@ -65,6 +65,9 @@ impl FrameBackend for CpuRasterizer {
                         *clips.last().expect("裁剪栈始终非空"),
                     );
                 }
+                // 外部纹理槽位（浏览器视频帧 GPU 直拷）只存在于 GPU 渲染器；
+                // CPU 参考光栅器没有对应像素，跳过即可（实时路径不经过这里）。
+                DrawCommand::ExternalSprite { .. } => {}
                 DrawCommand::Rectangle { rect, color } => {
                     let rect = intersection(*clips.last().expect("裁剪栈始终非空"), *rect);
                     target.fill_rect_size(

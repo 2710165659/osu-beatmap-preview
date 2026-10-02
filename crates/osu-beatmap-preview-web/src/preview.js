@@ -33,6 +33,13 @@ export const CONVERT_MODES = ['standard', 'taiko', 'catch', 'mania'];
 /** 数字模式 → 谱面模式 key（`hitsoundDefaults` 的参数）。 */
 const MODE_KEYS = ['standard', 'taiko', 'catch', 'mania'];
 
+/** 浏览器 `<video>` 放得了的容器；osu 白名单里的 .avi/.flv/.mpg 播不了。 */
+const PLAYABLE_VIDEO_EXTENSIONS = ['mp4', 'm4v', 'mov', 'webm', 'ogv', 'ogg'];
+
+/** 视频文件名的容器是否是浏览器能直接播放的（按扩展名判断）。 */
+const canPlayVideoExtension = (name) =>
+  PLAYABLE_VIDEO_EXTENSIONS.includes(String(name ?? '').split('.').pop().toLowerCase());
+
 /**
  * 默认音量 50%。
  *
@@ -136,6 +143,8 @@ export const state = reactive({
   backgroundVideo: false,
   /** 当前谱面是否有可用背景视频（`.osz` 里取到了可解的 mp4）；控制开关是否可点。 */
   videoAvailable: false,
+  /** 背景视频不可用的原因（开关旁的说明文字）；可用时为空。 */
+  videoStatus: '',
   /** 实时渲染帧率（最近 1 秒成功出帧数）；由 `render()` 滑动窗口统计。 */
   renderFps: 0,
   /** 是否显示帧率角标（画面右上角）。 */
@@ -907,13 +916,17 @@ function tick(now) {
 
   // 始终按显示刷新率推进时钟，但只按所选帧率提交渲染。用目标帧间隔
   // 累加而不是直接用 `now` 覆盖，避免 144Hz 等显示器上 60FPS 被降到 48FPS。
+  // 判定阈值另留 1ms 容差：rAF 到达时间本身有抖动，目标帧率恰好等于刷新率
+  //（如 120FPS @ 120Hz）时，「>= 精确间隔」会隔帧误判跳过，帧率被砍到一半。
   const frameInterval = 1000 / targetFps;
+  const frameEpsilon = 1;
   if (!hasRenderedFrame) {
     hasRenderedFrame = true;
     lastRenderTime = now;
     render();
-  } else if (now - lastRenderTime >= frameInterval) {
-    lastRenderTime += frameInterval * Math.floor((now - lastRenderTime) / frameInterval);
+  } else if (now - lastRenderTime >= frameInterval - frameEpsilon) {
+    lastRenderTime
+      += frameInterval * Math.max(1, Math.floor((now - lastRenderTime + frameEpsilon) / frameInterval));
     render();
   }
 
@@ -1019,9 +1032,19 @@ export async function loadPreview() {
     state.mode = state.modeKey.toUpperCase();
     // Mod 面板按实际模式（含转谱结果）取一次；HD/FL 是否可选由 core 决定。
     applyModOptions(wasm, state.modeKey);
-    // 背景视频在 WASM 内解码；开关默认关闭，用户上次打开过就沿用
-    //（与音量等设置一致），这份谱面没有可用视频时保持关闭。
-    state.videoAvailable = Boolean(session.hasBackgroundVideo?.());
+    // 背景视频在 WASM 内驱动浏览器硬解；开关默认关闭，用户上次打开过就沿用
+    //（与音量等设置一致）。可用性 = 包里真的取到视频 + 浏览器放得了这个容器。
+    const videoName = state.info?.videoFilename ?? '';
+    const inPackage = Boolean(session.hasBackgroundVideo?.());
+    const playable = canPlayVideoExtension(videoName);
+    state.videoAvailable = inPackage && playable;
+    state.videoStatus = !videoName
+      ? '当前谱面没有背景视频'
+      : !playable
+        ? `背景视频容器（.${videoName.split('.').pop().toLowerCase()}）浏览器不支持，网页端无法播放`
+        : inPackage
+          ? ''
+          : `包内缺失背景视频文件（${videoName}），可本地上传完整 .osz`;
     state.backgroundVideo = state.videoAvailable && state.backgroundVideo;
     session.setBackgroundVideo?.(state.backgroundVideo);
     state.status = hasMusic() ? '就绪' : '无音乐（.osu 单文件）';

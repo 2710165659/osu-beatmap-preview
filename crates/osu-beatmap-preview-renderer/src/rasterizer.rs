@@ -69,6 +69,19 @@ struct CachedTexture {
     image: Arc<Img>,
 }
 
+/// 外部纹理槽位的纹理：内容由 `copy_external_image_to_texture` 从外部源
+/// （浏览器视频帧）直接拷入，逐帧视频像素不进 CPU 内存。
+///
+/// `texture`/`width`/`height` 只被 wasm 侧的 `external_texture`（重建纹理）读取，
+/// native 构建不提供外部源，这里保留字段避免两条路径分叉。
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+struct CachedExternalTexture {
+    texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
+    width: u32,
+    height: u32,
+}
+
 /// 缓存命中条件：键一致且指向同一个图像实例。
 ///
 /// 键里已经带了地址，正常情况下两者同时成立；这里再比对一次实例，是为了万一
@@ -82,6 +95,8 @@ enum BatchKind {
     Solid,
     Sprite(ResourceKey),
     Glyph(ResourceKey),
+    /// 外部纹理槽位（浏览器视频帧 GPU 直拷），内容由 `external_texture` 填充。
+    ExternalSprite(u32),
     SliderBorderCoverage,
     SliderBorderColor,
     SliderBodyCoverage,
@@ -129,6 +144,7 @@ pub(crate) struct SceneRasterizer {
     _depth_stencil: wgpu::Texture,
     depth_stencil_view: wgpu::TextureView,
     textures: HashMap<ResourceKey, CachedTexture>,
+    external_textures: HashMap<u32, CachedExternalTexture>,
 }
 
 impl SceneRasterizer {
@@ -298,7 +314,70 @@ impl SceneRasterizer {
             _depth_stencil: depth_stencil,
             depth_stencil_view,
             textures: HashMap::new(),
+            external_textures: HashMap::new(),
         }
+    }
+
+    /// 取槽位的外部纹理（不存在或尺寸变化时重建）；纹理由调用方用
+    /// `copy_external_image_to_texture` 从外部源（浏览器视频帧）填入。
+    ///
+    /// 只有 wasm 侧的 `SurfaceRenderer::copy_external_frame` 调用（native 没有
+    /// 外部图像源）。
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub(crate) fn external_texture(
+        &mut self,
+        device: &wgpu::Device,
+        slot: u32,
+        width: u32,
+        height: u32,
+    ) -> &wgpu::Texture {
+        let needs_new = self
+            .external_textures
+            .get(&slot)
+            .is_none_or(|cached| cached.width != width || cached.height != height);
+        if needs_new {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("osu-beatmap-preview external frame"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: TARGET_FORMAT,
+                // `copy_external_image_to_texture` 按 WebGPU 规定要求目标纹理
+                // 同时带 COPY_DST 与 RENDER_ATTACHMENT，缺后者会被静默拒绝
+                //（wgpu 只报验证错误，不抛异常），表现为视频层完全不显示。
+                usage: wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            let bind_group = create_texture_bind_group(
+                device,
+                &self.texture_layout,
+                &view,
+                &self.sampler,
+                "osu-beatmap-preview external frame bind group",
+            );
+            self.external_textures.insert(
+                slot,
+                CachedExternalTexture {
+                    texture,
+                    bind_group,
+                    width,
+                    height,
+                },
+            );
+        }
+        &self
+            .external_textures
+            .get(&slot)
+            .expect("外部纹理已按槽位建立")
+            .texture
     }
 
     pub(crate) fn output_view(&self) -> &wgpu::TextureView {
@@ -378,6 +457,17 @@ impl SceneRasterizer {
                                     .bind_group,
                                 &[],
                             );
+                        }
+                        BatchKind::ExternalSprite(slot) => {
+                            // 外部纹理会随渲染器重建（切分辨率）一起被清掉：
+                            // 缺槽位时跳过本批而不是 panic，下一帧拷贝会重建。
+                            match self.external_textures.get(&slot) {
+                                Some(cached) => {
+                                    pass.set_pipeline(&self.sprite_pipeline);
+                                    pass.set_bind_group(0, &cached.bind_group, &[]);
+                                }
+                                None => continue,
+                            }
                         }
                         BatchKind::Glyph(key) => {
                             pass.set_pipeline(&self.glyph_pipeline);
@@ -711,6 +801,27 @@ fn build_batches(
                 push_textured_rect(
                     &mut batches,
                     BatchKind::Sprite(ResourceKey::new(*resource, image)),
+                    scissor(
+                        *clips.last().expect("裁剪栈始终非空"),
+                        offset,
+                        target_width,
+                        target_height,
+                    ),
+                    *destination,
+                    [1.0, 1.0, 1.0, alpha.clamp(0.0, 1.0)],
+                    offset,
+                    target_width,
+                    target_height,
+                );
+            }
+            DrawCommand::ExternalSprite {
+                slot,
+                destination,
+                alpha,
+            } => {
+                push_textured_rect(
+                    &mut batches,
+                    BatchKind::ExternalSprite(*slot),
                     scissor(
                         *clips.last().expect("裁剪栈始终非空"),
                         offset,

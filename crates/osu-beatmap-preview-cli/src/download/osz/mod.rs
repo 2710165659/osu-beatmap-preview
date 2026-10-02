@@ -38,14 +38,30 @@ impl MirrorSource {
         }
     }
 
-    fn url(self, set_id: u64) -> String {
+    /// 构造下载 URL。
+    ///
+    /// `download_video` 决定要带视频的完整包还是 novideo 去视频包：取值来自
+    /// 当前模式的 `ENABLE_BACKGROUND_VIDEO`（背景视频开启才有素材需求），
+    /// 去视频包则明显更省流量。只有 sayobot / nekoha 提供两种变体，
+    /// 其余镜像本来就是完整包。
+    fn url(self, set_id: u64, download_video: bool) -> String {
         match self {
-            Self::Sayobot => format!("https://txy1.sayobot.cn/beatmaps/download/novideo/{set_id}"),
+            Self::Sayobot => {
+                if download_video {
+                    format!("https://txy1.sayobot.cn/beatmaps/download/{set_id}")
+                } else {
+                    format!("https://txy1.sayobot.cn/beatmaps/download/novideo/{set_id}")
+                }
+            }
             Self::OsuDirectPreferred(_) | Self::OsuDirectDns => {
                 format!("https://osu.direct/api/d/{set_id}")
             }
             Self::Nekoha => {
-                format!("https://mirror.nekoha.moe/api/download/{set_id}?noVideo=1")
+                if download_video {
+                    format!("https://mirror.nekoha.moe/api/download/{set_id}")
+                } else {
+                    format!("https://mirror.nekoha.moe/api/download/{set_id}?noVideo=1")
+                }
             }
             Self::Catboy => format!("https://catboy.best/d/{set_id}"),
         }
@@ -243,12 +259,16 @@ pub fn download_beatmapset_archive(
     temp_dir: &Path,
     no_cache: bool,
     deadline: &RequestDeadline,
+    download_video: bool,
 ) -> Result<PathBuf> {
     deadline.check()?;
     let log = OszLogContext::new(request_bid, set_id);
     std::fs::create_dir_all(temp_dir)
         .map_err(|e| PreviewError::download(format!("failed to create osz cache dir: {e}")))?;
-    let target_path = temp_dir.join(format!("{set_id}.osz"));
+    // 缓存文件名区分包变体（带视频 / 去视频）：两种包共用 `<set_id>.osz` 会
+    // 互相污染——旧的 novideo 缓存会让背景视频功能永远没有素材。
+    let variant = if download_video { "video" } else { "novideo" };
+    let target_path = temp_dir.join(format!("{set_id}-{variant}.osz"));
     if !no_cache && valid_osz(&target_path) {
         deadline.check()?;
         let size_mib = target_path
@@ -277,7 +297,7 @@ pub fn download_beatmapset_archive(
     );
 
     let started = Instant::now();
-    let winner = match run_download_race(&log, temp_dir, candidates, deadline) {
+    let winner = match run_download_race(&log, temp_dir, candidates, deadline, download_video) {
         Ok(winner) => winner,
         Err(failures) => {
             deadline.check()?;
@@ -359,6 +379,7 @@ fn run_download_race(
     temp_dir: &Path,
     mut candidates: Vec<MirrorCandidate>,
     request_deadline: &RequestDeadline,
+    download_video: bool,
 ) -> std::result::Result<PathBuf, Vec<String>> {
     let (sender, receiver) = mpsc::channel();
     let mut active = Vec::new();
@@ -377,6 +398,7 @@ fn run_download_race(
         &sender,
         &mut active,
         request_deadline,
+        download_video,
     );
 
     loop {
@@ -424,6 +446,7 @@ fn run_download_race(
                         &sender,
                         &mut active,
                         request_deadline,
+                        download_video,
                     );
                 }
                 while let Ok(message) = receiver.try_recv() {
@@ -451,6 +474,7 @@ fn run_download_race(
                             &sender,
                             &mut active,
                             request_deadline,
+                            download_video,
                         );
                     }
                 }
@@ -537,6 +561,7 @@ fn run_download_race(
                 &sender,
                 &mut active,
                 request_deadline,
+                download_video,
             );
         }
 
@@ -553,6 +578,7 @@ fn run_download_race(
                 &sender,
                 &mut active,
                 request_deadline,
+                download_video,
             );
         }
     }
@@ -568,6 +594,7 @@ fn start_next_attempt(
     sender: &mpsc::Sender<AttemptResult>,
     active: &mut Vec<ActiveAttempt>,
     deadline: &RequestDeadline,
+    download_video: bool,
 ) {
     maybe_insert_preferred_candidate(candidates, *next_candidate, temp_dir);
     if *next_candidate >= candidates.len()
@@ -587,7 +614,9 @@ fn start_next_attempt(
         cancel: cancel.clone(),
         progress: progress.clone(),
     };
-    let url = source.url(log.set_id);
+    // 带不带视频由当前模式的 ENABLE_BACKGROUND_VIDEO 决定：背景视频开启时
+    // 要完整包才有素材，关闭时用去视频包省流量。
+    let url = source.url(log.set_id, download_video);
     let agent = build_agent(source.preferred_ip(), deadline);
     log.event(
         "attempt-start",

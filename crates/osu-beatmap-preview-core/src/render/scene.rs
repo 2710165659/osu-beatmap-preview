@@ -32,6 +32,13 @@ pub enum DrawCommand {
         destination: SceneRect,
         alpha: f32,
     },
+    /// 外部纹理精灵：纹理内容由渲染后端从外部源（如浏览器视频帧）直接拷入，
+    /// 场景里只带槽位号——逐帧视频像素不进 CPU 内存。
+    ExternalSprite {
+        slot: u32,
+        destination: SceneRect,
+        alpha: f32,
+    },
     Rectangle {
         rect: SceneRect,
         color: Rgba,
@@ -217,6 +224,15 @@ impl FrameSceneBuilder {
         });
     }
 
+    /// 绘制外部纹理槽位（如浏览器视频帧）；纹理由渲染后端按槽位号填充。
+    pub fn external_sprite(&mut self, slot: u32, destination: SceneRect, alpha: f32) {
+        self.commands.push(DrawCommand::ExternalSprite {
+            slot,
+            destination,
+            alpha,
+        });
+    }
+
     pub fn glyph(&mut self, image: Arc<Img>, destination: SceneRect, color: Rgba) {
         let resource = self.insert_resource(image);
         self.commands.push(DrawCommand::Glyph {
@@ -300,6 +316,15 @@ fn transform_command(
             alpha,
         } => DrawCommand::Sprite {
             resource: resources[resource],
+            destination: rect(*destination),
+            alpha: *alpha,
+        },
+        DrawCommand::ExternalSprite {
+            slot,
+            destination,
+            alpha,
+        } => DrawCommand::ExternalSprite {
+            slot: *slot,
             destination: rect(*destination),
             alpha: *alpha,
         },

@@ -69,6 +69,49 @@ impl SurfaceRenderer {
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
+    /// 把外部图像源（如浏览器视频帧）拷进槽位纹理，供场景的
+    /// `DrawCommand::ExternalSprite` 绘制。
+    ///
+    /// 帧像素不经过 CPU：WebGPU 的 `copyExternalImageToTexture` 直接 GPU→GPU，
+    /// 逐帧视频因此几乎零开销。仅 wasm32 提供（`ExternalImageSource` 是 Web 侧
+    /// 类型，native 没有对应的外部源）。
+    #[cfg(target_arch = "wasm32")]
+    pub fn copy_external_frame(
+        &mut self,
+        slot: u32,
+        source: &wgpu::ExternalImageSource,
+    ) -> Result<()> {
+        let (width, height) = (source.width(), source.height());
+        if width == 0 || height == 0 {
+            return Err(PreviewError::render("external frame has zero size"));
+        }
+        let device = Arc::clone(&self.device);
+        let texture = self.rasterizer.external_texture(&device, slot, width, height);
+        self.queue.copy_external_image_to_texture(
+            &wgpu::CopyExternalImageSourceInfo {
+                source: source.clone(),
+                origin: wgpu::Origin2d::ZERO,
+                flip_y: false,
+            },
+            wgpu::CopyExternalImageDestInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+                // 与 CPU 路径（write_texture 直写 getImageData 字节）一致：
+                // 源按 sRGB 解释、目标存同样的字节，不做色彩空间转换。
+                color_space: wgpu::PredefinedColorSpace::Srgb,
+                premultiplied_alpha: true,
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        Ok(())
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
         if width == 0 || height == 0 {
             return Err(PreviewError::render("surface dimensions must be positive"));
