@@ -6,7 +6,7 @@ use crate::cache;
 use crate::export::segment::PngSegment;
 use crate::logging::{self, CacheKind, SummaryRecord};
 use crate::media::audio::{AudioSourceJob, OszLocation};
-use crate::media::MediaBackground;
+use crate::media::{MediaBackground, MediaStoryboard};
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::{Beatmap, HitObjects};
 use osu_beatmap_preview_core::processing::timeline::{GifRenderOptions, TimeAxis};
@@ -209,6 +209,7 @@ fn generate_preview_inner(
         Some(AudioSourceJob::start(
             &bid,
             beatmap.clone(),
+            &String::from_utf8_lossy(&acquired.bytes),
             osz,
             cache_root.join("osz-download-cache"),
             plan.no_cache,
@@ -369,6 +370,7 @@ trait ModeRenderer {
         &self,
         input: ModeRenderInput<'_>,
         background: MediaBackground,
+        storyboard: Option<MediaStoryboard>,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf>;
 
@@ -427,6 +429,7 @@ impl ModeRenderer for StandardRenderer {
         &self,
         input: ModeRenderInput<'_>,
         background: MediaBackground,
+        storyboard: Option<MediaStoryboard>,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
         crate::export::standard::render_standard_video(
@@ -436,6 +439,7 @@ impl ModeRenderer for StandardRenderer {
             input.plan.duration_seconds,
             input.output_path,
             background,
+            storyboard,
             audio_job,
             input.time_axis,
             input.plan.fps,
@@ -483,6 +487,7 @@ impl ModeRenderer for TaikoRenderer {
         &self,
         input: ModeRenderInput<'_>,
         background: MediaBackground,
+        storyboard: Option<MediaStoryboard>,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
         crate::export::taiko::render_taiko_video(
@@ -492,6 +497,7 @@ impl ModeRenderer for TaikoRenderer {
             input.plan.duration_seconds,
             input.output_path,
             background,
+            storyboard,
             audio_job,
             input.time_axis,
             input.plan.fps,
@@ -539,6 +545,7 @@ impl ModeRenderer for CatchRenderer {
         &self,
         input: ModeRenderInput<'_>,
         background: MediaBackground,
+        storyboard: Option<MediaStoryboard>,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
         crate::export::catch::render_catch_video(
@@ -548,6 +555,7 @@ impl ModeRenderer for CatchRenderer {
             input.plan.duration_seconds,
             input.output_path,
             background,
+            storyboard,
             audio_job,
             input.time_axis,
             input.plan.fps,
@@ -595,6 +603,7 @@ impl ModeRenderer for ManiaRenderer {
         &self,
         input: ModeRenderInput<'_>,
         background: MediaBackground,
+        storyboard: Option<MediaStoryboard>,
         audio_job: AudioSourceJob,
     ) -> Result<PathBuf> {
         crate::export::mania::render_mania_video(
@@ -604,6 +613,7 @@ impl ModeRenderer for ManiaRenderer {
             input.plan.duration_seconds,
             input.output_path,
             background,
+            storyboard,
             audio_job,
             input.time_axis,
             input.plan.fps,
@@ -769,7 +779,8 @@ fn render_preview_for_mode_inner(
         let mut audio_job =
             audio_job.ok_or_else(|| PreviewError::render("MP4 audio job was not started"))?;
         let background = audio_job.take_background();
-        renderer.render_video(input, background, audio_job)
+        let storyboard = audio_job.take_storyboard();
+        renderer.render_video(input, background, storyboard, audio_job)
     } else {
         renderer.render_png(input)
     }

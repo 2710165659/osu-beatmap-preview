@@ -23,6 +23,7 @@ use crate::export::canvas::Img;
 use crate::export::text::{draw_text, text_size};
 use crate::media::audio::{encode_audio_segment, AudioSourceJob};
 use crate::media::background_video::{FrameBackgrounds, MediaBackground};
+use crate::media::storyboard::MediaStoryboard;
 use bytes::Bytes;
 use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::Beatmap;
@@ -77,6 +78,7 @@ fn encoder_queue_capacity(par_chunk_size: usize) -> usize {
 pub(crate) struct VideoStyle {
     pub(crate) enable_background_image: bool,
     pub(crate) enable_background_video: bool,
+    pub(crate) enable_storyboard: bool,
     pub(crate) background_dim: f64,
     pub(crate) label_color: [u8; 4],
     pub(crate) label_font_size: u32,
@@ -104,6 +106,7 @@ pub(crate) fn video_style(mode: crate::export::geometry::GameMode) -> VideoStyle
             VideoStyle {
                 enable_background_image: section.style.ENABLE_BACKGROUND_IMAGE,
                 enable_background_video: section.style.ENABLE_BACKGROUND_VIDEO,
+                enable_storyboard: section.style.ENABLE_STORYBOARD,
                 background_dim: section.style.BACKGROUND_DIM,
                 label_color: section.style.LABEL_COLOR,
                 label_font_size: section.sizing.LABEL_FONT_SIZE,
@@ -314,6 +317,7 @@ pub(crate) fn save_mp4_streamed(
     audio_job: AudioSourceJob,
     beatmap: Beatmap,
     background: MediaBackground,
+    storyboard: Option<MediaStoryboard>,
     time_axis: TimeAxis,
     deadline: &RequestDeadline,
     mode: crate::export::geometry::GameMode,
@@ -424,11 +428,13 @@ pub(crate) fn save_mp4_streamed(
         FrameComposition::Canvas => compose_frame(
             first_frame,
             time_axis.to_display(first_time),
+            first_time,
             time_axis.to_display(last_object_ms),
             out_w,
             out_h,
             first_background.as_deref(),
             style,
+            storyboard.as_ref(),
         ),
         FrameComposition::FinalRgba => first_frame,
     };
@@ -584,11 +590,13 @@ pub(crate) fn save_mp4_streamed(
                         FrameComposition::Canvas => compose_frame(
                             pf,
                             time_axis.to_display(time),
+                            time,
                             gameplay_total,
                             out_w,
                             out_h,
                             chunk_backgrounds[fi - chunk_start].as_deref(),
                             style,
+                            storyboard.as_ref(),
                         ),
                         FrameComposition::FinalRgba => pf,
                     })
@@ -932,21 +940,38 @@ fn prepare_video_background_inner(
 
 /// 将游戏区域帧居中放置到 16:9 背景画布，并在右上角绘制
 ///“当前 / 总时长”游戏时间标签；没有谱面背景时画布为黑色。
+///
+/// 故事板（启用时）层序与 osu! 一致：underlay（Background/Pass/Foreground）压在
+/// 背景之上、物件层之下，只有 Overlay 层压在物件层之上、时间标签之下；全部层都
+/// 与背景同吃 `BACKGROUND_DIM` 暗度（亮度预乘进精灵颜色）。`chart_ms` 是谱面
+/// 绝对毫秒，`current_ms` 是进度标签用的显示时间。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn compose_frame(
     pf: Img,
     current_ms: i64,
+    chart_ms: i64,
     total_ms: i64,
     out_w: u32,
     out_h: u32,
     background: Option<&Img>,
     style: VideoStyle,
+    storyboard: Option<&MediaStoryboard>,
 ) -> Img {
     let mut canvas = background
         .cloned()
         .unwrap_or_else(|| Img::new(out_w, out_h, style.black_opaque));
+    // 与背景图同一亮度：背景已按 (1 - BACKGROUND_DIM) 预暗化，故事板同倍率
+    // 乘进精灵颜色后，与「整层压暗」的合成结果逐像素一致。
+    let brightness = (1.0 - style.background_dim.clamp(0.0, 1.0)) as f32;
+    if let Some(storyboard) = storyboard {
+        storyboard.draw(&mut canvas, chart_ms, true, brightness);
+    }
     let ox = ((out_w - pf.w) / 2) as i64;
     let oy = ((out_h - pf.h) / 2) as i64;
     canvas.alpha_composite(&pf, ox, oy);
+    if let Some(storyboard) = storyboard {
+        storyboard.draw(&mut canvas, chart_ms, false, brightness);
+    }
 
     let label = format_progress_label(current_ms, total_ms);
     let (lw, _) = text_size(&label, style.label_font_size);

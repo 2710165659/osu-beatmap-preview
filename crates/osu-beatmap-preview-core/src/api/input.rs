@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::gameplay::GameplayOptions;
 use crate::hitsound::SAMPLE_RATE;
+use crate::storyboard::Storyboard;
 use crate::{config, Beatmap};
 
 /// 会话创建时可以提供的谱面与背景资源。
@@ -14,6 +15,8 @@ use crate::{config, Beatmap};
 pub struct ResourceBundle {
     pub beatmap: Option<Beatmap>,
     pub background: Option<ImageData>,
+    /// 故事板（解析结果 + 贴图）；是否绘制由 [`RealtimeOptions::storyboard_enabled`] 控制。
+    pub storyboard: Option<StoryboardBundle>,
 }
 
 impl ResourceBundle {
@@ -23,6 +26,17 @@ impl ResourceBundle {
             ..Self::default()
         }
     }
+}
+
+/// 宿主提供的故事板资源：解析结果与贴图。
+///
+/// 解析由 [`crate::storyboard::parse_storyboard`] 完成（.osu 的 `[Events]` 与
+/// `.osb` 合并），贴图由宿主解码为 RGBA 后按归一化路径放入。
+#[derive(Debug, Clone)]
+pub struct StoryboardBundle {
+    pub storyboard: Storyboard,
+    /// 贴图：归一化路径 → RGBA 图像。
+    pub textures: Vec<(String, ImageData)>,
 }
 
 /// 宿主提供的 RGBA 背景图像。
@@ -98,6 +112,9 @@ pub struct RealtimeOptions {
     /// 判定引擎与画面叠加的实现在后续阶段接入，接口见
     /// [`crate::gameplay`](crate::gameplay) 与 `docs/architecture.md` 的「后续功能接口」。
     pub gameplay: GameplayOptions,
+    /// 是否绘制故事板；默认关闭（storyboard 素材与合成开销不小，且不是所有
+    /// 谱面都有故事板）。
+    pub storyboard_enabled: bool,
 }
 
 impl Default for RealtimeOptions {
@@ -110,6 +127,7 @@ impl Default for RealtimeOptions {
             core_config: Arc::new(config::CoreConfig::default()),
             audio: AudioConfig::default(),
             gameplay: GameplayOptions::default(),
+            storyboard_enabled: false,
         }
     }
 }

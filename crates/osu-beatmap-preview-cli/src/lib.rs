@@ -67,6 +67,7 @@ impl ResourceLoader {
         Ok(ResourceBundle {
             beatmap: Some(beatmap),
             background,
+            storyboard: None,
         })
     }
 }

@@ -145,6 +145,18 @@ export const state = reactive({
   videoAvailable: false,
   /** 背景视频不可用的原因（开关旁的说明文字）；可用时为空。 */
   videoStatus: '',
+  /**
+   * 是否渲染故事板（`.osb` / `[Events]` 的 Sprite/Animation）。
+   *
+   * 默认关闭：故事板贴图解码与逐帧合成有实打实的开销，且不少谱面根本没有
+   * 故事板。解析与绘制都在 WASM/会话内（与 CLI 导出同一套语义），前端只负责
+   * 开关；用户在「画面」里打开后沿用到下一个谱面。
+   */
+  storyboard: false,
+  /** 当前谱面是否有可绘制的故事板元素；控制开关是否可点。 */
+  storyboardAvailable: false,
+  /** 故事板不可用的原因（开关旁的说明文字）；可用时为空。 */
+  storyboardStatus: '',
   /** 实时渲染帧率（最近 1 秒成功出帧数）；由 `render()` 滑动窗口统计。 */
   renderFps: 0,
   /** 是否显示帧率角标（画面右上角）。 */
@@ -729,6 +741,7 @@ function teardownSession() {
   // 列表随会话一起失效：下一次加载会按新模式的矩阵重新取。
   state.modOptions = [];
   state.videoAvailable = false;
+  state.storyboardAvailable = false;
   fpsSamples = [];
   state.renderFps = 0;
   skippedFrames = 0;
@@ -1014,6 +1027,7 @@ export async function loadPreview() {
       hitsoundVolume: state.hitsoundVolume,
       musicVolume: Math.round(state.volume * 100),
       beatmapHitsound: state.hitsoundBeatmap,
+      storyboard: state.storyboard,
     });
     if (token !== loadToken) {
       await audioContext?.close().catch(() => {});
@@ -1047,6 +1061,13 @@ export async function loadPreview() {
           : `包内缺失背景视频文件（${videoName}），可本地上传完整 .osz`;
     state.backgroundVideo = state.videoAvailable && state.backgroundVideo;
     session.setBackgroundVideo?.(state.backgroundVideo);
+    // 故事板默认关闭，用户上次打开过就沿用（与背景视频一致）；可用性看会话里
+    // 是否真的解析出了可绘制元素（无命令的精灵不算）。
+    const hasStoryboard = Boolean(session.hasStoryboard?.());
+    state.storyboardAvailable = hasStoryboard;
+    state.storyboardStatus = hasStoryboard ? '' : '当前谱面没有故事板';
+    state.storyboard = hasStoryboard && state.storyboard;
+    session.setStoryboard?.(state.storyboard);
     state.status = hasMusic() ? '就绪' : '无音乐（.osu 单文件）';
 
     // 6. 接上音频输出；不可用就退化成只有画面。
@@ -1371,6 +1392,25 @@ export function setBackgroundVideo(value) {
   // <video> 的加载与 seek 是异步的：暂停状态下没有渲染循环兜底，
   // 延后补一帧，画面才能立刻跟上开关。
   window.setTimeout(render, 300);
+}
+
+/**
+ * 开关故事板（默认关闭）。
+ *
+ * 解析与合成都在 WASM/会话内（`setStoryboard`），前端只切开关：开启后
+ * `.osb` / `[Events]` 的故事板层画在背景之上、物件之下，前景层压在物件之上，
+ * 层序与 CLI 导出一致。
+ */
+export function setStoryboard(value) {
+  const enabled = Boolean(value) && state.storyboardAvailable;
+  state.storyboard = enabled;
+  try {
+    session?.setStoryboard?.(enabled);
+  } catch (error) {
+    state.storyboard = false;
+    logPlay(`故事板切换失败：${errorText(error)}`);
+  }
+  render();
 }
 
 /** 切换是否启用打击音；关闭时音乐照常输出。 */

@@ -10,9 +10,11 @@ pub(crate) mod image;
 mod mux;
 #[cfg(windows)]
 mod nvenc;
+pub(crate) mod storyboard;
 mod video;
 
 pub(crate) use background_video::MediaBackground;
+pub(crate) use storyboard::MediaStoryboard;
 pub(crate) use video::{
     frame_time_ms, resolve_video_time_range, save_mp4_streamed, video_style, FrameComposition,
 };

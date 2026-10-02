@@ -4,6 +4,7 @@
 
 use crate::export::canvas::Img;
 use crate::export::scene::{DrawCommand, FrameScene, SceneRect};
+use osu_beatmap_preview_core::storyboard::{draw_transformed_sprite, SpriteTransform};
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 
 pub(crate) trait FrameBackend {
@@ -68,6 +69,48 @@ impl FrameBackend for CpuRasterizer {
                 // 外部纹理槽位（浏览器视频帧 GPU 直拷）只存在于 GPU 渲染器；
                 // CPU 参考光栅器没有对应像素，跳过即可（实时路径不经过这里）。
                 DrawCommand::ExternalSprite { .. } => {}
+                DrawCommand::TransformedSprite {
+                    resource,
+                    position,
+                    origin,
+                    size,
+                    rotation,
+                    color,
+                    additive,
+                } => {
+                    let source = scene.resources.get(resource).ok_or_else(|| {
+                        PreviewError::render(format!(
+                            "frame scene resource {} is missing",
+                            resource.0
+                        ))
+                    })?;
+                    // 与 GPU 光栅器同一套几何语义：直接复用 core 的故事板光栅。
+                    let clip = *clips.last().expect("裁剪栈始终非空");
+                    let sprite = SpriteTransform {
+                        position: *position,
+                        size: *size,
+                        origin: *origin,
+                        rotation: *rotation,
+                        colour: [
+                            f32::from(color[0]) / 255.0,
+                            f32::from(color[1]) / 255.0,
+                            f32::from(color[2]) / 255.0,
+                        ],
+                        alpha: f32::from(color[3]) / 255.0,
+                        additive: *additive,
+                    };
+                    draw_transformed_sprite(
+                        &mut target,
+                        source,
+                        &sprite,
+                        [
+                            clip.x,
+                            clip.y,
+                            clip.x + clip.width,
+                            clip.y + clip.height,
+                        ],
+                    );
+                }
                 DrawCommand::Rectangle { rect, color } => {
                     let rect = intersection(*clips.last().expect("裁剪栈始终非空"), *rect);
                     target.fill_rect_size(
@@ -285,6 +328,7 @@ mod tests {
                         1280,
                         720,
                         Some(&background),
+                        None,
                         None,
                         VideoStyle::default(),
                     )

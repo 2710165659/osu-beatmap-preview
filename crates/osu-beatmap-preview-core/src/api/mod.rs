@@ -12,7 +12,9 @@ pub mod session;
 pub mod stream;
 
 pub use clock::PreviewClock;
-pub use input::{AudioConfig, ImageData, RealtimeOptions, RenderConfig, ResourceBundle};
+pub use input::{
+    AudioConfig, ImageData, RealtimeOptions, RenderConfig, ResourceBundle, StoryboardBundle,
+};
 pub use output::{RealtimeMode, TimelineInfo};
 pub use session::RealtimeSession;
 pub use stream::AudioStream;

@@ -259,7 +259,7 @@ fn canvas_sized_layer_composites_at_origin_and_keeps_label_in_corner() {
     // 物件层左上角画一像素：如果合成时又居中一次，它会跑到 (77, 0)。
     layer.put(0, 0, [10, 20, 30, 255]);
 
-    let composed = compose_frame(layer, 0, 60_000, width, height, None, style);
+    let composed = compose_frame(layer, 0, 0, 60_000, width, height, None, style, None);
 
     assert_eq!(composed.get(0, 0), [10, 20, 30, 255]);
     let label = format_progress_label(0, 60_000);
@@ -373,4 +373,62 @@ fn encode_stream_worker_consumes_frames_in_order_and_returns_encoder() {
         "收尾后文件应包含 MP4 头与样本数据，实际 {written} 字节"
     );
     let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// 故事板层序与暗度：underlay（Background/Pass/Foreground）压在背景与物件层之间，
+/// 只有 Overlay 层压在物件层之上；所有层都与背景同吃 `BACKGROUND_DIM` 暗度。
+#[test]
+fn compose_frame_places_storyboard_around_the_playfield_with_dim() {
+    use crate::media::storyboard::MediaStoryboard;
+    use osu_beatmap_preview_core::storyboard::{parse_storyboard, Textures};
+
+    let style = video_style(crate::export::geometry::GameMode::Standard);
+    let (width, height) = (640u32, 480u32);
+    // 物件层整块半透明黑：underlay 应被它压暗，Overlay 应压在它上面。
+    let layer = Img::new(width, height, [0, 0, 0, 128]);
+    let mut textures = Textures::new();
+    textures.insert(
+        "behind.png".to_string(),
+        Arc::new(Img::new(8, 8, [255, 0, 0, 255])),
+    );
+    textures.insert(
+        "front.png".to_string(),
+        Arc::new(Img::new(8, 8, [0, 255, 0, 255])),
+    );
+    let storyboard = MediaStoryboard {
+        storyboard: parse_storyboard(
+            "[Events]\n\
+             Sprite,Foreground,Centre,\"behind.png\",100,240\n\
+             _F,0,0,,1\n\
+             Sprite,Overlay,Centre,\"front.png\",500,240\n\
+             _F,0,0,,1",
+            None,
+        ),
+        textures,
+    };
+
+    let composed = compose_frame(
+        layer,
+        0,
+        0,
+        60_000,
+        width,
+        height,
+        None,
+        style,
+        Some(&storyboard),
+    );
+
+    // Foreground 属于 underlay：被半透明物件层压暗，且本身已按亮度 0.3 预暗化。
+    let behind = composed.get(100, 240);
+    assert!(
+        (25..=50).contains(&behind[0]) && behind[1] == 0,
+        "underlay 应吃暗度并被物件层压暗，实际 {behind:?}"
+    );
+    // Overlay 层压在物件层之上，同样吃暗度（255×0.3≈77）。
+    assert_eq!(
+        composed.get(500, 240),
+        [0, 77, 0, 255],
+        "Overlay 层压在物件层之上并吃暗度"
+    );
 }

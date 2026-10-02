@@ -1,7 +1,9 @@
 //! 将 playfield、背景和 HUD 组合为固定 WGPU 画布上的有序场景。
 //!
 //! 层序与 osu! 一致：静态背景图在最底，背景视频叠在其上（`background_video`
-//! 的 alpha 是淡入淡出可见度），playfield 与 HUD 在最上。
+//! 的 alpha 是淡入淡出可见度），故事板的 underlay（Background/Pass/Foreground）
+//! 在视频之后、playfield 之下，playfield 与 HUD 在其上，故事板的 Overlay 层压在
+//! playfield 之上（时间标签之前）。
 
 use std::sync::Arc;
 
@@ -11,6 +13,8 @@ use crate::domain::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::scene::{FrameScene, FrameSceneBuilder, SceneRect};
 use crate::render::text::{draw_text, text_size};
+use crate::storyboard::draw::{append_scene_sprites, StoryboardViewport};
+use crate::storyboard::{Storyboard, Textures};
 
 const LABEL_REFERENCE_WIDTH: f64 = 1280.0;
 const LABEL_REFERENCE_HEIGHT: f64 = 720.0;
@@ -42,6 +46,16 @@ pub enum VideoSource<'a> {
     External { slot: u32, alpha: f32 },
 }
 
+/// 故事板合成输入：已解析故事板、贴图、求值时刻（谱面毫秒，与 `current_ms`
+/// 同坐标系）与用户暗度亮度（1 − dim，预乘进精灵颜色）。
+pub struct StoryboardLayers<'a> {
+    pub storyboard: &'a Storyboard,
+    pub textures: &'a Textures,
+    pub chart_ms: f64,
+    /// 用户暗度的亮度（`BACKGROUND_DIM=0.7` 时为 0.3）；1.0 表示不变暗。
+    pub brightness: f32,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn compose_video_scene(
     playfield: FrameScene,
@@ -51,6 +65,7 @@ pub fn compose_video_scene(
     height: u32,
     background: Option<&Arc<Img>>,
     background_video: Option<VideoSource<'_>>,
+    storyboard: Option<StoryboardLayers<'_>>,
     style: VideoStyle,
 ) -> crate::domain::errors::Result<FrameScene> {
     let (scale, offset) = fit_playfield(playfield.width(), playfield.height(), width, height)?;
@@ -93,7 +108,35 @@ pub fn compose_video_scene(
         }
         _ => {}
     }
-    builder.append_scaled(&playfield, offset, scale);
+    // 故事板层序与 osu! 一致：Background/Pass/Foreground（underlay）压在背景之上、
+    // playfield 之下；只有 Overlay 层压在 playfield 之上、时间标签之下。全部层都
+    // 吃用户暗度（亮度预乘进精灵颜色，见 `StoryboardLayers::brightness`）。
+    match storyboard.as_ref() {
+        Some(layers) => {
+            let view = StoryboardViewport::new(
+                width as f32,
+                height as f32,
+                layers.storyboard.widescreen,
+            );
+            let (behind, front) = layers.storyboard.sprites_at(layers.chart_ms);
+            append_scene_sprites(
+                &mut builder,
+                &behind,
+                layers.textures,
+                &view,
+                layers.brightness,
+            );
+            builder.append_scaled(&playfield, offset, scale);
+            append_scene_sprites(
+                &mut builder,
+                &front,
+                layers.textures,
+                &view,
+                layers.brightness,
+            );
+        }
+        None => builder.append_scaled(&playfield, offset, scale),
+    }
 
     let label = format!(
         "{}/{}",
@@ -207,6 +250,7 @@ mod tests {
                 height,
                 None,
                 None,
+                None,
                 VideoStyle::default(),
             )
             .unwrap();
@@ -259,6 +303,7 @@ mod tests {
             720,
             Some(&background),
             Some(VideoSource::Pixels(&video_frame, 0.5)),
+            None,
             VideoStyle::default(),
         )
         .unwrap();
@@ -289,6 +334,7 @@ mod tests {
             720,
             None,
             Some(VideoSource::External { slot: 7, alpha: 0.25 }),
+            None,
             VideoStyle::default(),
         )
         .unwrap();
@@ -297,5 +343,59 @@ mod tests {
         };
         assert_eq!(*slot, 7);
         assert_eq!(*alpha, 0.25);
+    }
+
+    /// 故事板层序：underlay（Background/Pass/Foreground）在 playfield 之下，
+    /// 只有 Overlay 在其上。
+    #[test]
+    fn storyboard_layers_straddle_the_playfield() {
+        use super::StoryboardLayers;
+        use crate::storyboard::{parse_storyboard, Textures};
+        use std::sync::Arc;
+
+        let playfield = FrameScene::clear(
+            SceneSize {
+                width: 530,
+                height: 384,
+            },
+            0,
+            [0, 0, 0, 255],
+        );
+        let storyboard = parse_storyboard(
+            "[Events]\n\
+             Sprite,Foreground,Centre,\"behind.png\",320,240\n\
+             _F,0,0,,1\n\
+             Sprite,Overlay,Centre,\"front.png\",320,240\n\
+             _F,0,0,,1",
+            None,
+        );
+        let texture = Arc::new(crate::render::canvas::Img::new(2, 2, [255, 255, 255, 255]));
+        let mut textures = Textures::new();
+        textures.insert("behind.png".to_string(), Arc::clone(&texture));
+        textures.insert("front.png".to_string(), texture);
+        let layers = StoryboardLayers {
+            storyboard: &storyboard,
+            textures: &textures,
+            chart_ms: 0.0,
+            brightness: 1.0,
+        };
+        let scene = compose_video_scene(
+            playfield,
+            0,
+            60_000,
+            1280,
+            720,
+            None,
+            None,
+            Some(layers),
+            VideoStyle::default(),
+        )
+        .unwrap();
+        // 命令顺序：兜底底色 → 背景层故事板 → playfield → 前景层故事板 → 时间标签。
+        let is_transformed =
+            |command: &DrawCommand| matches!(command, DrawCommand::TransformedSprite { .. });
+        assert!(is_transformed(&scene.commands[1]), "第二条必须是背景层故事板");
+        assert!(!is_transformed(&scene.commands[2]), "第三条是 playfield 矩形");
+        assert!(is_transformed(&scene.commands[3]), "第四条必须是前景层故事板");
     }
 }

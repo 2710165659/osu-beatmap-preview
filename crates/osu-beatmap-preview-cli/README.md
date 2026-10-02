@@ -169,6 +169,8 @@ Taiko、Catch 和 Mania 可用 `--time-points` 与 `--duration-time` 只渲染�
 
 谱面带背景视频（`[Events]` 的 `Video,<offset>,"file"` 事件）时可打开 `ENABLE_BACKGROUND_VIDEO`（四模式的 `mp4` 小节各一份，**默认关闭**）把视频合成进背景：视频时间 = 谱面时间 − 事件偏移，叠在背景图之上并共用同一个 `BACKGROUND_DIM` 暗化，开始处 500ms 淡入、结束前 500ms 淡出（与 osu! 的 `DrawableStoryboardVideo` 一致）。视频缺失、不是 H.264 mp4 或解码失败时自动回退背景图，不影响导出。
 
+谱面带故事板（`.osb` 或 `[Events]` 里的 `Sprite`/`Animation`）时可打开 `ENABLE_STORYBOARD`（四模式的 `mp4` 小节各一份，**默认关闭**）把故事板合成进视频，层序与 osu! 一致：Background/Pass/Foreground（underlay）画在背景之上、游玩物件之下，**只有 Overlay 层**压在游玩物件之上（时间标签之下）；`Fail` 层只在失败时可见，预览是自动游玩、恒为通过状态，因此不绘制。故事板与背景同吃 `BACKGROUND_DIM` 暗度（亮度预乘进精灵颜色，等价 lazer 的 `UserDimContainer` 暗化）。640×480 的故事板坐标按高度等比缩放并居中映射到画布，宽屏标记（`WidescreenStoryboard: 1`）会放宽层遮罩的水平范围。支持 `F`/`M`/`MX`/`MY`/`S`/`V`/`R`/`C`/`P`（含加色混合与翻转）命令、`L` 循环组与 `Animation` 帧动画（时间求值对齐 osu! 的 Transform 语义，含 `alpha > 1` 取模闪烁等怪癖）；元素**只在其命令时间跨度内存在**（osu! 的生命周期语义）：命令未开始的精灵不靠初值提前出现（`alpha` 先 0 后亮的元素等到第一条可见 `F` 命令才登场），命令结束后也不残留，因此不会出现转场黑幕盖满全片之类的错位。`T` 触发组与 `Sample` 事件只解析不生效（触发依赖运行时游玩状态）。贴图缺失或解码失败按缺图静默跳过；背景层存在与谱面背景同名的元素时按 osu! 的 `ReplacesBackground` 由故事板接管背景（仅在故事板实际绘制时生效，关闭开关后背景照常显示）。
+
 MP4 默认还会把打击音（hit sound）混入音轨，音量 100%：
 
 - Standard / Catch / Mania 使用 argon pro (2022) 音效，Taiko 使用 osu! "classic" (2013) 音效；
@@ -244,7 +246,7 @@ osu-beatmap-preview-cli --bid=738063 --config='{"render":{"standard":{"gif":{"st
 osu-beatmap-preview-cli --bid=738063 --config='{render: {standard: {gif: {structure: {ROW_COUNT: 1}}}}}'
 ```
 
-以下示例关闭 Standard MP4 背景图、调整暗化程度、为 Standard 打开背景视频、让 Taiko 只用内嵌皮肤（忽略谱面自带音效）并关闭 Mania 打击音，同时分别设置三种格式的整次请求超时：
+以下示例关闭 Standard MP4 背景图、调整暗化程度、为 Standard 打开背景视频与故事板、让 Taiko 只用内嵌皮肤（忽略谱面自带音效）并关闭 Mania 打击音，同时分别设置三种格式的整次请求超时：
 
 ```yaml
 render:
@@ -253,6 +255,7 @@ render:
       style:
         ENABLE_BACKGROUND_IMAGE: false
         ENABLE_BACKGROUND_VIDEO: true
+        ENABLE_STORYBOARD: true
         BACKGROUND_DIM: 0.5
         ENABLE_HITSOUND: true
         ENABLE_BEATMAP_HITSOUND: true

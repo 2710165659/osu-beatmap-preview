@@ -34,6 +34,12 @@ const MAX_SAMPLE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_SAMPLE_ENTRIES: usize = 64;
 /// 自带音效的合计字节上限。
 const MAX_SAMPLE_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
+/// `.osb`（故事板脚本）的最大字节数。
+const MAX_OSB_BYTES: u64 = 16 * 1024 * 1024;
+/// 单张故事板贴图的最大字节数。
+const MAX_STORYBOARD_TEXTURE_BYTES: u64 = 64 * 1024 * 1024;
+/// 故事板贴图的条目数上限。
+const MAX_STORYBOARD_TEXTURES: usize = 512;
 
 /// 难度选择方式。
 #[derive(Debug, Clone, Default)]
@@ -73,6 +79,8 @@ pub struct ArchiveContent {
     pub background: Option<Vec<u8>>,
     /// 背景视频字节（可选；供宿主交给浏览器 `<video>` 解码播放）。
     pub video: Option<Vec<u8>>,
+    /// 故事板 `.osb` 字节（可选；与 `.osu` 的 `[Events]` 一起解析）。
+    pub osb: Option<Vec<u8>>,
     /// 自带打击音条目（条目名 + 字节），供样本库按候选名匹配。
     pub samples: Vec<(String, Vec<u8>)>,
 }
@@ -90,6 +98,57 @@ pub fn read_input(
         read_archive(bytes, selector, want_media)
     } else {
         read_plain_osu(bytes)
+    }
+}
+
+/// 按归一化路径批量读取故事板贴图字节。
+///
+/// 条目名匹配**大小写不敏感**（osu! 的文件名查找规则）；无扩展名的引用路径按
+/// osu! 的 `.jpg → .jpeg → .png` 顺序尝试。缺失、超限或损坏的条目直接跳过
+/// （故事板缺图静默降级，与 osu! 一致）；返回 (故事板引用路径, 字节)。
+pub fn read_storyboard_textures(
+    bytes: &[u8],
+    paths: &[String],
+) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(bytes)).map_err(|error| format!(".osz 打开失败：{error}"))?;
+    // 一次扫描建立「归一化小写名 → 条目下标」索引。
+    let mut names = std::collections::HashMap::new();
+    for index in 0..archive.len() {
+        let Ok(entry) = archive.by_index(index) else {
+            continue;
+        };
+        if entry.is_dir() {
+            continue;
+        }
+        if let Some(name) = normalize_entry_path(entry.name()) {
+            names.insert(name.to_lowercase(), index);
+        }
+    }
+    let mut textures = Vec::new();
+    for path in paths.iter().take(MAX_STORYBOARD_TEXTURES) {
+        for candidate in texture_candidates(path) {
+            let Some(index) = names.get(&candidate.to_lowercase()).copied() else {
+                continue;
+            };
+            if let Ok(raw) = read_entry(&mut archive, index, MAX_STORYBOARD_TEXTURE_BYTES) {
+                textures.push((path.clone(), raw));
+                break;
+            }
+        }
+    }
+    Ok(textures)
+}
+
+/// 按 osu! 的路径解析规则生成候选条目名：无扩展名时依次尝试 .jpg/.jpeg/.png。
+fn texture_candidates(path: &str) -> Vec<String> {
+    if path.contains('.') {
+        vec![path.to_string()]
+    } else {
+        ["jpg", "jpeg", "png"]
+            .into_iter()
+            .map(|ext| format!("{path}.{ext}"))
+            .collect()
     }
 }
 
@@ -204,6 +263,19 @@ fn read_archive(
         if let Some(index) = find_entry(&mut archive, &video.name) {
             content.video = read_entry(&mut archive, index, MAX_VIDEO_BYTES).ok();
         }
+    }
+
+    // 故事板 .osb 可选：取第一个扩展名为 osb 的条目（通常在包根，无固定命名）。
+    let osb_index = (0..archive.len()).find(|&index| {
+        archive
+            .by_index(index)
+            .ok()
+            .filter(|entry| !entry.is_dir())
+            .and_then(|entry| normalize_entry_path(entry.name()))
+            .is_some_and(|name| name.rsplit('.').next().is_some_and(|ext| ext.eq_ignore_ascii_case("osb")))
+    });
+    if let Some(index) = osb_index {
+        content.osb = read_entry(&mut archive, index, MAX_OSB_BYTES).ok();
     }
 
     // 自带音效：按候选名匹配同名条目（`sample_entry_matches`），限额防炸包；

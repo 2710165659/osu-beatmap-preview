@@ -38,19 +38,18 @@ impl GpuVertex {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct ResourceKey {
-    id: ResourceId,
     identity: usize,
 }
 
 impl ResourceKey {
-    /// 键的身份是「场景内编号 + 图像堆地址」。
+    /// 键的身份是「图像堆地址」，与场景内编号无关。
     ///
-    /// 地址只在图像本体存活期间唯一，所以缓存条目必须一并持有图像（见
-    /// `CachedTexture`）：只有同一块地址不可能被别的图像复用时，跨帧的键命中
-    /// 才等价于「同一张图」。
-    fn new(id: ResourceId, image: &Arc<Img>) -> Self {
+    /// 编号每帧都会重排（可见精灵集合一变，后续资源的编号整体平移），把编号
+    /// 放进键会让缓存逐帧失效、把多兆字节的故事板贴图反复重传（实测帧率崩到
+    /// 个位数）；而地址只在图像本体存活期间唯一，缓存条目又必须持有图像
+    /// （见 `CachedTexture`），所以只用地址即可保证「键相同 = 同一张图」。
+    fn new(_id: ResourceId, image: &Arc<Img>) -> Self {
         Self {
-            id,
             identity: Arc::as_ptr(image) as usize,
         }
     }
@@ -58,16 +57,22 @@ impl ResourceKey {
 
 /// 已上传的场景纹理。
 ///
-/// `image` 不是冗余字段，而是键成立的前提：编号在帧之间会重复（早期帧没有谱面
-/// 背景时时间标签就是 0 号资源，背景到达后同样是 0 号），如果这里不持有图像本体，
-/// 上一帧释放掉的临时图会把堆地址让给新图，键相同就会命中旧纹理。曾经的表现是
-/// 谱面背景被画成上一帧的时间标签（拉伸整屏、模糊），并且一直错到光栅器重建
-/// （切分辨率）为止。
+/// `image` 不是冗余字段，而是键成立的前提：只有缓存条目持有图像本体，堆地址才
+/// 不会被别的图像复用，键命中才等价于「同一张图」。曾经的表现是谱面背景被画成
+/// 上一帧的时间标签（拉伸整屏、模糊），并且一直错到光栅器重建（切分辨率）为止。
 struct CachedTexture {
     _texture: wgpu::Texture,
     bind_group: wgpu::BindGroup,
     image: Arc<Img>,
+    /// 最近一次被场景引用的帧序号；配合 [`TEXTURE_EVICTION_GRACE_FRAMES`] 做延迟驱逐。
+    last_used: u64,
 }
+
+/// 纹理驱逐宽限窗口（帧）：暂时不可见的贴图（淡入淡出过零点、动画换帧）再
+/// 短暂驻留，重新出现时直接命中缓存而不是重新上传——故事板的贴图动辄数兆
+/// 字节，逐次重传会把帧率打穿。宽限窗口也给常驻内存划了界：只有最近
+/// 半秒左右出现过的贴图才会驻留。
+const TEXTURE_EVICTION_GRACE_FRAMES: u64 = 32;
 
 /// 外部纹理槽位的纹理：内容由 `copy_external_image_to_texture` 从外部源
 /// （浏览器视频帧）直接拷入，逐帧视频像素不进 CPU 内存。
@@ -94,6 +99,9 @@ fn is_cache_hit(cached: Option<&Arc<Img>>, image: &Arc<Img>) -> bool {
 enum BatchKind {
     Solid,
     Sprite(ResourceKey),
+    /// 加色混合的贴图（故事板 `P,,A`）：与 [`BatchKind::Sprite`] 同几何语义，
+    /// 但用加法混合管线绘制。
+    SpriteAdditive(ResourceKey),
     Glyph(ResourceKey),
     /// 外部纹理槽位（浏览器视频帧 GPU 直拷），内容由 `external_texture` 填充。
     ExternalSprite(u32),
@@ -136,6 +144,7 @@ pub(crate) struct SceneRasterizer {
     sampler: wgpu::Sampler,
     solid_pipeline: wgpu::RenderPipeline,
     sprite_pipeline: wgpu::RenderPipeline,
+    sprite_additive_pipeline: wgpu::RenderPipeline,
     glyph_pipeline: wgpu::RenderPipeline,
     slider_coverage_pipeline: wgpu::RenderPipeline,
     slider_color_pipeline: wgpu::RenderPipeline,
@@ -145,6 +154,8 @@ pub(crate) struct SceneRasterizer {
     depth_stencil_view: wgpu::TextureView,
     textures: HashMap<ResourceKey, CachedTexture>,
     external_textures: HashMap<u32, CachedExternalTexture>,
+    /// 已处理的场景帧数：给纹理驱逐的宽限窗口计时。
+    frames_seen: u64,
 }
 
 impl SceneRasterizer {
@@ -242,6 +253,7 @@ impl SceneRasterizer {
             "solid_fragment",
             sample_count,
             StencilMode::Keep,
+            false,
             "osu-beatmap-preview solid pipeline",
         );
         let sprite_pipeline = create_scene_pipeline(
@@ -251,7 +263,18 @@ impl SceneRasterizer {
             "sprite_fragment",
             sample_count,
             StencilMode::Keep,
+            false,
             "osu-beatmap-preview sprite pipeline",
+        );
+        let sprite_additive_pipeline = create_scene_pipeline(
+            device,
+            &shader,
+            &scene_layout,
+            "sprite_fragment",
+            sample_count,
+            StencilMode::Keep,
+            true,
+            "osu-beatmap-preview additive sprite pipeline",
         );
         let glyph_pipeline = create_scene_pipeline(
             device,
@@ -260,6 +283,7 @@ impl SceneRasterizer {
             "glyph_fragment",
             sample_count,
             StencilMode::Keep,
+            false,
             "osu-beatmap-preview glyph pipeline",
         );
         let slider_coverage_pipeline = create_scene_pipeline(
@@ -269,6 +293,7 @@ impl SceneRasterizer {
             "solid_fragment",
             sample_count,
             StencilMode::Coverage,
+            false,
             "osu-beatmap-preview slider coverage pipeline",
         );
         let slider_color_pipeline = create_scene_pipeline(
@@ -278,6 +303,7 @@ impl SceneRasterizer {
             "solid_fragment",
             sample_count,
             StencilMode::Color,
+            false,
             "osu-beatmap-preview slider color pipeline",
         );
         let resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -306,6 +332,7 @@ impl SceneRasterizer {
             sampler,
             solid_pipeline,
             sprite_pipeline,
+            sprite_additive_pipeline,
             glyph_pipeline,
             slider_coverage_pipeline,
             slider_color_pipeline,
@@ -315,6 +342,7 @@ impl SceneRasterizer {
             depth_stencil_view,
             textures: HashMap::new(),
             external_textures: HashMap::new(),
+            frames_seen: 0,
         }
     }
 
@@ -458,6 +486,18 @@ impl SceneRasterizer {
                                 &[],
                             );
                         }
+                        BatchKind::SpriteAdditive(key) => {
+                            pass.set_pipeline(&self.sprite_additive_pipeline);
+                            pass.set_bind_group(
+                                0,
+                                &self
+                                    .textures
+                                    .get(&key)
+                                    .expect("场景纹理已在编码前上传")
+                                    .bind_group,
+                                &[],
+                            );
+                        }
                         BatchKind::ExternalSprite(slot) => {
                             // 外部纹理会随渲染器重建（切分辨率）一起被清掉：
                             // 缺槽位时跳过本批而不是 panic，下一帧拷贝会重建。
@@ -514,18 +554,30 @@ impl SceneRasterizer {
         Ok(())
     }
 
+    /// 上传场景引用的纹理并驱逐不再引用的条目；返回本次真正上传的张数。
+    ///
+    /// 跨帧命中条件是「同一图像实例」（[`ResourceKey`]）：同一 `Arc<Img>` 在
+    /// 帧间复用同一张 GPU 纹理，只有换图才重新上传。暂时不可见的贴图延后
+    /// [`TEXTURE_EVICTION_GRACE_FRAMES`] 帧再驱逐，淡入淡出与动画换帧不会
+    /// 反复重传。
     fn prepare_textures(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         scene: &FrameScene,
-    ) -> Result<()> {
+    ) -> Result<usize> {
+        self.frames_seen += 1;
+        let frames_seen = self.frames_seen;
         let live = scene
             .resources
             .iter()
             .map(|(&id, image)| ResourceKey::new(id, image))
             .collect::<HashSet<_>>();
-        self.textures.retain(|key, _| live.contains(key));
+        self.textures.retain(|key, cached| {
+            live.contains(key)
+                || cached.last_used + TEXTURE_EVICTION_GRACE_FRAMES >= frames_seen
+        });
+        let mut uploads = 0;
         for (&id, image) in scene.resources.iter() {
             if image.w == 0
                 || image.h == 0
@@ -538,8 +590,12 @@ impl SceneRasterizer {
             }
             let key = ResourceKey::new(id, image);
             if is_cache_hit(self.textures.get(&key).map(|cached| &cached.image), image) {
+                if let Some(cached) = self.textures.get_mut(&key) {
+                    cached.last_used = frames_seen;
+                }
                 continue;
             }
+            uploads += 1;
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("osu-beatmap-preview scene resource"),
                 size: wgpu::Extent3d {
@@ -587,10 +643,11 @@ impl SceneRasterizer {
                     _texture: texture,
                     bind_group,
                     image: Arc::clone(image),
+                    last_used: frames_seen,
                 },
             );
         }
-        Ok(())
+        Ok(uploads)
     }
 }
 
@@ -625,6 +682,7 @@ fn create_scene_pipeline(
     fragment_entry: &str,
     sample_count: u32,
     stencil_mode: StencilMode,
+    additive: bool,
     label: &str,
 ) -> wgpu::RenderPipeline {
     let (compare, pass_op, write_mask, color_write_mask) = match stencil_mode {
@@ -685,17 +743,34 @@ fn create_scene_pipeline(
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format: TARGET_FORMAT,
-                blend: Some(wgpu::BlendState {
-                    color: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::One,
-                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        operation: wgpu::BlendOperation::Add,
-                    },
-                    alpha: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::One,
-                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        operation: wgpu::BlendOperation::Add,
-                    },
+                // 常规混合是预乘 alpha 的 src-over；加色混合（故事板 `P,,A`，
+                // osu! 的 (SrcAlpha, One)）对预乘源就是 dst += src。
+                blend: Some(if additive {
+                    wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::One,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::One,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }
+                } else {
+                    wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }
                 }),
                 write_mask: color_write_mask,
             })],
@@ -812,6 +887,53 @@ fn build_batches(
                     offset,
                     target_width,
                     target_height,
+                );
+            }
+            DrawCommand::TransformedSprite {
+                resource,
+                position: sprite_position,
+                origin,
+                size,
+                rotation,
+                color,
+                additive,
+            } => {
+                let image = scene.resources.get(resource).ok_or_else(|| {
+                    PreviewError::render(format!("frame scene resource {} is missing", resource.0))
+                })?;
+                if color[3] == 0 || size[0] == 0.0 || size[1] == 0.0 {
+                    continue;
+                }
+                let (sin, cos) = rotation.sin_cos();
+                // 四角 = 锚点 + 旋转(尺寸 × (uv - 原点))，uv 顺序与 quad 一致。
+                let corners = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(u, v)| {
+                    let local = [(u - origin[0]) * size[0], (v - origin[1]) * size[1]];
+                    [
+                        sprite_position[0] + local[0] * cos - local[1] * sin,
+                        sprite_position[1] + local[0] * sin + local[1] * cos,
+                    ]
+                });
+                let positions =
+                    corners.map(|corner| position(corner, offset, target_width, target_height));
+                let kind = if *additive {
+                    BatchKind::SpriteAdditive(ResourceKey::new(*resource, image))
+                } else {
+                    BatchKind::Sprite(ResourceKey::new(*resource, image))
+                };
+                push_batch(
+                    &mut batches,
+                    kind,
+                    scissor(
+                        *clips.last().expect("裁剪栈始终非空"),
+                        offset,
+                        target_width,
+                        target_height,
+                    ),
+                    quad(
+                        positions,
+                        [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+                        color_f32(*color),
+                    ),
                 );
             }
             DrawCommand::ExternalSprite {
@@ -1497,9 +1619,9 @@ mod tests {
         assert_eq!(stencil_reference(batches[2].kind), 3);
     }
 
-    /// 资源键同时包含稳定编号和资源实例。
+    /// 资源键只认图像实例：换图换键，同一张图跨帧（编号可变）复用同一键。
     #[test]
-    fn resource_key_includes_stable_id_and_instance() {
+    fn resource_key_tracks_image_instance_only() {
         let first = Arc::new(Img::new(1, 1, [0, 0, 0, 0]));
         let second = Arc::new(Img::new(1, 1, [0, 0, 0, 0]));
         assert_ne!(
@@ -1509,6 +1631,12 @@ mod tests {
         assert_eq!(
             ResourceKey::new(ResourceId(1), &first),
             ResourceKey::new(ResourceId(1), &first)
+        );
+        // 同一张图换编号仍命中同一键：场景编号每帧重排（可见精灵集合一变就整体
+        // 平移），键若含编号会让故事板这类大贴图逐帧重传、帧率崩掉。
+        assert_eq!(
+            ResourceKey::new(ResourceId(1), &first),
+            ResourceKey::new(ResourceId(9), &first)
         );
     }
 

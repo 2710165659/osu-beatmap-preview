@@ -16,6 +16,7 @@ use crate::processing::conversion::{catch_convert, mania_convert, taiko_convert}
 use crate::processing::timeline::{preview_start_ms, TimeAxis, PREVIEW_END_PADDING_MS};
 use crate::render::scene::FrameScene;
 use crate::render::Img;
+use crate::storyboard::{Storyboard, Textures};
 use crate::support::error::{PreviewError, Result};
 
 /// 已完成解析、转换并准备好渲染资源的实时会话。
@@ -38,6 +39,11 @@ pub struct RealtimeSession {
     /// 可见度（osu! 的淡入淡出）在合成时按 `video_time_ms` 算，不随帧存储：
     /// 同一画面在淡入淡出窗口里无需重复上传像素。
     background_video: Option<(VideoLayer, i64, i64)>,
+    /// 故事板（解析结果 + 贴图）；贴图转成 `Arc<Img>` 后与背景一样在会话
+    /// 生命周期内保持同一 Arc，避免逐帧重传 GPU 纹理。
+    storyboard: Option<(Storyboard, Textures)>,
+    /// 故事板开关；默认关闭，宿主可随时切换。
+    storyboard_enabled: bool,
     /// 音乐 + 打击音混音器：与画面共用同一条谱面时间轴，会话生命周期内一直持有
     /// （打击音关闭时音乐仍要出声，开关不能用 `Option` 表达）。
     mixer: HitsoundMixer,
@@ -102,6 +108,17 @@ impl RealtimeSession {
             time_axis,
             &options.core_config,
         )?;
+        // 故事板贴图同样转成 Arc<Img>；单张贴图损坏按缺失处理（故事板缺图静默跳过）。
+        // 注意放在 `background_image` 绑定之前，避免遮蔽同名转换函数。
+        let storyboard = bundle.storyboard.take().map(|bundle| {
+            let mut textures = Textures::new();
+            for (path, image) in bundle.textures {
+                if let Ok(image) = background_image(&image) {
+                    textures.insert(path, image);
+                }
+            }
+            (bundle.storyboard, textures)
+        });
         let background_image = bundle
             .background
             .as_ref()
@@ -126,6 +143,7 @@ impl RealtimeSession {
         let mut stream = AudioStream::new(audio.sample_rate.max(1));
         stream.reset(timeline.absolute_start_ms as f64);
         clock.seek(timeline.absolute_start_ms as f64, 0.0);
+        let storyboard_enabled = options.storyboard_enabled;
         Ok(Self {
             source_beatmap,
             beatmap,
@@ -136,6 +154,8 @@ impl RealtimeSession {
             source,
             background_image,
             background_video: None,
+            storyboard,
+            storyboard_enabled,
             mixer,
             hitsound_enabled: audio.hitsound_enabled,
             settings,
@@ -263,6 +283,38 @@ impl RealtimeSession {
     /// 移除背景视频帧，回退静态背景图（视频未开始、已结束或被关闭时调用）。
     pub fn clear_background_video(&mut self) {
         self.background_video = None;
+    }
+
+    /// 会话是否包含可绘制的故事板元素（宿主用于决定开关是否可用）。
+    pub fn has_storyboard(&self) -> bool {
+        self.storyboard
+            .as_ref()
+            .is_some_and(|(storyboard, _)| storyboard.has_drawable_elements())
+    }
+
+    /// 开关故事板绘制（默认关闭）；无故事板素材时切换无效果。
+    pub fn set_storyboard_enabled(&mut self, enabled: bool) {
+        self.storyboard_enabled = enabled;
+    }
+
+    /// 当前故事板开关状态。
+    pub fn storyboard_enabled(&self) -> bool {
+        self.storyboard_enabled
+    }
+
+    /// 故事板是否接管背景（osu! 的 `ReplacesBackground`）：背景层存在与谱面背景
+    /// 同名元素时由故事板里的那张精灵充当背景。
+    ///
+    /// 只在故事板**实际绘制**时生效：关闭故事板必须把背景图放回来，否则
+    /// 「关着故事板反而没背景」。
+    fn storyboard_hides_background(&self) -> bool {
+        self.storyboard_enabled
+            && self.storyboard.as_ref().is_some_and(|(storyboard, _)| {
+                self.beatmap
+                    .background_filename
+                    .as_deref()
+                    .is_some_and(|name| storyboard.replaces_background(name))
+            })
     }
 
     /// 更新后续 `scene_at_absolute` 使用的输出尺寸。
@@ -481,13 +533,29 @@ impl RealtimeSession {
             self.source.render(absolute_time_ms)
         })
         .map_err(|error| PreviewError::render(error.to_string()))?;
+        // 故事板求值用谱面显示时间（与合成层的 current_ms 同坐标系）；用户暗度
+        // 与背景一致（`video_style.background_dim`），亮度预乘进精灵颜色。
+        let storyboard_layers = self
+            .storyboard
+            .as_ref()
+            .filter(|_| self.storyboard_enabled)
+            .map(|(storyboard, textures)| crate::render::wgpu::composition::StoryboardLayers {
+                storyboard,
+                textures,
+                chart_ms: (absolute_time_ms - self.timeline.first_object_ms) as f64,
+                brightness: (1.0 - self.options.video_style.background_dim).clamp(0.0, 1.0)
+                    as f32,
+            });
         crate::render::wgpu::composition::compose_video_scene(
             playfield,
             absolute_time_ms.saturating_sub(self.timeline.first_object_ms),
             self.timeline.duration_ms,
             width,
             height,
-            self.background_image.as_ref(),
+            // ReplacesBackground：故事板在绘制时才接管背景，关闭时背景照常显示。
+            self.background_image
+                .as_ref()
+                .filter(|_| !self.storyboard_hides_background()),
             self.background_video.as_ref().map(|(layer, video_time, duration)| {
                 let alpha = crate::render::wgpu::composition::visibility_alpha(
                     *video_time,
@@ -505,6 +573,7 @@ impl RealtimeSession {
                     }
                 }
             }),
+            storyboard_layers,
             self.options.video_style,
         )
         .map_err(|error| PreviewError::render(error.to_string()))

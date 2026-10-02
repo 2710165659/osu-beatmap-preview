@@ -19,7 +19,7 @@ pub mod video;
 #[cfg(target_arch = "wasm32")]
 use osu_beatmap_preview_core::{
     hitsound, parse_beatmap_bytes, BeatmapInfo, ImageData, RealtimeOptions, RealtimeSession,
-    ResourceBundle,
+    ResourceBundle, StoryboardBundle,
 };
 #[cfg(target_arch = "wasm32")]
 use osu_beatmap_preview_renderer::{SurfaceConfig, SurfaceRenderer};
@@ -80,9 +80,10 @@ impl WebGpuSession {
     /// （音乐、背景、自带音效全部在 WASM 内解出）。
     ///
     /// `options`：`{ bid?, difficulty?, convert?, mods?, width, height, sampleRate?,
-    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound? }`。
+    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard? }`。
     /// 难度选择优先 `difficulty`（压缩包条目名），其次 `bid`（`BeatmapID`），
     /// 都没有时取第一个顶层 `.osu`。`sampleRate` 必须等于宿主音频设备的实际采样率。
+    /// `storyboard` 默认关闭，开启后绘制 `.osb` / `[Events]` 的故事板层。
     #[wasm_bindgen(js_name = create)]
     pub async fn create(
         bytes: Vec<u8>,
@@ -135,6 +136,16 @@ impl WebGpuSession {
         if let Some(background) = content.background.as_deref() {
             bundle.background = decode::decode_background(background);
         }
+        // 故事板（默认关闭，`storyboard` 选项开启）：`.osu` 的 `[Events]` 与包内
+        // `.osb` 一起解析，贴图按引用路径从同一份 `.osz` 取出并解码。osu! 的
+        // ReplacesBackground（背景层有同名精灵时接管背景）由会话在合成时按
+        // 开关联动——这里不丢背景资源，关闭故事板后背景照常显示。
+        bundle.storyboard =
+            build_storyboard(&content, &bytes).map_err(|error| JsValue::from_str(&error))?;
+        realtime.storyboard_enabled = option_bool(&options, "storyboard").unwrap_or(false);
+        // 背景暗化系数同步给会话：故事板精灵的亮度（1 − dim）由此而来，
+        // 与 `decode_background` 的预暗化同一语义。
+        realtime.video_style.background_dim = decode::BACKGROUND_DIM;
         let mut session = RealtimeSession::from_bundle(bundle, realtime).map_err(js_error)?;
 
         // 音乐解码失败是致命错误（没有声音的整包预览没有意义）；
@@ -461,6 +472,20 @@ impl WebGpuSession {
         }
     }
 
+    // ── 故事板（默认关闭；开启后按 .osb / [Events] 合成故事板层） ───────
+
+    /// 这份谱面是否有可绘制的故事板元素（决定开关是否可用）。
+    #[wasm_bindgen(js_name = hasStoryboard)]
+    pub fn has_storyboard(&self) -> bool {
+        self.inner.has_storyboard()
+    }
+
+    /// 开关故事板绘制（默认关闭）；没有故事板素材时切换无效果。
+    #[wasm_bindgen(js_name = setStoryboard)]
+    pub fn set_storyboard(&mut self, enabled: bool) {
+        self.inner.set_storyboard_enabled(enabled);
+    }
+
     /// 按当前时钟推进背景视频层：只在画面真的变化时才拷贝/写入会话。
     ///
     /// 时间对齐由 [`video::BackgroundVideo`] 驱动（与 CLI 导出同一套语义）；
@@ -597,6 +622,33 @@ fn load_samples(
         }
     }
     session.rebuild_hitsound_timeline();
+}
+
+/// 从解包内容装配故事板资源：解析 `.osu` `[Events]` 与 `.osb`，并解码引用贴图。
+///
+/// 没有可绘制元素返回 `None`；贴图缺失或解码失败按缺图静默跳过（与 osu! 一致）。
+#[cfg(target_arch = "wasm32")]
+fn build_storyboard(
+    content: &archive::ArchiveContent,
+    bytes: &[u8],
+) -> Result<Option<StoryboardBundle>, String> {
+    let osu_text = String::from_utf8_lossy(&content.beatmap);
+    let osb_text = content
+        .osb
+        .as_deref()
+        .map(|raw| String::from_utf8_lossy(raw).into_owned());
+    let storyboard =
+        osu_beatmap_preview_core::storyboard::parse_storyboard(&osu_text, osb_text.as_deref());
+    if !storyboard.has_drawable_elements() {
+        return Ok(None);
+    }
+    let paths = storyboard.referenced_paths();
+    let raw = archive::read_storyboard_textures(bytes, &paths)?;
+    let textures = raw
+        .into_iter()
+        .filter_map(|(path, raw)| decode::decode_image(&raw).map(|image| (path, image)))
+        .collect();
+    Ok(Some(StoryboardBundle { storyboard, textures }))
 }
 
 /// 解析难度选择：`difficulty`（条目名）优先，其次 `bid`（`BeatmapID`），都没有取第一个。

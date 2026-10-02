@@ -12,10 +12,10 @@ Web -> Node 后端下载并缓存 .osz -> 浏览器把整包字节交给 wasm
 
 ## 目录职责
 
-- `crates/osu-beatmap-preview-core`：谱面模型、`.osu` 解析、Mod、转谱、时间轴、四模式 CPU 单帧/静态场景绘制、`FrameScene`、打击音事件时间轴、音乐与打击音的统一混音、实时预览时钟（`PreviewClock`）。不接触文件、网络、音频设备，也不解压 OSZ、不解码图像/音频：这些都由宿主完成后把数据传进来。
+- `crates/osu-beatmap-preview-core`：谱面模型、`.osu` 解析、Mod、转谱、时间轴、四模式 CPU 单帧/静态场景绘制、`FrameScene`、打击音事件时间轴、音乐与打击音的统一混音、实时预览时钟（`PreviewClock`）、故事板（`storyboard` 模块：`.osb`/`[Events]` 解析、命令时间线求值、640×480→画布映射，CPU 光栅与场景命令共用同一套几何语义）。不接触文件、网络、音频设备，也不解压 OSZ、不解码图像/音频：这些都由宿主完成后把数据传进来。
 - `crates/osu-beatmap-preview-renderer`：平台无关的 WGPU 场景绘制、surface 和离屏后端。
 - `crates/osu-beatmap-preview-cli`：CLI/native 适配、文件/下载/缓存/配置/日志、时间序列与布局组装、媒体编码和 I/O；不再包含模式绘制逻辑。
-- `crates/osu-beatmap-preview-wasm`：**单文件输入**（`.osu` / `.osz` 字节）的 Web 适配层：`.osz` 解包（zip crate）、音乐与音效解码（symphonia）、背景解码（image crate）都在这里，背景视频由它驱动浏览器 `<video>` 硬解并逐帧抓取（软解实测 720p 需 60～145 ms/帧，达不到实时），再把结果交给 core 会话；导出 `WebGpuSession`（渲染 + 时钟 + 混音输出）与 `beatmapInfo`（谱面信息与难度清单），没有 Rust 调用方。
+- `crates/osu-beatmap-preview-wasm`：**单文件输入**（`.osu` / `.osz` 字节）的 Web 适配层：`.osz` 解包（zip crate）、音乐与音效解码（symphonia）、背景与故事板贴图解码（image crate）都在这里，背景视频由它驱动浏览器 `<video>` 硬解并逐帧抓取（软解实测 720p 需 60～145 ms/帧，达不到实时），再把结果交给 core 会话；导出 `WebGpuSession`（渲染 + 时钟 + 混音输出）与 `beatmapInfo`（谱面信息与难度清单），没有 Rust 调用方。
 - `crates/osu-beatmap-preview-web`：Vue 静态站点与 Node.js 下载后端，负责跨域下载 `.osu`/`.osz`、缓存并把整包字节发给浏览器、向页面报告加载进度；不属于 Cargo workspace，也不参与任何绘制与解包。
 - `crates/osu-beatmap-preview-gui`：桌面 surface、输入和播放生命周期接口骨架。
 - `crates/osu-beatmap-preview-mobile`：Android/iOS surface、输入和音频时钟接口骨架。

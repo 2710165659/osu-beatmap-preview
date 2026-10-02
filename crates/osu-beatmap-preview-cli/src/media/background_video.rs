@@ -538,6 +538,7 @@ mod tests {
         VideoStyle {
             enable_background_image: true,
             enable_background_video: true,
+            enable_storyboard: false,
             background_dim: 0.7,
             label_color: [255, 255, 255, 255],
             label_font_size: 18,

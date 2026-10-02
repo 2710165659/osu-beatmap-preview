@@ -866,3 +866,35 @@ fn configured_scale_and_fps_change_config_variant_hash() {
         serde_json::json!({"render": {"standard": {"gif": {"style": {"FPS": 30}}}}})
     );
 }
+
+/// 故事板开关：四模式 mp4 各自带 `ENABLE_STORYBOARD`、默认关闭；只对被覆盖的
+/// 模式生效，且开启后差异进入配置 hash（输出目录随之变化，符合「只有配置项
+/// 变更才能改变输出目录」的约定）。
+#[test]
+fn storyboard_toggle_defaults_off_and_enters_config_hash() {
+    let defaults = load_snapshot(None).unwrap();
+    for enabled in [
+        defaults.render.standard.mp4.style.ENABLE_STORYBOARD,
+        defaults.render.taiko.mp4.style.ENABLE_STORYBOARD,
+        defaults.render.catch.mp4.style.ENABLE_STORYBOARD,
+        defaults.render.mania.mp4.style.ENABLE_STORYBOARD,
+    ] {
+        assert!(!enabled);
+    }
+
+    let configured =
+        load_snapshot(Some(r#"{"render":{"standard":{"mp4":{"style":{"ENABLE_STORYBOARD":true}}}}}"#))
+            .unwrap();
+    assert!(configured.render.standard.mp4.style.ENABLE_STORYBOARD);
+    assert!(!configured.render.mania.mp4.style.ENABLE_STORYBOARD);
+
+    let storyboard =
+        variant(r#"{"render":{"standard":{"mp4":{"style":{"ENABLE_STORYBOARD":true}}}}}"#).unwrap();
+    assert_eq!(
+        storyboard.difference,
+        serde_json::json!({"render": {"standard": {"mp4": {"style": {"ENABLE_STORYBOARD": true}}}}})
+    );
+    let hit =
+        variant(r#"{"render":{"standard":{"mp4":{"style":{"ENABLE_HITSOUND":false}}}}}"#).unwrap();
+    assert_ne!(storyboard.hash, hit.hash);
+}

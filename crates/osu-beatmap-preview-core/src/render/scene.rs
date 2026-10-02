@@ -32,6 +32,26 @@ pub enum DrawCommand {
         destination: SceneRect,
         alpha: f32,
     },
+    /// 变换精灵：支持旋转、缩放/翻转、颜色调制与混合模式的贴图绘制。
+    ///
+    /// 与 [`DrawCommand::Sprite`] 的轴对齐矩形不同，本命令按「锚点 + 尺寸 +
+    /// 旋转」描述几何，供故事板这类带组合变换的贴图使用；CPU 与 WGPU 两条
+    /// 光栅路径按同一套几何语义实现。
+    TransformedSprite {
+        resource: ResourceId,
+        /// 锚点位置（画布坐标）。
+        position: [f32; 2],
+        /// 原点在图像中的归一化偏移（0 / 0.5 / 1，已按翻转调整）。
+        origin: [f32; 2],
+        /// 缩放后的目标尺寸；负值表示翻转。
+        size: [f32; 2],
+        /// 顺时针旋转弧度。
+        rotation: f32,
+        /// 颜色调制（RGB）与不透明度（A）。
+        color: Rgba,
+        /// 加色混合（osu! 的 `P,,A`）。
+        additive: bool,
+    },
     /// 外部纹理精灵：纹理内容由渲染后端从外部源（如浏览器视频帧）直接拷入，
     /// 场景里只带槽位号——逐帧视频像素不进 CPU 内存。
     ExternalSprite {
@@ -224,6 +244,29 @@ impl FrameSceneBuilder {
         });
     }
 
+    /// 绘制带组合变换的贴图（旋转、缩放/翻转、颜色调制、加色混合）。
+    pub fn transformed_sprite(
+        &mut self,
+        image: Arc<Img>,
+        position: [f32; 2],
+        origin: [f32; 2],
+        size: [f32; 2],
+        rotation: f32,
+        color: Rgba,
+        additive: bool,
+    ) {
+        let resource = self.insert_resource(image);
+        self.commands.push(DrawCommand::TransformedSprite {
+            resource,
+            position,
+            origin,
+            size,
+            rotation,
+            color,
+            additive,
+        });
+    }
+
     /// 绘制外部纹理槽位（如浏览器视频帧）；纹理由渲染后端按槽位号填充。
     pub fn external_sprite(&mut self, slot: u32, destination: SceneRect, alpha: f32) {
         self.commands.push(DrawCommand::ExternalSprite {
@@ -318,6 +361,24 @@ fn transform_command(
             resource: resources[resource],
             destination: rect(*destination),
             alpha: *alpha,
+        },
+        // 均匀缩放不改变旋转角与原点比例；尺寸按同样倍率缩放（负值=翻转保留符号）。
+        DrawCommand::TransformedSprite {
+            resource,
+            position,
+            origin,
+            size,
+            rotation,
+            color,
+            additive,
+        } => DrawCommand::TransformedSprite {
+            resource: resources[resource],
+            position: point(*position),
+            origin: *origin,
+            size: [size[0] * scale, size[1] * scale],
+            rotation: *rotation,
+            color: *color,
+            additive: *additive,
         },
         DrawCommand::ExternalSprite {
             slot,

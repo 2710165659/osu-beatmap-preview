@@ -6,7 +6,7 @@
 
 use crate::export::canvas::Img;
 use crate::media::audio::AudioSourceJob;
-use crate::media::{frame_time_ms, resolve_video_time_range, save_mp4_streamed, MediaBackground};
+use crate::media::{frame_time_ms, resolve_video_time_range, save_mp4_streamed, MediaBackground, MediaStoryboard};
 use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::Beatmap;
@@ -27,6 +27,7 @@ pub(crate) fn render_catch_video(
     duration_time: Option<f64>,
     output_path: &Path,
     background: MediaBackground,
+    storyboard: Option<MediaStoryboard>,
     audio_job: AudioSourceJob,
     time_axis: TimeAxis,
     fps: Option<u32>,
@@ -110,6 +111,7 @@ pub(crate) fn render_catch_video(
         audio_job,
         beatmap.clone(),
         background,
+        storyboard,
         time_axis,
         deadline,
         crate::export::geometry::GameMode::Catch,

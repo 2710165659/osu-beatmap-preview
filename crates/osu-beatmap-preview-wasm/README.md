@@ -120,6 +120,8 @@ npm start
 | `setHitsoundEnabled(bool)` | 打开/关闭打击音；关闭时音乐照常输出 |
 | `set_mods(mods)` | 热切换 Mod，数组每项是一个独立 token；转谱后所需样本由 WASM 重新装载，`absoluteStartMs()` 可能变化，需要重新读取 |
 | `resize(width, height)` | 同时更新 surface 与 core 的合成尺寸；只改 Canvas 不会改变渲染尺寸 |
+| `hasStoryboard()` | 这份谱面是否有可绘制的故事板元素（无命令的精灵不算）；决定「故事板」开关是否可用 |
+| `setStoryboard(bool)` | 开关故事板绘制（默认关闭）；开启后 `.osb` / `[Events]` 的故事板层合成进画面——underlay（Background/Pass/Foreground）在背景之上、物件之下，只有 Overlay 层压在物件之上，并与背景同吃暗化 |
 | `durationMs()` | 预览时长（含最后一个物件后的 2s 余韵），用于进度条和结束判定 |
 | `absoluteStartMs()` | 预览起点（进度条 `0:00`）对应的谱面绝对时间；与游戏时间轴（首个可玩物件为 `0:00`）不同 |
 | `beatmapSpeed()` | 当前谱面倍速（`DT`/`HT`/`NC`/`DC` 等） |
@@ -139,6 +141,7 @@ npm start
 | `sampleRate` | **音频设备采样率**（`AudioContext.sampleRate`）：混音输出按它生成，必须一致 |
 | `hitsoundEnabled` / `hitsoundVolume` / `musicVolume` | 打击音开关（默认 true）、打击音音量（默认 100）、音乐音量（默认 50） |
 | `beatmapHitsound` | 是否采用谱面自带的自定义音效（`ENABLE_BEATMAP_HITSOUND`，默认 true）；**创建时生效**，决定装载哪些样本 |
+| `storyboard` | 是否绘制故事板（默认 false）；可随时用 `setStoryboard` 切换 |
 
 ### 时钟与时间轴
 

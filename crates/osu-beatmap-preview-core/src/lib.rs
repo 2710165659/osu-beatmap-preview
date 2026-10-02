@@ -13,11 +13,12 @@ pub mod hitsound;
 pub mod model;
 pub mod processing;
 pub mod render;
+pub mod storyboard;
 pub mod support;
 
 pub use api::{
     ImageData, RealtimeMode, RealtimeOptions, RealtimeSession, RenderConfig, ResourceBundle,
-    TimelineInfo,
+    StoryboardBundle, TimelineInfo,
 };
 pub use gameplay::{
     GameplayMode, GameplayOptions, GameplayOverlay, InputSnapshot, InputSource, Judgement,
@@ -42,4 +43,5 @@ pub use processing::media::{
 pub use processing::parse::parse_beatmap_bytes;
 pub use processing::timeline::preview_start_ms;
 pub use render::{DrawCommand, FrameScene, Img, Rgba, SceneRect, SceneSize};
+pub use storyboard::{parse_storyboard, Storyboard, StoryboardViewport};
 pub use support::error::{ErrorKind, PreviewError, Result};

@@ -81,6 +81,25 @@ fn dim_rgba(rgba: &mut [u8]) {
     }
 }
 
+/// 故事板贴图的解码像素上限（4096×4096）：防止病态大图撑爆 WASM 线性内存。
+const MAX_STORYBOARD_PIXELS: u64 = 4096 * 4096;
+
+/// 解码故事板贴图（png / jpeg）为**原始** RGBA（不做暗化：故事板不在暗化层内）。
+///
+/// 解码失败、空图或超像素上限返回 `None`，对应精灵按缺图静默跳过（与 osu! 一致）。
+pub fn decode_image(bytes: &[u8]) -> Option<ImageData> {
+    let image = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_STORYBOARD_PIXELS {
+        return None;
+    }
+    Some(ImageData {
+        width,
+        height,
+        rgba: image.into_raw(),
+    })
+}
+
 /// 把一段音频字节解码成交错立体声 f32。
 ///
 /// 声道数为 1 时复制成双声道；多声道取前两个声道（与 CLI 一致）。中途的坏包跳过，

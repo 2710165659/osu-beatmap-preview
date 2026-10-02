@@ -85,12 +85,14 @@ pub(crate) struct AudioSourceJob {
     handle: Option<std::thread::JoinHandle<Result<AudioSource>>>,
     deadline: RequestDeadline,
     background: MediaBackground,
+    storyboard: Option<super::storyboard::MediaStoryboard>,
 }
 
 impl AudioSourceJob {
     pub(crate) fn start(
         request_bid: &str,
         beatmap: Beatmap,
+        osu_text: &str,
         osz: OszLocation,
         cache_dir: PathBuf,
         no_cache: bool,
@@ -128,6 +130,20 @@ impl AudioSourceJob {
         } else {
             None
         };
+        // 故事板（默认关闭）：.osu 的 [Events] 与包内 .osb 一起解析，贴图同包取用。
+        let storyboard = if style.enable_storyboard {
+            super::storyboard::MediaStoryboard::load(osu_text, &osz_path, &deadline)?
+        } else {
+            None
+        };
+        // osu! 的 ReplacesBackground：背景层存在与谱面背景同名的精灵时隐藏背景图，
+        // 由故事板里的同名精灵接管，避免两层同图叠画。
+        let mut image = image;
+        if storyboard.as_ref().is_some_and(|storyboard| {
+            storyboard.replaces_background(beatmap.background_filename.as_deref())
+        }) {
+            image = None;
+        }
         let worker_deadline = deadline.clone();
         let handle = std::thread::spawn(move || {
             worker_deadline.check()?;
@@ -144,6 +160,7 @@ impl AudioSourceJob {
             handle: Some(handle),
             deadline,
             background: MediaBackground { image, video },
+            storyboard,
         })
     }
 
@@ -152,6 +169,11 @@ impl AudioSourceJob {
             image: self.background.image.take(),
             video: self.background.video.take(),
         }
+    }
+
+    /// 取走已装载的故事板（`ENABLE_STORYBOARD` 关闭时恒为 `None`）。
+    pub(crate) fn take_storyboard(&mut self) -> Option<super::storyboard::MediaStoryboard> {
+        self.storyboard.take()
     }
 
     pub(crate) fn wait(mut self) -> Result<AudioSource> {

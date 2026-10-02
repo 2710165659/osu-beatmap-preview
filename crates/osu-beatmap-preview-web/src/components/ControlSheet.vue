@@ -21,6 +21,7 @@ import {
   setShowFps,
   setSheetOpen,
   setSpeed,
+  setStoryboard,
   setVolume,
   SPEED_CHOICES,
   state,
@@ -90,6 +91,22 @@ const chipClass = (active) => (active
               {{ state.backgroundVideo ? '开' : '关' }}
             </button>
             <span v-if="!state.videoAvailable" class="text-[11px] text-neutral-500">{{ state.videoStatus }}</span>
+          </div>
+        </div>
+        <!-- 故事板默认关闭：贴图合成有开销，且很多谱面没有故事板。 -->
+        <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
+          <span class="text-xs text-neutral-400">故事板</span>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="h-8 shrink-0 rounded-md border px-2.5 text-xs transition disabled:opacity-40"
+              :class="chipClass(state.storyboard)"
+              :disabled="!state.storyboardAvailable"
+              @click="setStoryboard(!state.storyboard)"
+            >
+              {{ state.storyboard ? '开' : '关' }}
+            </button>
+            <span v-if="!state.storyboardAvailable" class="text-[11px] text-neutral-500">{{ state.storyboardStatus }}</span>
           </div>
         </div>
       </section>
