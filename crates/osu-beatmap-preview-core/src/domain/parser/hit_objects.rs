@@ -106,8 +106,14 @@ pub(crate) fn parse_hit_sample(field: Option<&str>) -> ParsedHitSample {
         return ParsedHitSample::default();
     }
     let parts: Vec<&str> = field.split(':').collect();
-    let normal_set = parts.first().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
-    let addition_set = parts.get(1).and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+    let normal_set = parts
+        .first()
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(0);
+    let addition_set = parts
+        .get(1)
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(0);
     // 负数索引没有意义（`.osu` 里出现过 -1），按「不使用谱面音效」处理。
     let custom_bank = parts
         .get(2)
@@ -197,7 +203,10 @@ pub(crate) fn parse_edge_sample(
         return Vec::new();
     }
     let parts: Vec<&str> = field.split(':').collect();
-    let normal_set = parts.first().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+    let normal_set = parts
+        .first()
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(0);
     let addition_set = parts
         .get(1)
         .and_then(|v| v.parse::<i32>().ok())
@@ -451,10 +460,7 @@ pub(crate) fn parse_catch(
     Some(objects)
 }
 
-pub(crate) fn parse_mania(
-    lines: &[&str],
-    difficulty: &KvSection,
-) -> Option<Vec<ManiaHitObject>> {
+pub(crate) fn parse_mania(lines: &[&str], difficulty: &KvSection) -> Option<Vec<ManiaHitObject>> {
     let key_count = difficulty.get_f64("CircleSize")? as i64;
     let mut objects = Vec::with_capacity(lines.len());
     for line in lines {

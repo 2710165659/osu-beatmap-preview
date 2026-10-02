@@ -39,11 +39,11 @@ pub fn asset_names() -> impl Iterator<Item = &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hitsound::referenced_names;
     use crate::domain::models::{
         Beatmap, CatchHitObject, HitAddition, HitObjects, HitSample, KvSection, ManiaHitObject,
         SampleBank, StandardHitObject, TaikoHitObject, TimingPoint,
     };
+    use crate::hitsound::referenced_names;
 
     /// 内嵌资源覆盖四模式全部音效与 NC 的节拍鼓点。
     #[test]

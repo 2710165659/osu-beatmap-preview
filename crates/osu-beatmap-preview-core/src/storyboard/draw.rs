@@ -8,7 +8,7 @@
 //! 精灵绘制是一次逆映射光栅化：旋转、均匀/矢量缩放、翻转、颜色调制、
 //! 淡入淡出与加色混合在同一次逐像素采样内完成，避免逐帧多次重采样分配。
 
-use super::{ElementState, Origin, Storyboard, SpriteDraw, Textures};
+use super::{ElementState, Origin, SpriteDraw, Storyboard, Textures};
 use crate::render::canvas::Img;
 use crate::render::scene::FrameSceneBuilder;
 use std::sync::Arc;
@@ -162,20 +162,22 @@ pub fn draw_transformed_sprite(
         corner(0.0, th),
     ];
     let min_x = corners.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min);
-    let max_x = corners.iter().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max);
+    let max_x = corners
+        .iter()
+        .map(|p| p[0])
+        .fold(f32::NEG_INFINITY, f32::max);
     let min_y = corners.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
-    let max_y = corners.iter().map(|p| p[1]).fold(f32::NEG_INFINITY, f32::max);
+    let max_y = corners
+        .iter()
+        .map(|p| p[1])
+        .fold(f32::NEG_INFINITY, f32::max);
 
     // 包围盒放宽 1 像素，覆盖跨过边界的像素中心；越界像素由 u/v 判定剔除。
-    let x0 = (min_x.floor() as i64)
-        .max(clip[0] as i64)
-        .max(0);
+    let x0 = (min_x.floor() as i64).max(clip[0] as i64).max(0);
     let x1 = ((max_x.ceil() as i64) + 1)
         .min(clip[2] as i64)
         .min(canvas.w as i64);
-    let y0 = (min_y.floor() as i64)
-        .max(clip[1] as i64)
-        .max(0);
+    let y0 = (min_y.floor() as i64).max(clip[1] as i64).max(0);
     let y1 = ((max_y.ceil() as i64) + 1)
         .min(clip[3] as i64)
         .min(canvas.h as i64);
@@ -418,9 +420,13 @@ mod tests {
     #[test]
     fn sprite_geometry_centres_on_declared_position() {
         let view = StoryboardViewport::new(640.0, 480.0, true);
-        let geometry =
-            sprite_geometry(&state_at(320.0, 240.0, 1.0), Origin::Centre, [64.0, 32.0], &view)
-                .expect("几何必须可推导");
+        let geometry = sprite_geometry(
+            &state_at(320.0, 240.0, 1.0),
+            Origin::Centre,
+            [64.0, 32.0],
+            &view,
+        )
+        .expect("几何必须可推导");
         assert_eq!(geometry.position, [320.0, 240.0]);
         assert_eq!(geometry.size, [64.0, 32.0]);
         assert_eq!(geometry.origin, [0.5, 0.5]);
@@ -465,7 +471,11 @@ mod tests {
             &view,
             0.3,
         );
-        assert_eq!(canvas.get(240, 240), [60, 30, 15, 255], "亮度 0.3 乘在颜色上");
+        assert_eq!(
+            canvas.get(240, 240),
+            [60, 30, 15, 255],
+            "亮度 0.3 乘在颜色上"
+        );
     }
 
     /// 缩放语义：`size` 是整张贴图的缩放后宽高，覆盖范围与贴图像素一一对应

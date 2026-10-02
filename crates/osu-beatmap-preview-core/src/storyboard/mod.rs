@@ -176,7 +176,10 @@ pub(crate) const PROPERTIES: [Property; PROPERTY_COUNT] = [
 
 impl Property {
     pub(crate) fn index(self) -> usize {
-        PROPERTIES.iter().position(|p| *p == self).expect("属性必须在常量表内")
+        PROPERTIES
+            .iter()
+            .position(|p| *p == self)
+            .expect("属性必须在常量表内")
     }
 }
 

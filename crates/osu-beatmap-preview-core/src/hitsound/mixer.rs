@@ -599,10 +599,7 @@ mod tests {
             output[..500 * 2].iter().all(|value| *value == 0.0),
             "预卷期间不应有声音"
         );
-        assert!(
-            output[500 * 2].abs() > 0.0,
-            "事件应当出现在缓冲区第 500 帧"
-        );
+        assert!(output[500 * 2].abs() > 0.0, "事件应当出现在缓冲区第 500 帧");
     }
 
     /// 样本采样率与混音采样率不同时按小数位置插值。
@@ -790,8 +787,16 @@ mod tests {
         let output = mixer.render(4);
         for (index, pair) in output.chunks_exact(2).enumerate() {
             let expected = soft_limit(index as f32 * 0.5);
-            assert!((pair[0] - expected).abs() < 1e-6, "frame {index}: {}", pair[0]);
-            assert!((pair[1] - expected).abs() < 1e-6, "frame {index}: {}", pair[1]);
+            assert!(
+                (pair[0] - expected).abs() < 1e-6,
+                "frame {index}: {}",
+                pair[0]
+            );
+            assert!(
+                (pair[1] - expected).abs() < 1e-6,
+                "frame {index}: {}",
+                pair[1]
+            );
         }
     }
 
@@ -809,8 +814,16 @@ mod tests {
         // seek 到 2ms：从音乐第 2 帧继续（输出经软限幅）。
         mixer.seek(2.0);
         let resumed = mixer.render(2);
-        assert!((resumed[0] - soft_limit(2.0)).abs() < 1e-6, "{}", resumed[0]);
-        assert!((resumed[2] - soft_limit(3.0)).abs() < 1e-6, "{}", resumed[2]);
+        assert!(
+            (resumed[0] - soft_limit(2.0)).abs() < 1e-6,
+            "{}",
+            resumed[0]
+        );
+        assert!(
+            (resumed[2] - soft_limit(3.0)).abs() < 1e-6,
+            "{}",
+            resumed[2]
+        );
 
         // 曲末之后继续静音，不越界、不循环。
         mixer.seek(5.0);

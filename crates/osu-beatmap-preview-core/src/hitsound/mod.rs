@@ -24,9 +24,7 @@ mod timeline;
 #[cfg(test)]
 mod test_support;
 
-pub use assets::{
-    asset_bytes, asset_count, asset_names, has_embedded_asset, HITSOUND_ASSETS,
-};
+pub use assets::{asset_bytes, asset_count, asset_names, has_embedded_asset, HITSOUND_ASSETS};
 pub use mixer::{HitsoundMixer, LoopHandle};
 pub use music::{MusicPlayer, MusicRate, StereoSource};
 pub use nightcore::{nightcore_events, NIGHTCORE_SAMPLE_NAMES};
@@ -120,7 +118,9 @@ fn build_with<R: SampleResolver>(beatmap: &Beatmap, resolver: &mut R) -> Hitsoun
 mod tests {
     use super::test_support::{beatmap_with, library_with, object_sample};
     use super::{build_timeline, referenced_names, sample_loop_len, volume_gain, SampleLibrary};
-    use crate::domain::models::{HitAddition, HitObjects, HitSample, SampleBank, StandardHitObject};
+    use crate::domain::models::{
+        HitAddition, HitObjects, HitSample, SampleBank, StandardHitObject,
+    };
 
     /// 滑条的音效参数取自正确的列。
     #[test]
@@ -129,12 +129,21 @@ mod tests {
         // additionSet=192，导致音效组与音量全错。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,2,0,100,1,0\n\n[HitObjects]\n256,192,2000,2,0,B|356:192,1,140\n";
         let beatmap = crate::parse_beatmap_bytes(source.as_bytes()).expect("fixture 必须可解析");
-        let object = &beatmap.hit_objects.as_standard().expect("必须是 standard 谱面")[0];
+        let object = &beatmap
+            .hit_objects
+            .as_standard()
+            .expect("必须是 standard 谱面")[0];
         // hitSample 全为 0：物件不覆盖任何参数，交给 timing point 决定。
         assert!(object.samples.is_empty(), "samples={:?}", object.samples);
         let names = referenced_names(&beatmap);
-        assert!(names.contains(&"soft-hitnormal".to_string()), "names={names:?}");
-        assert!(names.contains(&"soft-sliderslide".to_string()), "names={names:?}");
+        assert!(
+            names.contains(&"soft-hitnormal".to_string()),
+            "names={names:?}"
+        );
+        assert!(
+            names.contains(&"soft-sliderslide".to_string()),
+            "names={names:?}"
+        );
     }
 
     /// 音量曲线与游戏内一致。
@@ -197,7 +206,12 @@ mod tests {
         );
         let names = referenced_names(&beatmap);
         // soft 音效组会同时登记带 bank 前缀的名字与裸名（裸名是 osu! 的回退查找）。
-        for expected in ["soft-hitnormal", "hitnormal", "soft-hitwhistle", "hitwhistle"] {
+        for expected in [
+            "soft-hitnormal",
+            "hitnormal",
+            "soft-hitwhistle",
+            "hitwhistle",
+        ] {
             assert!(
                 names.contains(&expected.to_string()),
                 "缺少候选名 {expected}：{names:?}"
@@ -226,8 +240,13 @@ mod tests {
         let beatmap = crate::parse_beatmap_bytes(source.as_bytes()).unwrap();
         let object = &beatmap.hit_objects.as_standard().unwrap()[0];
         assert_eq!(object.samples.len(), 3);
-        assert_eq!(object.samples[0].filename.as_deref(), Some("custom-hit.ogg"));
-        assert!(object.samples[1..].iter().all(|sample| sample.filename.is_none()));
+        assert_eq!(
+            object.samples[0].filename.as_deref(),
+            Some("custom-hit.ogg")
+        );
+        assert!(object.samples[1..]
+            .iter()
+            .all(|sample| sample.filename.is_none()));
     }
 
     /// timing point 的索引产生带后缀的候选名。
@@ -250,13 +269,25 @@ mod tests {
 
         let names = referenced_names(&beatmap);
         // 带后缀的名字优先，不带后缀的仍然是回退（内嵌皮肤提供的是后者）。
-        assert!(names.contains(&"soft-hitnormal20".to_string()), "names={names:?}");
-        assert!(names.contains(&"soft-hitnormal".to_string()), "names={names:?}");
+        assert!(
+            names.contains(&"soft-hitnormal20".to_string()),
+            "names={names:?}"
+        );
+        assert!(
+            names.contains(&"soft-hitnormal".to_string()),
+            "names={names:?}"
+        );
 
         // 谱面包里只有带后缀的样本时命中它。
-        assert_eq!(build_timeline(&beatmap, &library_with(&["soft-hitnormal20"])).len(), 1);
+        assert_eq!(
+            build_timeline(&beatmap, &library_with(&["soft-hitnormal20"])).len(),
+            1
+        );
         // 只有不带后缀的样本时回退到它。
-        assert_eq!(build_timeline(&beatmap, &library_with(&["soft-hitnormal"])).len(), 1);
+        assert_eq!(
+            build_timeline(&beatmap, &library_with(&["soft-hitnormal"])).len(),
+            1
+        );
         // 索引 20 的样本缺失、无后缀的也没有时按静音处理。
         assert!(build_timeline(&beatmap, &library_with(&["soft-hitclap20"])).is_empty());
     }
@@ -306,7 +337,10 @@ mod tests {
             "soft-sliderslide7",
             "soft-slidertick7",
         ] {
-            assert!(names.contains(&expected.to_string()), "缺少 {expected}：{names:?}");
+            assert!(
+                names.contains(&expected.to_string()),
+                "缺少 {expected}：{names:?}"
+            );
         }
 
         // 带后缀的样本存在时优先使用它，而不是同名的无后缀样本（后者属于内嵌皮肤）。
@@ -319,12 +353,10 @@ mod tests {
         ]);
         let timeline = build_timeline(&beatmap, &library);
         assert!(!timeline.is_empty());
-        assert!(
-            timeline
-                .events
-                .iter()
-                .any(|event| library.name_of(event.source_id) == Some("soft-hitnormal7"))
-        );
+        assert!(timeline
+            .events
+            .iter()
+            .any(|event| library.name_of(event.source_id) == Some("soft-hitnormal7")));
     }
 
     /// 索引为一表示谱面自带的无后缀音效。
@@ -344,9 +376,15 @@ mod tests {
         beatmap.timing_points[0].sample_set = 2;
         beatmap.timing_points[0].sample_index = 1;
         let names = referenced_names(&beatmap);
-        assert!(names.contains(&"soft-hitnormal".to_string()), "names={names:?}");
+        assert!(
+            names.contains(&"soft-hitnormal".to_string()),
+            "names={names:?}"
+        );
         // 1 不带后缀，`soft-hitnormal1` 不是合法候选名。
-        assert!(!names.contains(&"soft-hitnormal1".to_string()), "names={names:?}");
+        assert!(
+            !names.contains(&"soft-hitnormal1".to_string()),
+            "names={names:?}"
+        );
     }
 
     /// 循环长度判定覆盖 bank 前缀与自定义音效索引后缀。
@@ -376,8 +414,14 @@ mod tests {
         beatmap.timing_points[0].sample_set = 2;
         beatmap.timing_points[0].sample_index = 20;
         let names = referenced_names(&beatmap);
-        assert!(names.contains(&"taiko-soft-hitnormal20".to_string()), "names={names:?}");
-        assert!(names.contains(&"taiko-soft-hitnormal".to_string()), "names={names:?}");
+        assert!(
+            names.contains(&"taiko-soft-hitnormal20".to_string()),
+            "names={names:?}"
+        );
+        assert!(
+            names.contains(&"taiko-soft-hitnormal".to_string()),
+            "names={names:?}"
+        );
         assert_eq!(
             build_timeline(&beatmap, &library_with(&["taiko-soft-hitnormal20"])).len(),
             1

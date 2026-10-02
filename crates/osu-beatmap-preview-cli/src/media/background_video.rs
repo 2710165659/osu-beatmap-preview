@@ -105,7 +105,8 @@ impl DecodeContext {
             out.push((self.times_ms[sample_index], Arc::new(prepared)));
         };
         for sample_index in start..end {
-            let Ok(Some(sample)) = reader.read_sample(self.track_id, sample_index as u32 + 1) else {
+            let Ok(Some(sample)) = reader.read_sample(self.track_id, sample_index as u32 + 1)
+            else {
                 return out;
             };
             let Some(packet) = sample_to_annexb(&sample.bytes, &mut header) else {
@@ -172,12 +173,12 @@ impl BackgroundVideo {
         if sample_count == 0 {
             return Err(PreviewError::render("background video has no samples"));
         }
-        let sps = track.sequence_parameter_set().map_err(|e| {
-            PreviewError::render(format!("background video is missing SPS: {e}"))
-        })?;
-        let pps = track.picture_parameter_set().map_err(|e| {
-            PreviewError::render(format!("background video is missing PPS: {e}"))
-        })?;
+        let sps = track
+            .sequence_parameter_set()
+            .map_err(|e| PreviewError::render(format!("background video is missing SPS: {e}")))?;
+        let pps = track
+            .picture_parameter_set()
+            .map_err(|e| PreviewError::render(format!("background video is missing PPS: {e}")))?;
         let mut header_packet = Vec::with_capacity(sps.len() + pps.len() + 8);
         for nal in [sps, pps] {
             header_packet.extend_from_slice(&[0, 0, 0, 1]);
@@ -295,8 +296,7 @@ impl BackgroundVideo {
             .map(|threads| threads.get())
             .unwrap_or(4)
             .min(16);
-        self.batch_size = (MEMORY_BUDGET_BYTES / per_segment_bytes.max(1))
-            .clamp(1, parallel);
+        self.batch_size = (MEMORY_BUDGET_BYTES / per_segment_bytes.max(1)).clamp(1, parallel);
         context.chosen = chosen;
         context.width = width;
         context.height = height;
@@ -638,7 +638,10 @@ mod tests {
         // 完全可见：第 3 帧（视频时间 500，灰度 160 → 48）。
         let visible = backgrounds.background_at(1_600).expect("必须有背景");
         let pixel = visible.get(0, 0);
-        assert!((pixel[0] as i64 - 48).abs() <= 8, "应显示第 3 帧：{pixel:?}");
+        assert!(
+            (pixel[0] as i64 - 48).abs() <= 8,
+            "应显示第 3 帧：{pixel:?}"
+        );
         // 视频结束后回退背景图。
         let after = backgrounds.background_at(3_000).expect("必须有背景");
         assert_eq!(after.get(0, 0), [60, 60, 60, 255]);

@@ -159,7 +159,10 @@ mod tests {
 
         // 大小写扩展名同样按视频处理。
         let beatmap = beatmap_with_events("Video,0,\"clip.MP4\"");
-        assert_eq!(beatmap.video.as_ref().map(|video| video.filename.as_str()), Some("clip.MP4"));
+        assert_eq!(
+            beatmap.video.as_ref().map(|video| video.filename.as_str()),
+            Some("clip.MP4")
+        );
         assert_eq!(beatmap.background_filename, None);
     }
 }

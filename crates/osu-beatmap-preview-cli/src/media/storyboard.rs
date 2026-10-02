@@ -59,7 +59,12 @@ impl MediaStoryboard {
                 continue;
             };
             // .osb 没有固定命名规则：取第一个扩展名为 osb 的条目（通常在包根）。
-            if osb_index.is_none() && name.rsplit('.').next().is_some_and(|ext| ext.eq_ignore_ascii_case("osb")) {
+            if osb_index.is_none()
+                && name
+                    .rsplit('.')
+                    .next()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("osb"))
+            {
                 osb_index = Some(index);
             }
             names.insert(name.to_lowercase(), index);
@@ -68,9 +73,9 @@ impl MediaStoryboard {
         let osb_text = match osb_index {
             Some(index) => {
                 let mut bytes = Vec::new();
-                let entry = archive
-                    .by_index(index)
-                    .map_err(|e| PreviewError::download(format!("failed to open .osb entry: {e}")))?;
+                let entry = archive.by_index(index).map_err(|e| {
+                    PreviewError::download(format!("failed to open .osb entry: {e}"))
+                })?;
                 if entry.size() > MAX_OSB_BYTES {
                     crate::logging::event(
                         "storyboard-prepare",
@@ -83,7 +88,9 @@ impl MediaStoryboard {
                     entry
                         .take(MAX_OSB_BYTES + 1)
                         .read_to_end(&mut bytes)
-                        .map_err(|e| PreviewError::download(format!("failed to extract .osb: {e}")))?;
+                        .map_err(|e| {
+                            PreviewError::download(format!("failed to extract .osb: {e}"))
+                        })?;
                     Some(String::from_utf8_lossy(&bytes).into_owned())
                 }
             }
@@ -178,10 +185,7 @@ fn texture_candidates(path: &str) -> Vec<String> {
 }
 
 /// 读取指定下标的条目字节（带大小上限；超限按缺图返回 `None`）。
-fn read_entry(
-    archive: &mut zip::ZipArchive<File>,
-    index: usize,
-) -> Result<Option<Vec<u8>>> {
+fn read_entry(archive: &mut zip::ZipArchive<File>, index: usize) -> Result<Option<Vec<u8>>> {
     let mut entry = archive
         .by_index(index)
         .map_err(|e| PreviewError::download(format!("failed to open osz entry: {e}")))?;

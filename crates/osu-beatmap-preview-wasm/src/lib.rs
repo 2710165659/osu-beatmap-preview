@@ -116,10 +116,12 @@ impl WebGpuSession {
                     realtime.audio.sample_rate = rate.max(1.0) as u32;
                 }
             }
-            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("hitsoundEnabled")) {
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("hitsoundEnabled"))
+            {
                 realtime.audio.hitsound_enabled = value.as_bool().unwrap_or(true);
             }
-            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("hitsoundVolume")) {
+            if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("hitsoundVolume"))
+            {
                 realtime.audio.hitsound_volume = value.as_f64().unwrap_or(100.0) as i32;
             }
             if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("musicVolume")) {
@@ -129,7 +131,11 @@ impl WebGpuSession {
         let use_beatmap_samples = option_bool(&options, "beatmapHitsound").unwrap_or(true);
 
         // 背景视频的时间偏移来自 `Video` 事件；视频本体由会话按需解码。
-        let video_start_ms = beatmap.video.as_ref().map(|video| video.start_ms).unwrap_or(0);
+        let video_start_ms = beatmap
+            .video
+            .as_ref()
+            .map(|video| video.start_ms)
+            .unwrap_or(0);
 
         // 背景在 WASM 内解码后直接进合成；解不出来退化成纯色背景。
         let mut bundle = ResourceBundle::new(beatmap);
@@ -297,10 +303,7 @@ impl WebGpuSession {
     pub fn render_frame(&mut self) -> Result<bool, JsValue> {
         let chart_ms = self.inner.clock_ms(wall_ms()).round() as i64;
         self.update_background_video(chart_ms);
-        let scene = self
-            .inner
-            .scene_at_absolute(chart_ms)
-            .map_err(js_error)?;
+        let scene = self.inner.scene_at_absolute(chart_ms).map_err(js_error)?;
         let Some(frame) = self.acquire_surface()? else {
             return Ok(false);
         };
@@ -517,8 +520,11 @@ impl WebGpuSession {
                 }
                 let video_time_ms = chart_ms - video.start_ms;
                 let duration_ms = video.duration_ms();
-                self.inner
-                    .set_background_video_external(VIDEO_TEXTURE_SLOT, video_time_ms, duration_ms);
+                self.inner.set_background_video_external(
+                    VIDEO_TEXTURE_SLOT,
+                    video_time_ms,
+                    duration_ms,
+                );
                 self.video_showing = true;
             }
             video::Capture::Pixels(frame) => {
@@ -607,7 +613,12 @@ fn load_samples(
                 // 空样本视为「取不到」：回落内嵌皮肤，与旧 Web 端的解码失败语义一致
                 //（argon pro 的静音滑行音本身就是内嵌资源，回落后仍是静音）。
                 if data.frames() > 0 {
-                    session.set_hitsound_sample(&name, data.channels, data.sample_rate, data.loop_len);
+                    session.set_hitsound_sample(
+                        &name,
+                        data.channels,
+                        data.sample_rate,
+                        data.loop_len,
+                    );
                     loaded = true;
                 }
             }
@@ -616,7 +627,12 @@ fn load_samples(
             if let Some(bytes) = hitsound::asset_bytes(&name) {
                 let data = decode::decode_sample(&name, bytes, Some("ogg"));
                 if data.frames() > 0 {
-                    session.set_hitsound_sample(&name, data.channels, data.sample_rate, data.loop_len);
+                    session.set_hitsound_sample(
+                        &name,
+                        data.channels,
+                        data.sample_rate,
+                        data.loop_len,
+                    );
                 }
             }
         }
@@ -648,7 +664,10 @@ fn build_storyboard(
         .into_iter()
         .filter_map(|(path, raw)| decode::decode_image(&raw).map(|image| (path, image)))
         .collect();
-    Ok(Some(StoryboardBundle { storyboard, textures }))
+    Ok(Some(StoryboardBundle {
+        storyboard,
+        textures,
+    }))
 }
 
 /// 解析难度选择：`difficulty`（条目名）优先，其次 `bid`（`BeatmapID`），都没有取第一个。

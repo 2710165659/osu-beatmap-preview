@@ -410,8 +410,7 @@ impl RealtimeSession {
             HitsoundTimeline::default()
         };
         if self.settings.nightcore {
-            let end_ms =
-                (self.timeline.absolute_start_ms + self.timeline.duration_ms) as f64;
+            let end_ms = (self.timeline.absolute_start_ms + self.timeline.duration_ms) as f64;
             timeline.merge(hitsound::nightcore_events(
                 &self.beatmap,
                 self.mixer.library(),
@@ -539,13 +538,15 @@ impl RealtimeSession {
             .storyboard
             .as_ref()
             .filter(|_| self.storyboard_enabled)
-            .map(|(storyboard, textures)| crate::render::wgpu::composition::StoryboardLayers {
-                storyboard,
-                textures,
-                chart_ms: (absolute_time_ms - self.timeline.first_object_ms) as f64,
-                brightness: (1.0 - self.options.video_style.background_dim).clamp(0.0, 1.0)
-                    as f32,
-            });
+            .map(
+                |(storyboard, textures)| crate::render::wgpu::composition::StoryboardLayers {
+                    storyboard,
+                    textures,
+                    chart_ms: (absolute_time_ms - self.timeline.first_object_ms) as f64,
+                    brightness: (1.0 - self.options.video_style.background_dim).clamp(0.0, 1.0)
+                        as f32,
+                },
+            );
         crate::render::wgpu::composition::compose_video_scene(
             playfield,
             absolute_time_ms.saturating_sub(self.timeline.first_object_ms),
@@ -556,23 +557,24 @@ impl RealtimeSession {
             self.background_image
                 .as_ref()
                 .filter(|_| !self.storyboard_hides_background()),
-            self.background_video.as_ref().map(|(layer, video_time, duration)| {
-                let alpha = crate::render::wgpu::composition::visibility_alpha(
-                    *video_time,
-                    *duration,
-                ) as f32;
-                match layer {
-                    VideoLayer::Pixels(image) => {
-                        crate::render::wgpu::composition::VideoSource::Pixels(image, alpha)
-                    }
-                    VideoLayer::External(slot) => {
-                        crate::render::wgpu::composition::VideoSource::External {
-                            slot: *slot,
-                            alpha,
+            self.background_video
+                .as_ref()
+                .map(|(layer, video_time, duration)| {
+                    let alpha =
+                        crate::render::wgpu::composition::visibility_alpha(*video_time, *duration)
+                            as f32;
+                    match layer {
+                        VideoLayer::Pixels(image) => {
+                            crate::render::wgpu::composition::VideoSource::Pixels(image, alpha)
+                        }
+                        VideoLayer::External(slot) => {
+                            crate::render::wgpu::composition::VideoSource::External {
+                                slot: *slot,
+                                alpha,
+                            }
                         }
                     }
-                }
-            }),
+                }),
             storyboard_layers,
             self.options.video_style,
         )
@@ -765,7 +767,12 @@ mod tests {
                 end_time: 0,
                 hit_type: 1,
                 hitsound: 0,
-                samples: vec![HitSample::new(SampleBank::Normal, HitAddition::None, 100, None)],
+                samples: vec![HitSample::new(
+                    SampleBank::Normal,
+                    HitAddition::None,
+                    100,
+                    None,
+                )],
                 ..Default::default()
             }]),
             break_periods: Vec::new(),
@@ -905,10 +912,7 @@ mod tests {
         session.seek(0.0, 0.0);
         let output = session.pull_audio(0.0, 2);
         assert_eq!(output.len(), 4);
-        assert!(
-            output.iter().all(|value| *value > 0.0),
-            "output={output:?}"
-        );
+        assert!(output.iter().all(|value| *value > 0.0), "output={output:?}");
     }
 
     /// 音乐与打击音走同一条输出流，叠加后再统一限幅。
@@ -967,10 +971,20 @@ mod tests {
     #[test]
     fn mod_switch_recomputes_total_rate() {
         let mut session = session();
-        session.set_mods(vec!["DT".to_string()], 0.0).expect("DT 必须合法");
-        assert!((session.rate() - 1.5).abs() < 1e-9, "rate={}", session.rate());
+        session
+            .set_mods(vec!["DT".to_string()], 0.0)
+            .expect("DT 必须合法");
+        assert!(
+            (session.rate() - 1.5).abs() < 1e-9,
+            "rate={}",
+            session.rate()
+        );
         session.set_rate(0.0, 2.0);
-        assert!((session.rate() - 3.0).abs() < 1e-9, "rate={}", session.rate());
+        assert!(
+            (session.rate() - 3.0).abs() < 1e-9,
+            "rate={}",
+            session.rate()
+        );
     }
 
     /// NC/DC 的图表域倍率、固定音高偏移与节拍鼓点。

@@ -366,7 +366,11 @@ pub(crate) fn load_background_video(
         return Ok(None);
     };
     // 起始偏移来自 `Video` 事件；解析器保证事件存在时字段齐全。
-    let start_ms = beatmap.video.as_ref().map(|video| video.start_ms).unwrap_or(0);
+    let start_ms = beatmap
+        .video
+        .as_ref()
+        .map(|video| video.start_ms)
+        .unwrap_or(0);
     match BackgroundVideo::open(bytes, start_ms) {
         Ok(video) => {
             crate::logging::event(
@@ -632,8 +636,11 @@ fn render_hitsound_segment(
     let Some(settings) = settings.filter(|settings| settings.enabled || settings.nightcore) else {
         return Ok(None);
     };
-    let library =
-        super::hitsound::build_library(beatmap, settings.beatmap_samples.as_deref(), settings.nightcore);
+    let library = super::hitsound::build_library(
+        beatmap,
+        settings.beatmap_samples.as_deref(),
+        settings.nightcore,
+    );
     if library.is_empty() {
         return Ok(None);
     }
@@ -1388,7 +1395,9 @@ mod tests {
             sample_rate: 1_000,
             stereo_samples: (0..frames)
                 .flat_map(|index| {
-                    let silent = gaps.iter().any(|(start, end)| (*start..*end).contains(&index));
+                    let silent = gaps
+                        .iter()
+                        .any(|(start, end)| (*start..*end).contains(&index));
                     let value = if silent {
                         0.0
                     } else {

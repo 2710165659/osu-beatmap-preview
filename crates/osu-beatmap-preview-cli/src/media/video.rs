@@ -567,8 +567,7 @@ pub(crate) fn save_mp4_streamed(
                         send_failure = Some(Err(error));
                         break 'pipeline;
                     }
-                    chunk_backgrounds
-                        .push(backgrounds.background_at(chart_times[frame_index]));
+                    chunk_backgrounds.push(backgrounds.background_at(chart_times[frame_index]));
                 }
             } else {
                 chunk_backgrounds.resize(chunk_end - chunk_start, None);

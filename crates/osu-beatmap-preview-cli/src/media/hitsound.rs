@@ -16,6 +16,7 @@ use osu_beatmap_preview_core::processing::media::{
 };
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use std::fs::File;
+use std::io::Cursor;
 use std::io::Read;
 use std::path::Path;
 use symphonia::core::audio::SampleBuffer;
@@ -25,7 +26,6 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use std::io::Cursor;
 
 /// build.rs 生成的内嵌样本表。
 mod embedded {
@@ -68,7 +68,9 @@ fn default_sample_rate() -> u32 {
 fn is_recoverable(error: &SymphoniaError) -> bool {
     matches!(
         error,
-        SymphoniaError::IoError(_) | SymphoniaError::DecodeError(_) | SymphoniaError::Unsupported(_)
+        SymphoniaError::IoError(_)
+            | SymphoniaError::DecodeError(_)
+            | SymphoniaError::Unsupported(_)
     )
 }
 
@@ -247,7 +249,9 @@ fn decode_sample(name: &str, bytes: &[u8], extension: Option<&str>) -> Result<Sa
         };
         let spec = *decoded.spec();
         if spec.rate == 0 || spec.channels.count() == 0 {
-            return Err(PreviewError::render("hitsound has an invalid sample format"));
+            return Err(PreviewError::render(
+                "hitsound has an invalid sample format",
+            ));
         }
         sample_rate = spec.rate;
         let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
@@ -339,7 +343,8 @@ mod tests {
     /// 谱面：soft 音效组，物件带自定义文件名，另有 clap 加成音与自定义音效索引。
     fn beatmap_with_custom_samples() -> Beatmap {
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,2,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,2,0:0:0:100:Custom-Hit.WAV\n256,192,2000,1,8,0:0:0:0:\n256,192,3000,1,0,0:0:20:0:\n";
-        osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes()).expect("fixture 必须可解析")
+        osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
+            .expect("fixture 必须可解析")
     }
 
     /// 内嵌样本表覆盖四模式全部打击音与 NC 的节拍鼓点。
@@ -392,7 +397,8 @@ mod tests {
     #[test]
     fn spinner_spin_sound_is_marked_looping() {
         let bytes = embedded_bytes("spinnerspin").expect("必须内嵌转盘旋转音");
-        let sample = decode_sample("spinnerspin", bytes, Some("ogg")).expect("转盘旋转音必须可解码");
+        let sample =
+            decode_sample("spinnerspin", bytes, Some("ogg")).expect("转盘旋转音必须可解码");
         assert!(sample.frames() > 0);
         assert_eq!(sample.loop_len, sample.frames());
     }
@@ -437,7 +443,9 @@ mod tests {
         assert_eq!(overridden.sample_rate, 8_000);
         assert_eq!(overridden.frames(), 4);
         // 自定义音效索引同样来自谱面：候选名是 `{bank}-{name}{index}`。
-        let suffixed = with_beatmap.get("soft-hitnormal20").expect("必须解析出带索引的音效");
+        let suffixed = with_beatmap
+            .get("soft-hitnormal20")
+            .expect("必须解析出带索引的音效");
         assert_eq!(suffixed.sample_rate, 8_000);
         assert!(embedded_only.get("soft-hitnormal20").is_none());
         // 自定义文件名同样来自谱面：候选名就是 `hitSample` 里写的那个名字。
@@ -446,7 +454,9 @@ mod tests {
             .expect("必须解析出自定义音效");
         assert_eq!(custom_sample.sample_rate, 8_000);
         // 谱面没提供的音效回退到内嵌皮肤，内容与关闭谱面音效时完全一致。
-        let fallback = with_beatmap.get("soft-hitclap").expect("clap 必须回退到内嵌");
+        let fallback = with_beatmap
+            .get("soft-hitclap")
+            .expect("clap 必须回退到内嵌");
         let embedded_clap = embedded_only.get("soft-hitclap").expect("clap 必须内嵌");
         assert_eq!(fallback, embedded_clap);
         assert_ne!(embedded_only.get("soft-hitnormal"), Some(overridden));
@@ -467,7 +477,10 @@ mod tests {
 
         // 开启 NC 时多装载 4 个节拍鼓点样本（它们同样来自内嵌皮肤）。
         let with_drums = build_library(&beatmap, None, true);
-        assert_eq!(with_drums.len(), embedded_only.len() + NIGHTCORE_SAMPLE_NAMES.len());
+        assert_eq!(
+            with_drums.len(),
+            embedded_only.len() + NIGHTCORE_SAMPLE_NAMES.len()
+        );
         for name in NIGHTCORE_SAMPLE_NAMES {
             assert!(with_drums.contains(name), "缺少内嵌鼓点 {name}");
         }

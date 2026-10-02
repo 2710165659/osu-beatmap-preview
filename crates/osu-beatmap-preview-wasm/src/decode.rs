@@ -207,7 +207,11 @@ mod tests {
         bytes.extend_from_slice(b"data");
         bytes.extend_from_slice(&data_len.to_le_bytes());
         for index in 0..frames {
-            let value = if index % 2 == 0 { 8_000_i16 } else { -8_000_i16 };
+            let value = if index % 2 == 0 {
+                8_000_i16
+            } else {
+                -8_000_i16
+            };
             bytes.extend_from_slice(&value.to_le_bytes());
             bytes.extend_from_slice(&value.to_le_bytes());
         }

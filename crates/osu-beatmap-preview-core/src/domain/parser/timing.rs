@@ -105,10 +105,7 @@ pub fn parse_video_event(lines: Option<&Vec<&str>>) -> Option<VideoEvent> {
     for line in lines {
         for event_type in ["Video", "1"] {
             if let Some((start_ms, filename)) = parse_media_event(line, event_type) {
-                return Some(VideoEvent {
-                    filename,
-                    start_ms,
-                });
+                return Some(VideoEvent { filename, start_ms });
             }
         }
     }

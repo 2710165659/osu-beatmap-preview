@@ -882,9 +882,10 @@ fn storyboard_toggle_defaults_off_and_enters_config_hash() {
         assert!(!enabled);
     }
 
-    let configured =
-        load_snapshot(Some(r#"{"render":{"standard":{"mp4":{"style":{"ENABLE_STORYBOARD":true}}}}}"#))
-            .unwrap();
+    let configured = load_snapshot(Some(
+        r#"{"render":{"standard":{"mp4":{"style":{"ENABLE_STORYBOARD":true}}}}}"#,
+    ))
+    .unwrap();
     assert!(configured.render.standard.mp4.style.ENABLE_STORYBOARD);
     assert!(!configured.render.mania.mp4.style.ENABLE_STORYBOARD);
 

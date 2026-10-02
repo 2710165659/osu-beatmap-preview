@@ -207,7 +207,10 @@ mod tests {
             let before = clock.current(200.0);
             clock.anchor_audio(260.0, 200.0);
             let after = clock.current(200.0);
-            assert!(after > before && after <= 260.0, "before={before} after={after}");
+            assert!(
+                after > before && after <= 260.0,
+                "before={before} after={after}"
+            );
         }
         assert!((clock.current(200.0) - 260.0).abs() <= ANCHOR_DEADBAND_MS + 1e-3);
     }

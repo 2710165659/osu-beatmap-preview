@@ -5,9 +5,7 @@
 
 use crate::domain::models::{Beatmap, HitSample, SampleBank};
 
-use super::common::{
-    sample_custom_bank, sample_point_at, timing_sample_bank, HeadSample,
-};
+use super::common::{sample_custom_bank, sample_point_at, timing_sample_bank, HeadSample};
 use super::sample::SampleResolver;
 use super::volume_gain;
 
@@ -134,11 +132,12 @@ impl HitsoundTimeline {
         let mut right = other.events.into_iter().peekable();
         loop {
             let take_left = match (left.peek(), right.peek()) {
-                (Some(a), Some(b)) => a
-                    .start_ms
-                    .partial_cmp(&b.start_ms)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    != std::cmp::Ordering::Greater,
+                (Some(a), Some(b)) => {
+                    a.start_ms
+                        .partial_cmp(&b.start_ms)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        != std::cmp::Ordering::Greater
+                }
                 (Some(_), None) => true,
                 (None, Some(_)) => false,
                 (None, None) => break,
@@ -169,8 +168,9 @@ impl CollectNames {
 impl SampleResolver for CollectNames {
     fn resolve<'a, I: Iterator<Item = &'a [u8]>>(&mut self, candidates: I) -> Option<usize> {
         // 宿主需要知道「这名字取自哪个资源」，因此这里把候选名记成可读文本。
-        self.names
-            .extend(candidates.filter_map(|name| std::str::from_utf8(name).ok().map(str::to_string)));
+        self.names.extend(
+            candidates.filter_map(|name| std::str::from_utf8(name).ok().map(str::to_string)),
+        );
         None
     }
 }
@@ -224,7 +224,9 @@ impl AssetKey {
     fn new(prefix: Option<&str>, name: &str, suffix: Option<i32>) -> Self {
         let digits = suffix.map(|value| value.to_string());
         let name_parts: &[&[u8]] = match (&digits, prefix) {
-            (Some(digits), Some(prefix)) => &[prefix.as_bytes(), b"-", name.as_bytes(), digits.as_bytes()],
+            (Some(digits), Some(prefix)) => {
+                &[prefix.as_bytes(), b"-", name.as_bytes(), digits.as_bytes()]
+            }
             (Some(digits), None) => &[name.as_bytes(), digits.as_bytes()],
             (None, Some(prefix)) => &[prefix.as_bytes(), b"-", name.as_bytes()],
             (None, None) => &[name.as_bytes()],
@@ -268,7 +270,8 @@ struct AssetCandidates<'a> {
 impl<'a> AssetCandidates<'a> {
     fn new(prefix: Option<&str>, plain: &'a str, custom_bank: i32) -> Self {
         Self {
-            suffixed: custom_suffix(custom_bank).map(|suffix| AssetKey::new(prefix, plain, Some(suffix))),
+            suffixed: custom_suffix(custom_bank)
+                .map(|suffix| AssetKey::new(prefix, plain, Some(suffix))),
             banked: prefix.map(|prefix| AssetKey::new(Some(prefix), plain, None)),
             plain,
         }
@@ -337,7 +340,8 @@ struct TaikoCandidates {
 impl TaikoCandidates {
     fn new(bank: &str, name: &str, custom_bank: i32) -> Self {
         Self {
-            suffixed: custom_suffix(custom_bank).map(|suffix| TaikoKey::new(bank, name, Some(suffix))),
+            suffixed: custom_suffix(custom_bank)
+                .map(|suffix| TaikoKey::new(bank, name, Some(suffix))),
             banked: TaikoKey::new(bank, name, None),
         }
     }
@@ -492,7 +496,9 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
     ) {
         let default = sample_point_at(beatmap, start_ms as i64);
         let bank = if sample.bank == SampleBank::Auto {
-            default.map_or(SampleBank::Normal, |point| timing_sample_bank(beatmap, point))
+            default.map_or(SampleBank::Normal, |point| {
+                timing_sample_bank(beatmap, point)
+            })
         } else {
             sample.bank
         };

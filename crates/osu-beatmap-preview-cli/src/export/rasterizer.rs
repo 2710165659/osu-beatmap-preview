@@ -103,12 +103,7 @@ impl FrameBackend for CpuRasterizer {
                         &mut target,
                         source,
                         &sprite,
-                        [
-                            clip.x,
-                            clip.y,
-                            clip.x + clip.width,
-                            clip.y + clip.height,
-                        ],
+                        [clip.x, clip.y, clip.x + clip.width, clip.y + clip.height],
                     );
                 }
                 DrawCommand::Rectangle { rect, color } => {

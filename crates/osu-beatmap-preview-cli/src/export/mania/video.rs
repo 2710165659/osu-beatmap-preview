@@ -6,7 +6,9 @@
 
 use crate::export::canvas::{Img, Rgba};
 use crate::media::audio::AudioSourceJob;
-use crate::media::{frame_time_ms, resolve_video_time_range, save_mp4_streamed, MediaBackground, MediaStoryboard};
+use crate::media::{
+    frame_time_ms, resolve_video_time_range, save_mp4_streamed, MediaBackground, MediaStoryboard,
+};
 use osu_beatmap_preview_core::hitsound::MusicRate;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::Beatmap;

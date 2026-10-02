@@ -407,9 +407,13 @@ mod tests {
     fn osu_velocity_uses_adjusted_beat_length() {
         // adjusted = 160：rate = 3 / (1000 / 160) * 1000 = 18.75
         // 阈值拍长 320 → limit = 640，18.75 < 640 → 拆分
-        assert!(should_convert_slider_to_hits(&values(3.0, 1.0, 160.0, 320.0)));
+        assert!(should_convert_slider_to_hits(&values(
+            3.0, 1.0, 160.0, 320.0
+        )));
         // 阈值拍长 8 → limit = 16，18.75 > 16 → 不拆分。
         // 若 osuV 误用拍长 8：rate = 375 > 16，期望反转，用例失败。
-        assert!(!should_convert_slider_to_hits(&values(3.0, 1.0, 160.0, 8.0)));
+        assert!(!should_convert_slider_to_hits(&values(
+            3.0, 1.0, 160.0, 8.0
+        )));
     }
 }

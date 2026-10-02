@@ -185,7 +185,9 @@ fn frame_to_ms(frame: i64, sample_rate: u32) -> f64 {
 
 /// 毫秒换算成采样帧（至少 1 帧，避免极短时长在低采样率下被截成 0）。
 fn ms_to_frames(milliseconds: f64, sample_rate: u32) -> i64 {
-    (milliseconds * sample_rate as f64 / 1000.0).round().max(1.0) as i64
+    (milliseconds * sample_rate as f64 / 1000.0)
+        .round()
+        .max(1.0) as i64
 }
 
 #[cfg(test)]

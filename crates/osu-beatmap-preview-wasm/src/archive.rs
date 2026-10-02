@@ -110,8 +110,8 @@ pub fn read_storyboard_textures(
     bytes: &[u8],
     paths: &[String],
 ) -> Result<Vec<(String, Vec<u8>)>, String> {
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(bytes)).map_err(|error| format!(".osz 打开失败：{error}"))?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| format!(".osz 打开失败：{error}"))?;
     // 一次扫描建立「归一化小写名 → 条目下标」索引。
     let mut names = std::collections::HashMap::new();
     for index in 0..archive.len() {
@@ -175,8 +175,8 @@ fn read_archive(
     selector: &DifficultySelector,
     want_media: bool,
 ) -> Result<ArchiveContent, String> {
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(bytes)).map_err(|error| format!(".osz 打开失败：{error}"))?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| format!(".osz 打开失败：{error}"))?;
 
     // 顶层 `.osu` 清单：保持压缩包内顺序，同一压缩包的结果稳定可复现。
     let mut candidates: Vec<(usize, String)> = Vec::new();
@@ -272,7 +272,11 @@ fn read_archive(
             .ok()
             .filter(|entry| !entry.is_dir())
             .and_then(|entry| normalize_entry_path(entry.name()))
-            .is_some_and(|name| name.rsplit('.').next().is_some_and(|ext| ext.eq_ignore_ascii_case("osb")))
+            .is_some_and(|name| {
+                name.rsplit('.')
+                    .next()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("osb"))
+            })
     });
     if let Some(index) = osb_index {
         content.osb = read_entry(&mut archive, index, MAX_OSB_BYTES).ok();
@@ -363,7 +367,9 @@ fn is_beatmap_entry(name: &str) -> bool {
 
 /// 字节是否是 ZIP（`.osz`）；否则按 `.osu` 文本处理。
 fn is_zip(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06") || bytes.starts_with(b"PK\x07\x08")
+    bytes.starts_with(b"PK\x03\x04")
+        || bytes.starts_with(b"PK\x05\x06")
+        || bytes.starts_with(b"PK\x07\x08")
 }
 
 fn parse_beatmap(bytes: &[u8]) -> Result<Beatmap, String> {
@@ -508,10 +514,22 @@ mod tests {
         let first = read_input(&bytes, &DifficultySelector::First, false).unwrap();
         assert_eq!(first.difficulties.len(), 2);
         assert_eq!(first.difficulties[1].label, "Someone - Test [Hard]");
-        assert!(parse_beatmap(&first.beatmap).unwrap().metadata.get("Version") == Some("Easy"));
+        assert!(
+            parse_beatmap(&first.beatmap)
+                .unwrap()
+                .metadata
+                .get("Version")
+                == Some("Easy")
+        );
 
         let by_id = read_input(&bytes, &DifficultySelector::ById(200), false).unwrap();
-        assert!(parse_beatmap(&by_id.beatmap).unwrap().metadata.get("Version") == Some("Hard"));
+        assert!(
+            parse_beatmap(&by_id.beatmap)
+                .unwrap()
+                .metadata
+                .get("Version")
+                == Some("Hard")
+        );
 
         let by_entry = read_input(
             &bytes,
@@ -519,7 +537,13 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(parse_beatmap(&by_entry.beatmap).unwrap().metadata.get("Version") == Some("Hard"));
+        assert!(
+            parse_beatmap(&by_entry.beatmap)
+                .unwrap()
+                .metadata
+                .get("Version")
+                == Some("Hard")
+        );
 
         let error = read_input(&bytes, &DifficultySelector::ById(999), false).unwrap_err();
         assert!(error.contains("找不到 bid 为 999"), "{error}");

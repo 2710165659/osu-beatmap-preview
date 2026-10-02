@@ -89,7 +89,11 @@ pub(crate) fn render_mania_grid(
         &timing_points_for_render,
         chart_end_time,
         beatmap.beat_divisor,
-        hit_objects.iter().map(|ho| ho.start_time).min().unwrap_or(0),
+        hit_objects
+            .iter()
+            .map(|ho| ho.start_time)
+            .min()
+            .unwrap_or(0),
     );
     let sv_changes = if cs_mode
         || !native_mania

@@ -22,7 +22,8 @@ impl PngSegment {
     /// 防止极端参数在窗口运算中溢出。
     pub(crate) fn new(start_ms: i64, duration_seconds: f64) -> Result<Self> {
         let duration_f64 = duration_seconds * 1000.0;
-        if !duration_f64.is_finite() || !(0.0..9_223_372_036_854_775_808.0).contains(&duration_f64) {
+        if !duration_f64.is_finite() || !(0.0..9_223_372_036_854_775_808.0).contains(&duration_f64)
+        {
             return Err(PreviewError::new(
                 "duration time is outside the supported range",
             ));
@@ -108,10 +109,13 @@ mod tests {
     fn requested_window_is_kept_inside_the_chart() {
         let segment = PngSegment::new(30_000, 10.0).unwrap();
         let window = resolve_png_window(1_000, 61_000, Some(segment)).unwrap();
-        assert_eq!(window, PngWindow {
-            start_ms: 30_000,
-            end_ms: 40_000
-        });
+        assert_eq!(
+            window,
+            PngWindow {
+                start_ms: 30_000,
+                end_ms: 40_000
+            }
+        );
     }
 
     #[test]
@@ -119,30 +123,39 @@ mod tests {
         // 谱面 60s，请求从 55s 起 10s：窗口整体前移到 [50s, 60s]。
         let segment = PngSegment::new(55_000, 10.0).unwrap();
         let window = resolve_png_window(0, 60_000, Some(segment)).unwrap();
-        assert_eq!(window, PngWindow {
-            start_ms: 50_000,
-            end_ms: 60_000
-        });
+        assert_eq!(
+            window,
+            PngWindow {
+                start_ms: 50_000,
+                end_ms: 60_000
+            }
+        );
     }
 
     #[test]
     fn early_start_shifts_the_window_later_to_keep_duration() {
         let segment = PngSegment::new(-30_000, 10.0).unwrap();
         let window = resolve_png_window(5_000, 60_000, Some(segment)).unwrap();
-        assert_eq!(window, PngWindow {
-            start_ms: 5_000,
-            end_ms: 15_000
-        });
+        assert_eq!(
+            window,
+            PngWindow {
+                start_ms: 5_000,
+                end_ms: 15_000
+            }
+        );
     }
 
     #[test]
     fn duration_not_shorter_than_chart_renders_the_whole_chart() {
         let segment = PngSegment::new(55_000, 600.0).unwrap();
         let window = resolve_png_window(1_000, 61_000, Some(segment)).unwrap();
-        assert_eq!(window, PngWindow {
-            start_ms: 1_000,
-            end_ms: 61_000
-        });
+        assert_eq!(
+            window,
+            PngWindow {
+                start_ms: 1_000,
+                end_ms: 61_000
+            }
+        );
     }
 
     #[test]

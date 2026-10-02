@@ -108,7 +108,12 @@ pub struct HitSample {
 }
 
 impl HitSample {
-    pub fn new(bank: SampleBank, addition: HitAddition, volume: i32, filename: Option<String>) -> Self {
+    pub fn new(
+        bank: SampleBank,
+        addition: HitAddition,
+        volume: i32,
+        filename: Option<String>,
+    ) -> Self {
         Self {
             bank,
             addition,

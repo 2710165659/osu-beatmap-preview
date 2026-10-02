@@ -69,14 +69,7 @@ pub(super) fn push_catch<R: SampleResolver>(
                 );
             }
         } else {
-            builder.push_transformed_samples(
-                &object.samples,
-                "slidertick",
-                head,
-                time,
-                0.0,
-                false,
-            );
+            builder.push_transformed_samples(&object.samples, "slidertick", head, time, 0.0, false);
         }
     }
 

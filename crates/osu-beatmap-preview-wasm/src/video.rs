@@ -112,12 +112,12 @@ impl BackgroundVideo {
         // 移动端要求 playsInline 才不会强制全屏。
         element.set_muted(true);
         element.set_volume(0.0);
-        element.set_attribute("muted", "").map_err(|error| {
-            format!("设置 video muted 失败：{error:?}")
-        })?;
-        element.set_attribute("playsinline", "").map_err(|error| {
-            format!("设置 video playsinline 失败：{error:?}")
-        })?;
+        element
+            .set_attribute("muted", "")
+            .map_err(|error| format!("设置 video muted 失败：{error:?}"))?;
+        element
+            .set_attribute("playsinline", "")
+            .map_err(|error| format!("设置 video playsinline 失败：{error:?}"))?;
         element.set_preload("auto");
         element.set_attribute(
             "style",
@@ -221,7 +221,8 @@ impl BackgroundVideo {
         }
         // 抓帧分辨率封顶：等比缩到「预览画布 / 720p」之内，绝不放大。
         let (limit_w, limit_h) = self.capture_limit;
-        let scale = ((limit_w as f64 / video_w as f64).min(limit_h as f64 / video_h as f64)).min(1.0);
+        let scale =
+            ((limit_w as f64 / video_w as f64).min(limit_h as f64 / video_h as f64)).min(1.0);
         let width = ((video_w as f64 * scale).round() as u32).max(1);
         let height = ((video_h as f64 * scale).round() as u32).max(1);
         if self.canvas.width() != width {

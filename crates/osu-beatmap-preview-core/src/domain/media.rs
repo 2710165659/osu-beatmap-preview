@@ -68,8 +68,7 @@ pub fn entry_extension(path: &str) -> Option<String> {
 /// 与 osu! 一致按扩展名判断；没有可用扩展名（[`entry_extension`] 返回 `None`）
 /// 时一律不是视频。
 pub fn is_video_entry(path: &str) -> bool {
-    entry_extension(path)
-        .is_some_and(|extension| VIDEO_EXTENSIONS.contains(&extension.as_str()))
+    entry_extension(path).is_some_and(|extension| VIDEO_EXTENSIONS.contains(&extension.as_str()))
 }
 
 /// 压缩包里的一个媒体条目。
@@ -126,7 +125,10 @@ impl BeatmapMedia {
                 .background_filename
                 .as_deref()
                 .and_then(MediaEntry::new),
-            video: beatmap.video.as_ref().and_then(|video| MediaEntry::new(&video.filename)),
+            video: beatmap
+                .video
+                .as_ref()
+                .and_then(|video| MediaEntry::new(&video.filename)),
             samples: sample_entries(beatmap),
         }
     }
@@ -375,10 +377,19 @@ mod tests {
             "normal-custom-hit.ogg"
         ));
         assert!(!sample_entry_matches("hitnormal.ogg", "soft-hitnormal"));
-        assert!(!sample_entry_matches("spinnerbonus.ogg", "spinnerbonus-max"));
+        assert!(!sample_entry_matches(
+            "spinnerbonus.ogg",
+            "spinnerbonus-max"
+        ));
         // 越界路径一律不匹配（避免拿 `..` 去压缩包里翻文件）。
-        assert!(!sample_entry_matches("../soft-hitnormal.ogg", "soft-hitnormal"));
-        assert!(!sample_entry_matches("soft-hitnormal.ogg", "../soft-hitnormal"));
+        assert!(!sample_entry_matches(
+            "../soft-hitnormal.ogg",
+            "soft-hitnormal"
+        ));
+        assert!(!sample_entry_matches(
+            "soft-hitnormal.ogg",
+            "../soft-hitnormal"
+        ));
     }
 
     /// 缺少音频与背景时留空，但保留样本候选。

@@ -12,7 +12,7 @@
 //!   `end` 时刻跳到 `end_value`；且仅瞬时命令会把初值提前生效（lazer 的
 //!   `ApplyInitialValue` 只在 `StartTime == EndTime` 时赋值）。
 
-use super::{Command, Element, ElementKind, Property, Value, AnimationLoop};
+use super::{AnimationLoop, Command, Element, ElementKind, Property, Value};
 
 /// 元素在某一时刻的完整状态。
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -68,8 +68,11 @@ impl Element {
         state.x = scalar_at(lists.list(Property::X), time_ms, state.x);
         state.y = scalar_at(lists.list(Property::Y), time_ms, state.y);
         state.scale = scalar_at(lists.list(Property::Scale), time_ms, state.scale);
-        state.vector_scale =
-            vector_at(lists.list(Property::VectorScale), time_ms, state.vector_scale);
+        state.vector_scale = vector_at(
+            lists.list(Property::VectorScale),
+            time_ms,
+            state.vector_scale,
+        );
         state.rotation = scalar_at(lists.list(Property::Rotation), time_ms, state.rotation);
         state.colour = rgb_at(lists.list(Property::Colour), time_ms, state.colour);
         state.alpha = scalar_at(lists.list(Property::Alpha), time_ms, state.alpha);
@@ -295,8 +298,8 @@ pub fn apply_easing_f64(easing: u32, time: f64) -> f64 {
     let mut t = time;
     match easing {
         // 0 None：线性。
-        2 | 3 => t * t,                    // In / InQuad
-        1 | 4 => t * (2.0 - t),            // Out / OutQuad
+        2 | 3 => t * t,         // In / InQuad
+        1 | 4 => t * (2.0 - t), // Out / OutQuad
         5 => {
             if t < 0.5 {
                 t * t * 2.0
@@ -305,7 +308,7 @@ pub fn apply_easing_f64(easing: u32, time: f64) -> f64 {
                 t * t * -2.0 + 1.0
             }
         }
-        6 => t * t * t,                    // InCubic
+        6 => t * t * t, // InCubic
         7 => {
             t -= 1.0;
             t * t * t + 1.0
@@ -318,7 +321,7 @@ pub fn apply_easing_f64(easing: u32, time: f64) -> f64 {
                 t * t * t * 4.0 + 1.0
             }
         }
-        9 => t * t * t * t,                // InQuart
+        9 => t * t * t * t, // InQuart
         10 => {
             t -= 1.0;
             1.0 - t * t * t * t
@@ -331,7 +334,7 @@ pub fn apply_easing_f64(easing: u32, time: f64) -> f64 {
                 t * t * t * t * -8.0 + 1.0
             }
         }
-        12 => t * t * t * t * t,           // InQuint
+        12 => t * t * t * t * t, // InQuint
         13 => {
             t -= 1.0;
             t * t * t * t * t + 1.0
@@ -344,11 +347,11 @@ pub fn apply_easing_f64(easing: u32, time: f64) -> f64 {
                 t * t * t * t * t * 16.0 + 1.0
             }
         }
-        15 => 1.0 - (t * std::f64::consts::PI * 0.5).cos(),  // InSine
-        16 => (t * std::f64::consts::PI * 0.5).sin(),        // OutSine
-        17 => 0.5 - 0.5 * (std::f64::consts::PI * t).cos(),  // InOutSine
+        15 => 1.0 - (t * std::f64::consts::PI * 0.5).cos(), // InSine
+        16 => (t * std::f64::consts::PI * 0.5).sin(),       // OutSine
+        17 => 0.5 - 0.5 * (std::f64::consts::PI * t).cos(), // InOutSine
         18 => 2f64.powf(10.0 * (t - 1.0)) + expo_offset * (t - 1.0), // InExpo
-        19 => -2f64.powf(-10.0 * t) + 1.0 + expo_offset * t,         // OutExpo
+        19 => -2f64.powf(-10.0 * t) + 1.0 + expo_offset * t, // OutExpo
         20 => {
             if t < 0.5 {
                 0.5 * (2f64.powf(20.0 * t - 10.0) + expo_offset * (2.0 * t - 1.0))
@@ -356,7 +359,7 @@ pub fn apply_easing_f64(easing: u32, time: f64) -> f64 {
                 1.0 - 0.5 * (2f64.powf(-20.0 * t + 10.0) + expo_offset * (-2.0 * t + 1.0))
             }
         }
-        21 => 1.0 - (1.0 - t * t).sqrt(),  // InCirc
+        21 => 1.0 - (1.0 - t * t).sqrt(), // InCirc
         22 => {
             t -= 1.0;
             (1.0 - t * t).sqrt()
@@ -522,9 +525,18 @@ mod tests {
         for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
             let t64 = f64::from(t);
             assert!((apply_easing(0, t) - t).abs() < 1e-6, "线性 {t}");
-            assert!((apply_easing(1, t) - (t64 * (2.0 - t64)) as f32).abs() < 1e-6, "Out {t}");
-            assert!((apply_easing(2, t) - (t64 * t64) as f32).abs() < 1e-6, "In {t}");
-            assert!((apply_easing(3, t) - (t64 * t64) as f32).abs() < 1e-6, "InQuad {t}");
+            assert!(
+                (apply_easing(1, t) - (t64 * (2.0 - t64)) as f32).abs() < 1e-6,
+                "Out {t}"
+            );
+            assert!(
+                (apply_easing(2, t) - (t64 * t64) as f32).abs() < 1e-6,
+                "In {t}"
+            );
+            assert!(
+                (apply_easing(3, t) - (t64 * t64) as f32).abs() < 1e-6,
+                "InQuad {t}"
+            );
         }
         // OutPow10 端点精确。
         assert!((apply_easing(35, 1.0) - 1.0).abs() < 1e-6);
@@ -545,7 +557,11 @@ mod tests {
         let state = element.state_at(0.0);
         assert_eq!(state.x, 0.0, "命令开始前显示最早命令的 startValue");
         let state = element.state_at(1500.0);
-        assert!((state.x - 50.0).abs() < 1e-3, "中点线性插值，实际 {}", state.x);
+        assert!(
+            (state.x - 50.0).abs() < 1e-3,
+            "中点线性插值，实际 {}",
+            state.x
+        );
         let state = element.state_at(3000.0);
         assert_eq!(state.x, 100.0, "命令结束后保持 endValue");
     }
@@ -622,14 +638,22 @@ mod tests {
         };
         assert_eq!(element.state_at(500.0).frame_index, 0);
         assert_eq!(element.state_at(750.0).frame_index, 2);
-        assert_eq!(element.state_at(2000.0).frame_index, 2, "LoopOnce 停在最后一帧");
+        assert_eq!(
+            element.state_at(2000.0).frame_index,
+            2,
+            "LoopOnce 停在最后一帧"
+        );
 
         element.kind = ElementKind::Animation {
             frame_count: 3,
             frame_delay_ms: 100.0,
             loop_type: AnimationLoop::LoopForever,
         };
-        assert_eq!(element.state_at(800.0).frame_index, 0, "LoopForever 循环回第一帧");
+        assert_eq!(
+            element.state_at(800.0).frame_index,
+            0,
+            "LoopForever 循环回第一帧"
+        );
     }
 
     /// 颜色插值在 linear 空间（gamma 校正），与 osu! 一致。
@@ -646,6 +670,9 @@ mod tests {
         let element = element_with(vec![vec![command]]);
         let mid = element.state_at(500.0).colour[0];
         // linear 空间中点再转回 sRGB 约 0.735；sRGB 直插则为 0.5。
-        assert!((mid - 0.7354).abs() < 5e-3, "中点应为 gamma 校正值，实际 {mid}");
+        assert!(
+            (mid - 0.7354).abs() < 5e-3,
+            "中点应为 gamma 校正值，实际 {mid}"
+        );
     }
 }

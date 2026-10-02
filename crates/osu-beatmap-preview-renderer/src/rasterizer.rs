@@ -574,8 +574,7 @@ impl SceneRasterizer {
             .map(|(&id, image)| ResourceKey::new(id, image))
             .collect::<HashSet<_>>();
         self.textures.retain(|key, cached| {
-            live.contains(key)
-                || cached.last_used + TEXTURE_EVICTION_GRACE_FRAMES >= frames_seen
+            live.contains(key) || cached.last_used + TEXTURE_EVICTION_GRACE_FRAMES >= frames_seen
         });
         let mut uploads = 0;
         for (&id, image) in scene.resources.iter() {

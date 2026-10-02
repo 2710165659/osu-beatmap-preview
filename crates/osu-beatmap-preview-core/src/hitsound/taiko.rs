@@ -3,7 +3,9 @@
 //! 走的是 legacy（classic 皮肤）路径：音效组取自物件 `hitSample` 与所在 timing point，
 //! 鼓边按 `clap|whistle` 判定，strong 追加 `finish`/`whistle`。
 
-use crate::domain::models::{Beatmap, HitAddition, HitSample, SampleBank, StandardHitObject, TaikoHitObject};
+use crate::domain::models::{
+    Beatmap, HitAddition, HitSample, SampleBank, StandardHitObject, TaikoHitObject,
+};
 use crate::render::cpu::modes::catch::objects::difficulty_range;
 use crate::render::cpu::modes::taiko::animation::generate_drum_roll_ticks;
 use crate::render::cpu::modes::taiko::constants::{
@@ -31,8 +33,15 @@ struct TaikoSampleSpec {
 /// 物件没有自带 `hitSample`（或样本未指定音效组/音量）时回退到所在 timing point。
 /// 注意这里刻意不按音量重选音效组：那是 osu! Argon 皮肤（`VolumeAwareHitSampleInfo`）的逻辑，
 /// 本项目使用 classic 皮肤资源，走的是 legacy 查找路径。
-fn taiko_sample_spec(samples: &[HitSample], beatmap: &Beatmap, time: i64, name: &str) -> TaikoSampleSpec {
-    let normal = samples.iter().find(|sample| sample.addition == HitAddition::None);
+fn taiko_sample_spec(
+    samples: &[HitSample],
+    beatmap: &Beatmap,
+    time: i64,
+    name: &str,
+) -> TaikoSampleSpec {
+    let normal = samples
+        .iter()
+        .find(|sample| sample.addition == HitAddition::None);
     let addition = samples
         .iter()
         .find(|sample| sample.addition != HitAddition::None);
@@ -44,7 +53,9 @@ fn taiko_sample_spec(samples: &[HitSample], beatmap: &Beatmap, time: i64, name: 
     let fallback = DefaultSample::at(beatmap, time);
     let bank = match picked.map(|sample| sample.bank) {
         // `Auto` 表示 `.osu` 里没有指定音效组：用 timing point 的采样组。
-        Some(SampleBank::Auto) | None => fallback.map_or(SampleBank::Normal, |default| default.bank),
+        Some(SampleBank::Auto) | None => {
+            fallback.map_or(SampleBank::Normal, |default| default.bank)
+        }
         Some(bank) => bank,
     };
     let volume = picked
@@ -127,7 +138,8 @@ fn push_taiko_swell<R: SampleResolver>(
     let duration_ms = (object.end_time - object.start_time).clamp(0, 600_000) as f64;
     let overall_difficulty = beatmap.difficulty.get_f64_or("OverallDifficulty", 5.0);
     // 与 C# 的 `(int)Math.Max(1, duration / 1000 * hitsPerSecond)` 一致：先取至少 1，再截断。
-    let required = (duration_ms / 1000.0 * swell_hits_per_second(overall_difficulty)).max(1.0) as i32;
+    let required =
+        (duration_ms / 1000.0 * swell_hits_per_second(overall_difficulty)).max(1.0) as i32;
     let hit_rate = 50.0_f64.min(duration_ms / required.max(1) as f64);
     if !hit_rate.is_finite() || hit_rate <= 0.0 {
         return;
@@ -164,9 +176,21 @@ pub(super) fn push_taiko_object<R: SampleResolver>(
     // 红蓝判定与画面共用 `HIT_SOUNDS_RIM`（whistle | clap），只认 clap 位会漏掉 whistle 蓝音符。
     let is_rim = object.hitsound & HIT_SOUNDS_RIM != 0;
     if object.hitsound & HIT_SOUNDS_STRONG != 0 {
-        push_taiko_strong(builder, &object.samples, beatmap, object.start_time as f64, is_rim);
+        push_taiko_strong(
+            builder,
+            &object.samples,
+            beatmap,
+            object.start_time as f64,
+            is_rim,
+        );
     } else {
-        push_taiko_press(builder, &object.samples, beatmap, object.start_time as f64, is_rim);
+        push_taiko_press(
+            builder,
+            &object.samples,
+            beatmap,
+            object.start_time as f64,
+            is_rim,
+        );
     }
 }
 
@@ -245,7 +269,12 @@ mod tests {
                     end_time: 1000,
                     hit_type: 0,
                     hitsound: 1,
-                    samples: vec![HitSample::new(SampleBank::Soft, HitAddition::None, 80, None)],
+                    samples: vec![HitSample::new(
+                        SampleBank::Soft,
+                        HitAddition::None,
+                        80,
+                        None,
+                    )],
                 },
                 // 普通层没指定音效组（Auto）、加成层是 drum：蓝音符继承加成层的音效组。
                 TaikoHitObject {
@@ -264,7 +293,12 @@ mod tests {
                     end_time: 3000,
                     hit_type: 0,
                     hitsound: 0,
-                    samples: vec![HitSample::new(SampleBank::Auto, HitAddition::None, 80, None)],
+                    samples: vec![HitSample::new(
+                        SampleBank::Auto,
+                        HitAddition::None,
+                        80,
+                        None,
+                    )],
                 },
             ]),
         );
@@ -403,7 +437,11 @@ mod tests {
             } else {
                 "taiko-normal-hitclap"
             };
-            assert_eq!(library.name_of(event.source_id), Some(expected), "第 {index} 次敲击");
+            assert_eq!(
+                library.name_of(event.source_id),
+                Some(expected),
+                "第 {index} 次敲击"
+            );
             assert!((event.start_ms - index as f64 * 50.0).abs() < 1e-9);
         }
     }

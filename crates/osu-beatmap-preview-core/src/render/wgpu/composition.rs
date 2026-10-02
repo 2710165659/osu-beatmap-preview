@@ -113,11 +113,8 @@ pub fn compose_video_scene(
     // 吃用户暗度（亮度预乘进精灵颜色，见 `StoryboardLayers::brightness`）。
     match storyboard.as_ref() {
         Some(layers) => {
-            let view = StoryboardViewport::new(
-                width as f32,
-                height as f32,
-                layers.storyboard.widescreen,
-            );
+            let view =
+                StoryboardViewport::new(width as f32, height as f32, layers.storyboard.widescreen);
             let (behind, front) = layers.storyboard.sprites_at(layers.chart_ms);
             append_scene_sprites(
                 &mut builder,
@@ -333,7 +330,10 @@ mod tests {
             1280,
             720,
             None,
-            Some(VideoSource::External { slot: 7, alpha: 0.25 }),
+            Some(VideoSource::External {
+                slot: 7,
+                alpha: 0.25,
+            }),
             None,
             VideoStyle::default(),
         )
@@ -394,8 +394,17 @@ mod tests {
         // 命令顺序：兜底底色 → 背景层故事板 → playfield → 前景层故事板 → 时间标签。
         let is_transformed =
             |command: &DrawCommand| matches!(command, DrawCommand::TransformedSprite { .. });
-        assert!(is_transformed(&scene.commands[1]), "第二条必须是背景层故事板");
-        assert!(!is_transformed(&scene.commands[2]), "第三条是 playfield 矩形");
-        assert!(is_transformed(&scene.commands[3]), "第四条必须是前景层故事板");
+        assert!(
+            is_transformed(&scene.commands[1]),
+            "第二条必须是背景层故事板"
+        );
+        assert!(
+            !is_transformed(&scene.commands[2]),
+            "第三条是 playfield 矩形"
+        );
+        assert!(
+            is_transformed(&scene.commands[3]),
+            "第四条必须是前景层故事板"
+        );
     }
 }

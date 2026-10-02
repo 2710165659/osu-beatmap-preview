@@ -86,7 +86,9 @@ impl SurfaceRenderer {
             return Err(PreviewError::render("external frame has zero size"));
         }
         let device = Arc::clone(&self.device);
-        let texture = self.rasterizer.external_texture(&device, slot, width, height);
+        let texture = self
+            .rasterizer
+            .external_texture(&device, slot, width, height);
         self.queue.copy_external_image_to_texture(
             &wgpu::CopyExternalImageSourceInfo {
                 source: source.clone(),

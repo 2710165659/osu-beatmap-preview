@@ -10,8 +10,8 @@
 //! （osu! 的主/次流解码顺序），层内后定义的元素绘制在上层。
 
 use super::{
-    normalize_path, Command, Element, ElementCommands, ElementKind, Layer, Origin, Property,
-    Sample, Storyboard, TriggerGroup, Value, AnimationLoop, LayerElements, PROPERTY_COUNT,
+    normalize_path, AnimationLoop, Command, Element, ElementCommands, ElementKind, Layer,
+    LayerElements, Origin, Property, Sample, Storyboard, TriggerGroup, Value, PROPERTY_COUNT,
 };
 use crate::domain::parser::round_half_even;
 
@@ -195,7 +195,9 @@ fn parse_stream(text: &str, builder: &mut StoryboardBuilder) {
         match section.as_str() {
             "Variables" => {
                 if let Some((key, value)) = line.split_once('=') {
-                    builder.variables.push((key.trim().to_string(), value.trim().to_string()));
+                    builder
+                        .variables
+                        .push((key.trim().to_string(), value.trim().to_string()));
                 }
             }
             "General" => {
@@ -227,10 +229,7 @@ fn parse_event_line(
     current: &mut Option<ElementBuilder>,
     builder: &mut StoryboardBuilder,
 ) {
-    let depth = line
-        .chars()
-        .take_while(|c| *c == ' ' || *c == '_')
-        .count();
+    let depth = line.chars().take_while(|c| *c == ' ' || *c == '_').count();
     let content = &line[depth..];
     if content.is_empty() {
         return;
@@ -296,9 +295,8 @@ fn parse_element_header(
             let mut frame_delay_ms = parse_f64(split.get(7)?)?;
             if format_version < 6 {
                 // 老格式的帧时长换算（照抄 osu-stable；Math.Round 为四舍六入五成双）。
-                frame_delay_ms = round_half_even(0.015 * frame_delay_ms) as f64
-                    * 1.186
-                    * (1000.0 / 60.0);
+                frame_delay_ms =
+                    round_half_even(0.015 * frame_delay_ms) as f64 * 1.186 * (1000.0 / 60.0);
             }
             let loop_type = split
                 .get(8)
@@ -507,7 +505,11 @@ fn parse_value_command(split: &[&str]) -> Option<Vec<Command>> {
             push(
                 Property::Colour,
                 Value::Rgb((r / 255.0) as f32, (g / 255.0) as f32, (b / 255.0) as f32),
-                Value::Rgb((er / 255.0) as f32, (eg / 255.0) as f32, (eb / 255.0) as f32),
+                Value::Rgb(
+                    (er / 255.0) as f32,
+                    (eg / 255.0) as f32,
+                    (eb / 255.0) as f32,
+                ),
             );
         }
         "P" => {
@@ -613,7 +615,9 @@ mod tests {
              __F,0,0,100,0,1\n\
              __F,0,50,150,1,0",
         );
-        let alpha = storyboard.layers[0].elements[0].commands.list(Property::Alpha);
+        let alpha = storyboard.layers[0].elements[0]
+            .commands
+            .list(Property::Alpha);
         assert_eq!(alpha.len(), 6, "2 条命令 × 3 次播放");
         // 周期 = 150 - 0 = 150；第 2 次播放整体 +150、第 3 次 +300。
         assert_eq!(alpha[2].start_ms, 1150.0);
@@ -670,7 +674,10 @@ mod tests {
     #[test]
     fn sample_events_are_collected() {
         let storyboard = storyboard_of("Sample,1234,Foreground,\"a.wav\",80");
-        assert!(storyboard.layers.iter().all(|layer| layer.elements.is_empty()));
+        assert!(storyboard
+            .layers
+            .iter()
+            .all(|layer| layer.elements.is_empty()));
         assert_eq!(storyboard.samples.len(), 1);
         assert_eq!(storyboard.samples[0].time_ms, 1234.0);
         assert_eq!(storyboard.samples[0].volume, 80);

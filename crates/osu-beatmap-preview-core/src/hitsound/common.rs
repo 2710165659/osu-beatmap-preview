@@ -88,7 +88,12 @@ pub(super) fn timing_sample_bank(beatmap: &Beatmap, point: &TimingPoint) -> Samp
     if point.sample_set != 0 {
         return SampleBank::from_set_id(point.sample_set);
     }
-    match beatmap.general.get("SampleSet").map(str::trim).unwrap_or("") {
+    match beatmap
+        .general
+        .get("SampleSet")
+        .map(str::trim)
+        .unwrap_or("")
+    {
         value if value.eq_ignore_ascii_case("soft") => SampleBank::Soft,
         value if value.eq_ignore_ascii_case("drum") => SampleBank::Drum,
         _ => SampleBank::Normal,
@@ -102,7 +107,9 @@ pub(super) fn head_sample(samples: &[HitSample], beatmap: &Beatmap, time: i64) -
         Some(sample) => {
             let default = sample_point_at(beatmap, time);
             let bank = if sample.bank == SampleBank::Auto {
-                default.map_or(SampleBank::Normal, |point| timing_sample_bank(beatmap, point))
+                default.map_or(SampleBank::Normal, |point| {
+                    timing_sample_bank(beatmap, point)
+                })
             } else {
                 sample.bank
             };

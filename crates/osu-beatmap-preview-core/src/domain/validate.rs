@@ -173,8 +173,13 @@ mod tests {
     fn segment_png_requires_one_paired_time_range() {
         // 成对给出：接受（taiko/catch/mania 任一模式）。
         for mode in [1, 2, 3] {
-            validate_with_context(&ctx("png", mode), &[TimePoint::Seconds(30.0)], Some(20.0), None)
-                .unwrap();
+            validate_with_context(
+                &ctx("png", mode),
+                &[TimePoint::Seconds(30.0)],
+                Some(20.0),
+                None,
+            )
+            .unwrap();
         }
         // 缺任一端：拒绝。
         assert!(validate_with_context(&ctx("png", 3), &[TimePoint::Preview], None, None).is_err());

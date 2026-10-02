@@ -167,13 +167,7 @@ fn push_standard_spinner<R: SampleResolver>(
     // 判定音：`DrawableHitObject` 只在 `ArmedState.Hit` 时 `PlaySamples()`，而转盘的判定
     // 成立在结束处（`CheckForResult` 在 `Time.Current < EndTime` 时直接返回），所以它响在
     // 转盘结束而不是出现时。
-    push_declared_samples(
-        builder,
-        &object.samples,
-        object.hitsound,
-        beatmap,
-        end,
-    );
+    push_declared_samples(builder, &object.samples, object.hitsound, beatmap, end);
 }
 
 fn push_standard_slider<R: SampleResolver>(
@@ -474,7 +468,12 @@ mod tests {
                     end_time: 2000,
                     hit_type: 1,
                     hitsound: 0,
-                    samples: vec![HitSample::new(SampleBank::Drum, HitAddition::None, 40, None)],
+                    samples: vec![HitSample::new(
+                        SampleBank::Drum,
+                        HitAddition::None,
+                        40,
+                        None,
+                    )],
                     ..Default::default()
                 },
             ]),
@@ -483,8 +482,14 @@ mod tests {
 
         let timeline = build_timeline(&beatmap, &library);
         assert_eq!(timeline.len(), 2);
-        assert_eq!(library.name_of(timeline.events[0].source_id), Some("soft-hitnormal"));
-        assert_eq!(library.name_of(timeline.events[1].source_id), Some("drum-hitnormal"));
+        assert_eq!(
+            library.name_of(timeline.events[0].source_id),
+            Some("soft-hitnormal")
+        );
+        assert_eq!(
+            library.name_of(timeline.events[1].source_id),
+            Some("drum-hitnormal")
+        );
     }
 
     /// 滑条生成滑行音与 tick 事件。
