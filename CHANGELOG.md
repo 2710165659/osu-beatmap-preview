@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- CLI 背景视频解码**按关键帧分段并行**（IDR 之间互相独立，实测 43 段可并行），并且只对输出时间轴会取到的画面做 RGBA 转换与缩放暗化（15fps 输出从 24fps 视频取样约六成），批次并行度按「核数 vs 内存预算」封顶；逐帧缩放从 Lanczos3 换成双线性（Lanczos 实测 32ms/帧，占背景视频合成七成耗时；暗化装饰层看不出差别），暗化改整数查找表。同一测试图（2:17、800×450 视频）带背景视频的完整导出从 68s 降到约 20s。
 - 在线下载按**是否需要背景视频**选择谱面包：Web 端固定下载带视频的完整包；CLI 端跟随当前模式的 `ENABLE_BACKGROUND_VIDEO`——开启背景视频才下载完整包，关闭时用 novideo 去视频包省流量。包大小上限同步提到 256MB（`download.osz.MAX_OSZ_BYTES` / Web 同值），缓存文件名区分两种包变体（`<set_id>-video.osz` / `<set_id>-novideo.osz`）避免互相污染。
 - Web 端「背景视频」开关置灰时会写明具体原因（谱面没有视频 / 包内缺失文件 / 容器浏览器不支持，如 `.avi`），不再一律显示「没有背景视频」。
 - `DT`/`HT` 改为**保调**变速（游戏里 `AdjustPitch` 默认关、等价 `AdjustableProperty.Tempo`）：音乐按倍率变快/变慢而音高不变。实时预览与 MP4 导出都通过 WSOLA 时间伸缩实现；无 Mod 与 `NC`/`DC` 默认速度仍走原来的无状态重采样快路径，输出逐位不变。

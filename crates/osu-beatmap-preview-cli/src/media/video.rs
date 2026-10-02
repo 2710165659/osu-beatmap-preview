@@ -69,7 +69,11 @@ fn encoder_queue_capacity(par_chunk_size: usize) -> usize {
     par_chunk_size.clamp(1, 8)
 }
 
-#[derive(Debug, Clone, Copy)]
+/// 后端无关的视频合成样式。
+///
+/// `Default` 只用于背景视频解码上下文的「尚未配置」占位（`background_video.rs`
+/// 在 `begin_decode` 前构造），实际渲染一律用 [`video_style`] 从配置取。
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct VideoStyle {
     pub(crate) enable_background_image: bool,
     pub(crate) enable_background_video: bool,
@@ -378,10 +382,15 @@ pub(crate) fn save_mp4_streamed(
     // 这里绝不能再对已合成的帧调用 `video_canvas_16_9`（它不幂等，会撑大分辨率）。
     let (out_w, out_h) = (pf_w, pf_h);
     let style = video_style(mode);
+    // 输出时间轴（谱面绝对毫秒）：背景视频按它做「只保留会被取样到的画面」
+    // 的并行解码，逐帧预取也用同一份时间，保证背景与玩法帧严格对齐。
+    let chart_times: Vec<i64> = (0..frame_count)
+        .map(|frame_index| frame_time_ms(chart_start_ms, frame_index, speed, fps))
+        .collect();
     // 背景（静态图 + 背景视频）只在最终画布上处理一次，避免 playfield 与画布
     // 分别裁剪同一素材造成画面不连续；`FinalRgba` 回调已自行合成最终帧，
     // 不会调用 `background_at`，因此这里无需区分对待。
-    let mut backgrounds = FrameBackgrounds::new(background, out_w, out_h, style);
+    let mut backgrounds = FrameBackgrounds::new(background, out_w, out_h, style, &chart_times);
 
     // ── 选择最佳可用编码后端 ──
     let mut encoder = create_encoder(out_w, out_h, fps)?;
@@ -409,7 +418,7 @@ pub(crate) fn save_mp4_streamed(
 
     // ── 编码首帧并提取 SPS/PPS，供 MP4 轨道配置使用 ──
     let first_background = (composition == FrameComposition::Canvas)
-        .then(|| backgrounds.background_at(frame_time_ms(chart_start_ms, 0, speed, fps)))
+        .then(|| backgrounds.background_at(chart_times[0]))
         .flatten();
     let first_comp = match composition {
         FrameComposition::Canvas => compose_frame(
@@ -541,8 +550,9 @@ pub(crate) fn save_mp4_streamed(
                 break;
             }
             let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
-            // 背景视频只能单向顺序解码：每块先按时间轴预取好各帧背景，再并行合成。
-            // 首个导出区间可能要一次解过很长一段视频，逐帧检查超时并干净退出。
+            // 每块先按时间轴预取好各帧背景（视频画面由分段并行解码按时间序
+            // 供给），再并行合成；首个导出区间可能要一次解过很长一段视频，
+            // 逐帧检查超时并干净退出。
             let mut chunk_backgrounds: Vec<Option<Arc<Img>>> =
                 Vec::with_capacity(chunk_end - chunk_start);
             if composition == FrameComposition::Canvas {
@@ -551,9 +561,8 @@ pub(crate) fn save_mp4_streamed(
                         send_failure = Some(Err(error));
                         break 'pipeline;
                     }
-                    chunk_backgrounds.push(backgrounds.background_at(
-                        frame_time_ms(chart_start_ms, frame_index, speed, fps),
-                    ));
+                    chunk_backgrounds
+                        .push(backgrounds.background_at(chart_times[frame_index]));
                 }
             } else {
                 chunk_backgrounds.resize(chunk_end - chunk_start, None);
@@ -904,15 +913,19 @@ fn prepare_video_background_inner(
     };
     let resized_width = ((source.w as f64 * scale).round() as u32).max(1);
     let resized_height = ((source.h as f64 * scale).round() as u32).max(1);
-    let resized = source.resize(resized_width, resized_height);
+    // 双线性而非 Lanczos3：这条路径逐帧执行（视频背景每秒换几十次），
+    // Lanczos 每帧要 32ms，是背景视频合成的七成耗时；暗化装饰层看不出差别。
+    let resized = source.resize_bilinear(resized_width, resized_height);
     let left = (width as i64 - resized_width as i64) / 2;
     let top = (height as i64 - resized_height as i64) / 2;
     result.alpha_composite(&resized, left, top);
+    // 暗化用整数查找表：逐像素 f64 循环在逐帧路径上同样不划算。
     let brightness = 1.0 - style.background_dim.clamp(0.0, 1.0);
+    let table: [u8; 256] = std::array::from_fn(|value| (value as f64 * brightness).round() as u8);
     for pixel in result.data.chunks_exact_mut(4) {
-        pixel[0] = (pixel[0] as f64 * brightness).round() as u8;
-        pixel[1] = (pixel[1] as f64 * brightness).round() as u8;
-        pixel[2] = (pixel[2] as f64 * brightness).round() as u8;
+        pixel[0] = table[pixel[0] as usize];
+        pixel[1] = table[pixel[1] as usize];
+        pixel[2] = table[pixel[2] as usize];
     }
     result
 }

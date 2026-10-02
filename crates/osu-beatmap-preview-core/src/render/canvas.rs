@@ -164,6 +164,52 @@ impl Img {
         resample_axis(&horizontal, nh, false)
     }
 
+    /// 快速双线性缩放：给「每帧都要处理」的路径用（如逐帧视频背景）。
+    ///
+    /// [`Img::resize`] 的 Lanczos3 质量更高，但每帧要几十毫秒（实测 32ms/帧
+    /// 占了背景视频合成的七成耗时）；背景视频是暗化 70% 的装饰层，双线性与
+    /// Lanczos 的差别看不出来，速度差一个量级。
+    pub fn resize_bilinear(&self, nw: u32, nh: u32) -> Img {
+        let (w, h) = (self.w.max(1), self.h.max(1));
+        let (nw, nh) = (nw.max(1), nh.max(1));
+        if w == nw && h == nh {
+            return self.clone();
+        }
+        let mut out = Img::new(nw, nh, [0, 0, 0, 255]);
+        let (sx_ratio, sy_ratio) = (w as f32 / nw as f32, h as f32 / nh as f32);
+        for y in 0..nh {
+            // 像素中心对齐的采样坐标，边界截断到有效范围。
+            let sy = ((y as f32 + 0.5) * sy_ratio - 0.5).clamp(0.0, (h - 1) as f32);
+            let y0 = sy.floor() as usize;
+            let y1 = (y0 + 1).min(h as usize - 1);
+            let fy = sy - y0 as f32;
+            for x in 0..nw {
+                let sx = ((x as f32 + 0.5) * sx_ratio - 0.5).clamp(0.0, (w - 1) as f32);
+                let x0 = sx.floor() as usize;
+                let x1 = (x0 + 1).min(w as usize - 1);
+                let fx = sx - x0 as f32;
+                let mut acc = [0.0_f32; 4];
+                for (row, wy) in [(y0, 1.0 - fy), (y1, fy)] {
+                    for (col, wx) in [(x0, 1.0 - fx), (x1, fx)] {
+                        let weight = wy * wx;
+                        if weight <= 0.0 {
+                            continue;
+                        }
+                        let pixel = &self.data[(row * w as usize + col) * 4..][..4];
+                        for channel in 0..4 {
+                            acc[channel] += pixel[channel] as f32 * weight;
+                        }
+                    }
+                }
+                let base = (y as usize * nw as usize + x as usize) * 4;
+                for channel in 0..4 {
+                    out.data[base + channel] = acc[channel].round().clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+        out
+    }
+
     /// 逆时针旋转 `angle_deg` 度，使用 expand=true 和双线性采样。
     pub fn rotate_expand(&self, angle_deg: f64) -> Img {
         let theta = angle_deg.to_radians();
