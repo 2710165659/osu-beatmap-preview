@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- 批量渲染脚本重组为 `scripts/` 下的 8 个脚本：一般测试集、极端测试谱面、mod 测试、转谱、视频渲染、配置渲染、背景视频/故事板各一个，外加一键总计 `batch_render_all.ps1`；根目录旧 `batch_render*.ps1` 删除，任务清单并入对应新脚本。7 个渲染脚本的报告列统一（`渲染ms`、`覆盖s`、`每sms`、`大小KB`、`峰值MB`、`CPU`、`GPU峰值`、`备注`），渲染结束后输出全部任务的总耗时汇总与机器可读 `SUMMARY` 行，并生成 `results.csv` 供总计脚本使用；PNG 遇到该模式不支持的 mod 自动跳过（记 SKIP）。产物统一收敛到默认输出目录（`%TEMP%/osu-beatmap-preview/outputs`）下的 `batch-*` 子文件夹，脚本结束后清理输出根目录散文件（不动子文件夹）。总计脚本顺序执行 7 个脚本并生成 `report.md`（含全部单项、按格式/模式汇总与总结，可直接替换 `docs\report.md`，或用 `-UpdateDocs` 自动同步）。
 - CLI 背景视频解码**按关键帧分段并行**（IDR 之间互相独立，实测 43 段可并行），并且只对输出时间轴会取到的画面做 RGBA 转换与缩放暗化（15fps 输出从 24fps 视频取样约六成），批次并行度按「核数 vs 内存预算」封顶；逐帧缩放从 Lanczos3 换成双线性（Lanczos 实测 32ms/帧，占背景视频合成七成耗时；暗化装饰层看不出差别），暗化改整数查找表。同一测试图（2:17、800×450 视频）带背景视频的完整导出从 68s 降到约 20s。
 - 在线下载按**是否需要背景视频**选择谱面包：Web 端固定下载带视频的完整包；CLI 端跟随当前模式的 `ENABLE_BACKGROUND_VIDEO`——开启背景视频才下载完整包，关闭时用 novideo 去视频包省流量。包大小上限同步提到 256MB（`download.osz.MAX_OSZ_BYTES` / Web 同值），缓存文件名区分两种包变体（`<set_id>-video.osz` / `<set_id>-novideo.osz`）避免互相污染。
 - Web 端「背景视频」开关置灰时会写明具体原因（谱面没有视频 / 包内缺失文件 / 容器浏览器不支持，如 `.avi`），不再一律显示「没有背景视频」。
