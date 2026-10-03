@@ -562,12 +562,12 @@ pub(crate) fn save_mp4_streamed(
             let mut chunk_backgrounds: Vec<Option<Arc<Img>>> =
                 Vec::with_capacity(chunk_end - chunk_start);
             if composition == FrameComposition::Canvas {
-                for frame_index in chunk_start..chunk_end {
+                for &time in &chart_times[chunk_start..chunk_end] {
                     if let Err(error) = deadline.check() {
                         send_failure = Some(Err(error));
                         break 'pipeline;
                     }
-                    chunk_backgrounds.push(backgrounds.background_at(chart_times[frame_index]));
+                    chunk_backgrounds.push(backgrounds.background_at(time));
                 }
             } else {
                 chunk_backgrounds.resize(chunk_end - chunk_start, None);

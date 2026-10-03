@@ -202,8 +202,8 @@ impl Img {
                     }
                 }
                 let base = (y as usize * nw as usize + x as usize) * 4;
-                for channel in 0..4 {
-                    out.data[base + channel] = acc[channel].round().clamp(0.0, 255.0) as u8;
+                for (channel, value) in acc.iter().enumerate() {
+                    out.data[base + channel] = value.round().clamp(0.0, 255.0) as u8;
                 }
             }
         }

@@ -1,10 +1,11 @@
 //! osu!catch 的打击音事件：水果与果汁流（juice stream）。
 
 use crate::domain::models::{Beatmap, CatchHitObject, HitAddition};
+use crate::render::cpu::modes::standard::slider::{slider_tick_times, SliderTickParams};
 
 use super::common::{head_sample, push_declared_samples, push_default_samples, slider_timing};
 use super::sample::SampleResolver;
-use super::timeline::TimelineBuilder;
+use super::timeline::{NamedEvent, TimelineBuilder};
 
 pub(super) fn push_catch<R: SampleResolver>(
     builder: &mut TimelineBuilder<R>,
@@ -33,40 +34,40 @@ pub(super) fn push_catch<R: SampleResolver>(
     let (beat_length, slider_velocity) = slider_timing(object.start_time, beatmap);
     let slider_multiplier = beatmap.difficulty.get_f64_or("SliderMultiplier", 1.4);
     let tick_rate = beatmap.difficulty.get_f64_or("SliderTickRate", 1.0);
-    let times = crate::render::cpu::modes::standard::slider::slider_tick_times(
-        object.slider_pixel_length,
-        object.start_time,
-        object.end_time,
-        object.slider_repeats,
+    let times = slider_tick_times(SliderTickParams {
+        world_length: object.slider_pixel_length,
+        start_time: object.start_time,
+        end_time: object.end_time,
+        repeats: object.slider_repeats,
         beat_length,
         slider_velocity,
         tick_rate,
         slider_multiplier,
-    );
+    });
     for time in times {
         // 果汁流的每个小果都把头部样本名替换为 slidertick，保留所有层和音量。
         // 参数取自头部（osu! `JuiceStream` 的 `dropletSamples = Samples.With("slidertick")`），
         // 而不是小果所在时刻的 timing point。
         if object.samples.is_empty() {
-            builder.push_named(
-                head.bank,
-                "slidertick",
-                head.custom_bank,
-                head.volume,
-                time,
-                0.0,
-                false,
-            );
+            builder.push_named(NamedEvent {
+                bank: head.bank,
+                name: "slidertick",
+                custom_bank: head.custom_bank,
+                volume: head.volume,
+                start_ms: time,
+                duration_ms: 0.0,
+                looping: false,
+            });
             for _ in HitAddition::all_from_hitsound(object.hitsound) {
-                builder.push_named(
-                    head.bank,
-                    "slidertick",
-                    head.custom_bank,
-                    head.volume,
-                    time,
-                    0.0,
-                    false,
-                );
+                builder.push_named(NamedEvent {
+                    bank: head.bank,
+                    name: "slidertick",
+                    custom_bank: head.custom_bank,
+                    volume: head.volume,
+                    start_ms: time,
+                    duration_ms: 0.0,
+                    looping: false,
+                });
             }
         } else {
             builder.push_transformed_samples(&object.samples, "slidertick", head, time, 0.0, false);

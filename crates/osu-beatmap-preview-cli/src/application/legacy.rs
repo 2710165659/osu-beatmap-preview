@@ -5,7 +5,7 @@ use crate::application::request::ValidatedRequest;
 use crate::cache;
 use crate::export::segment::PngSegment;
 use crate::logging::{self, CacheKind, SummaryRecord};
-use crate::media::audio::{AudioSourceJob, OszLocation};
+use crate::media::audio::{AudioSourceJob, AudioSourceRequest, OszLocation};
 use crate::media::{MediaBackground, MediaStoryboard};
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::{Beatmap, HitObjects};
@@ -206,22 +206,22 @@ fn generate_preview_inner(
                 })?,
             },
         };
-        Some(AudioSourceJob::start(
-            &bid,
-            beatmap.clone(),
-            &String::from_utf8_lossy(&acquired.bytes),
+        Some(AudioSourceJob::start(AudioSourceRequest {
+            request_bid: &bid,
+            beatmap: beatmap.clone(),
+            osu_text: &String::from_utf8_lossy(&acquired.bytes),
             osz,
-            cache_root.join("osz-download-cache"),
-            plan.no_cache,
-            deadline.clone(),
-            match target_mode {
+            cache_dir: cache_root.join("osz-download-cache"),
+            no_cache: plan.no_cache,
+            deadline: deadline.clone(),
+            mode: match target_mode {
                 0 => crate::export::geometry::GameMode::Standard,
                 1 => crate::export::geometry::GameMode::Taiko,
                 2 => crate::export::geometry::GameMode::Catch,
                 3 => crate::export::geometry::GameMode::Mania,
                 _ => unreachable!("target mode was validated above"),
             },
-        )?)
+        })?)
     } else {
         None
     };

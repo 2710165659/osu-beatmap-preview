@@ -22,6 +22,26 @@ pub struct SceneRect {
     pub height: f32,
 }
 
+/// 带组合变换的贴图绘制参数：锚点 + 尺寸 + 旋转 + 颜色 + 混合模式。
+///
+/// 与 [`DrawCommand::TransformedSprite`] 的几何字段一一对应，打包成结构体，
+/// 避免 [`FrameSceneBuilder::transformed_sprite`] 一长串参数传错位。
+#[derive(Debug, Clone, Copy)]
+pub struct SpriteSpec {
+    /// 锚点位置（画布坐标）。
+    pub position: [f32; 2],
+    /// 原点在图像中的归一化偏移（0 / 0.5 / 1，已按翻转调整）。
+    pub origin: [f32; 2],
+    /// 缩放后的目标尺寸；负值表示翻转。
+    pub size: [f32; 2],
+    /// 顺时针旋转弧度。
+    pub rotation: f32,
+    /// 颜色调制（RGB）与不透明度（A）。
+    pub color: Rgba,
+    /// 加色混合（osu! 的 `P,,A`）。
+    pub additive: bool,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum DrawCommand {
@@ -245,25 +265,16 @@ impl FrameSceneBuilder {
     }
 
     /// 绘制带组合变换的贴图（旋转、缩放/翻转、颜色调制、加色混合）。
-    pub fn transformed_sprite(
-        &mut self,
-        image: Arc<Img>,
-        position: [f32; 2],
-        origin: [f32; 2],
-        size: [f32; 2],
-        rotation: f32,
-        color: Rgba,
-        additive: bool,
-    ) {
+    pub fn transformed_sprite(&mut self, image: Arc<Img>, spec: SpriteSpec) {
         let resource = self.insert_resource(image);
         self.commands.push(DrawCommand::TransformedSprite {
             resource,
-            position,
-            origin,
-            size,
-            rotation,
-            color,
-            additive,
+            position: spec.position,
+            origin: spec.origin,
+            size: spec.size,
+            rotation: spec.rotation,
+            color: spec.color,
+            additive: spec.additive,
         });
     }
 

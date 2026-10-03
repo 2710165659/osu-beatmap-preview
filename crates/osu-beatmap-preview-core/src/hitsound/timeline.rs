@@ -354,6 +354,27 @@ impl TaikoCandidates {
     }
 }
 
+/// 按样本名推送一个打击音事件的完整参数。
+///
+/// 把音效组、名字、自定义索引、音量与播放时刻打包成结构体，避免 `push_named` /
+/// `push_taiko` 一长串同类型参数传错位（两者只差候选名的拼法，参数完全相同）。
+pub(super) struct NamedEvent<'a> {
+    /// 音效组，决定候选名的前缀。
+    pub(super) bank: SampleBank,
+    /// 样本名，不含音效组前缀与自定义索引后缀。
+    pub(super) name: &'a str,
+    /// 自定义音效索引；≥ 2 时优先查带该后缀的名字。
+    pub(super) custom_bank: i32,
+    /// 谱面音量（0-100），内部换算成线性增益。
+    pub(super) volume: i32,
+    /// 发声时刻（毫秒，相对谱面零时刻）。
+    pub(super) start_ms: f64,
+    /// 播放时长（毫秒）；0 表示按样本自身长度播放。
+    pub(super) duration_ms: f64,
+    /// 是否为循环音（滑条滑行音）。
+    pub(super) looping: bool,
+}
+
 /// 时间轴构建器。
 ///
 /// 泛型而不是 `dyn SampleResolver`：解析器接口带泛型方法，且两种实现互斥
@@ -444,45 +465,27 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
     }
 
     /// 按样本名推送事件；`custom_bank` ≥ 2 时优先查带该索引后缀的名字。
-    pub(super) fn push_named(
-        &mut self,
-        bank: SampleBank,
-        name: &str,
-        custom_bank: i32,
-        volume: i32,
-        start_ms: f64,
-        duration_ms: f64,
-        looping: bool,
-    ) {
+    pub(super) fn push_named(&mut self, event: NamedEvent<'_>) {
         self.push_at(
-            AssetCandidates::new(bank.prefix(), name, custom_bank).iter(),
-            volume,
-            start_ms,
-            duration_ms,
-            looping,
+            AssetCandidates::new(event.bank.prefix(), event.name, event.custom_bank).iter(),
+            event.volume,
+            event.start_ms,
+            event.duration_ms,
+            event.looping,
         );
     }
 
     /// taiko 的查找名：`taiko-{bank}-{name}{index}`。
-    pub(super) fn push_taiko(
-        &mut self,
-        bank: SampleBank,
-        name: &str,
-        custom_bank: i32,
-        volume: i32,
-        start_ms: f64,
-        duration_ms: f64,
-        looping: bool,
-    ) {
-        let Some(prefix) = bank.prefix() else {
+    pub(super) fn push_taiko(&mut self, event: NamedEvent<'_>) {
+        let Some(prefix) = event.bank.prefix() else {
             return;
         };
         self.push_at(
-            TaikoCandidates::new(prefix, name, custom_bank).iter(),
-            volume,
-            start_ms,
-            duration_ms,
-            looping,
+            TaikoCandidates::new(prefix, event.name, event.custom_bank).iter(),
+            event.volume,
+            event.start_ms,
+            event.duration_ms,
+            event.looping,
         );
     }
 
@@ -520,15 +523,15 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
                 duration_ms,
                 looping,
             ),
-            None => self.push_named(
+            None => self.push_named(NamedEvent {
                 bank,
-                sample.addition.suffix(),
+                name: sample.addition.suffix(),
                 custom_bank,
                 volume,
                 start_ms,
                 duration_ms,
                 looping,
-            ),
+            }),
         }
     }
 
@@ -583,7 +586,7 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
                     duration_ms,
                     looping,
                 ),
-                None => self.push_named(
+                None => self.push_named(NamedEvent {
                     bank,
                     name,
                     custom_bank,
@@ -591,7 +594,7 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
                     start_ms,
                     duration_ms,
                     looping,
-                ),
+                }),
             }
         }
     }

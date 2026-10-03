@@ -118,6 +118,21 @@ enum StencilMode {
     Color,
 }
 
+/// 单条场景管线的差异配置：片元入口、模板模式、混合模式与调试标签。
+///
+/// 打包成结构体避免 [`create_scene_pipeline`] 一长串参数传错位；
+/// 共享的 device / shader / 采样数仍按参数传入。
+struct PipelineSpec<'a> {
+    /// 片元着色器入口名。
+    fragment_entry: &'a str,
+    /// 模板缓冲的读写模式。
+    stencil_mode: StencilMode,
+    /// 加色混合（故事板 `P,,A`）；false 为常规预乘 alpha 覆盖。
+    additive: bool,
+    /// wgpu 调试标签。
+    label: &'a str,
+}
+
 struct DrawBatch {
     kind: BatchKind,
     scissor: [u32; 4],
@@ -250,61 +265,73 @@ impl SceneRasterizer {
             device,
             &shader,
             &solid_layout,
-            "solid_fragment",
             sample_count,
-            StencilMode::Keep,
-            false,
-            "osu-beatmap-preview solid pipeline",
+            PipelineSpec {
+                fragment_entry: "solid_fragment",
+                stencil_mode: StencilMode::Keep,
+                additive: false,
+                label: "osu-beatmap-preview solid pipeline",
+            },
         );
         let sprite_pipeline = create_scene_pipeline(
             device,
             &shader,
             &scene_layout,
-            "sprite_fragment",
             sample_count,
-            StencilMode::Keep,
-            false,
-            "osu-beatmap-preview sprite pipeline",
+            PipelineSpec {
+                fragment_entry: "sprite_fragment",
+                stencil_mode: StencilMode::Keep,
+                additive: false,
+                label: "osu-beatmap-preview sprite pipeline",
+            },
         );
         let sprite_additive_pipeline = create_scene_pipeline(
             device,
             &shader,
             &scene_layout,
-            "sprite_fragment",
             sample_count,
-            StencilMode::Keep,
-            true,
-            "osu-beatmap-preview additive sprite pipeline",
+            PipelineSpec {
+                fragment_entry: "sprite_fragment",
+                stencil_mode: StencilMode::Keep,
+                additive: true,
+                label: "osu-beatmap-preview additive sprite pipeline",
+            },
         );
         let glyph_pipeline = create_scene_pipeline(
             device,
             &shader,
             &scene_layout,
-            "glyph_fragment",
             sample_count,
-            StencilMode::Keep,
-            false,
-            "osu-beatmap-preview glyph pipeline",
+            PipelineSpec {
+                fragment_entry: "glyph_fragment",
+                stencil_mode: StencilMode::Keep,
+                additive: false,
+                label: "osu-beatmap-preview glyph pipeline",
+            },
         );
         let slider_coverage_pipeline = create_scene_pipeline(
             device,
             &shader,
             &solid_layout,
-            "solid_fragment",
             sample_count,
-            StencilMode::Coverage,
-            false,
-            "osu-beatmap-preview slider coverage pipeline",
+            PipelineSpec {
+                fragment_entry: "solid_fragment",
+                stencil_mode: StencilMode::Coverage,
+                additive: false,
+                label: "osu-beatmap-preview slider coverage pipeline",
+            },
         );
         let slider_color_pipeline = create_scene_pipeline(
             device,
             &shader,
             &solid_layout,
-            "solid_fragment",
             sample_count,
-            StencilMode::Color,
-            false,
-            "osu-beatmap-preview slider color pipeline",
+            PipelineSpec {
+                fragment_entry: "solid_fragment",
+                stencil_mode: StencilMode::Color,
+                additive: false,
+                label: "osu-beatmap-preview slider color pipeline",
+            },
         );
         let resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("osu-beatmap-preview alpha resolve layout"),
@@ -678,12 +705,15 @@ fn create_scene_pipeline(
     device: &wgpu::Device,
     shader: &wgpu::ShaderModule,
     layout: &wgpu::PipelineLayout,
-    fragment_entry: &str,
     sample_count: u32,
-    stencil_mode: StencilMode,
-    additive: bool,
-    label: &str,
+    spec: PipelineSpec<'_>,
 ) -> wgpu::RenderPipeline {
+    let PipelineSpec {
+        fragment_entry,
+        stencil_mode,
+        additive,
+        label,
+    } = spec;
     let (compare, pass_op, write_mask, color_write_mask) = match stencil_mode {
         StencilMode::Keep => (
             wgpu::CompareFunction::Always,

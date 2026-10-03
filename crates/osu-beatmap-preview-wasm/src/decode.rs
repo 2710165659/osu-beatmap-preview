@@ -274,7 +274,8 @@ mod tests {
             .expect("PNG 编码必须成功");
         let decoded = decode_background(&cursor.into_inner()).expect("PNG 必须可解码");
         assert_eq!((decoded.width, decoded.height), (2, 1));
-        assert_eq!(decoded.rgba.len(), 2 * 1 * 4);
+        // 2 像素 × 4 通道（RGBA）= 8 字节；宽高已由上一行断言。
+        assert_eq!(decoded.rgba.len(), 8);
         // 暗化 70%（保留 30% 亮度），alpha 不动。
         assert_eq!(&decoded.rgba[..4], &[30, 60, 15, 255]);
 

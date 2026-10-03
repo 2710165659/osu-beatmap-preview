@@ -3,7 +3,7 @@
 use crate::domain::models::{Beatmap, HitAddition, HitSample, SampleBank, TimingPoint};
 
 use super::sample::SampleResolver;
-use super::timeline::TimelineBuilder;
+use super::timeline::{NamedEvent, TimelineBuilder};
 
 /// 打击音取样时 timing point 查找的滞后量（毫秒）。
 ///
@@ -141,25 +141,25 @@ pub(super) fn push_default_samples<R: SampleResolver>(
     time_ms: f64,
 ) {
     let default = DefaultSample::or_default(DefaultSample::at(beatmap, time_ms as i64));
-    builder.push_named(
-        default.bank,
-        "hitnormal",
-        default.custom_bank,
-        default.volume,
-        time_ms,
-        0.0,
-        false,
-    );
+    builder.push_named(NamedEvent {
+        bank: default.bank,
+        name: "hitnormal",
+        custom_bank: default.custom_bank,
+        volume: default.volume,
+        start_ms: time_ms,
+        duration_ms: 0.0,
+        looping: false,
+    });
     for addition in HitAddition::all_from_hitsound(hitsound) {
-        builder.push_named(
-            default.bank,
-            addition.suffix(),
-            default.custom_bank,
-            default.volume,
-            time_ms,
-            0.0,
-            false,
-        );
+        builder.push_named(NamedEvent {
+            bank: default.bank,
+            name: addition.suffix(),
+            custom_bank: default.custom_bank,
+            volume: default.volume,
+            start_ms: time_ms,
+            duration_ms: 0.0,
+            looping: false,
+        });
     }
 }
 

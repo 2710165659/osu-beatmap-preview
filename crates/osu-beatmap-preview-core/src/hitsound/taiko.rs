@@ -14,7 +14,7 @@ use crate::render::cpu::modes::taiko::constants::{
 
 use super::common::DefaultSample;
 use super::sample::SampleResolver;
-use super::timeline::TimelineBuilder;
+use super::timeline::{NamedEvent, TimelineBuilder};
 
 /// taiko 一次敲击的取样参数：音效组 + 音量 + 自定义音效索引。
 #[derive(Debug, Clone, Copy)]
@@ -86,15 +86,15 @@ fn push_taiko_press<R: SampleResolver>(
 ) {
     let name = if is_rim { "hitclap" } else { "hitnormal" };
     let spec = taiko_sample_spec(samples, beatmap, time_ms as i64, name);
-    builder.push_taiko(
-        spec.bank,
+    builder.push_taiko(NamedEvent {
+        bank: spec.bank,
         name,
-        spec.custom_bank,
-        spec.volume,
-        time_ms,
-        0.0,
-        false,
-    );
+        custom_bank: spec.custom_bank,
+        volume: spec.volume,
+        start_ms: time_ms,
+        duration_ms: 0.0,
+        looping: false,
+    });
 }
 
 /// strong 敲击：同一时刻在 base 之上再叠一层 `hitwhistle`（蓝）/ `hitfinish`（红）。
@@ -111,15 +111,15 @@ fn push_taiko_strong<R: SampleResolver>(
     push_taiko_press(builder, samples, beatmap, time_ms, is_rim);
     let name = if is_rim { "hitwhistle" } else { "hitfinish" };
     let spec = taiko_sample_spec(samples, beatmap, time_ms as i64, name);
-    builder.push_taiko(
-        spec.bank,
+    builder.push_taiko(NamedEvent {
+        bank: spec.bank,
         name,
-        spec.custom_bank,
-        spec.volume,
-        time_ms,
-        0.0,
-        false,
-    );
+        custom_bank: spec.custom_bank,
+        volume: spec.volume,
+        start_ms: time_ms,
+        duration_ms: 0.0,
+        looping: false,
+    });
 }
 
 /// osu! `TaikoBeatmapConverter.RequiredSwellHitsPerSecond`：按 OD 换算大连打所需敲击数。

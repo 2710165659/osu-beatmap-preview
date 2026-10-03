@@ -10,7 +10,7 @@
 
 use super::{ElementState, Origin, SpriteDraw, Storyboard, Textures};
 use crate::render::canvas::Img;
-use crate::render::scene::FrameSceneBuilder;
+use crate::render::scene::{FrameSceneBuilder, SpriteSpec};
 use std::sync::Arc;
 
 /// 640×480 虚拟坐标 → 目标画布的映射与层遮罩（目标画布坐标，像素）。
@@ -247,12 +247,12 @@ fn sample_bilinear_clamped(texture: &Img, u: f32, v: f32) -> [f32; 4] {
     let fx = x - x0 as f32;
     let fy = y - y0 as f32;
     let mut result = [0.0; 4];
-    for channel in 0..4 {
+    for (channel, value) in result.iter_mut().enumerate() {
         let top = texture.data[(y0 * texture.w + x0) as usize * 4 + channel] as f32 * (1.0 - fx)
             + texture.data[(y0 * texture.w + x1) as usize * 4 + channel] as f32 * fx;
         let bottom = texture.data[(y1 * texture.w + x0) as usize * 4 + channel] as f32 * (1.0 - fx)
             + texture.data[(y1 * texture.w + x1) as usize * 4 + channel] as f32 * fx;
-        result[channel] = top * (1.0 - fy) + bottom * fy;
+        *value = top * (1.0 - fy) + bottom * fy;
     }
     result
 }
@@ -361,12 +361,14 @@ pub fn append_scene_sprites(
         ];
         builder.transformed_sprite(
             Arc::clone(texture),
-            geometry.position,
-            geometry.origin,
-            geometry.size,
-            geometry.rotation,
-            color,
-            geometry.additive,
+            SpriteSpec {
+                position: geometry.position,
+                origin: geometry.origin,
+                size: geometry.size,
+                rotation: geometry.rotation,
+                color,
+                additive: geometry.additive,
+            },
         );
     }
 }

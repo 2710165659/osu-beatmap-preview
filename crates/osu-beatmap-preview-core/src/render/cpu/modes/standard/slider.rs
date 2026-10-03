@@ -237,19 +237,23 @@ pub fn get_slider_render_data(
         .collect();
     let frame_path = build_path(&frame_points);
 
+    let (beat_length, slider_velocity) = context
+        .slider_timings
+        .get(index)
+        .copied()
+        .unwrap_or((500.0, 1.0));
     let ticks = generate_slider_ticks(
         &frame_path,
-        world_path.total_length,
-        hit_object.start_time,
-        hit_object.end_time,
-        hit_object.slider_repeats,
-        context
-            .slider_timings
-            .get(index)
-            .copied()
-            .unwrap_or((500.0, 1.0)),
-        context.slider_tick_rate,
-        context.slider_multiplier,
+        SliderTickParams {
+            world_length: world_path.total_length,
+            start_time: hit_object.start_time,
+            end_time: hit_object.end_time,
+            repeats: hit_object.slider_repeats,
+            beat_length,
+            slider_velocity,
+            tick_rate: context.slider_tick_rate,
+            slider_multiplier: context.slider_multiplier,
+        },
         context.settings.preempt_ms as f64,
     );
 
@@ -290,52 +294,57 @@ pub fn get_slider_render_data(
     data
 }
 
+/// 滑条 tick 生成参数：路径长度、时间跨度与速度配置打包成结构体，
+/// 供画面 tick 与打击音 tick 共用同一套 osu! 规则，也避免长参数列表传错位。
+#[derive(Debug, Clone, Copy)]
+pub struct SliderTickParams {
+    /// 滑条路径的世界长度（像素）。
+    pub world_length: f64,
+    /// 滑条起点时刻（毫秒，绝对谱面时间）。
+    pub start_time: i64,
+    /// 滑条终点时刻（毫秒，绝对谱面时间）。
+    pub end_time: i64,
+    /// 滑条重复次数；span 数按 `repeats.max(1)` 计算。
+    pub repeats: i32,
+    /// 当前 timing point 的拍长（毫秒）。
+    pub beat_length: f64,
+    /// 当前 timing point 的滑条速度倍率（SV）。
+    pub slider_velocity: f64,
+    /// 每拍的 tick 数（SliderTickRate）。
+    pub tick_rate: f64,
+    /// 谱面的 SliderMultiplier。
+    pub slider_multiplier: f64,
+}
+
 /// 计算滑条 tick 的出现时间（毫秒，绝对谱面时间）。
 ///
 /// 打击音只需要时间序列，不需要路径几何，因此用一条最短路径复用
 /// [`generate_slider_ticks`]，保证画面 tick 与声音 tick 使用同一套 osu! 规则。
-pub fn slider_tick_times(
-    world_length: f64,
-    start_time: i64,
-    end_time: i64,
-    repeats: i32,
-    beat_length: f64,
-    slider_velocity: f64,
-    tick_rate: f64,
-    slider_multiplier: f64,
-) -> Vec<f64> {
+pub fn slider_tick_times(params: SliderTickParams) -> Vec<f64> {
     let dummy_path = build_path(&[(0.0, 0.0), (1.0, 0.0)]);
-    generate_slider_ticks(
-        &dummy_path,
+    generate_slider_ticks(&dummy_path, params, 0.0)
+        .into_iter()
+        .map(|tick| tick.time)
+        .collect()
+}
+
+/// 按 osu! SliderEventGenerator 规则生成可视化 tick。
+fn generate_slider_ticks(
+    frame_path: &SliderPath,
+    params: SliderTickParams,
+    object_preempt: f64,
+) -> Vec<SliderTickRenderData> {
+    let SliderTickParams {
         world_length,
         start_time,
         end_time,
         repeats,
-        (beat_length, slider_velocity),
+        beat_length,
+        slider_velocity,
         tick_rate,
         slider_multiplier,
-        0.0,
-    )
-    .into_iter()
-    .map(|tick| tick.time)
-    .collect()
-}
-
-/// 按 osu! SliderEventGenerator 规则生成可视化 tick。
-#[allow(clippy::too_many_arguments)]
-fn generate_slider_ticks(
-    frame_path: &SliderPath,
-    world_length: f64,
-    start_time: i64,
-    end_time: i64,
-    repeats: i32,
-    timing: (f64, f64),
-    tick_rate: f64,
-    slider_multiplier: f64,
-    object_preempt: f64,
-) -> Vec<SliderTickRenderData> {
+    } = params;
     let span_count = repeats.max(1) as usize;
-    let (beat_length, slider_velocity) = timing;
     if !world_length.is_finite()
         || world_length <= 0.0
         || !beat_length.is_finite()
@@ -955,19 +964,24 @@ mod tests {
         build_path(&[(0.0, 0.0), (length, 0.0)])
     }
 
+    /// 测试用的 tick 参数（测试辅助）：固定 0→1000ms、拍长 500、SV 1.0、SliderMultiplier 1.4。
+    #[cfg(test)]
+    fn tick_params(world_length: f64, repeats: i32, tick_rate: f64) -> SliderTickParams {
+        SliderTickParams {
+            world_length,
+            start_time: 0,
+            end_time: 1000,
+            repeats,
+            beat_length: 500.0,
+            slider_velocity: 1.0,
+            tick_rate,
+            slider_multiplier: 1.4,
+        }
+    }
+
     #[test]
     fn slider_ticks_follow_tick_distance_and_time() {
-        let ticks = generate_slider_ticks(
-            &path(100.0),
-            100.0,
-            0,
-            1000,
-            1,
-            (500.0, 1.0),
-            2.0,
-            1.4,
-            800.0,
-        );
+        let ticks = generate_slider_ticks(&path(100.0), tick_params(100.0, 1, 2.0), 800.0);
         assert_eq!(ticks.len(), 1);
         assert!((ticks[0].center.0 - 70.0).abs() < 1e-9);
         assert!((ticks[0].time - 700.0).abs() < 1e-9);
@@ -976,17 +990,7 @@ mod tests {
 
     #[test]
     fn repeated_slider_ticks_reverse_time_progress() {
-        let ticks = generate_slider_ticks(
-            &path(100.0),
-            100.0,
-            0,
-            1000,
-            2,
-            (500.0, 1.0),
-            2.0,
-            1.4,
-            800.0,
-        );
+        let ticks = generate_slider_ticks(&path(100.0), tick_params(100.0, 2, 2.0), 800.0);
         assert_eq!(ticks.len(), 2);
         assert!((ticks[0].time - 350.0).abs() < 1e-9);
         assert!((ticks[1].time - 650.0).abs() < 1e-9);
@@ -995,34 +999,13 @@ mod tests {
 
     #[test]
     fn slider_ticks_skip_points_near_span_end() {
-        let ticks = generate_slider_ticks(
-            &path(142.0),
-            142.0,
-            0,
-            1000,
-            1,
-            (500.0, 1.0),
-            2.0,
-            1.4,
-            800.0,
-        );
+        let ticks = generate_slider_ticks(&path(142.0), tick_params(142.0, 1, 2.0), 800.0);
         assert_eq!(ticks.len(), 1);
     }
 
     #[test]
     fn invalid_tick_inputs_generate_no_ticks() {
-        assert!(generate_slider_ticks(
-            &path(100.0),
-            100.0,
-            0,
-            1000,
-            1,
-            (500.0, 1.0),
-            0.0,
-            1.4,
-            800.0,
-        )
-        .is_empty());
+        assert!(generate_slider_ticks(&path(100.0), tick_params(100.0, 1, 0.0), 800.0).is_empty());
     }
 
     #[test]

@@ -81,6 +81,27 @@ impl OszLocation {
     }
 }
 
+/// [`AudioSourceJob::start`] 的入参：谱面、谱面包来源、缓存与模式打包成结构体，
+/// 避免一长串同类型参数传错位。
+pub(crate) struct AudioSourceRequest<'a> {
+    /// 请求用的谱面 ID（下载与日志用）。
+    pub(crate) request_bid: &'a str,
+    /// 已解析的谱面。
+    pub(crate) beatmap: Beatmap,
+    /// `.osu` 原文（故事板解析用）。
+    pub(crate) osu_text: &'a str,
+    /// 音频、背景与打击音所在的谱面包来源。
+    pub(crate) osz: OszLocation,
+    /// 谱面包下载缓存目录。
+    pub(crate) cache_dir: PathBuf,
+    /// 是否跳过缓存强制重新下载。
+    pub(crate) no_cache: bool,
+    /// 请求超时。
+    pub(crate) deadline: RequestDeadline,
+    /// 输出模式；决定背景图、背景视频与故事板的开关。
+    pub(crate) mode: crate::export::geometry::GameMode,
+}
+
 pub(crate) struct AudioSourceJob {
     handle: Option<std::thread::JoinHandle<Result<AudioSource>>>,
     deadline: RequestDeadline,
@@ -89,16 +110,17 @@ pub(crate) struct AudioSourceJob {
 }
 
 impl AudioSourceJob {
-    pub(crate) fn start(
-        request_bid: &str,
-        beatmap: Beatmap,
-        osu_text: &str,
-        osz: OszLocation,
-        cache_dir: PathBuf,
-        no_cache: bool,
-        deadline: RequestDeadline,
-        mode: crate::export::geometry::GameMode,
-    ) -> Result<Self> {
+    pub(crate) fn start(request: AudioSourceRequest<'_>) -> Result<Self> {
+        let AudioSourceRequest {
+            request_bid,
+            beatmap,
+            osu_text,
+            osz,
+            cache_dir,
+            no_cache,
+            deadline,
+            mode,
+        } = request;
         let request_bid = request_bid.to_string();
         let audio_filename = beatmap
             .audio_filename()
