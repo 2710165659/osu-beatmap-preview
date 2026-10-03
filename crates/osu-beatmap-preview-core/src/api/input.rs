@@ -7,10 +7,8 @@ use crate::hitsound::SAMPLE_RATE;
 use crate::storyboard::Storyboard;
 use crate::{config, Beatmap};
 
-/// 会话创建时可以提供的谱面与背景资源。
-///
-/// 音乐不在这里：音乐由宿主解码后经 [`crate::api::session::RealtimeSession::set_music`]
-/// 放进混音器，与打击音同流输出（实时预览）或由宿主自行与打击音合成（离线导出）。
+/// 会话创建时可以提供的谱面与背景资源。音乐不在这里：宿主解码后经
+/// [`crate::api::session::RealtimeSession::set_music`] 放进混音器。
 #[derive(Debug, Clone, Default)]
 pub struct ResourceBundle {
     pub beatmap: Option<Beatmap>,
@@ -77,11 +75,10 @@ impl RenderConfig {
 pub struct AudioConfig {
     /// 混音输出采样率，必须等于宿主音频设备的实际采样率，混音结果才能直接播放。
     pub sample_rate: u32,
-    /// 是否启用打击音；关闭时音乐照常输出，事件时间轴为空。
     pub hitsound_enabled: bool,
-    /// 打击音音量百分比（0..=100，越界按边界处理）。
+    /// 打击音音量百分比（0..=100）。
     pub hitsound_volume: i32,
-    /// 音乐音量百分比（0..=100，越界按边界处理）。
+    /// 音乐音量百分比（0..=100）。
     pub music_volume: i32,
 }
 
@@ -106,14 +103,10 @@ pub struct RealtimeOptions {
     pub core_config: Arc<config::CoreConfig>,
     /// 音频输出配置（采样率、开关与初始音量）。
     pub audio: AudioConfig,
-    /// 游玩/回放配置。
-    ///
-    /// 目前只保留配置位（默认 `GameplayMode::Preview`，不改变任何现有行为）：
-    /// 判定引擎与画面叠加的实现在后续阶段接入，接口见
-    /// [`crate::gameplay`](crate::gameplay) 与 `docs/architecture.md` 的「后续功能接口」。
+    /// 游玩/回放配置。目前只保留配置位（默认 `GameplayMode::Preview`，不改变任何
+    /// 现有行为），判定引擎与画面叠加后续接入，接口见 `docs/architecture.md`。
     pub gameplay: GameplayOptions,
-    /// 是否绘制故事板；默认关闭（storyboard 素材与合成开销不小，且不是所有
-    /// 谱面都有故事板）。
+    /// 是否绘制故事板；默认关闭（素材与合成开销不小，且不是所有谱面都有故事板）。
     pub storyboard_enabled: bool,
 }
 

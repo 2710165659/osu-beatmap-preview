@@ -65,11 +65,8 @@ pub struct WebGpuSession {
     video_enabled: bool,
     /// 背景视频层当前是否已有画面（决定要不要发一次 clear）。
     video_showing: bool,
-    /// 连续拿不到 surface 的起始墙钟时间；拿得到时清空。
-    ///
-    /// 只用来把「画布一直画不出来」变成宿主能看到的错误：以前这种情况是每帧
-    /// `Ok(())` 静默跳过，画面永远停在黑色（或旧帧）而音频照常在放，
-    /// 用户只看到黑屏且日志里没有任何线索。
+    /// 连续拿不到 surface 的起始墙钟时间；拿得到时清空。只用来把「画布一直画不出
+    /// 来」变成宿主能看到的错误，而不是每帧静默跳过、用户只看到黑屏且日志无线索。
     surface_failure_since: Option<f64>,
 }
 
@@ -81,9 +78,8 @@ impl WebGpuSession {
     ///
     /// `options`：`{ bid?, difficulty?, convert?, mods?, width, height, sampleRate?,
     /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard? }`。
-    /// 难度选择优先 `difficulty`（压缩包条目名），其次 `bid`（`BeatmapID`），
-    /// 都没有时取第一个顶层 `.osu`。`sampleRate` 必须等于宿主音频设备的实际采样率。
-    /// `storyboard` 默认关闭，开启后绘制 `.osb` / `[Events]` 的故事板层。
+    /// 难度选择优先 `difficulty`（压缩包条目名），其次 `bid`（`BeatmapID`），都没有时
+    /// 取第一个顶层 `.osu`；`sampleRate` 必须等于宿主音频设备的实际采样率。
     #[wasm_bindgen(js_name = create)]
     pub async fn create(
         bytes: Vec<u8>,
@@ -317,13 +313,10 @@ impl WebGpuSession {
 
     /// 取一帧可绘制的 surface 纹理；`None` 表示这一帧跳过。
     ///
-    /// `Outdated` / `Lost` 表示 surface 配置与画布已经不一致（换分辨率、窗口迁移、
-    /// 设备回收），这里重新配置后**立刻重试一次**：以前直接返回会白白黑掉一帧，
-    /// 而状态一直不变时就变成永久黑屏。
-    ///
+    /// `Outdated` / `Lost` 表示 surface 配置与画布不一致（换分辨率、窗口迁移、设备
+    /// 回收），这里重新配置后**立刻重试一次**——状态一直不变时直接返回会永久黑屏。
     /// `Occluded`（页面被遮挡）跳过是正常的；其余状态连续失败超过
-    /// [`SURFACE_FAILURE_LIMIT_MS`] 就报错，让宿主停下来提示用户，
-    /// 而不是留下一块黑画布继续放声音。
+    /// [`SURFACE_FAILURE_LIMIT_MS`] 就报错，而不是留下一块黑画布继续放声音。
     fn acquire_surface(&mut self) -> Result<Option<wgpu::SurfaceTexture>, JsValue> {
         let mut last_reason = "surface 不可用";
         for attempt in 0..2 {
@@ -776,9 +769,7 @@ fn is_plain_osu(bytes: &[u8]) -> bool {
 /// 返回某个模式在 `assets/shared_config.yml` 里的打击音默认设置。
 ///
 /// CLI 直接读同一份配置，网页端通过这里取值，避免两边各写一份默认值而走偏。
-/// 返回 `{ enabled, volume, beatmapEnabled }`：`beatmapEnabled` 对应
-/// `ENABLE_BEATMAP_HITSOUND`，表示是否使用谱面自带的自定义打击音。
-/// `mode` 接受 `standard` / `taiko` / `catch` / `mania`（也接受 `std` 与 `ctb`）。
+/// 返回 `{ enabled, volume, beatmapEnabled }`，`mode` 接受四种模式名（也接受 `std`/`ctb`）。
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = hitsoundDefaults)]
 pub fn hitsound_defaults(mode: &str) -> Result<JsValue, JsValue> {

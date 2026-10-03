@@ -428,7 +428,7 @@ impl Img {
         }
     }
 
-    /// Anti-aliased circular ring, blended over the current image.
+    /// 绘制带抗锯齿的圆环，混合到当前图像上。
     pub fn stroke_circle_aa(
         &mut self,
         cx: f64,

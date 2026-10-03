@@ -22,23 +22,16 @@ pub struct SceneRect {
     pub height: f32,
 }
 
-/// 带组合变换的贴图绘制参数：锚点 + 尺寸 + 旋转 + 颜色 + 混合模式。
+/// 带组合变换的贴图绘制参数：几何与混合字段同 [`DrawCommand::TransformedSprite`]。
 ///
-/// 与 [`DrawCommand::TransformedSprite`] 的几何字段一一对应，打包成结构体，
-/// 避免 [`FrameSceneBuilder::transformed_sprite`] 一长串参数传错位。
+/// 打包成结构体，避免 [`FrameSceneBuilder::transformed_sprite`] 一长串参数传错位。
 #[derive(Debug, Clone, Copy)]
 pub struct SpriteSpec {
-    /// 锚点位置（画布坐标）。
     pub position: [f32; 2],
-    /// 原点在图像中的归一化偏移（0 / 0.5 / 1，已按翻转调整）。
     pub origin: [f32; 2],
-    /// 缩放后的目标尺寸；负值表示翻转。
     pub size: [f32; 2],
-    /// 顺时针旋转弧度。
     pub rotation: f32,
-    /// 颜色调制（RGB）与不透明度（A）。
     pub color: Rgba,
-    /// 加色混合（osu! 的 `P,,A`）。
     pub additive: bool,
 }
 
@@ -52,11 +45,8 @@ pub enum DrawCommand {
         destination: SceneRect,
         alpha: f32,
     },
-    /// 变换精灵：支持旋转、缩放/翻转、颜色调制与混合模式的贴图绘制。
-    ///
-    /// 与 [`DrawCommand::Sprite`] 的轴对齐矩形不同，本命令按「锚点 + 尺寸 +
-    /// 旋转」描述几何，供故事板这类带组合变换的贴图使用；CPU 与 WGPU 两条
-    /// 光栅路径按同一套几何语义实现。
+    /// 变换精灵：按「锚点 + 尺寸 + 旋转」描述几何，供故事板这类带组合变换的贴图使用；
+    /// CPU 与 WGPU 两条光栅路径按同一套几何语义实现。
     TransformedSprite {
         resource: ResourceId,
         /// 锚点位置（画布坐标）。

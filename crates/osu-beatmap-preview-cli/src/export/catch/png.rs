@@ -303,7 +303,7 @@ pub(crate) fn render_catch_grid(
 /// 将渲染对象裁剪进渲染窗口并平移到窗口起点。
 ///
 /// 渲染对象都是单点事件，窗口外的直接取舍即可；整谱模式窗口覆盖全部对象，
-/// 平移结果与原先一致。
+/// 统一平移不改变相对布局。
 fn window_render_objects(render_objects: &mut Vec<RenderObject>, window: PngWindow) {
     render_objects.retain(|ro| {
         let time = ro.event_time_or_start();

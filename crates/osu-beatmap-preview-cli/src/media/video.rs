@@ -1,22 +1,16 @@
-//! MP4（H.264）视频编码器：将回调生成的帧通过 H.264 和 `mp4` crate
-//! 流式写入 MP4 文件。流程类似 `save_animated_gif_streamed`：
-//! rayon 分块并行渲染，再顺序编码以保持帧顺序。
+//! MP4（H.264）视频编码器：将回调生成的帧通过 H.264 和 `mp4` crate 流式写入 MP4 文件。
+//! 流程类似 `save_animated_gif_streamed`：rayon 分块并行渲染，再顺序编码以保持帧顺序。
 //!
-//! 每帧物件层已经是最终视频画布（物件只会在视频边界被裁剪），画布底部叠上
-//! 暗化谱面背景；背景不可用或已关闭时使用黑色，并在右上角绘制“当前 / 总时长”标签。
-//! 随后转换为后端所需格式并编码为 H.264，再写入一个 MP4 sample。
-//! 完整动画不会同时驻留内存，最多保留 `PAR_CHUNK_SIZE` 个原始帧。
+//! 每帧物件层已经是最终视频画布（物件只在视频边界被裁剪），画布底部叠上暗化谱面
+//! 背景；背景不可用或已关闭时用黑色，并在右上角绘制“当前 / 总时长”标签。完整动画
+//! 不会同时驻留内存，最多保留 `PAR_CHUNK_SIZE` 个原始帧。
 //!
 //! ## GPU 加速
 //!
-//! 编码按顺序分派给第一个可用的后端：
-//!   1. **NVENC**（NVIDIA）：运行时动态加载 `nvEncodeAPI64.dll`。
-//!   2. **AMF**（AMD）：运行时动态加载 `amfrt64.dll`。
-//!   3. **openh264**（CPU）：始终可用的单线程软件编码回退（原始实现）。
-//!
-//! 所有后端都输出 Annex-B H.264 NAL，并交给共享封装层
-//!（`extract_nals` + `mp4` writer），因此输出文件结构一致。GPU DLL 通过
-//! `libloading` 加载；构建或运行时缺少 DLL 都不会影响程序，编码器会静默回退到 CPU。
+//! 编码按顺序分派给第一个可用的后端：1. **NVENC**（NVIDIA）、2. **AMF**（AMD），二者
+//! 运行时动态加载 DLL；3. **openh264**（CPU）始终可用作回退。所有后端都输出 Annex-B
+//! H.264 NAL 并交给共享封装层（`extract_nals` + `mp4` writer），输出文件结构一致；
+//! 构建或运行时缺少 DLL 都不影响程序，编码器静默回退到 CPU。
 
 use crate::cache::with_atomic_output_deadline;
 use crate::export::canvas::Img;
@@ -42,9 +36,8 @@ use std::time::Instant;
 
 /// 编码线程向渲染侧回传的耗时统计（纳秒）。
 ///
-/// 渲染与编码改成并行后，两侧的耗时无法再用同一条时间线相加，
-/// 因此改用原子累加：`render` 由渲染侧写入，`encode`/`mux` 由编码线程写入。
-/// 这些值只用于日志诊断，不影响画面与文件内容。
+/// 渲染与编码在两条时间线上，耗时无法用同一条时间线相加，因此按线程原子累加：
+/// `render` 由渲染侧写入，`encode`/`mux` 由编码线程写入。只用于日志诊断。
 #[derive(Default)]
 pub(super) struct PipelineStages {
     render_ns: AtomicU64,
@@ -64,8 +57,8 @@ impl PipelineStages {
 
 /// 渲染线程池与封装循环之间的在途帧上限。
 ///
-/// 上限按 `PAR_CHUNK_SIZE` 收敛，使「在途帧数 × 帧字节」与改造前
-/// 单批渲染的内存占用同量级（默认 8 帧），不会因为流水线把峰值内存放大。
+/// 上限按 `PAR_CHUNK_SIZE` 收敛（默认 8 帧），使「在途帧数 × 帧字节」保持个位数
+/// MB 量级，不会因为流水线把峰值内存放大。
 fn encoder_queue_capacity(par_chunk_size: usize) -> usize {
     par_chunk_size.clamp(1, 8)
 }
@@ -520,10 +513,8 @@ pub(crate) fn save_mp4_streamed(
             .map_err(|e| PreviewError::render(format!("mp4 write_sample failed: {e}")))?;
 
         // ── 流水线：渲染线程池持续预渲染，独立线程顺序编码并封装 ──
-        // 编码必须严格按帧号顺序执行（H.264 参考帧 + MP4 sample 顺序），
-        // 所以这里只把「编码」留在单线程上，让「渲染 + 合成」与它重叠进行。
-        // 改造前是「整块渲染 → 整块顺序编码」，rayon 在编码阶段完全空闲；
-        // 现在渲染侧只受有界通道背压，编码线程始终有下一帧可取。
+        // 编码必须严格按帧号顺序（H.264 参考帧 + MP4 sample 顺序），所以只把「编码」
+        // 留在单线程上，让「渲染 + 合成」与它重叠进行，渲染侧只受有界通道背压。
         //
         // 后端名字必须先取成 `&'static str`：`name()` 是 `&self` 方法，
         // 而编码器本身要被移进编码线程。
@@ -701,9 +692,8 @@ pub(crate) fn save_mp4_streamed(
         Ok(encoder)
     })?;
 
-    // 返回前显式释放编码器。`nvenc` crate 的 Drop 实现使用 `println!` 向 stdout
-    // 输出调试信息，会污染 JSON 输出。临时将 stdout 切换到 stderr，使调试信息
-    // 写入 stderr，从而保持 JSON 输出纯净。
+    // 返回前显式释放编码器：`nvenc` crate 的 Drop 用 `println!` 写 stdout，会污染
+    // JSON 输出；临时把 stdout 切到 stderr 吞掉这些调试信息，返回前恢复。
     drop_stdout_silence(|| {
         drop(encoder);
     });

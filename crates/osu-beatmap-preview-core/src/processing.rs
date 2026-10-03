@@ -1,7 +1,7 @@
 //! 谱面处理能力的公开门面。
 //!
-//! 这里按“解析、规则转换、时间选择、校验”组织能力，避免调用者依赖历史上的
-//! `domain::parser`、`domain::rulesets` 和 `domain::shared` 嵌套路径。
+//! 这里按“解析、规则转换、时间选择、校验”组织能力，避免调用者依赖
+//! `domain::parser`、`domain::rulesets` 和 `domain::shared` 等内部嵌套路径。
 
 pub mod parse {
     pub use crate::domain::parser::{

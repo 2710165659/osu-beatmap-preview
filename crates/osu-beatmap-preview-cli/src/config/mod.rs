@@ -188,8 +188,8 @@ fn apply_render_scales(config: &mut Value, scale_override: Option<f64>) -> Resul
                     ));
                 };
                 let scaled = if is_bitmap_font_size(name) {
-                    // 位图字体以 8px 字形为基础。先换算旧实现实际绘制的基础高度，
-                    // 再应用输出倍率，既保持 1x 外观，又允许小数倍率精确缩放。
+                    // 位图字体以 8px 字形为基础：先取整到实际绘制的基础高度，再应用
+                    // 输出倍率，既保持 1x 外观，又允许小数倍率精确缩放。
                     let glyph_scale = (number.max(8.0) / 8.0).floor().max(1.0);
                     (glyph_scale * 8.0 * scale).max(1.0)
                 } else {

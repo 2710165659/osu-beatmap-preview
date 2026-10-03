@@ -259,9 +259,8 @@ fn sample_bilinear_clamped(texture: &Img, u: f32, v: f32) -> [f32; 4] {
 
 /// 把一个元素状态绘制到画布（内部按 [`sprite_geometry`] 推导几何）。
 ///
-/// `brightness` 是用户暗度的亮度（1 − dim，如 `BACKGROUND_DIM=0.7` 时为 0.3），
-/// 直接乘在精灵颜色上——与 lazer `UserDimContainer` 的
-/// `FadeColour(Gray(1-DimLevel))` 等价（背景图也是同一亮度预暗化，逐像素结果一致）。
+/// `brightness` 是用户暗度的亮度（1 − dim），直接乘在精灵颜色上，与 lazer
+/// `UserDimContainer` 的 `FadeColour(Gray(1-DimLevel))` 等价（背景图同亮度预暗化）。
 pub fn draw_sprite(
     canvas: &mut Img,
     texture: &Img,

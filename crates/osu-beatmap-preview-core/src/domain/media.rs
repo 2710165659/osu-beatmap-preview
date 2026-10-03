@@ -1,13 +1,11 @@
 //! 媒体（压缩包）条目策略。
 //!
-//! 这里只做「谱面字段 + 纯字符串」的换算：宿主要去压缩包里找哪些条目、条目名怎么
-//! 归一化、扩展名怎么取，全部由这里决定；不读文件、不认识 ZIP 实现，因此 CLI、
-//! Web 后端（`backend/zip.js` 保持同一套规则，由契约测试钉住）与将来的 GUI/移动端
-//! 共用同一份策略，不会各自走偏。
+//! 只做「谱面字段 + 纯字符串」的换算：去压缩包里找哪些条目、条目名怎么归一化、
+//! 扩展名怎么取全由这里决定；不读文件、不认识 ZIP 实现，CLI、Web 后端
+//! （`backend/zip.js` 由契约测试钉住同一套规则）与 GUI/移动端共用同一份策略。
 //!
-//! 典型用法：宿主解析出 [`crate::Beatmap`] 后调用 [`BeatmapMedia::from_beatmap`]，
-//! 得到 `audio` / `background` / `samples` 三类条目，再按自己的方式（zip crate、
-//! Node 的 zlib、浏览器原生解压）把条目取出来。
+//! 用法：解析出 [`crate::Beatmap`] 后调用 [`BeatmapMedia::from_beatmap`] 得到
+//! `audio` / `background` / `samples` 三类条目，宿主按自己的方式解包取条目。
 
 use super::models::Beatmap;
 
@@ -20,10 +18,9 @@ pub const SAMPLE_EXTENSIONS: [&str; 3] = ["ogg", "wav", "mp3"];
 /// osu! 对这种行按背景图处理（见 [`crate::domain::parser`] 的兼容分支）。
 pub const VIDEO_EXTENSIONS: [&str; 7] = ["mp4", "mov", "avi", "flv", "mpg", "wmv", "m4v"];
 
-/// 归一化压缩包内的条目路径。
-///
-/// 规则与 `backend/zip.js` 的 `normalizeArchivePath` 一致：反斜杠转正斜杠、去掉空段
-/// 与 `.`，并拒绝绝对路径、`..` 与含 `:` 的段（盘符/协议前缀），避免解包时越界写入。
+/// 归一化压缩包内的条目路径。与 `backend/zip.js` 的 `normalizeArchivePath` 一致：
+/// 反斜杠转正斜杠、去掉空段与 `.`，拒绝绝对路径、`..` 与含 `:` 的段（盘符/协议
+/// 前缀），避免解包时越界写入。
 pub fn normalize_entry_path(path: &str) -> Option<String> {
     let replaced = path.trim().replace('\\', "/");
     if replaced.starts_with('/') {
@@ -44,10 +41,8 @@ pub fn normalize_entry_path(path: &str) -> Option<String> {
     Some(segments.join("/"))
 }
 
-/// 条目扩展名：小写、只保留 ASCII 字母数字。
-///
-/// 没有扩展名（或扩展名里没有可用字符）时返回 `None`，由宿主决定兜底名
-/// （CLI 的媒体缓存用 `audio`，Web 用 `bin`），这样缓存文件名不会被这里改变。
+/// 条目扩展名：小写、只保留 ASCII 字母数字。没有可用字符时返回 `None`，由宿主决定
+/// 兜底名（CLI 用 `audio`、Web 用 `bin`），缓存文件名不会被这里改变。
 pub fn entry_extension(path: &str) -> Option<String> {
     let name = path.rsplit('/').next().unwrap_or(path);
     let (_, extension) = name.rsplit_once('.')?;
@@ -88,10 +83,8 @@ impl MediaEntry {
         Some(Self { name, extension })
     }
 
-    /// 这个条目是否带音频扩展名（ogg / wav / mp3）。
-    ///
-    /// 注意：谱面自带的候选样本名也可能是**不带扩展名**的（`soft-hitnormal`，实际文件是
-    /// `soft-hitnormal.ogg` 等），所以筛选候选条目时不能只看这个判断，见 [`sample_entries`]。
+    /// 这个条目是否带音频扩展名（ogg / wav / mp3）。注意候选样本名也可能**不带扩展名**
+    /// （`soft-hitnormal`），筛选候选条目时不能只看这个判断，见 [`sample_entries`]。
     pub fn is_sample(&self) -> bool {
         self.extension
             .as_deref()
@@ -101,13 +94,11 @@ impl MediaEntry {
 
 /// 谱面在媒体压缩包里需要的条目。
 ///
-/// - `audio`：`[General] AudioFilename`，必需（预览/视频都要靠它出声）；
-/// - `background`：`[Events]` 的第一张背景图，可选（缺失时宿主退化成纯色背景）；
-/// - `video`：`[Events]` 的背景视频，可选（缺失时按没有背景视频处理）；
-/// - `samples`：谱面可能自带的候选打击音样本名，供宿主去压缩包里按
-///   [`sample_entry_matches`] 查找同名条目。找到的条目由宿主解码后填进样本库，其优先级
-///   高于内嵌皮肤（见 [`crate::hitsound::has_embedded_asset`]）：谱面自带音效是谱面
-///   自定义的一部分，内嵌资源只是它缺失时的兜底。
+/// - `audio`：`[General] AudioFilename`，必需；
+/// - `background` / `video`：`[Events]` 的背景图与背景视频，可选；
+/// - `samples`：谱面可能自带的候选打击音样本名，供宿主按 [`sample_entry_matches`]
+///   查找同名条目。找到的条目解码后填进样本库，优先级高于内嵌皮肤（见
+///   [`crate::hitsound::has_embedded_asset`]）——谱面自带音效是谱面自定义的一部分。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BeatmapMedia {
     pub audio: Option<MediaEntry>,
@@ -145,12 +136,9 @@ impl BeatmapMedia {
 /// 压缩包条目是否就是某个候选样本名对应的文件。
 ///
 /// 候选名有两种写法：不带扩展名的样本名（`soft-hitnormal`，磁盘上对应
-/// `soft-hitnormal.ogg` / `.wav` / `.mp3`）与 `hitSample` 里的自定义文件名
-/// （`custom-hit.ogg`，可能带子目录）。因此依次比较「完整条目名」「文件名」「去掉扩展名
-/// 的文件名」，全部不区分大小写；条目名或候选名非法（越界路径）时返回 `false`。
-///
-/// `src/hitsound.js` 里有同一套规则的 JS 版本，由
-/// `test/hitsound-samples.test.js` 的用例表钉住。
+/// `soft-hitnormal.ogg` / `.wav` / `.mp3`）与 `hitSample` 的自定义文件名（可能带
+/// 子目录）。因此依次比较「完整条目名」「文件名」「去掉扩展名的文件名」，均不区分
+/// 大小写；路径非法返回 `false`。JS 版本在 `src/hitsound.js`，由契约测试钉住。
 pub fn sample_entry_matches(entry_name: &str, candidate: &str) -> bool {
     let Some(entry) = normalize_entry_path(entry_name) else {
         return false;
@@ -173,13 +161,10 @@ pub fn sample_entry_matches(entry_name: &str, candidate: &str) -> bool {
 
 /// 收集谱面可能自带的打击音样本条目。
 ///
-/// 候选名来自 [`crate::hitsound::referenced_names`]，包含两类：`{bank}-{name}` 这类不带
-/// 扩展名的样本名，以及 `hitSample` 里的自定义文件名（自带扩展名）。前者不能按扩展名
-/// 过滤，否则 `soft-hitnormal` 这些最常见的候选会被整批丢掉；后者必须是音频扩展名，
-/// 免得把 `.osu` 里写错的非音频文件名也拿去解包。
-///
-/// 大小写不同的同名候选只保留第一次出现的写法（压缩包匹配本来就不区分大小写）；
-/// 输入已排序，因此结果顺序稳定。
+/// 候选名来自 [`crate::hitsound::referenced_names`]：不带扩展名的样本名
+/// （`{bank}-{name}`）不能按扩展名过滤（否则最常见候选被整批丢掉），`hitSample`
+/// 的自定义文件名则必须是音频扩展名。同名候选只保留第一次出现的写法（匹配本就不
+/// 区分大小写）；输入已排序，结果顺序稳定。
 fn sample_entries(beatmap: &Beatmap) -> Vec<MediaEntry> {
     let mut seen = std::collections::BTreeSet::new();
     let mut entries = Vec::new();

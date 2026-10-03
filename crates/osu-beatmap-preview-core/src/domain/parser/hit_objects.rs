@@ -28,9 +28,8 @@ pub(crate) struct ParsedHitSample {
 impl ParsedHitSample {
     /// 转换为「普通打击音 + 所有加成音」。
     ///
-    /// `.osu` 里 `hitSample` 全为 0（最常见的情况）表示「沿用当前 timing point 的
-    /// 音效组、音量与自定义音效」，因此这里返回空切片，由打击音模块按物件所在时间
-    /// 查找 timing point 决定实际参数——在解析阶段就写死会用到错误的时间点信息。
+    /// `hitSample` 全为 0（最常见）表示沿用当前 timing point 的参数，因此返回空切片、
+    /// 由打击音模块按物件所在时间查找决定——解析阶段写死会用到错误时间点的信息。
     pub(crate) fn samples(&self, hitsound: i32) -> Vec<HitSample> {
         if self.is_default() {
             return Vec::new();
@@ -163,11 +162,9 @@ pub(crate) fn parse_hit_sample_banks(field: Option<&str>) -> ParsedHitSample {
     }
 }
 
-/// 返回 `hitSample` 字段所在的列。
-///
-/// 列数随物件类型变化：圆圈 `x,y,time,type,hitSound,hitSample` 是第 6 列（下标 5），
-/// 滑条在 `edgeSets` 之后是第 11 列（下标 10），转盘在 `endTime` 之后是第 7 列（下标 6）。
-/// 取错列会把结束时间当成音效参数（曾被解析成音效组 id，导致转盘音效组错成 normal）。
+/// 返回 `hitSample` 字段所在的列。列数随物件类型变化：圆圈第 6 列（下标 5）、
+/// 滑条在 `edgeSets` 之后第 11 列（下标 10）、转盘在 `endTime` 之后第 7 列（下标 6）；
+/// 取错列会把结束时间当成音效参数。
 fn hit_sample_index(hit_type: i32) -> usize {
     if hit_type & 2 != 0 {
         10

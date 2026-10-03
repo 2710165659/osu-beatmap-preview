@@ -11,16 +11,13 @@ use super::volume_gain;
 
 /// 播放频率（音高倍率）随时间的线性斜坡。
 ///
-/// 普通打击音是恒定 1.0 倍；osu! 的转盘旋转音则会随旋转进度升高音调
+/// 普通打击音是恒定 1.0 倍；osu! 的转盘旋转音会随旋转进度升高音调
 /// （`DrawableSpinner`：起始 `20000/44100`、比例 `40000/44100`、上限 `100000/44100`），
 /// 因此事件需要能表达「倍率随时间变化」而不只是一个常数。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayFrequency {
-    /// 事件开始时的倍率。
     pub start: f64,
-    /// 每毫秒的倍率增量。
     pub per_ms: f64,
-    /// 倍率上限；到达后保持不变。
     pub max: f64,
 }
 
@@ -85,17 +82,13 @@ fn sanitize_frequency(value: f64, fallback: f64) -> f64 {
 /// 一个待播放的打击音事件。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayEvent {
-    /// 相对于谱面零时刻的毫秒时间。
     pub start_ms: f64,
-    /// 播放时长；0 表示按样本自身长度播放，循环事件则一直持续到该时长结束。
+    /// 0 表示按样本自身长度播放，循环事件则一直持续到该时长结束。
     pub duration_ms: f64,
-    /// 样本在 [`SampleLibrary`](crate::hitsound::SampleLibrary) 中的 id。
     pub source_id: usize,
     /// 线性增益（已包含谱面音量与设计音量）。
     pub gain: f64,
-    /// 是否为循环音（滑条滑行音）。
     pub looping: bool,
-    /// 播放频率（音高倍率）随时间的斜坡；普通打击音是恒定 1.0。
     pub frequency: PlayFrequency,
 }
 
@@ -116,9 +109,8 @@ impl HitsoundTimeline {
 
     /// 归并另一条同样按开始时间升序的时间轴（例如 NC 的节拍鼓点）。
     ///
-    /// 两者都已有序，因此线性归并；同一时刻保持「自己的事件在前、`other` 的在后」，
-    /// 与拼接后再稳定排序的结果一致，但复杂度是 O(n + m)，且不会因重排打乱同刻事件
-    /// 原有的先后关系（混音器的事件游标只要求整体有序）。
+    /// 线性归并，O(n + m)；同一时刻「自己的在前、`other` 的在后」，与拼接后稳定排序
+    /// 一致，且不打乱同刻事件原有的先后关系（混音器游标只要求整体有序）。
     pub fn merge(&mut self, other: HitsoundTimeline) {
         if other.events.is_empty() {
             return;
@@ -256,11 +248,9 @@ impl AssetKey {
     }
 }
 
-/// 一个事件的候选名字序列。
-///
-/// 与 osu! `HitSampleInfo.LookupNames` 一致：带自定义音效索引时先查 `{bank}-{name}{index}`，
-/// 再回退到 `{bank}-{name}`，最后是共享目录里的裸名 `{name}`。内嵌皮肤只提供后两种，
-/// 所以「带索引的那个来自谱面包、其余来自皮肤」自然成立。
+/// 一个事件的候选名字序列。与 osu! `HitSampleInfo.LookupNames` 一致：带自定义音效索引时
+/// 先查 `{bank}-{name}{index}`，再回退 `{bank}-{name}`，最后裸名 `{name}`（内嵌皮肤只提供
+/// 后两种，「带索引的来自谱面包、其余来自皮肤」自然成立）。
 struct AssetCandidates<'a> {
     suffixed: Option<AssetKey>,
     banked: Option<AssetKey>,
@@ -288,8 +278,8 @@ impl<'a> AssetCandidates<'a> {
 
 /// taiko 的候选名字缓冲：`taiko-{bank}-{name}{index}`。
 ///
-/// legacy taiko 会把 `taiko-` 插到文件名前面（`TaikoLegacySkinTransformer`），
-/// 同样在栈上拼，超长名字退化成堆分配的 `String`。
+/// legacy taiko 会把 `taiko-` 插到文件名前（`TaikoLegacySkinTransformer`），同样栈上拼、
+/// 超长退化为堆分配。
 enum TaikoKey {
     Stack {
         buffer: [u8; ASSET_KEY_CAPACITY],
@@ -354,24 +344,17 @@ impl TaikoCandidates {
     }
 }
 
-/// 按样本名推送一个打击音事件的完整参数。
+/// 按样本名推送一个打击音事件的参数（`push_named` / `push_taiko` 共用，两者只差候选名的拼法）。
 ///
-/// 把音效组、名字、自定义索引、音量与播放时刻打包成结构体，避免 `push_named` /
-/// `push_taiko` 一长串同类型参数传错位（两者只差候选名的拼法，参数完全相同）。
+/// `name` 不含音效组前缀与自定义索引后缀；`custom_bank ≥ 2` 时优先查带该后缀的名字；
+/// `duration_ms` 为 0 表示按样本自身长度播放。
 pub(super) struct NamedEvent<'a> {
-    /// 音效组，决定候选名的前缀。
     pub(super) bank: SampleBank,
-    /// 样本名，不含音效组前缀与自定义索引后缀。
     pub(super) name: &'a str,
-    /// 自定义音效索引；≥ 2 时优先查带该后缀的名字。
     pub(super) custom_bank: i32,
-    /// 谱面音量（0-100），内部换算成线性增益。
     pub(super) volume: i32,
-    /// 发声时刻（毫秒，相对谱面零时刻）。
     pub(super) start_ms: f64,
-    /// 播放时长（毫秒）；0 表示按样本自身长度播放。
     pub(super) duration_ms: f64,
-    /// 是否为循环音（滑条滑行音）。
     pub(super) looping: bool,
 }
 
@@ -512,10 +495,9 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
             default.map_or(100, |point| point.sample_volume)
         };
         match sample.filename.as_deref() {
-            // 自定义文件名优先：先查带 bank 前缀的名字，再回退到裸文件名
-            // （与 `HitSampleInfo.LookupNames` 的 `Gameplay/{bank}-{name}` 规则一致）。
-            // 写死文件名时 osu! 会把自定义索引强制成 1（`FileHitSampleInfo`），因此这里
-            // 不追加索引后缀。
+            // 自定义文件名优先：先查带 bank 前缀的名字，再回退裸文件名（osu! 的
+            // `Gameplay/{bank}-{name}` 规则）；写死文件名时自定义索引被强制成 1
+            // （`FileHitSampleInfo`），因此不追加索引后缀。
             Some(filename) => self.push_at(
                 AssetCandidates::new(bank.prefix(), filename, 0).iter(),
                 volume,
@@ -549,9 +531,9 @@ impl<'a, R: SampleResolver> TimelineBuilder<'a, R> {
 
     /// 将已有样本改成滑条滑行音 / tick 之类的样本名。
     ///
-    /// 音效组、音量与自定义索引都继承**已经按头部时刻解析好的** [`HeadSample`]：
-    /// osu! 的 `CreateSlidingSamples` / `UpdateNestedSamples` 都是把头部解析完成的样本改名，
-    /// 事件自身的时刻（例如果汁流小果的 tick 时刻）不参与参数解析。
+    /// 音效组、音量与自定义索引继承**已按头部时刻解析好的** [`HeadSample`]：osu! 的
+    /// `CreateSlidingSamples` / `UpdateNestedSamples` 都是把头部解析完成的样本改名，
+    /// 事件自身时刻不参与参数解析。
     pub(super) fn push_transformed_samples(
         &mut self,
         samples: &[HitSample],

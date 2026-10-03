@@ -3,22 +3,17 @@ use crate::domain::models::{Beatmap, BreakPeriod, TimingPoint};
 
 pub const BREAK_GAP_MS: i64 = 2200;
 
-/// 预览与「完整视频」的起点（谱面绝对时间）。
+/// 预览与「完整视频」的起点（谱面绝对时间）：第一个物件前 2000ms，`AudioLeadIn`
+/// 更大时按它提前（游戏开局的预卷时长）。
 ///
-/// 规则：第一个物件前 2000ms；谱面的 `AudioLeadIn` 更大时按它提前
-/// （`AudioLeadIn` 是游戏开局的预卷时长，osu! 与实际游玩都按它提前开始）。
-///
-/// 音频文件的 0 点就是谱面时间轴的 0 点，`AudioLeadIn` **只决定从多早开始播放**，
-/// 不改变音频与物件时间的对应关系——因此这里只影响起点，宿主把谱面绝对时间换算成
-/// 播放进度时不能再叠加 `AudioLeadIn`。
+/// 音频文件的 0 点就是谱面时间 0 点，`AudioLeadIn` 只决定从多早开始播放、不改变音频
+/// 与物件时间的对应关系——宿主把谱面绝对时间换算成播放进度时不能再叠加它。
 pub fn preview_start_ms(first_object_ms: i64, audio_lead_in_ms: i64) -> i64 {
     first_object_ms.saturating_sub(2_000.max(audio_lead_in_ms.max(0)))
 }
 
-/// 实时预览（Web）在最后一个物件结束后继续渲染的时长（毫秒）。
-///
-/// 与 CLI MP4 的尾部留白（`VIDEO_END_PADDING_MS`，默认 2000ms）对齐：
-/// 最后一个物件后留 2 秒余韵，预览不会在最后一个物件的瞬间结束。
+/// 实时预览（Web）在最后一个物件结束后继续渲染的时长（毫秒）。与 CLI MP4 的尾部
+/// 留白（`VIDEO_END_PADDING_MS`，2000ms）对齐，预览不在最后一个物件的瞬间结束。
 pub const PREVIEW_END_PADDING_MS: i64 = 2_000;
 
 /// 在渲染器使用的绝对 `.osu` 时间轴与 osu! 歌曲进度皮肤组件使用的

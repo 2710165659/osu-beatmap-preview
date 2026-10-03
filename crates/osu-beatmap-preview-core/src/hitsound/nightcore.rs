@@ -1,23 +1,18 @@
 //! NC（Nightcore）的节拍鼓点：按 osu! 的 `ModNightcore.NightcoreBeatContainer` 生成事件。
 //!
-//! 游戏里的鼓点由 `BeatSyncedContainer` 每半拍（`Divisor = 2`）驱动一次，节拍号
-//! `beatIndex = floor((t - 红线时间) / (拍长 / Divisor)) - (OmitFirstBarLine ? 1 : 0)`，
-//! 每 4 小节（`meter * Divisor * 4` 个半拍）为一段，段内按拍号放 kick / clap / hat，
-//! 段首再叠一声 finish；`SliderTickRate` 不是偶数时不放 hat（游戏注释：拍长非 2 的倍数时
-//! 没有规律的反拍）。DC 没有鼓点，因此这里只服务于 NC。
+//! 每半拍（`Divisor = 2`）算一次拍号 `beatIndex`（每条红线从 0 重计，`OmitFirstBarLine`
+//! 再减 1），每 `meter × 2 × 4` 个半拍为一段：段内按拍号放 kick / clap / hat、段首叠
+//! finish；`SliderTickRate` 非偶数时不放 hat（拍长非 2 的倍数没有规律的反拍）。DC 无鼓点。
 //!
-//! 离线渲染按网格精确时刻落点（游戏由逐帧 `Update` 触发，最多晚一帧），并且不做游戏里
-//! 「开始播放时按段对齐 `firstBeat`」之外的额外处理：从谱面起点连续生成即可，
-//! 因为 `firstBeat` 永远是段长的整数倍，相位与从头播放一致。
+//! 离线按网格精确时刻落点（游戏逐帧 `Update` 最多晚一帧）；`firstBeat` 恒为段长整数倍，
+//! 从谱面起点连续生成与按段对齐的相位一致。
 
 use super::sample::SampleLibrary;
 use super::timeline::{HitsoundTimeline, PlayEvent, PlayFrequency};
 use crate::domain::models::{Beatmap, TimingPoint};
 
-/// 随二进制分发、并需要由宿主预解码的 NC 鼓点样本名。
-///
-/// 名字与游戏 `ModNightcore` 里的 `SampleInfo("Gameplay/nightcore-*")` 一致（去掉了
-/// 皮肤查找用的 `Gameplay/` 前缀）；谱面包提供同名条目时仍按「OSZ > 内嵌皮肤」优先。
+/// 随二进制分发、需宿主预解码的 NC 鼓点样本名。与游戏 `ModNightcore` 的
+/// `SampleInfo("Gameplay/nightcore-*")` 一致（去掉皮肤查找用的 `Gameplay/` 前缀）。
 pub const NIGHTCORE_SAMPLE_NAMES: [&str; 4] = [
     "nightcore-clap",
     "nightcore-finish",
@@ -39,9 +34,8 @@ const MAX_EVENTS: usize = 100_000;
 
 /// 生成 NC 的节拍鼓点事件。
 ///
-/// `end_ms` 是需要覆盖的结尾（谱面绝对毫秒，不含）：离线导出传本次混音窗口的结尾，
-/// 实时预览传预览时间轴的结尾，避免为歌曲之后的时间白白生成事件。
-/// 返回的事件已按开始时间升序，样本缺失时对应事件直接跳过（与打击音一致按静音处理）。
+/// `end_ms` 是要覆盖的结尾（谱面绝对毫秒，不含），避免为歌曲之后的时间生成事件；
+/// 返回的事件已按开始时间升序，样本缺失时跳过（与打击音一致按静音处理）。
 pub fn nightcore_events(
     beatmap: &Beatmap,
     library: &SampleLibrary,
@@ -159,11 +153,9 @@ fn push_event(events: &mut Vec<PlayEvent>, source_id: Option<usize>, start_ms: f
     };
     events.push(PlayEvent {
         start_ms,
-        // 0 表示按样本自身长度播放一次（鼓点都是单次触发）。
         duration_ms: 0.0,
         source_id,
-        // 游戏里这些采样按皮肤音量 100% 播放，受总音量（效果音量）缩放；
-        // 谱面的音效音量不参与，因此这里固定 1.0。
+        // 游戏里按皮肤音量 100% 播放、谱面音效音量不参与，因此固定 1.0。
         gain: 1.0,
         looping: false,
         // 音高来自整条混音流的倍速重采样，事件本身不做音高调制。

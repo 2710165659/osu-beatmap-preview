@@ -907,7 +907,7 @@ mod tests {
         let inside_x = content.x as u32;
         let inside_y = content.y as u32;
         assert_eq!(frame.get(inside_x, inside_y)[3], 255);
-        // 左侧补边必须保持透明，让合成阶段的画布底色透出来（外观与修改前一致）。
+        // 左侧补边必须保持透明，让合成阶段的画布底色透出来。
         assert_eq!(frame.get(inside_x - 1, inside_y)[3], 0);
         assert_eq!(frame.get(frame.w - 1, frame.h - 1)[3], 0);
     }

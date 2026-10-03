@@ -1,13 +1,12 @@
 //! 打击音（hit sound）时间轴与混音。
 //!
-//! 这个模块只负责「什么时候播放哪个样本、多大声」，不接触文件系统、网络或音频设备：
-//! 样本 PCM 由宿主提供（CLI 解码内嵌音频、Web 宿主用浏览器解码），因此同一套事件与
-//! 混音逻辑既能驱动 MP4 离线混音，也能驱动浏览器实时播放。
+//! 只负责「什么时候播放哪个样本、多大声」，不接触文件系统、网络或音频设备：样本 PCM
+//! 由宿主提供（CLI 解码内嵌音频、Web 宿主用浏览器解码），同一套事件与混音逻辑既能
+//! 驱动 MP4 离线混音，也能驱动浏览器实时播放。
 //!
-//! 分工：`sample` 管样本与名字解析，`timeline` 管事件与构建器，`common` 放各模式共用的
-//! 取样辅助，`standard`/`taiko`/`catch`/`mania` 按 osu! 规则展开各自的物件，
-//! `mixer` 把时间轴混成 PCM，`music` 负责音乐的变速保调（重采样 + WSOLA 时间伸缩），
-//! `nightcore` 生成 NC 的节拍鼓点事件。
+//! 分工：`sample` 管样本与名字解析，`timeline` 管事件与构建器，`common` 放各模式共用
+//! 的取样辅助，`standard`/`taiko`/`catch`/`mania` 按 osu! 规则展开物件，`mixer` 把
+//! 时间轴混成 PCM，`music` 负责变速保调，`nightcore` 生成 NC 节拍鼓点。
 
 mod assets;
 mod catch;
@@ -48,12 +47,10 @@ pub fn volume_gain(volume: i32) -> f64 {
 /// 宿主没有提供采样率时使用的默认混音采样率。
 pub const SAMPLE_RATE: u32 = 48_000;
 
-/// 循环音样本的循环长度（采样帧）：滑条滑行音与转盘旋转音需要首尾衔接，整段样本
-/// 循环；其余样本播一遍即止，返回 0。
+/// 循环音样本的循环长度（采样帧）：滑条滑行音与转盘旋转音整段循环，其余播一遍即止（0）。
 ///
-/// 这是「哪些样本要循环」的唯一判定，CLI 解码与 Web 的 WASM 解码都调它，宿主不再
-/// 各自猜名字正则；判定按子串匹配，因为样本名带 bank 前缀或自定义音效索引后缀
-/// （`normal-spinnerspin`、`soft-sliderslide7`）同样要循环。
+/// 「哪些样本要循环」的唯一判定，CLI 与 WASM 解码共用（宿主不再各自猜名字正则）；
+/// 按子串匹配，因为带 bank 前缀或索引后缀的名字（`soft-sliderslide7`）同样要循环。
 pub fn sample_loop_len(name: &str, frames: usize) -> usize {
     let name = name.to_ascii_lowercase();
     if name.contains("sliderslide") || name.contains("spinnerspin") {
@@ -68,8 +65,7 @@ pub fn sample_loop_len(name: &str, frames: usize) -> usize {
 /// 模式取 `beatmap.mode()`：0/1/2/3 分别对应 standard/taiko/catch/mania。
 /// standard 谱面在 taiko 模式下也会按 taiko 规则发声。
 pub fn build_timeline(beatmap: &Beatmap, library: &SampleLibrary) -> HitsoundTimeline {
-    // 只读借用即可完成解析：`SampleResolver` 对 `&SampleLibrary` 有实现，
-    // 不需要克隆整份样本数据。
+    // `SampleResolver` 对 `&SampleLibrary` 有实现，只读借用即可，不需要克隆样本数据。
     let mut resolver = library;
     build_with(beatmap, &mut resolver)
 }
@@ -222,8 +218,8 @@ mod tests {
     /// 转盘的音效参数取自第七列，而不是结束时间。
     #[test]
     fn spinner_hitsound_params_come_from_seventh_column() {
-        // 回归：转盘行是 `x,y,time,type,hitSound,endTime,hitSample`，曾经按圆圈的列号去读，
-        // 把结束时间（`3000`）当成了音效组 id，结果转盘音效组恒为 normal。
+        // 回归：转盘行是 `x,y,time,type,hitSound,endTime,hitSample`，按圆圈的列号去读会
+        // 把结束时间（`3000`）当成音效组 id，结果转盘音效组恒为 normal。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\n\n[TimingPoints]\n0,500,4,2,1,100,1,0\n\n[HitObjects]\n256,192,1000,8,0,3000,2:3:0:40:\n";
         let beatmap = crate::parse_beatmap_bytes(source.as_bytes()).unwrap();
         let object = &beatmap.hit_objects.as_standard().unwrap()[0];

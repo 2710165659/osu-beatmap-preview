@@ -82,23 +82,18 @@ impl OszLocation {
 }
 
 /// [`AudioSourceJob::start`] 的入参：谱面、谱面包来源、缓存与模式打包成结构体，
-/// 避免一长串同类型参数传错位。
+/// 避免一长串同类型参数传错位。`osu_text` 用于故事板解析，`mode` 决定背景图、
+/// 背景视频与故事板的开关。
 pub(crate) struct AudioSourceRequest<'a> {
     /// 请求用的谱面 ID（下载与日志用）。
     pub(crate) request_bid: &'a str,
-    /// 已解析的谱面。
     pub(crate) beatmap: Beatmap,
     /// `.osu` 原文（故事板解析用）。
     pub(crate) osu_text: &'a str,
-    /// 音频、背景与打击音所在的谱面包来源。
     pub(crate) osz: OszLocation,
-    /// 谱面包下载缓存目录。
     pub(crate) cache_dir: PathBuf,
-    /// 是否跳过缓存强制重新下载。
     pub(crate) no_cache: bool,
-    /// 请求超时。
     pub(crate) deadline: RequestDeadline,
-    /// 输出模式；决定背景图、背景视频与故事板的开关。
     pub(crate) mode: crate::export::geometry::GameMode,
 }
 
@@ -637,15 +632,13 @@ impl HitsoundSettings {
     }
 }
 
-/// 按视频输出时间轴混出整段打击音。
+/// 按视频输出时间轴混出整段打击音。返回 `None` 表示既没启用打击音也没有需要发声的
+/// 事件（配置关闭且没有 NC）。
 ///
-/// 返回 `None` 表示本次导出既没有启用打击音、也没有需要发声的事件（配置关闭且没有 NC）。
-///
-/// 缓冲区下标即输出帧下标，与音乐（`MusicPlayer`）共用同一时间换算：
-/// 第 i 帧对应的谱面时间是 `chart_start_ms + i * 1000 * speed / sample_rate`。
-/// 倍速通过「混音器的内部采样率取 `sample_rate / speed`」实现，音高随之变化，
-/// 与游戏里 `ModRateAdjust.ApplyToSample`（`Frequency = SpeedChange`）一致。
-/// NC 的节拍鼓点属于 Mod：即使 `ENABLE_HITSOUND` 关闭，鼓点也会照常混进来。
+/// 缓冲区下标即输出帧下标，与音乐共用同一时间换算：第 i 帧对应谱面时间
+/// `chart_start_ms + i * 1000 * speed / sample_rate`；倍速通过「混音器内部采样率取
+/// `sample_rate / speed`」实现，音高随之变化（同 `ModRateAdjust.ApplyToSample`）。
+/// NC 节拍鼓点属于 Mod：即使 `ENABLE_HITSOUND` 关闭也照常混入。
 fn render_hitsound_segment(
     beatmap: &Beatmap,
     settings: Option<HitsoundSettings>,
@@ -747,10 +740,9 @@ fn fill_audio_frame(
 
 /// 一个编码块起点的音乐内容毫秒。
 ///
-/// `speed` 是本次 Mod 组合的总倍速：输出帧按实时帧推进，内容按 `1000 * speed / sample_rate`
-/// 毫秒每帧推进（与画面、打击音共用同一条被压缩过的谱面时间轴）。
-/// `encoder_delay_samples` 抵消 AAC 编码器的前瞻延迟，等价于旧实现里的
-/// `output_index + encoder_delay_samples` 下标补偿。
+/// `speed` 是总倍速：输出帧按实时帧推进、内容按 `1000 * speed / sample_rate` 毫秒每帧
+/// 推进（与画面、打击音共用同一谱面时间轴）。`encoder_delay_samples` 抵消 AAC 编码器
+/// 的前瞻延迟。
 fn block_content_ms(
     chart_start_ms: i64,
     block_start: usize,
@@ -765,7 +757,7 @@ fn block_content_ms(
 /// 把 f32 音乐与 f32 打击音相加并夹紧到 i16。
 ///
 /// 音乐的 f32 值来自整数量化（`i16 / 32767.0`），乘回 `32767` 再 `round` 后与原值逐位
-/// 相同，因此无 Mod（`hitsound = 0`）时输出与改动前的 i16 路径一致。
+/// 相同，因此无 Mod（`hitsound = 0`）时与直接走 i16 路径的输出逐位相同。
 fn mix_sample(music: f32, hitsound: f32) -> i16 {
     let scaled = (music + hitsound) * i16::MAX as f32;
     scaled.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
@@ -1192,9 +1184,8 @@ mod tests {
     /// 长谱面必须使用有界混音窗口，避免退回整段渲染。
     #[test]
     fn long_hitsound_exports_keep_bounded_mix_windows() {
-        // 回归：整段只用一个混音窗口时，所有事件都会压在 voices 里、逐输出帧遍历一遍
-        // （O(输出帧 × 事件数)）。旧用例用 release 的耗时设置 10 秒上限，未优化的
-        // macOS CI 会在正确分块时越线。直接观测真实混音调用，保留退化检查并去除机器依赖。
+        // 回归：整段只用一个混音窗口时，所有事件都压在 voices 里、逐输出帧遍历一遍
+        // （O(输出帧 × 事件数)）。这里直接观测真实混音调用，检查窗口有界。
         let mut source = String::from("osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n");
         for index in 0..1_200 {
             source.push_str(&format!("256,192,{},1,0,0:0:0:0:\n", index * 50));
@@ -1270,8 +1261,8 @@ mod tests {
     /// 视频区间起点为负时打击音不得提前出声。
     #[test]
     fn hitsound_does_not_advance_before_negative_video_start() {
-        // 回归：完整视频的起点是「首个物件前 2000ms」，首个物件很早时它就是负数。
-        // 此前混音器把负位置夹到 0，缓冲区第 0 帧对应谱面 0，整段打击音提前了 |起点|。
+        // 回归：完整视频的起点是「首个物件前 2000ms」，首个物件很早时它就是负数；
+        // 负位置若被夹到 0，缓冲区第 0 帧对应谱面 0，整段打击音会提前 |起点|。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,3000,1,0,0:0:0:0:\n";
         let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
             .expect("fixture 必须可解析");
@@ -1303,7 +1294,7 @@ mod tests {
     /// 倍速导出时打击音与谱面一起被压缩。
     #[test]
     fn hitsound_compresses_with_beatmap_speed() {
-        // 回归：打击音此前按 1x 混好再 1:1 取样，倍速下会与音乐/画面按 speed 倍漂移。
+        // 回归：打击音必须随 speed 一起压缩，否则倍速下会与音乐/画面漂移。
         let source = "osu file format v14\n\n[General]\nMode: 0\n\n[Difficulty]\nCircleSize:4\nSliderMultiplier:1.4\nSliderTickRate:1\n\n[TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,3000,1,0,0:0:0:0:\n";
         let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes())
             .expect("fixture 必须可解析");

@@ -16,10 +16,8 @@
 //! 2. `factory->CreateContext()` → `AMFContext`。
 //! 3. `context->AllocSurface(HOST, BGRA, w, h)` → 系统内存 `AMFSurface`。
 //! 4. `factory->CreateComponent(context, "AMFVideoEncoderVCE_AVC")` → 编码器。
-//! 5. 设置属性：速度预设、900 kbps CBR、无 B 帧、High profile。
-//! 6. `encoder->Init(BGRA, w, h)`。
-//! 7. 循环：锁定 surface 平面 → memcpy RGBA → `SubmitInput(surface)` →
-//!    `QueryOutput(&data)` → 读取 Annex-B NAL。
+//! 5. 设置属性（速度预设、900 kbps CBR、无 B 帧、High profile）后 `Init(BGRA, w, h)`。
+//! 6. 循环：锁定 surface 平面 → memcpy RGBA → `SubmitInput` → `QueryOutput` → 读取 Annex-B。
 //!
 //! AMF 默认输出 Annex-B，由共享 `mux` 模块解析。
 

@@ -244,13 +244,10 @@ pub fn prepare_mania_gif_frames(
 
     let hold_colors: Vec<Rgba> = palette.iter().map(|&c| darken(c, 0.5)).collect();
 
-    // 预计算每个音符的滚动距离位置，供排序后的二分查找裁剪使用。
-    // position_at 随时间严格单调（所有滚动倍率都大于 0），hit_objects 又按
-    // start_time 排序，因此 `pos_start` 为升序。
-    //
-    // 可变 SV 下必须按滚动距离而不是谱面时间裁剪：时间与位置并非线性关系，
-    // 慢 SV 会把很长的谱面时间压缩到少量屏幕像素，按时间窗口会误删可见音符。
-    // 距离通过常量 `pixels_per_scroll_unit` 映射到 y，因此任意 SV 下都保持精确。
+    // 预计算每个音符的滚动距离位置，供排序后的二分查找裁剪使用：position_at 随时间
+    // 严格单调、hit_objects 按 start_time 排序，因此 `pos_start` 升序。可变 SV 下必须
+    // 按滚动距离而不是谱面时间裁剪——时间与位置非线性，慢 SV 会把很长的谱面时间压缩
+    // 到少量屏幕像素，按时间窗口会误删可见音符。
     let pos_start: Vec<f64> = hit_objects
         .iter()
         .map(|ho| scroll_map.position_at(ho.start_time as f64))
@@ -974,19 +971,13 @@ fn y_at_position(
         - round_half_even(distance * pixels_per_scroll_unit)
 }
 
-/// 滚动距离窗口 `[lo, hi]`，窗口外不可能有可见音符。
-/// 用它二分查找预计算的 `pos_start` 数组，避免每帧扫描全部音符。
+/// 滚动距离窗口 `[lo, hi]`，窗口外不可能有可见音符；用它二分查找预计算的
+/// `pos_start` 数组，避免每帧扫描全部音符。
 ///
-/// 窗口单位是滚动距离（position_at），不是谱面时间。可变 SV 使时间与位置非线性：
-/// 慢 SV 会把很长的谱面时间压缩到少量屏幕像素，基于时间的窗口会丢弃屏幕内音符。
-/// 距离通过 `pixels_per_scroll_unit` 映射到屏幕 y，因此任意 SV 下都保持精确。
-/// `lo`/`hi` 覆盖游戏区域并额外留出 `note_head_height`，避免头部/主体在边缘突现。
-///
-/// 从下界减去 `max_hold_position`（距离空间中最宽的长按主体），防止长按被截断：
-/// `end_time` 仍在屏幕内的长按，其 `start_time` 在距离上可能早得多。
-/// 由于 `pos_start >= pos_end - max_hold_position` 且
-/// `pos_end >= snapshot_pos - past_dist`，可得 `pos_start >= lo`，
-/// partition_point 会保留该音符。`draw_gif_hit_object` 内部仍执行 y 裁剪以保证像素精度。
+/// 单位是滚动距离（position_at）而非谱面时间：可变 SV 下时间与位置非线性，基于
+/// 时间的窗口会丢弃屏幕内音符。`lo`/`hi` 覆盖游戏区域并额外留出 `note_head_height`，
+/// 下界再减去 `max_hold_position`（距离空间中最宽的长按主体），保证 `end_time` 仍
+/// 在屏幕内的长按不被截断。`draw_gif_hit_object` 内部仍做 y 裁剪保证像素精度。
 #[inline]
 pub fn visible_pos_window(
     snapshot_pos: f64,

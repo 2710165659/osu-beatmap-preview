@@ -5,11 +5,9 @@ use crate::domain::models::{Beatmap, HitAddition, HitSample, SampleBank, TimingP
 use super::sample::SampleResolver;
 use super::timeline::{NamedEvent, TimelineBuilder};
 
-/// 打击音取样时 timing point 查找的滞后量（毫秒）。
-///
-/// 与 osu! `LegacyBeatmapDecoder` 的 `CONTROL_POINT_LENIENCY` 一致：打击音参数用的是
-/// 「物件 / 节点时间 + 5ms」处生效的 `SampleControlPoint`（`applySamples`），因此紧跟在
-/// 物件之后 5ms 内的音量、音效组或自定义索引变化也算在它头上。
+/// 打击音取样时 timing point 查找的滞后量（毫秒）。与 osu! `LegacyBeatmapDecoder` 的
+/// `CONTROL_POINT_LENIENCY` 一致：打击音参数用「物件 / 节点时间 + 5ms」处生效的
+/// `SampleControlPoint`，紧跟在物件之后 5ms 内的变化也算在它头上。
 pub(super) const SAMPLE_LENIENCY_MS: i64 = 5;
 
 /// 打击音取样使用的 timing point（带 [`SAMPLE_LENIENCY_MS`] 偏移）。
@@ -128,12 +126,11 @@ pub(super) fn head_sample(samples: &[HitSample], beatmap: &Beatmap, time: i64) -
     }
 }
 
-/// 按 timing point 的默认参数推送一个节点的打击音（普通层 + 该节点的加成音）。
+/// 按 timing point 的默认参数推送一个节点的打击音（普通层 + 加成音）。
 ///
-/// 滑条节点（重复箭头、滑条尾）与没有自带 `hitSample` 的物件都走这里：osu! 会对每个
-/// 节点用**它自己时刻**的 `SampleControlPoint` 补齐音效组、音量与自定义索引，因此节点
-/// 跨过音量或音效组变化时，声音与头部并不相同（谱面常用「在滑条尾插入低音量绿线」来
-/// 压掉尾部音效，就是靠这一点生效的）。
+/// 节点与没有自带 `hitSample` 的物件都走这里：osu! 对每个节点用**它自己时刻**的
+/// `SampleControlPoint` 补齐参数，节点跨过音量/音效组变化时与头部不同（谱面常用
+/// 「在滑条尾插低音量绿线」压掉尾部音效，靠的就是这一点）。
 pub(super) fn push_default_samples<R: SampleResolver>(
     builder: &mut TimelineBuilder<R>,
     beatmap: &Beatmap,

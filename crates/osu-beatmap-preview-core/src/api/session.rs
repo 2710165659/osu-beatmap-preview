@@ -32,35 +32,24 @@ pub struct RealtimeSession {
     mode: RealtimeMode,
     options: RealtimeOptions,
     source: crate::render::wgpu::RealtimeFrameSource,
-    // 背景纹理在会话生命周期内保持同一 Arc，避免每帧复制像素并触发 GPU 重新上传。
+    // 会话内保持同一 Arc，避免每帧复制像素并触发 GPU 重新上传。
     background_image: Option<Arc<Img>>,
-    /// 背景视频的当前帧与时间信息（宿主按视频时间轴逐帧推送）。
-    ///
-    /// 可见度（osu! 的淡入淡出）在合成时按 `video_time_ms` 算，不随帧存储：
-    /// 同一画面在淡入淡出窗口里无需重复上传像素。
+    /// 背景视频帧与时间；可见度（淡入淡出）在合成时按 `video_time_ms` 算，不随帧存储。
     background_video: Option<(VideoLayer, i64, i64)>,
-    /// 故事板（解析结果 + 贴图）；贴图转成 `Arc<Img>` 后与背景一样在会话
-    /// 生命周期内保持同一 Arc，避免逐帧重传 GPU 纹理。
+    /// 解析结果 + 贴图；贴图与背景一样保持同一 Arc，避免逐帧重传 GPU 纹理。
     storyboard: Option<(Storyboard, Textures)>,
-    /// 故事板开关；默认关闭，宿主可随时切换。
     storyboard_enabled: bool,
-    /// 音乐 + 打击音混音器：与画面共用同一条谱面时间轴，会话生命周期内一直持有
-    /// （打击音关闭时音乐仍要出声，开关不能用 `Option` 表达）。
+    /// 音乐 + 打击音混音器：与画面共用同一时间轴；打击音关闭时音乐仍要出声，故不用 `Option`。
     mixer: HitsoundMixer,
-    /// 打击音开关；关闭时事件时间轴为空，混音输出只剩音乐。
     hitsound_enabled: bool,
-    /// 当前 Mod 设置：决定音乐音高倍率与 NC 的节拍鼓点。
     settings: ModSettings,
     /// 用户倍速（不含 DT/HT）；总倍速 = 用户倍速 × `timeline.beatmap_speed`。
     user_rate: f64,
-    /// 预览时钟：画面与音频共用的时间权威。
     clock: PreviewClock,
-    /// 混音输出流：决定下一段混音的起点与长度，并跟踪音频线程的消费进度。
     stream: AudioStream,
 }
 
-/// 背景视频层的载体：像素帧，或渲染器的外部纹理槽位（浏览器视频帧 GPU 直拷，
-/// 视频像素不进 CPU 内存）。
+/// 背景视频层的载体：像素帧，或渲染器的外部纹理槽位（浏览器视频帧 GPU 直拷）。
 #[derive(Debug, Clone)]
 enum VideoLayer {
     Pixels(Arc<Img>),
@@ -108,8 +97,8 @@ impl RealtimeSession {
             time_axis,
             &options.core_config,
         )?;
-        // 故事板贴图同样转成 Arc<Img>；单张贴图损坏按缺失处理（故事板缺图静默跳过）。
-        // 注意放在 `background_image` 绑定之前，避免遮蔽同名转换函数。
+        // 故事板贴图同样转成 Arc<Img>，单张贴图损坏按缺失处理（缺图静默跳过）。
+        // 放在 `background_image` 绑定之前，避免遮蔽同名转换函数。
         let storyboard = bundle.storyboard.take().map(|bundle| {
             let mut textures = Textures::new();
             for (path, image) in bundle.textures {
@@ -133,13 +122,13 @@ impl RealtimeSession {
         mixer.set_master_gain(hitsound::volume_gain(audio.hitsound_volume));
         mixer.set_music_gain(hitsound::volume_gain(audio.music_volume));
         // 音乐变速保调：图表域下输出帧按谱面时间 1:1，宿主音频线程再按总倍率重采样，
-        // 因此这里把 Mod 的音高倍率换算成「图表域」的要求（DT/HT 保调、NC/DC 固定偏移）。
+        // 因此把 Mod 音高倍率换算成图表域要求（DT/HT 保调、NC/DC 固定偏移）。
         mixer.set_music_rate(MusicRate::chart_domain(speed, settings.music_pitch()));
         let mut clock = PreviewClock::new();
         // 总倍速 = 用户倍速（初始 1.0）× 谱面变速；换 mod 时由 `set_mods` 重算。
         clock.set_rate(speed, 0.0);
-        // 时钟与输出流都从预览起点开始（首个物件前的预卷段可能为负），
-        // 与宿主「进度条 0 = 预览起点」的坐标一致。
+        // 时钟与输出流都从预览起点开始（预卷段可能为负），与宿主「进度条 0 =
+        // 预览起点」的坐标一致。
         let mut stream = AudioStream::new(audio.sample_rate.max(1));
         stream.reset(timeline.absolute_start_ms as f64);
         clock.seek(timeline.absolute_start_ms as f64, 0.0);
@@ -192,9 +181,8 @@ impl RealtimeSession {
 
     /// 原子切换 mod；新设置只有在谱面转换和渲染源都准备成功后才会提交。
     ///
-    /// `wall_ms` 是当前墙钟读数：切换可能改变谱面变速（DT/HT），总倍速随之变化，
-    /// 时钟必须在这一刻换速而不是让时刻跳变。事件时间轴也随谱面重建（转谱会改变
-    /// 物件与所需样本），样本随后由宿主重新装载。
+    /// `wall_ms` 是当前墙钟读数：切换可能改变谱面变速，时钟必须在这一刻换速而不是
+    /// 让时刻跳变。事件时间轴也随谱面重建，样本随后由宿主重新装载。
     pub fn set_mods(&mut self, mods: Vec<String>, wall_ms: f64) -> Result<()> {
         let settings = parse_mods(&mods)?;
         let target_mode = self.mode_as_i32();
@@ -235,11 +223,9 @@ impl RealtimeSession {
         Ok(())
     }
 
-    /// 设置背景视频的当前帧；`video_time_ms` 是视频自身时间轴的位置，
-    /// `duration_ms` 是视频总时长，两者决定 osu! 淡入淡出的可见度。
-    ///
-    /// 帧的选取由宿主决定（浏览器 `<video>` 最清楚自己的当前帧）；RGBA 交给
-    /// 会话后**按所有权移入**，不再克隆像素（每帧几 MB 的拷贝经不起实时）。
+    /// 设置背景视频的当前帧；`video_time_ms` 是视频自身位置、`duration_ms` 是总时长，
+    /// 两者决定 osu! 淡入淡出的可见度。帧的选取由宿主决定，RGBA **按所有权移入**
+    /// （每帧几 MB 的像素拷贝经不起实时）。
     pub fn set_background_video(
         &mut self,
         frame: ImageData,
@@ -302,11 +288,9 @@ impl RealtimeSession {
         self.storyboard_enabled
     }
 
-    /// 故事板是否接管背景（osu! 的 `ReplacesBackground`）：背景层存在与谱面背景
-    /// 同名元素时由故事板里的那张精灵充当背景。
-    ///
-    /// 只在故事板**实际绘制**时生效：关闭故事板必须把背景图放回来，否则
-    /// 「关着故事板反而没背景」。
+    /// 故事板是否接管背景（osu! 的 `ReplacesBackground`）：背景层存在与谱面背景同名
+    /// 元素时由故事板里的那张精灵充当背景。只在故事板实际绘制时生效——关闭故事板
+    /// 必须把背景图放回来，否则「关着故事板反而没背景」。
     fn storyboard_hides_background(&self) -> bool {
         self.storyboard_enabled
             && self.storyboard.as_ref().is_some_and(|(storyboard, _)| {
@@ -317,10 +301,8 @@ impl RealtimeSession {
             })
     }
 
-    /// 更新后续 `scene_at_absolute` 使用的输出尺寸。
-    ///
-    /// 实时播放器可以在不重建会话的情况下切换画布分辨率；此时只更新合成
-    /// 场景的尺寸，已缓存的谱面、mod 和背景资源保持不变。
+    /// 更新后续 `scene_at_absolute` 使用的输出尺寸；可在不重建会话的情况下切换
+    /// 分辨率，已缓存的谱面、mod 和背景资源保持不变。
     pub fn set_render_size(&mut self, width: u32, height: u32) -> Result<()> {
         if width == 0 || height == 0 {
             return Err(PreviewError::render("render dimensions must be positive"));
@@ -332,14 +314,11 @@ impl RealtimeSession {
 
     // ── 音频：音乐与打击音同流混音 ──────────────────────────────────────
     //
-    // 时间、倍速与 seek 都由会话时钟统一驱动；宿主只做两件事：把 `pull_audio` 的
-    // 混音结果送进音频设备，把音频线程的消费位置用 `on_audio_clock` 转发回来。
+    // 时间、倍速与 seek 由会话时钟统一驱动；宿主只需把 `pull_audio` 的输出送进
+    // 音频设备，并把音频线程的消费位置用 `on_audio_clock` 转发回来。
 
-    /// 设置背景音乐（`None` 表示清除）。
-    ///
-    /// 音乐按「谱面绝对毫秒 × 采样率 / 1000」逐帧采样，与打击音共用同一条时间轴，
-    /// 因此倍速、seek、暂停只有一处位置计算。没有音乐的谱面（单独的 `.osu`）完全
-    /// 不必调用它。
+    /// 设置背景音乐（`None` 表示清除）；与打击音共用同一时间轴，倍速、seek、暂停
+    /// 只有一处位置计算。没有音乐的谱面（单独的 `.osu`）不必调用它。
     pub fn set_music(&mut self, music: Option<SampleData>) {
         self.mixer.set_music(music);
     }
@@ -367,10 +346,8 @@ impl RealtimeSession {
         self.mixer.set_master_gain(hitsound::volume_gain(volume));
     }
 
-    /// 当前谱面需要样本库提供的样本名（按优先级排列，含裸名回退）。
-    ///
-    /// 宿主只装载它拿得到的名字；缺失的样本在混音时按静音处理。
-    /// NC 生效时额外带上 4 个节拍鼓点样本名（鼓点属于 Mod，与打击音开关无关）。
+    /// 当前谱面需要样本库提供的样本名（按优先级排列，含裸名回退）；缺失的样本在混音
+    /// 时按静音处理，宿主只装载拿得到的名字。NC 生效时额外带上 4 个节拍鼓点样本名。
     pub fn hitsound_required_names(&self) -> Vec<String> {
         let mut names = hitsound::referenced_names(&self.beatmap);
         if self.settings.nightcore {
@@ -379,11 +356,8 @@ impl RealtimeSession {
         names
     }
 
-    /// 放入一段已解码的样本 PCM。
-    ///
-    /// 只放进样本库，不重建时间轴：宿主应当把需要的样本全部放完后调用一次
-    /// [`RealtimeSession::rebuild_hitsound_timeline`]，否则每个样本都会遍历一遍整张
-    /// 谱面（样本多时是明显的浪费）。
+    /// 放入一段已解码的样本 PCM。只放进样本库、不重建时间轴：宿主应把样本全部放完后
+    /// 调用一次 [`RealtimeSession::rebuild_hitsound_timeline`]，否则每个样本都遍历整张谱面。
     pub fn set_hitsound_sample(
         &mut self,
         name: &str,
@@ -400,9 +374,8 @@ impl RealtimeSession {
     }
 
     /// 用当前样本库重建打击音事件时间轴（样本全部放完后调用一次）。
-    ///
-    /// 打击音关闭时事件时间轴只留 NC 的节拍鼓点（鼓点是 Mod 的一部分，游戏里同样不受
-    /// 「谱面自带打击音」开关影响）。重建会清空正在播放的声音，只在装载阶段调用。
+    /// 打击音关闭时只留 NC 节拍鼓点（鼓点属于 Mod，不受该开关影响）；
+    /// 重建会清空正在播放的声音，只在装载阶段调用。
     pub fn rebuild_hitsound_timeline(&mut self) {
         let mut timeline = if self.hitsound_enabled {
             hitsound::build_timeline(&self.beatmap, self.mixer.library())
@@ -444,10 +417,8 @@ impl RealtimeSession {
         self.clock.pause(wall_ms);
     }
 
-    /// 跳到指定谱面绝对时间：时钟换锚、丢弃正在播放的声音、输出流整体重置
-    /// （宿主通过 [`RealtimeSession::audio_epoch`] 感知重置，把环形缓冲一起归零）。
-    ///
-    /// 非有限目标忽略，WASM 入口负责向宿主报错。
+    /// 跳到指定谱面绝对时间：时钟换锚、丢弃正在播放的声音、输出流整体重置（宿主通过
+    /// [`RealtimeSession::audio_epoch`] 感知重置，把环形缓冲一起归零）。非有限目标忽略。
     pub fn seek(&mut self, wall_ms: f64, chart_ms: f64) {
         if !chart_ms.is_finite() {
             return;
@@ -488,12 +459,9 @@ impl RealtimeSession {
 
     /// 按当前时钟补一段「音乐 + 打击音」混音，返回交错立体声 f32（帧数 × 2）。
     ///
-    /// 补多少由预读窗口决定（可能返回空数组表示暂无需要补的数据），`max_frames`
-    /// 限制单次返回量；宿主把返回数据接在环形缓冲的写入前沿之后即可。
-    ///
-    /// 画面时钟与音频消费位置走散（音频停滞后恢复、长时间后台）时整条流重置到画面
-    /// 位置：音频跳到画面位置继续，画面绝不回跳；重置的纪元变化见
-    /// [`RealtimeSession::audio_epoch`]。
+    /// 补多少由预读窗口决定（可能返回空数组），`max_frames` 限制单次返回量。画面时钟
+    /// 与音频消费位置走散时整条流重置到画面位置（音频跳过去继续，画面绝不回跳），
+    /// 纪元变化见 [`RealtimeSession::audio_epoch`]。
     pub fn pull_audio(&mut self, wall_ms: f64, max_frames: usize) -> Vec<f32> {
         let clock_ms = self.clock.current(wall_ms);
         let consumer_ms = self.stream.consumer_chart_ms(&self.clock, wall_ms);
@@ -663,11 +631,9 @@ fn prepare_source(
     .map_err(|error| PreviewError::render(error.to_string()))
 }
 
-/// 计算会话时间轴。
-///
-/// 起点与完整预览（CLI MP4）共用 [`preview_start_ms`]；时长从实际预览起点算起，
-/// 避免进度条在最后一个物件之前提前结束；末尾再保留 [`PREVIEW_END_PADDING_MS`]
-/// 余韵，与 MP4 的尾部留白一致，最后一个物件后仍会继续渲染 2 秒。
+/// 计算会话时间轴。起点与完整预览（CLI MP4）共用 [`preview_start_ms`]；时长从实际
+/// 预览起点算起（避免进度条在最后一个物件前就结束），末尾再保留
+/// [`PREVIEW_END_PADDING_MS`] 余韵，与 MP4 的尾部留白一致。
 fn preview_timeline(first: i64, last: i64, audio_lead_in_ms: i64, speed: f64) -> TimelineInfo {
     let absolute_start_ms = preview_start_ms(first, audio_lead_in_ms);
     TimelineInfo {

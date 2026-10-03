@@ -1,13 +1,11 @@
 //! 音乐播放：在输出帧序列上做重采样（音高）与 WSOLA 时间伸缩（速度）。
 //!
-//! 时间伸缩与重采样是两件正交的事：WSOLA 只改内容推进速率、保持音高；重采样同时改
-//! 音高与内容速率。两者组合出 osu! 的两种变速语义——「变速保调」（DT/HT 的
-//! `AdjustableProperty.Tempo`）与「固定音高偏移」（NC/DC 的 `Frequency` + `Tempo`）。
-//! 调用方用 [`MusicRate`] 把所在时间域的倍率换算好，本模块只按参数取源样本。
+//! 两者正交：WSOLA 只改内容推进速率、保持音高；重采样同时改音高与内容速率。组合出
+//! osu! 的两种变速语义——「变速保调」（DT/HT）与「固定音高偏移」（NC/DC）。调用方用
+//! [`MusicRate`] 把所在时间域的倍率换算好，本模块只按参数取源样本。
 //!
-//! 恒等倍率（无 Mod）走无状态快路径，取样公式与改动前的实现逐位一致；纯重采样
-//! （NC/DC 默认速度、实时端的恒等倍率）也只做线性插值读。只有 `stretch != 1`
-//! 才进入 WSOLA，因此「不需要时间伸缩」的路径没有任何额外开销与音质损失。
+//! 只有 `stretch != 1` 才进入 WSOLA；恒等倍率与纯重采样走无状态的线性插值快路径，
+//! 没有额外开销与音质损失。
 
 use super::sample::SampleData;
 
@@ -56,13 +54,10 @@ impl MusicRate {
 
     /// 图表域：输出帧按谱面时间 1:1（实时预览，宿主音频线程再按总倍率重采样）。
     ///
-    /// 宿主的总倍率 `rate = 用户倍速 × speed` 已经把内容与音高都乘过一次，因此这里
-    /// 要抵消：目标变为内容速率 = 1、音高 = `pitch / speed`，即
-    /// `resample = pitch / speed`、`stretch = speed / pitch`。
-    ///
-    /// 注意 `pitch` 是「Mod 的音高倍率」，不含用户倍速：网页端的用户倍速与游戏里的
-    /// `UserPlaybackRate` 一样按 `Frequency` 处理（见
-    /// `MasterGameplayClockContainer.addAdjustmentsToTrack`），因此它继续变调。
+    /// 宿主总倍率 `用户倍速 × speed` 已把内容与音高各乘过一次，这里要抵消：内容速率 = 1、
+    /// 音高 = `pitch / speed`，即 `resample = pitch / speed`、`stretch = speed / pitch`。
+    /// `pitch` 只是 Mod 音高、不含用户倍速（网页端用户倍速与游戏里的 `UserPlaybackRate`
+    /// 一样按 `Frequency` 处理），因此它继续变调。
     pub fn chart_domain(speed: f64, pitch: f64) -> Self {
         let (speed, pitch) = sanitize_pair(speed, pitch);
         MusicRate {
@@ -76,10 +71,8 @@ impl MusicRate {
         self.resample == 1.0 && self.stretch == 1.0
     }
 
-    /// 消毒：任一倍率非法就整体回退到恒等；合法但越界（手写配置/未来 Mod）的值夹紧。
-    ///
-    /// 合法 Mod 组合下 `resample ∈ [0.75, 1.5]`、`stretch ∈ [0.667, 2.0]`，夹紧只用来
-    /// 挡住病态输入，不会改变现有行为；宁可不处理，也不要拿坏参数去改音高。
+    /// 消毒：任一倍率非法就整体回退到恒等，越界的值夹紧——合法 Mod 组合下两值都在
+    /// 夹紧范围内，夹紧只挡病态输入；宁可不处理，也不要拿坏参数去改音高。
     fn sanitized(self) -> Self {
         let valid = |value: f64| value.is_finite() && value > 0.0;
         if !valid(self.resample) || !valid(self.stretch) {
@@ -104,24 +97,17 @@ fn sanitize_pair(speed: f64, pitch: f64) -> (f64, f64) {
     }
 }
 
-/// 判定「与上次渲染连续」的内容毫秒容差。
-///
-/// 宿主的混音位置可能由两条不同的浮点路径算出（累加窗口长度 vs 由锚点与帧号反算），
-/// 相差在 1e-9 量级；而真正的 seek 至少是毫秒级，因此 1e-3ms 既能容忍浮点噪声，也不会
-/// 把 seek 误判成连续（误判会让 WSOLA 状态错位并产生爆音）。
+/// 判定「与上次渲染连续」的内容毫秒容差：宿主位置可能由两条浮点路径算出（差 ~1e-9），
+/// seek 至少是毫秒级；1e-3ms 既容忍浮点噪声又不误判 seek——误判会让 WSOLA 状态错位爆音。
 const CONTINUITY_EPS_MS: f64 = 1e-3;
 
-/// WSOLA 分析窗长度（毫秒）。
-///
-/// 与 osu! 所用 BASS_FX 快速变速参数同量级（`TempoSequence` = 30ms、
-/// `TempoOverlap` = 4ms）：窗越长越平滑但越吃 CPU，重叠越短交叉处越容易听出颗粒感。
+/// WSOLA 分析窗长度（毫秒）；与 osu! 所用 BASS_FX 参数同量级（`TempoSequence` = 30ms）。
+/// 窗越长越平滑但越吃 CPU，重叠越短交叉处越容易听出颗粒感。
 const WSOLA_WINDOW_MS: f64 = 30.0;
 /// 交叉淡变长度（毫秒）；也是相似度搜索的相关窗长度。
 const WSOLA_OVERLAP_MS: f64 = 4.0;
-/// 相似度搜索半径（毫秒）。
-///
-/// 平均内容速率由段起点 `p_k = p_{k-1} + hop * stretch + δ_k` 精确决定，`δ` 只影响局部
-/// 相位对齐，因此它同时是「音乐与画面之间允许的局部抖动」上限。
+/// 相似度搜索半径（毫秒）；`δ` 只影响局部相位对齐（平均内容速率由 `hop * stretch`
+/// 精确决定），因此它同时是「音乐与画面之间允许的局部抖动」上限。
 const WSOLA_SEEK_MS: f64 = 4.0;
 
 /// 一个输出采样率下的 WSOLA 网格参数。
@@ -149,10 +135,8 @@ fn wsola_params(output_rate: u32) -> WsolaParams {
     }
 }
 
-/// 段内偏移 `offset` 处的交叉淡变权重。
-///
-/// 段覆盖 `[k*hop, k*hop + window)`，其中 `[0, overlap)` 淡入、`[hop, window)` 淡出，
-/// 中间为 1。相邻两段的淡出区与淡入区完全重合，因此权重之和恒为 1（交叉处不会掉音量）。
+/// 段内偏移 `offset` 处的交叉淡变权重：`[0, overlap)` 淡入、`[hop, window)` 淡出，
+/// 中间为 1；相邻两段的淡出/淡入区完全重合，权重之和恒为 1（交叉处不掉音量）。
 fn fade_weight(offset: usize, params: &WsolaParams) -> f32 {
     let overlap = params.overlap as f32;
     if offset < params.overlap {
@@ -166,8 +150,8 @@ fn fade_weight(offset: usize, params: &WsolaParams) -> f32 {
 
 /// 按输出帧顺序产生音乐样本的播放器。
 ///
-/// 调用方按输出帧序列顺序调用 [`MusicPlayer::render_at`]（实时预览分块补缓冲、CLI 导出
-/// 按编码块推进），位置跳变（seek、换速、换锚点）由内容毫秒的连续性自动识别并复位。
+/// 调用方按输出帧序列顺序调用 [`MusicPlayer::render_at`]，位置跳变（seek、换速、
+/// 换锚点）由内容毫秒的连续性自动识别并复位。
 #[derive(Debug, Clone)]
 pub struct MusicPlayer {
     output_rate: u32,
@@ -178,15 +162,11 @@ pub struct MusicPlayer {
     source_rate: u32,
     /// 自上次复位起已交给调用方的输出帧数。
     rendered: u64,
-    /// 下一个要合成的 WSOLA 段号。
     next_segment: u64,
-    /// 下一个 WSOLA 段的**名义**视图起点（视图帧）。
-    ///
-    /// 名义位置只按 `hop * stretch` 推进，是「平均内容速率」的唯一来源；相似度搜索的偏移
-    /// 只加在名义位置之上做局部对齐，绝不回头参与下一次推进，否则搜索的系统性偏向会累积
-    /// 成整体变速（纯音这类周期性信号尤其容易被偏向一侧）。
+    /// 下一个 WSOLA 段的名义视图起点（视图帧）：只按 `hop * stretch` 推进，相似度搜索
+    /// 的偏移只做局部对齐、不参与推进——否则搜索偏向会累积成整体变速（纯音尤其明显）。
     next_nominal_view: f64,
-    /// 上一个已合成段的**实际**视图起点：相似度搜索的模板取自它的自然延续。
+    /// 上一个已合成段的实际视图起点：相似度搜索的模板取自它的自然延续。
     previous_view: f64,
     /// 已合成但未吐出的输出帧（交错立体声），第 0 帧对应 `acc_start`。
     accum: Vec<f32>,
@@ -233,13 +213,10 @@ impl MusicPlayer {
 
     /// 渲染 `frames` 个输出帧写入 `output`（交错立体声，至少 `frames * 2` 个元素）。
     ///
-    /// `content_ms` 是本次窗口第一帧对应的源（谱面）毫秒位置，允许为负（首个物件前的
-    /// 预卷）；`source_rate` 是源样本的采样率。与上次终点不连续时会自动复位。
-    ///
-    /// **调用约定**：同一段播放里 `content_ms` 必须按 [`MusicRate::advance_ms`] 推进
+    /// `content_ms` 是本窗口第一帧对应的谱面毫秒（允许为负的预卷），与上次终点不连续
+    /// 时自动复位。**调用约定**：同一段播放里 `content_ms` 必须按 `advance_ms` 推进
     /// （图表域 = `1000 / output_rate`，输出域 = `speed * 1000 / output_rate`），
-    /// [`MusicRate::chart_domain`] 与 [`MusicRate::output_domain`] 的调用方都满足这一点。
-    /// 推进量对不上会被当成 seek：位置由传入值决定，混音因此出现跳变（音乐与画面错位）。
+    /// 推进量对不上会被当成 seek：位置由传入值决定，混音出现音乐与画面的错位跳变。
     pub fn render_at<S: StereoSource>(
         &mut self,
         content_ms: f64,
@@ -299,14 +276,9 @@ impl MusicPlayer {
 
     /// 恒等/纯重采样路径：逐帧线性插值读，无状态。
     ///
-    /// 内容毫秒按 [`MusicRate::advance_ms`] 推进（输出域 = `resample * 1000 / output_rate`
-    /// 毫秒每帧），源帧位置就是 `内容毫秒 × 源采样率 / 1000`：**不能再乘一次倍率**，
-    /// 否则「内容推进」与「取样步长」会各乘一次倍率，实际速度变成 倍率²。
-    /// 音高与内容速率在这里本来就是同一个量（纯重采样），只有当 `resample == speed`
-    /// 时才走这条路径（`stretch == 1` 等价于 `pitch == speed`），因此两者一致。
-    ///
-    /// `resample == 1` 时本式与改动前的音乐路径完全同式（先算 `frame_time`，
-    /// 再乘源采样率），无 Mod 的输出因此逐位不变。
+    /// 源帧位置就是 `内容毫秒 × 源采样率 / 1000`，**不能在取样步长上再乘一次倍率**——
+    /// 内容推进与取样步长各乘一次会让实际速度变成倍率²。本路径只在 `stretch == 1`
+    /// （音高与内容速率是同一个量）时走，无 Mod 时即最简单的线性插值。
     fn render_direct<S: StereoSource>(
         &self,
         content_ms: f64,
@@ -400,8 +372,8 @@ impl MusicPlayer {
 
     /// 相似度搜索：让新段头部与上一段的自然延续对齐，返回最优偏移（视图帧，整数）。
     ///
-    /// 相关窗用左右声道均值（单声道混合）算一次、两声道共用同一偏移，立体声像不会散。
-    /// 模板或候选能量接近 0（静音、曲末采样）时直接返回 0，避免无意义的噪声放大。
+    /// 相关窗用左右声道均值算一次、两声道共用同一偏移（立体声像不散）；模板或候选
+    /// 能量接近 0（静音、曲末）直接返回 0，避免无意义的噪声放大。
     fn best_offset<S: StereoSource>(
         &self,
         source: &S,
@@ -483,10 +455,7 @@ mod tests {
         SampleData::stereo(samples, RATE)
     }
 
-    /// 恒等倍率（`resample == 1`）下直接按「内容毫秒 × 源采样率 / 1000」取样。
-    ///
-    /// 只用于恒等倍率的断言；非 1 倍率的取样步长由 [`MusicPlayer`] 的
-    /// `advance_ms` 决定，见 `resample_only_advances_content_by_the_rate`。
+    /// 恒等倍率下的直接取样（测试辅助）：源帧位置 = 内容毫秒 × 源采样率 / 1000。
     fn expected_identity(source: &SampleData, content_ms: f64, frames: usize) -> Vec<f32> {
         (0..frames)
             .flat_map(|index| {
@@ -508,10 +477,8 @@ mod tests {
         assert_eq!(output, expected);
     }
 
-    /// 纯重采样（stretch = 1）按倍率推进内容，取样步长不再额外乘倍率。
-    ///
-    /// 恒等以外的倍率下，音高与内容速率是同一个量：源帧位置 = 内容毫秒 × 源采样率 / 1000，
-    /// 而内容毫秒本身按 `resample * 1000 / output_rate` 每帧推进。
+    /// 纯重采样（stretch = 1）按倍率推进内容：内容毫秒按 `resample * 1000 / output_rate`
+    /// 每帧推进，取样步长不再额外乘倍率。
     #[test]
     fn resample_only_advances_content_by_the_rate() {
         let source = sine_source(48_000, 440.0);
@@ -531,10 +498,8 @@ mod tests {
         }
     }
 
-    /// 纯重采样（stretch = 1）按倍率推进内容：源里的静音缺口出现在「缺口位置 / 倍率」处。
-    ///
-    /// 这是 NC/DC 默认速度走的路径（不调用 WSOLA），缺口位置只由 `resample` 决定，
-    /// 长度按 1/倍率缩放；两侧都要测：倍率 > 1 压缩、< 1 拉长。
+    /// 纯重采样（NC/DC 默认速度走的路径）下缺口只由 `resample` 决定：起点 = 缺口位置 /
+    /// 倍率、长度按 1/倍率缩放，倍率 > 1 压缩、< 1 拉长两侧都要测。
     #[test]
     fn resample_only_moves_content_by_the_rate() {
         let source_frames = 2_000;
@@ -593,10 +558,8 @@ mod tests {
         }
     }
 
-    /// 源采样率与输出采样率不同（44.1kHz 源、48kHz 输出）时，内容速率仍只由倍率决定。
-    ///
-    /// 导出链路就是这种组合；这里用「源里 1 秒处的静音缺口」直接量内容速率，
-    /// 避免只靠公式自证。
+    /// 源采样率与输出不同时（44.1kHz 源、48kHz 输出），内容速率仍只由倍率决定：
+    /// 用「源里 1 秒处的静音缺口」直接量，避免只靠公式自证。
     #[test]
     fn resample_rate_holds_for_mismatched_sample_rates() {
         let source_rate = 44_100_u32;
@@ -897,10 +860,8 @@ mod tests {
         );
     }
 
-    /// 单个频率上的幅度（单个 DFT 频点），用于「保调」断言。
-    ///
-    /// 直接用相位递推的 Goertzel 在数万样本上会累积浮点误差（功率甚至可能算出负数），
-    /// 这里用显式 cos/sin 相关求和，测试里不需要考虑速度。
+    /// 单个 DFT 频点的幅度，用于「保调」断言；不用相位递推的 Goertzel——数万样本上
+    /// 会累积浮点误差（功率可能算出负数）。
     fn tone_magnitude(samples: &[f32], frequency: f64) -> f64 {
         let omega = 2.0 * std::f64::consts::PI * frequency / RATE as f64;
         let (mut real, mut imaginary) = (0.0_f64, 0.0_f64);

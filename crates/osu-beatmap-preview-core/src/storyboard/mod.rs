@@ -3,22 +3,15 @@
 //! 语义对齐 osu! 参考实现（osu.Game `Storyboards` + osu.Framework `Transform`/`Interpolation`）：
 //! - 元素坐标系是 640×480 虚拟空间，屏幕映射按高度等比缩放并居中（[`draw::StoryboardViewport`]）；
 //! - `L` 循环组按 lazer 公式展开（周期 = 组内 max(end) − min(start)，总次数 = loopCount）；
-//! - 命令求值取「已开始命令中排序最后一条」，与 osu.Framework 的 Transform 覆盖规则一致
-//!   （[`eval`] 里有精确公式）。
-//! - **生命周期**（`StoryboardSprite.StartTime` / `EndTimeForDisplay`）：元素只在其
-//!   命令时间跨度内存在——命令未开始时不靠初值提前出现（alpha 先 0 后亮的元素等到
-//!   第一条可见 alpha 命令才登场），命令结束后也不残留。
-//! - **层序**（`Player.createUnderlayComponents` / `createOverlayComponents`）：
-//!   Background/Fail/Pass/Foreground 全部在游玩物件**之下**（underlay），只有
-//!   Overlay 层代理到物件之上、HUD 之下；用户暗度（`BACKGROUND_DIM`）像
-//!   `UserDimContainer` 的 `FadeColour(Gray(1-DimLevel))` 一样乘在所有故事板精灵
-//!   的颜色上。
+//! - 命令求值取「已开始命令中排序最后一条」（[`eval`] 里有精确公式）；
+//! - 生命周期：元素只在其命令时间跨度内存在——命令未开始不靠初值提前出现
+//!   （alpha 先 0 后亮的元素等到第一条可见 alpha 命令才登场），命令结束后也不残留；
+//! - 层序：Background/Fail/Pass/Foreground 全部在游玩物件之下（underlay），只有 Overlay
+//!   层代理到物件之上、HUD 之下；用户暗度（`BACKGROUND_DIM`）乘在所有精灵颜色上。
 //!
-//! 已知裁剪范围（有意为之，均在文档中标注）：
-//! - `T` 触发组只解析保留、不参与求值：触发依赖运行时游玩状态（血量/打击音时机），
-//!   而本项目是确定性的离线渲染，逐帧乱序并行出帧要求求值是纯函数；
-//! - `Sample` 事件只解析保留、不播放（音频链路由 `hitsound` 模块负责）；
-//! - `UseSkinSprites` 贴图只从谱面包取，不查皮肤。
+//! 有意裁剪（均在文档中标注）：`T` 触发组只解析保留不求值（逐帧乱序并行出帧要求
+//! 求值是纯函数）、`Sample` 事件不播放（音频归 `hitsound` 模块）、`UseSkinSprites`
+//! 贴图只从谱面包取。
 
 pub mod draw;
 pub mod eval;
@@ -289,10 +282,9 @@ impl Element {
 
     /// 元素的绘制起点（osu! 的 `StoryboardSprite.StartTime`，即 `LifetimeStart`）。
     ///
-    /// 与「最早命令」不同的原因（lazer 的 alpha 优化语义）：若最早的 alpha 命令
-    /// 起点值是 0（元素先隐形后现身），元素要等到第一条**可见** alpha 命令
-    /// （start 或 end 大于 0）才开始存在；否则从最早命令算起。没有这条规则，
-    /// 「几秒后才登场」的精灵会被命令初值提前画出来（比如转场黑幕盖住整首歌）。
+    /// 与「最早命令」不同是 lazer 的 alpha 优化：最早 alpha 命令起点值为 0（先隐形
+    /// 后现身）时，元素要等到第一条**可见** alpha 命令才存在，否则「几秒后才登场」
+    /// 的精灵会被初值提前画出来（比如转场黑幕盖住整首歌）。
     pub fn start_time_ms(&self) -> f64 {
         let alphas = self.commands.list(Property::Alpha);
         let visible = |command: &Command| {
@@ -310,10 +302,8 @@ impl Element {
     }
 
     /// 元素的绘制终点（osu! 的 `EndTimeForDisplay`，即 `LifetimeEnd`）。
-    ///
-    /// 循环组已展开进命令桶，取所有命令的最大结束时间即可（与 lazer 的
-    /// `loopStart + minRel + 周期 × 次数` 求和展开一致）。超出这个时刻后元素
-    /// 不再存在——即使数值语义上它还停在最后一帧的状态。
+    /// 循环组已展开进命令桶，取所有命令的最大结束时间即可；超出这个时刻元素不再
+    /// 存在——即使数值语义上它还停在最后一帧的状态。
     pub fn end_time_ms(&self) -> f64 {
         self.commands
             .lists
@@ -330,9 +320,8 @@ impl Element {
 
     /// 该时刻实际要取用的贴图路径（动画元素为当前帧路径）。
     ///
-    /// 帧文件名规则与 osu! 一致：在扩展名前插入帧序号（`sprite.png` → `sprite0.png`）。
-    /// 多点文件名按「最后一个点」插入；lazer 的 `String.Replace` 会在每个点前都插帧号，
-    /// 与格式文档不符，这里取直觉行为并明确差异。
+    /// 帧号在扩展名前插入（`sprite.png` → `sprite0.png`，多点文件名按最后一个点插入）；
+    /// lazer 的 `String.Replace` 会在每个点前都插帧号，与格式文档不符，这里取直觉行为。
     pub fn texture_path_at(&self, frame_index: u32) -> String {
         match self.kind {
             ElementKind::Sprite => self.path.clone(),
@@ -435,11 +424,8 @@ impl Storyboard {
 
     /// 求值 `time_ms` 时刻的绘制列表：`behind` 画在游玩物件之下（Background/Pass/
     /// Foreground，osu! 的 underlay），`front` 画在物件之上、HUD 之下（Overlay），
-    /// 两者都按绘制顺序从底到顶排列。
-    ///
-    /// 层序与 osu! 一致（Depth 大者靠后；`Player` 只把 Overlay 层代理到 playfield
-    /// 之上）；`Fail` 层仅在失败时可见，本项目是自动游玩预览、恒为通过状态，
-    /// 因此跳过 `Fail` 层。
+    /// 两者都按绘制顺序从底到顶。`Fail` 层仅在失败时可见，自动游玩预览恒为通过，
+    /// 因此跳过。
     pub fn sprites_at(&self, time_ms: f64) -> (Vec<SpriteDraw<'_>>, Vec<SpriteDraw<'_>>) {
         let mut behind = Vec::new();
         let mut front = Vec::new();

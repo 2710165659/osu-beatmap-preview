@@ -296,23 +296,20 @@ pub fn get_slider_render_data(
 
 /// 滑条 tick 生成参数：路径长度、时间跨度与速度配置打包成结构体，
 /// 供画面 tick 与打击音 tick 共用同一套 osu! 规则，也避免长参数列表传错位。
+///
+/// 时间均为绝对谱面毫秒；`repeats` 的 span 数按 `repeats.max(1)` 计算；
+/// `tick_rate` / `slider_multiplier` 即谱面的 SliderTickRate / SliderMultiplier。
 #[derive(Debug, Clone, Copy)]
 pub struct SliderTickParams {
-    /// 滑条路径的世界长度（像素）。
     pub world_length: f64,
-    /// 滑条起点时刻（毫秒，绝对谱面时间）。
     pub start_time: i64,
-    /// 滑条终点时刻（毫秒，绝对谱面时间）。
     pub end_time: i64,
-    /// 滑条重复次数；span 数按 `repeats.max(1)` 计算。
     pub repeats: i32,
     /// 当前 timing point 的拍长（毫秒）。
     pub beat_length: f64,
     /// 当前 timing point 的滑条速度倍率（SV）。
     pub slider_velocity: f64,
-    /// 每拍的 tick 数（SliderTickRate）。
     pub tick_rate: f64,
-    /// 谱面的 SliderMultiplier。
     pub slider_multiplier: f64,
 }
 
@@ -823,8 +820,7 @@ pub fn build_reverse_arrow(circle_diameter: i64, color: [u8; 3]) -> Img {
         true,
     );
 
-    // 深色 `»` 图标：C# Argon = accent.Darken(4)
-    // 图标高度约为胶囊高的 60%（原 72%，缩小一点）
+    // 深色 `»` 图标：C# Argon = accent.Darken(4)，图标高度约为胶囊高的 60%。
     let dark = darken(color, 4.0);
     let dark_rgba = [dark[0], dark[1], dark[2], 255];
     let chev_h = cap_h * 0.60;

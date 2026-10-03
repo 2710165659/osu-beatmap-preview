@@ -1,10 +1,8 @@
 //! 随二进制分发的打击音资源。
 //!
-//! build.rs 把 `assets/hitsound/*.ogg` 内嵌进来，宿主按样本名直接取字节、解码成 PCM
-//! 后交给混音器，因此不需要再从网络或磁盘读取音效文件。CLI 与 Web 用同一份来源，
-//! 也就不会出现「静态副本忘记同步导致全部加载失败」这类问题。
-//!
-//! 查找表很小（36 项），直接线性扫描即可，不需要额外建立索引。
+//! build.rs 把 `assets/hitsound/*.ogg` 内嵌进来，宿主按样本名取字节、解码成 PCM 后
+//! 交给混音器；CLI 与 Web 同源，不会有「静态副本忘同步导致加载失败」的问题。
+//! 查找表很小（36 项），直接线性扫描即可。
 
 include!(concat!(env!("OUT_DIR"), "/hitsound_assets.rs"));
 
@@ -23,10 +21,9 @@ pub fn asset_count() -> usize {
 
 /// 某个样本名是否随二进制分发。
 ///
-/// 宿主按「谱面自带的同名条目 > 内嵌皮肤 > 静音」的优先级取样本：先在压缩包里用
-/// [`sample_entry_matches`](crate::sample_entry_matches) 找同名条目，找不到再用这个名字
-/// 取内嵌资源兜底。两者的候选名都由 [`referenced_names`](crate::hitsound::referenced_names)
-/// 给出，因此这里只回答「这个名字有没有内嵌资源」。
+/// 宿主按「谱面自带的同名条目 > 内嵌皮肤 > 静音」优先级取样本：先在压缩包里找同名
+/// 条目，找不到再用这个名字取内嵌资源兜底；候选名由 [`referenced_names`](crate::hitsound::referenced_names)
+/// 给出，这里只回答「这个名字有没有内嵌资源」。
 pub fn has_embedded_asset(name: &str) -> bool {
     asset_bytes(name).is_some()
 }

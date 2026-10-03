@@ -98,12 +98,10 @@ pub struct HitSample {
     pub addition: HitAddition,
     pub volume: i32,
     pub filename: Option<String>,
-    /// 自定义音效索引（`.osu` 的 `hitSample` 第 3 列）。
-    ///
-    /// 与 osu! 的 `HitSampleInfo.CustomSampleBank` 同义：0 表示音效来自皮肤；1 表示
-    /// 使用谱面自带的无后缀音效（`soft-hitnormal`）；≥2 表示使用带该索引后缀的音效
-    /// （`soft-hitnormal20`，见 `LegacyHitSampleInfo.Suffix`）。物件没有声明时由所在
-    /// timing point 的 `sample_index` 补齐。
+    /// 自定义音效索引（`.osu` 的 `hitSample` 第 3 列）。与 osu! 的
+    /// `HitSampleInfo.CustomSampleBank` 同义：0 = 皮肤、1 = 谱面自带无后缀音效
+    /// （`soft-hitnormal`）、≥2 = 带该索引后缀的音效（`soft-hitnormal20`）；
+    /// 物件没有声明时由所在 timing point 的 `sample_index` 补齐。
     pub custom_bank: i32,
 }
 

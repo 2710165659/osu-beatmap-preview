@@ -26,13 +26,10 @@ struct TaikoSampleSpec {
 
 /// 复现 osu! `HitObject.CreateHitSampleInfo` 的取样规则。
 ///
-/// `name` 是目标样本名（`hitnormal` 或 `hitclap`/`hitwhistle`/`hitfinish`）：
-/// - 非 `hitnormal` 时优先继承物件「第一个加成音样本」的音效组与音量，没有加成音才退回普通样本；
-/// - `hitnormal` 时只用普通样本。
-///
-/// 物件没有自带 `hitSample`（或样本未指定音效组/音量）时回退到所在 timing point。
-/// 注意这里刻意不按音量重选音效组：那是 osu! Argon 皮肤（`VolumeAwareHitSampleInfo`）的逻辑，
-/// 本项目使用 classic 皮肤资源，走的是 legacy 查找路径。
+/// `name` 是目标样本名：非 `hitnormal` 时优先继承物件「第一个加成音样本」的音效组与
+/// 音量，`hitnormal` 只用普通样本；物件没有自带 `hitSample` 时回退到所在 timing point。
+/// 刻意不按音量重选音效组——那是 osu! Argon 皮肤（`VolumeAwareHitSampleInfo`）的逻辑，
+/// 本项目用 classic 皮肤资源，走 legacy 查找路径。
 fn taiko_sample_spec(
     samples: &[HitSample],
     beatmap: &Beatmap,
@@ -222,8 +219,7 @@ mod tests {
     /// taiko 音效组来自 timing point，而不是音量。
     #[test]
     fn taiko_bank_comes_from_timing_point_not_volume() {
-        // 回归：曾经按音量分档（>=90 drum / >=60 normal / 其余 soft），那是 osu! Argon 皮肤的逻辑；
-        // legacy 路径只认物件 / timing point 声明的采样组。
+        // 回归：legacy 路径只认物件 / timing point 声明的采样组，不按音量分档（那是 Argon 皮肤的逻辑）。
         let library = library_with(&[
             "taiko-soft-hitnormal",
             "taiko-normal-hitnormal",

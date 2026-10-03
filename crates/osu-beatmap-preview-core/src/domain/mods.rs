@@ -549,11 +549,9 @@ fn rate_mod_count(settings: &ModSettings) -> usize {
 
 /// 实时预览 / 动画导出下某模式应当展示的可切换 Mod token 列表。
 ///
-/// 顺序与 CLI README 的「GIF / MP4」列一致；键数 Mod 在支持矩阵里是一组 `K`，
-/// 这里展开成 `1K`…`10K`，方便上层逐个渲染成按钮。实时会话用
-/// `validate_mods(..., Some("mp4"))` 校验，所以列表里的每一项都能被会话接受：
-/// `DA` 需要调用方替换成带参数的 token（网页端用 `DAAR<值>CS<值>`）。
-/// 网页端不再自带一份列表，避免两侧走偏（与 `hitsoundDefaults` 同样的思路）。
+/// 顺序与 CLI README 的「GIF / MP4」列一致；键数 Mod 展开成 `1K`…`10K` 方便逐个渲染
+/// 成按钮。每项都能被 `validate_mods(..., Some("mp4"))` 接受（`DA` 由调用方替换成带
+/// 参数的 token）；网页端不再自带一份列表，避免两侧走偏。
 pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
     match mode {
         0 => ["EZ", "HR", "HD", "FL", "DA", "TC", "DT", "HT", "NC", "DC"]
@@ -585,7 +583,7 @@ mod tests {
     fn supported_mod_tokens_match_the_realtime_matrix() {
         for mode in 0..=3 {
             let tokens = supported_mod_tokens(mode);
-            // PR #6 之后四种模式的实时链路都支持 HD/FL，面板必须能选到。
+            // 四种模式的实时链路都支持 HD/FL，面板必须能选到。
             for required in ["HD", "FL", "DT", "HT"] {
                 assert!(
                     tokens.iter().any(|token| token == required),

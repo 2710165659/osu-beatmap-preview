@@ -114,10 +114,9 @@ pub fn parse_video_event(lines: Option<&Vec<&str>>) -> Option<VideoEvent> {
 
 /// 解析一条 `[Events]` 媒体事件行，返回（起始时间毫秒、归一化文件名）。
 ///
-/// 第三字段支持带引号（文件名可含逗号）与旧式不带引号两种写法，文件名里的
-/// 反斜杠归一化为 `/`。类型不匹配或文件名为空时返回 `None`。
-/// 起始时间允许写成小数，向零截断为毫秒；写错时按 0 处理（背景图事件不关心
-/// 该字段，视频事件的 0 也是最常见的默认值），不让单个坏字段毁掉整行。
+/// 第三字段支持带引号（文件名可含逗号）与旧式不带引号两种写法，反斜杠归一化为 `/`。
+/// 起始时间允许小数、向零截断，写坏时按 0 处理，不让单个坏字段毁掉整行；
+/// 类型不匹配或文件名为空时返回 `None`。
 fn parse_media_event(line: &str, event_type: &str) -> Option<(i64, String)> {
     let mut fields = line.splitn(3, ',');
     if fields.next().map(str::trim) != Some(event_type) {

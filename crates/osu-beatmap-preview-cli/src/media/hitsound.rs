@@ -129,15 +129,10 @@ impl SampleArchive {
 
 /// 为给定谱面构建打击音样本库。
 ///
-/// `beatmap_samples` 为 `Some` 时表示启用谱面自带音效（对应配置项
-/// `ENABLE_BEATMAP_HITSOUND`），传的是该谱面的 OSZ 路径；每个候选名按
-///「OSZ 内同名条目 > 内嵌皮肤」的顺序取字节，两者都没有时跳过（混音阶段按静音处理）。
-/// 为 `None` 时只用内嵌资源。
-///
-/// `nightcore` 为 `true` 时把 NC 的 4 个节拍鼓点样本名也纳入候选（它们同样是
-///「谱面包同名条目 > 内嵌皮肤」）。
-///
-/// 只解包时间轴引用到的那几十个短音效，所以不需要截止时间：整体耗时在毫秒级。
+/// `beatmap_samples` 为 `Some` 时启用谱面自带音效（`ENABLE_BEATMAP_HITSOUND`，值为该
+/// 谱面的 OSZ 路径）：每个候选名按「OSZ 同名条目 > 内嵌皮肤」取字节，都没有则跳过；
+/// 为 `None` 时只用内嵌资源。`nightcore` 为 `true` 时把 NC 的 4 个鼓点样本名也纳入
+/// 候选。只解包时间轴引用到的几十个短音效（毫秒级），因此不需要截止时间。
 pub(crate) fn build_library(
     beatmap: &Beatmap,
     beatmap_samples: Option<&Path>,
@@ -167,9 +162,8 @@ pub(crate) fn build_library(
             continue;
         };
         match decode_sample(&name, bytes, Some("ogg")) {
-            // 解码失败按静音处理：单个坏文件不应该让整次导出失败。
-            // 这里刻意不写日志——日志是全局单例，媒体层的坏样本属于预期情况，
-            // 交给调用方按需统计即可。
+            // 解码失败按静音处理：单个坏文件不应该让整次导出失败。刻意不写日志——
+            // 日志是全局单例，媒体层的坏样本属于预期情况，交给调用方按需统计。
             Ok(sample) => library.insert(name, sample),
             Err(_) => continue,
         }

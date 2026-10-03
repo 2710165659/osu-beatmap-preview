@@ -108,15 +108,13 @@ fn program_build_time() -> SystemTime {
 
 // ── 原子输出 ──
 
-/// 以原子方式写入输出文件：`write` 接收同目录临时路径并写入，
-/// 仅在返回 `Ok` 后才将临时文件重命名覆盖 `output_path`。
-/// 因此渲染中途被终止或 panic 不会在缓存最终路径留下残缺文件，
-/// 最坏只会留下下次尝试前可清理的旧 `.tmp` 文件。
+/// 以原子方式写入输出文件：`write` 接收同目录临时路径并写入，仅返回 `Ok` 后才把
+/// 临时文件重命名覆盖 `output_path`。渲染中途被终止或 panic 不会在缓存最终路径留下
+/// 残缺文件，最坏只留可清理的旧 `.tmp`。
 ///
-/// 临时文件与 `output_path` 位于同一目录，确保重命名在同一卷内完成并具备原子性。
-/// Windows 的 `std::fs::rename` 会替换目标（`MOVEFILE_REPLACE_EXISTING`），
-/// 因此旧的有效缓存会一直保留到新文件完整写入。若 `write` 失败，
-/// 会尽力删除临时文件并原样返回错误，`output_path` 不受影响。
+/// 临时文件与 `output_path` 同目录，重命名在同一卷内完成、具备原子性；Windows 的
+/// `std::fs::rename` 会替换目标（`MOVEFILE_REPLACE_EXISTING`），旧缓存一直保留到新
+/// 文件完整写入。`write` 失败时尽力删除临时文件并原样返回错误，`output_path` 不变。
 pub(crate) fn with_atomic_output<T>(
     output_path: &Path,
     tmp_suffix: &str,
@@ -365,8 +363,8 @@ mod tests {
     /// 输出缓存只在产物晚于程序构建时间时命中。
     #[test]
     fn output_cache_requires_output_newer_than_build_time() {
-        // 回归：这项检查此前读的是 core 的构建时间，而它被钉在 1970（可复现构建），
-        // 于是「改了内嵌默认配置 + 重建」之后仍会命中旧 MP4，听到的还是旧声音。
+        // 回归：core 的构建时间被钉在 1970（可复现构建），拿它当基准会让
+        // 「改了内嵌默认配置 + 重建」之后仍命中旧 MP4，听到的还是旧声音。
         let dir = test_dir();
         let beatmap_path = unique_path(&dir, "map.osu");
         std::fs::write(&beatmap_path, b"osu file format v14\n").unwrap();

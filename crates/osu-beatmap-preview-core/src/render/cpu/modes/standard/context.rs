@@ -60,16 +60,11 @@ pub struct CachedLayer {
 
 /// 跨线程共享的滑条主体图层缓存。
 ///
-/// 滑条主体图层的构建（2 倍超采样描边 + Lanczos 降采样）是单帧渲染里最贵的一步：
-/// 实测单次约 40ms，其中降采样约占 60%。它的输入只有「滑条序号 + 路径几何 +
-/// 宽度 + 颜色 + traceable」，在同一个 [`RenderContext`] 内是纯函数，因此可以安全共享。
-///
-/// 这里按滑条序号建槽并用 `OnceLock` 惰性初始化：多个 rayon 线程同时请求同一条
-/// 滑条时只有一个线程真正构建，其余线程在 `OnceLock` 上等待后直接复用。
-/// 之前每条线程各持一份 `RenderCache`，同一张谱面会被重复构建约「线程数」次。
-///
-/// 不同 `RenderContext` 之间不共享（每个上下文一份），因此不同谱面或不同配置
-/// 不会互相污染；同一上下文的多次渲染（例如 PNG 的 40 帧、GIF 的 75 帧）全程复用。
+/// 滑条主体图层（2 倍超采样描边 + Lanczos 降采样）是单帧渲染里最贵的一步（实测约
+/// 40ms），输入只有「滑条序号 + 路径几何 + 宽度 + 颜色 + traceable」，在同一
+/// [`RenderContext`] 内是纯函数，可安全共享。按滑条序号建槽、`OnceLock` 惰性初始化：
+/// 多线程同时请求同一条滑条时只有一个真正构建、其余等待复用（否则同一张谱面会被
+/// 重复构建约「线程数」次）。不同上下文之间不共享，同一上下文的多帧全程复用。
 pub struct SharedBodyLayers {
     slots: Box<[OnceLock<CachedLayer>]>,
     cache_identity: Arc<()>,
@@ -87,8 +82,7 @@ impl SharedBodyLayers {
     }
 
     /// 返回该滑条已缓存的图层；尚未构建时调用 `build` 并记住结果。
-    ///
-    /// `OnceLock::get_or_init` 可能同时被多个线程调用，因此闭包必须在锁内重新取得
+    /// `OnceLock::get_or_init` 可能被多个线程同时调用，因此闭包必须在锁内重新取得
     /// 所需数据，不能依赖调用方的可变借用。
     pub fn get_or_init(&self, index: usize, build: impl FnOnce() -> CachedLayer) -> &CachedLayer {
         self.slots[index].get_or_init(build)
@@ -274,11 +268,9 @@ pub fn build_render_settings(beatmap: &Beatmap, mods: Option<&ModSettings>) -> R
 
 /// 计算 playfield 在单帧中的位置与缩放，与游戏内 1080p（16:9）布局一致。
 ///
-/// lazer 在 16:9 窗口下的布局推导（OsuPlayfieldAdjustmentContainer）：
-/// 游戏空间为 1365.33×768，playfield 容器取 80% 后按 4:3 适配，
-/// 得到 819.2×614.4，即 512×384 的 1.6 倍，居中放置并整体下移 8×scale
-/// （与 storyboard 对齐的历史偏移）。本帧 683×384 恰为游戏空间的一半，
-/// 因此缩放为 0.8，上下左右留白与游戏内完全等比。
+/// lazer 16:9 窗口（OsuPlayfieldAdjustmentContainer）：游戏空间 1365.33×768，容器取
+/// 80% 后按 4:3 适配得 819.2×614.4（512×384 的 1.6 倍），居中并整体下移 8×scale。
+/// 本帧 683×384 恰为游戏空间一半，因此缩放 0.8，留白与游戏内完全等比。
 pub fn build_frame_layout(output_format: crate::render::geometry::OutputFormat) -> FrameLayout {
     let geometry = crate::render::geometry::standard_geometry(output_format);
     let scale = crate::render::cpu::modes::standard::constants::PLAYFIELD_VIEWPORT_RATIO
@@ -323,15 +315,13 @@ pub fn build_video_frame_layout(
 
 /// 计算每个物件的连击色与连击序号。
 ///
-/// 与 lazer `IHasComboInformation.UpdateComboInformation` / `OsuHitObject` 一致：
-/// `ComboIndex` 与 `ComboIndexWithOffsets` 都从 0 开始，遇到新连击时各自 +1
-/// （后者再叠加 `ComboOffset`）。**第一个物件（以及转盘之后的第一个物件）按
-/// 「新连击」处理，因此第一个连击的序号是 1 而不是 0**，取色时用的是第二个颜色；
-/// 转盘即使带新连击标记也不会开启新连击。
+/// 与 lazer `IHasComboInformation.UpdateComboInformation` 一致：`ComboIndex` 与
+/// `ComboIndexWithOffsets` 都从 0 起，新连击各 +1（后者再叠加 `ComboOffset`）。
+/// 第一个物件（以及转盘之后的第一个）按「新连击」处理，所以第一个连击序号是 1、
+/// 取第二个颜色；转盘即使带新连击标记也不开启新连击。
 ///
-/// `colors_from_beatmap` 表示 `combo_colors` 是否来自谱面自带的 `[Colours]`：
-/// 来自谱面时按 lazer `LegacyBeatmapSkin` 用带 offset 的序号取色，否则按
-/// `LegacySkin` / Argon 皮肤用不带 offset 的序号取色。
+/// `colors_from_beatmap` 时按 lazer `LegacyBeatmapSkin` 用带 offset 的序号取色，
+/// 否则按 `LegacySkin` / Argon 用不带 offset 的序号取色。
 pub fn build_combo_info(
     hit_objects: &[StandardHitObject],
     combo_colors: &[[u8; 3]],

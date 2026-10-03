@@ -21,15 +21,11 @@ use super::context::{py_round, stack_offset, RenderSettings};
 /// 位置是世界坐标（512×384 playfield），与输出格式无关：绘制时再按当前
 /// `frame_layout.scale` 换算，因此 PNG/GIF/MP4 与实时预览共用同一份数据。
 pub struct FollowPoint {
-    /// 淡入开始时的位置（连接上 `fraction - 0.1` 处）。
     pub from: (f64, f64),
-    /// 淡入结束时的位置（连接上 `fraction` 处）。
     pub to: (f64, f64),
     /// 朝向（度，屏幕坐标 y 向下）：图标指向连接终点。
     pub rotation: f64,
-    /// 淡入时刻（绝对毫秒）。
     pub fade_in_time: f64,
-    /// 淡出时刻（绝对毫秒）。
     pub fade_out_time: f64,
     /// 淡入与淡出各自的时长（毫秒，等于 `end.TimeFadeIn`）。
     pub fade_duration: f64,
@@ -216,12 +212,10 @@ fn sprite_side(height: f64) -> f64 {
 
 /// 程序化绘制 Argon 跟随点图标（指向 +X，未旋转）。
 ///
-/// 对照 lazer `ArgonFollowPoint`：两个 FontAwesome Solid `ChevronRight`
-/// （`SpriteIcon` 尺寸 8），第二个相对第一个沿 +X 偏移半个图标高度；整体套用
-/// `FC618F → BB1A41` 的竖向渐变，前一个 chevron 再乘 `OsuColour.Gray(0.2)` 压暗。
-/// 渐变作用在旋转前的容器上，因此随图标一起旋转。
-///
-/// `rotation_deg` 直接烘焙进光栅化，避免对几像素大的成品再做一次重采样。
+/// 对照 lazer `ArgonFollowPoint`：两个 `ChevronRight`（`SpriteIcon` 尺寸 8），第二个沿
+/// +X 偏移半个图标高度；整体套 `FC618F → BB1A41` 竖向渐变，前一个再乘 `Gray(0.2)`
+/// 压暗，渐变作用在旋转前的容器上、随图标一起旋转。`rotation_deg` 直接烘焙进
+/// 光栅化，避免对几像素大的成品再做一次重采样。
 pub fn build_sprite(height: f64, rotation_deg: f64) -> Img {
     let side = sprite_side(height);
     let canvas = (side * SPRITE_SUPERSAMPLE).ceil().max(1.0) as u32;

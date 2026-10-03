@@ -15,9 +15,8 @@ pub fn save_png(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
     }
 
-    // NeuQuant 调色板每 16 个像素采样 1 个。PNG（尤其是 mania 网格）
-    // 主要由少于 256 种颜色的纯色区域组成，激进采样几乎不影响调色板，
-    // 却能将样本缓冲区相较原先四分之一采样再缩小 4 倍，并按比例加快训练。
+    // NeuQuant 每 16 个像素采样 1 个：PNG（尤其 mania 网格）以纯色区为主、调色板
+    // 少于 256 色，激进采样几乎不影响质量，样本缓冲再缩小 4 倍并加快训练。
     let mut sample = Vec::with_capacity(((image.w * image.h / 16 + 1) * 4) as usize);
     for px in image.data.chunks_exact(64) {
         sample.extend_from_slice(&[px[0], px[1], px[2], 255]);
@@ -46,10 +45,9 @@ pub fn save_png(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<
         palette_rgb.extend_from_slice(&[0, 0, 0]);
     }
 
-    // 通过 32³ 查找表将每个 RGBA 像素映射到最近的调色板索引。
-    // PNG 不做海报化，但每个通道量化为 32 级（>>3）最多产生 ±4 LSB 误差，
-    // 远小于 NeuQuant 自身误差，因此实际索引与逐像素 index_of() 相同。
-    // 查找表替代原先的 HashMap：只需一次数组访问，无哈希开销。
+    // 通过 32³ 查找表将每个 RGBA 像素映射到最近的调色板索引：PNG 不做海报化，但每
+    // 个通道量化为 32 级（>>3）最多 ±4 LSB 误差，远小于 NeuQuant 自身误差，结果与
+    // 逐像素 `index_of()` 相同；一次数组访问，没有哈希开销。
     let lut = build_png_lut(&nq);
     deadline.check()?;
     let mut indexed = vec![0u8; (image.w * image.h) as usize];
@@ -93,14 +91,10 @@ fn posterize(v: u8) -> u8 {
 
 /// 预计算将海报化 RGB 映射到调色板索引的 32³ 查找表。
 ///
-/// posterize() 每个通道产生 16 个不同值（0x00、0x11、…、0xFF）；
-/// `>> 3` 将其无冲突地映射到 32 个槽位中的 16 个，因此完整颜色空间
-/// 可以放入 `32*32*32 = 32768` 项数组。每项存储对应颜色的 NeuQuant 最近索引，
-/// 并将 `transparent_idx` 映射到前一个调色板项，避免作为普通像素索引输出。
-///
-/// 每个槽位由 `posterize(ri << 3)` 构建，正好对应查找时的颜色
-/// （`posterize(px) >> 3` 会映射到同一槽位）。因此每次查找都能命中精确颜色的
-/// `index_of()` 结果，与旧的逐像素 HashMap 路径一致且不会产生量化漂移。
+/// `posterize()` 每通道产生 16 个值（0x00…0xFF），`>> 3` 把它们无冲突地映射到 32 个
+/// 槽位中的 16 个，因此完整颜色空间可放入 32768 项数组；`transparent_idx` 映射到前
+/// 一个调色板项，避免被当作普通像素索引。每个槽位由 `posterize(ri << 3)` 构建，与查
+/// 找时的颜色精确对齐，命中与逐像素 `index_of()` 相同的结果、无量化漂移。
 fn build_gif_lut(nq: &color_quant::NeuQuant, transparent_idx: u8) -> [[[u8; 32]; 32]; 32] {
     let mut lut = [[[0u8; 32]; 32]; 32];
     for ri in 0..32u8 {
@@ -348,7 +342,7 @@ pub fn save_animated_gif_streamed(
 
 /// 将 RGBA 帧映射为 GIF 使用的 indexed 像素。
 ///
-/// 帧尺寸由渲染器保证一致；若输入数据不足，保留旧实现的行为，用 0 填充尾部。
+/// 帧尺寸由渲染器保证一致；输入数据不足时用 0 填充尾部。
 fn rgba_to_indexed(
     frame: &Img,
     lut: &[[[u8; 32]; 32]; 32],
@@ -356,7 +350,6 @@ fn rgba_to_indexed(
     pixel_count: usize,
 ) {
     indexed.clear();
-    // 保持旧路径对异常短输入的行为：未覆盖的尾部仍为索引 0。
     // 容量已在动画开始时预分配，resize 不会在正常帧尺寸下重新分配。
     indexed.resize(pixel_count, 0);
     for (i, px) in frame.data.chunks_exact(4).enumerate().take(pixel_count) {
