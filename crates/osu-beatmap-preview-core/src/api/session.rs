@@ -288,6 +288,15 @@ impl RealtimeSession {
         self.storyboard_enabled
     }
 
+    /// 更新背景暗化系数（0～1，超出范围夹紧）。
+    ///
+    /// 背景图与背景视频由宿主按这个系数预暗化（Web 端在 WASM 内重算并注入），
+    /// 故事板精灵的亮度（1 − dim）在合成时统一取这里——三层共用同一系数，
+    /// 运行时可调，不需要重建会话。
+    pub fn set_background_dim(&mut self, dim: f64) {
+        self.options.video_style.background_dim = dim.clamp(0.0, 1.0);
+    }
+
     /// 故事板是否接管背景（osu! 的 `ReplacesBackground`）：背景层存在与谱面背景同名
     /// 元素时由故事板里的那张精灵充当背景。只在故事板实际绘制时生效——关闭故事板
     /// 必须把背景图放回来，否则「关着故事板反而没背景」。
@@ -1075,5 +1084,17 @@ mod tests {
         session.set_hitsound_enabled(false);
         session.set_hitsound_enabled(false);
         assert!(!session.hitsound_enabled());
+    }
+
+    /// 背景暗化运行时可调并夹紧到 0～1；背景/视频/故事板三层共用这一系数。
+    #[test]
+    fn background_dim_is_runtime_adjustable_and_clamped() {
+        let mut session = session();
+        session.set_background_dim(0.25);
+        assert_eq!(session.options().video_style.background_dim, 0.25);
+        session.set_background_dim(-1.0);
+        assert_eq!(session.options().video_style.background_dim, 0.0);
+        session.set_background_dim(2.0);
+        assert_eq!(session.options().video_style.background_dim, 1.0);
     }
 }

@@ -46,33 +46,45 @@ pub fn decode_sample(name: &str, bytes: &[u8], extension: Option<&str>) -> Sampl
     }
 }
 
-/// 背景暗化系数：沿用 osu! 视频预览的默认值——暗化 70%，保留 30% 亮度。
+/// 背景暗化默认系数：沿用 osu! 视频预览的默认值——暗化 70%，保留 30% 亮度。
 ///
-/// 原来由宿主在交给 WASM 前逐像素调暗（Web 端 `BACKGROUND_DIM`），背景解码移进
-/// WASM 后在这里做，与 CLI 导出的 `BACKGROUND_DIM`（`shared_config.yml`）同一语义。
-/// 背景视频（`video.rs`）也用同一个系数。
-pub(crate) const BACKGROUND_DIM: f64 = 0.7;
+/// 与 CLI 导出的 `BACKGROUND_DIM`（`shared_config.yml`）同一语义；Web 端可在
+/// 运行时调整（`setBackgroundDim`），这里只是初值。背景图、背景视频（`video.rs`）
+/// 与故事板亮度三层共用用户选的系数。
+pub const DEFAULT_BACKGROUND_DIM: f64 = 0.7;
 
-/// 解码背景图（png / jpeg 等 image crate 支持的格式）为**已暗化**的 RGBA；
-/// 解码失败或尺寸非法返回 `None`，宿主退化成纯色背景。
+/// 解码背景图（png / jpeg 等 image crate 支持的格式）为**原始** RGBA（不做暗化）。
+///
+/// 暗化系数运行时可调（`setBackgroundDim`），原图要留着反复生成调暗副本
+/// （[`dim_background`]），不能在解码时一锤子调暗。解码失败或尺寸非法返回
+/// `None`，宿主退化成纯色背景。
 pub fn decode_background(bytes: &[u8]) -> Option<ImageData> {
     let image = image::load_from_memory(bytes).ok()?.to_rgba8();
     let (width, height) = image.dimensions();
     if width == 0 || height == 0 {
         return None;
     }
-    let mut rgba = image.into_raw();
-    dim_rgba(&mut rgba);
     Some(ImageData {
         width,
         height,
-        rgba,
+        rgba: image.into_raw(),
     })
 }
 
-/// 按 [`BACKGROUND_DIM`] 压暗 RGBA 像素（alpha 保持不变）。
-fn dim_rgba(rgba: &mut [u8]) {
-    let brightness = (1.0 - BACKGROUND_DIM) * 255.0;
+/// 按暗化系数（0～1）生成背景图的调暗副本（原图不动、alpha 保持不变）。
+pub fn dim_background(image: &ImageData, dim: f64) -> ImageData {
+    let mut rgba = image.rgba.clone();
+    dim_rgba(&mut rgba, dim);
+    ImageData {
+        width: image.width,
+        height: image.height,
+        rgba,
+    }
+}
+
+/// 按暗化系数（0～1）压暗 RGBA 像素（alpha 保持不变）。
+fn dim_rgba(rgba: &mut [u8], dim: f64) {
+    let brightness = (1.0 - dim.clamp(0.0, 1.0)) * 255.0;
     for pixel in rgba.chunks_exact_mut(4) {
         for channel in &mut pixel[..3] {
             // 每个通道独立按比例压暗，alpha 保持不变（透明背景仍要参与合成）。
@@ -264,9 +276,10 @@ mod tests {
         assert_eq!(clap.loop_len, 0);
     }
 
-    /// 背景解码为**暗化后的** RGBA；坏图返回 None。
+    /// 背景解码保留原图（暗化系数运行时可调），[`dim_background`] 按系数生成
+    /// 调暗副本且不动原图；坏图返回 None。
     #[test]
-    fn background_decodes_to_dimmed_rgba_or_none() {
+    fn background_decodes_undimmed_and_dims_on_demand() {
         let image = image::RgbaImage::from_pixel(2, 1, image::Rgba([100, 200, 50, 255]));
         let mut cursor = Cursor::new(Vec::new());
         image
@@ -276,8 +289,12 @@ mod tests {
         assert_eq!((decoded.width, decoded.height), (2, 1));
         // 2 像素 × 4 通道（RGBA）= 8 字节；宽高已由上一行断言。
         assert_eq!(decoded.rgba.len(), 8);
-        // 暗化 70%（保留 30% 亮度），alpha 不动。
-        assert_eq!(&decoded.rgba[..4], &[30, 60, 15, 255]);
+        assert_eq!(&decoded.rgba[..4], &[100, 200, 50, 255], "解码应保留原图");
+
+        // 默认暗化 70%（保留 30% 亮度），alpha 不动，原图不受影响。
+        let dimmed = dim_background(&decoded, DEFAULT_BACKGROUND_DIM);
+        assert_eq!(&dimmed.rgba[..4], &[30, 60, 15, 255]);
+        assert_eq!(&decoded.rgba[..4], &[100, 200, 50, 255]);
 
         assert!(decode_background(b"not an image").is_none());
         assert!(decode_background(&[]).is_none());

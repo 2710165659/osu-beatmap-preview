@@ -58,8 +58,11 @@ pub struct WebGpuSession {
     renderer: SurfaceRenderer,
     /// `.osz` 里的自带音效条目（条目名 + 字节）；切 Mod 后按新候选名重新匹配装载。
     custom_samples: Vec<(String, Vec<u8>)>,
-    /// 是否采用谱面自带音效（`ENABLE_BEATMAP_HITSOUND`）。
+    /// 是否采用谱面自带音效（`ENABLE_BEATMAP_HITSOUND`）；运行时可切（`setBeatmapHitsound`）。
     use_beatmap_samples: bool,
+    /// 背景原图（未暗化）与当前暗化系数：暗化运行时可调（`setBackgroundDim`），
+    /// 会话里的背景是按系数生成的调暗副本，原图留着反复生成。
+    background_source: Option<ImageData>,
     /// 背景视频解码器（`.osz` 里的 mp4，或重封装后的 avi）；缺失或不受支持时为 `None`。
     video: Option<video::BackgroundVideo>,
     /// 背景视频开关（默认关闭）：开启后逐帧解码并叠在静态背景上。
@@ -134,11 +137,18 @@ impl WebGpuSession {
             .map(|video| video.start_ms)
             .unwrap_or(0);
 
-        // 背景在 WASM 内解码后直接进合成；解不出来退化成纯色背景。
+        // 背景在 WASM 内解码后直接进合成；解不出来退化成纯色背景。暗化系数
+        // 运行时可调（`setBackgroundDim`），原图留在 `background_source`，会话里
+        // 放的是按当前系数生成的调暗副本。
+        let background_dim = decode::DEFAULT_BACKGROUND_DIM;
+        let background_source = content
+            .background
+            .as_deref()
+            .and_then(decode::decode_background);
         let mut bundle = ResourceBundle::new(beatmap);
-        if let Some(background) = content.background.as_deref() {
-            bundle.background = decode::decode_background(background);
-        }
+        bundle.background = background_source
+            .as_ref()
+            .map(|source| decode::dim_background(source, background_dim));
         // 故事板（默认关闭，`storyboard` 选项开启）：`.osu` 的 `[Events]` 与包内
         // `.osb` 一起解析，贴图按引用路径从同一份 `.osz` 取出并解码。osu! 的
         // ReplacesBackground（背景层有同名精灵时接管背景）由会话在合成时按
@@ -147,8 +157,8 @@ impl WebGpuSession {
             build_storyboard(&content, &bytes).map_err(|error| JsValue::from_str(&error))?;
         realtime.storyboard_enabled = option_bool(&options, "storyboard").unwrap_or(false);
         // 背景暗化系数同步给会话：故事板精灵的亮度（1 − dim）由此而来，
-        // 与 `decode_background` 的预暗化同一语义。
-        realtime.video_style.background_dim = decode::BACKGROUND_DIM;
+        // 与背景图/背景视频的预暗化同一系数。
+        realtime.video_style.background_dim = background_dim;
         let mut session = RealtimeSession::from_bundle(bundle, realtime).map_err(js_error)?;
 
         // 音乐解码失败是致命错误（没有声音的整包预览没有意义）；
@@ -222,7 +232,7 @@ impl WebGpuSession {
         let mut video = content
             .video
             .map(|bytes| {
-                video::BackgroundVideo::open(bytes, video_start_ms, 1.0 - decode::BACKGROUND_DIM)
+                video::BackgroundVideo::open(bytes, video_start_ms, 1.0 - background_dim)
             })
             .and_then(Result::ok);
         if let Some(video) = video.as_mut() {
@@ -235,6 +245,7 @@ impl WebGpuSession {
             renderer,
             custom_samples: content.samples,
             use_beatmap_samples,
+            background_source,
             video,
             video_enabled: false,
             video_showing: false,
@@ -412,6 +423,40 @@ impl WebGpuSession {
     #[wasm_bindgen(js_name = setHitsoundEnabled)]
     pub fn set_hitsound_enabled(&mut self, enabled: bool) {
         self.inner.set_hitsound_enabled(enabled);
+    }
+
+    /// 更新背景暗化百分比（0～100）：背景图按新系数重算调暗副本注入会话，
+    /// 背景视频改抓帧亮度并强制重抓，故事板精灵亮度由会话按同一系数切换。
+    #[wasm_bindgen(js_name = setBackgroundDim)]
+    pub fn set_background_dim(&mut self, dim_percent: i32) {
+        let dim = f64::from(dim_percent.clamp(0, 100)) / 100.0;
+        self.inner.set_background_dim(dim);
+        if let Some(source) = self.background_source.clone() {
+            // 原图常驻内存，按新系数生成副本注入：一次逐像素遍历（1080p 约几毫秒），
+            // 滑杆拖动足够跟手；尺寸不变，注入没有失败路径。
+            let dimmed = decode::dim_background(&source, dim);
+            let _ = self.inner.set_background(dimmed);
+        }
+        if let Some(video) = self.video.as_mut() {
+            video.set_dim_brightness(1.0 - dim);
+        }
+    }
+
+    /// 切换「谱面打击音」：是否优先使用谱面自带的自定义打击音样本（关闭时
+    /// 只用内嵌皮肤）。切换后按新优先级重新装载样本并重建时间轴（与 `set_mods` 同路）。
+    #[wasm_bindgen(js_name = setBeatmapHitsound)]
+    pub fn set_beatmap_hitsound(&mut self, enabled: bool) {
+        if self.use_beatmap_samples == enabled {
+            return;
+        }
+        self.use_beatmap_samples = enabled;
+        let Self {
+            inner,
+            custom_samples,
+            use_beatmap_samples,
+            ..
+        } = self;
+        load_samples(inner, custom_samples, *use_beatmap_samples);
     }
 
     /// 热切换当前会话的 mod，数组中的每项对应一个独立 token。

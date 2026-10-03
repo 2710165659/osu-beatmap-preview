@@ -168,6 +168,15 @@ impl BackgroundVideo {
         self.captured_time_s = f64::NAN;
     }
 
+    /// 更新抓帧暗化亮度（= 1 − 背景暗化系数）并强制重新抓帧。
+    ///
+    /// 暗化挂在 `drawImage` 的 canvas filter 上，改完必须重抓一次才会按新亮度
+    /// 重新出图（否则沿用上一帧已拷贝的暗化结果）。
+    pub fn set_dim_brightness(&mut self, brightness: f64) {
+        self.dim_brightness = brightness.clamp(0.0, 1.0);
+        self.invalidate_capture();
+    }
+
     /// 视频总时长（毫秒）；元数据就绪前为 0。
     pub fn duration_ms(&self) -> i64 {
         let seconds = self.element.duration();

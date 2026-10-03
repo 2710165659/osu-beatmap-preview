@@ -1,8 +1,9 @@
 <script setup>
 // 播放设置抽屉：默认收起，视频区域因此保持最大。
 //
-// 手机上从底部弹出，桌面（lg）变成右下角浮层；四组内容分别是画面参数、
-// 声音（音乐音量与打击音）、Mod 与运行日志。
+// 手机上从底部弹出，桌面（lg）变成右下角浮层；四组内容分别是画面参数
+//（帧率/清晰度/倍速/背景暗化 + 「其他」四个开关）、声音（音乐音量与打击音）、
+// Mod 与运行日志。
 import { computed } from 'vue';
 import ChipGroup from './ChipGroup.vue';
 import {
@@ -12,10 +13,11 @@ import {
   FPS_CHOICES,
   modTokens,
   RESOLUTIONS,
+  setBackgroundDim,
   setBackgroundVideo,
+  setBeatmapHitsound,
   setDaValue,
   setFps,
-  setHitsoundEnabled,
   setHitsoundVolume,
   setResolution,
   setShowFps,
@@ -23,13 +25,13 @@ import {
   setSpeed,
   setStoryboard,
   setVolume,
-  SPEED_CHOICES,
+  SPEED_MAX,
+  SPEED_MIN,
   state,
   toggleMod,
 } from '../preview.js';
 
 const fpsOptions = FPS_CHOICES.map((value) => ({ value, label: `${value} FPS` }));
-const speedOptions = SPEED_CHOICES.map((value) => ({ value, label: `${value}x` }));
 const resolutionOptions = Object.entries(RESOLUTIONS).map(([key]) => ({ value: key, label: `${key}P` }));
 const hasLogs = computed(() => state.playLogs.length > 0);
 // 滑杆用 0–100 的整数，显示与值域都按百分比呈现。
@@ -61,54 +63,75 @@ const chipClass = (active) => (active
           <span class="text-xs text-neutral-400">清晰度</span>
           <ChipGroup :model-value="state.resolution" :options="resolutionOptions" @update:model-value="setResolution" />
         </div>
-        <div class="grid grid-cols-[52px_1fr] items-center gap-2">
-          <span class="text-xs text-neutral-400">倍速</span>
-          <ChipGroup :model-value="state.speed" :options="speedOptions" @update:model-value="setSpeed" />
-        </div>
-        <!-- 帧率角标：画面右上角的实时渲染 FPS，默认显示。 -->
-        <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
-          <span class="text-xs text-neutral-400">帧率显示</span>
-          <button
-            type="button"
-            class="h-8 w-fit shrink-0 rounded-md border px-2.5 text-xs transition"
-            :class="chipClass(state.showFps)"
-            @click="setShowFps(!state.showFps)"
+        <!-- 倍速是连续滑杆（0.1～3 倍速）：DA 之外的整数档位挡不住细调需求。 -->
+        <label class="grid grid-cols-[52px_minmax(0,1fr)_48px] items-center gap-2 text-xs text-neutral-300">
+          倍速
+          <input
+            type="range" :min="SPEED_MIN" :max="SPEED_MAX" step="0.05" class="h-8 w-full cursor-pointer"
+            :value="state.speed"
+            @input="setSpeed($event.target.value)"
           >
-            {{ state.showFps ? '开' : '关' }}
-          </button>
-        </div>
-        <!-- 背景视频默认关闭：WASM 内驱动浏览器硬解、逐帧取帧有开销。 -->
+          <output class="text-right font-mono">{{ state.speed.toFixed(2) }}x</output>
+        </label>
+        <!-- 背景暗化：背景图/背景视频/故事板三层共用的暗化系数，0 = 不暗化。 -->
+        <label class="grid grid-cols-[52px_minmax(0,1fr)_48px] items-center gap-2 text-xs text-neutral-300">
+          背景暗化
+          <input
+            type="range" min="0" max="100" step="1" class="h-8 w-full cursor-pointer"
+            :value="state.backgroundDim"
+            @input="setBackgroundDim($event.target.value)"
+          >
+          <output class="text-right font-mono">{{ state.backgroundDim }}%</output>
+        </label>
+
+        <!-- 「其他」四个开关按钮，点名称即切换，默认全开。 -->
         <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
-          <span class="text-xs text-neutral-400">背景视频</span>
-          <div class="flex items-center gap-2">
+          <span class="text-xs text-neutral-400">其他</span>
+          <div class="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              class="h-8 shrink-0 rounded-md border px-2.5 text-xs transition disabled:opacity-40"
+              class="rounded-md border px-2.5 py-1 text-xs transition disabled:opacity-40"
               :class="chipClass(state.backgroundVideo)"
               :disabled="!state.videoAvailable"
+              :title="state.videoAvailable ? undefined : state.videoStatus"
               @click="setBackgroundVideo(!state.backgroundVideo)"
             >
-              {{ state.backgroundVideo ? '开' : '关' }}
+              背景视频
             </button>
-            <span v-if="!state.videoAvailable" class="text-[11px] text-neutral-500">{{ state.videoStatus }}</span>
-          </div>
-        </div>
-        <!-- 故事板默认关闭：贴图合成有开销，且很多谱面没有故事板。 -->
-        <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
-          <span class="text-xs text-neutral-400">故事板</span>
-          <div class="flex items-center gap-2">
             <button
               type="button"
-              class="h-8 shrink-0 rounded-md border px-2.5 text-xs transition disabled:opacity-40"
+              class="rounded-md border px-2.5 py-1 text-xs transition disabled:opacity-40"
               :class="chipClass(state.storyboard)"
               :disabled="!state.storyboardAvailable"
+              :title="state.storyboardAvailable ? undefined : state.storyboardStatus"
               @click="setStoryboard(!state.storyboard)"
             >
-              {{ state.storyboard ? '开' : '关' }}
+              故事板
             </button>
-            <span v-if="!state.storyboardAvailable" class="text-[11px] text-neutral-500">{{ state.storyboardStatus }}</span>
+            <button
+              type="button"
+              class="rounded-md border px-2.5 py-1 text-xs transition"
+              :class="chipClass(state.hitsoundBeatmap)"
+              @click="setBeatmapHitsound(!state.hitsoundBeatmap)"
+            >
+              谱面打击音
+            </button>
+            <button
+              type="button"
+              class="rounded-md border px-2.5 py-1 text-xs transition"
+              :class="chipClass(state.showFps)"
+              @click="setShowFps(!state.showFps)"
+            >
+              帧率显示
+            </button>
           </div>
         </div>
+        <!-- 开关不可用时的原因说明（可用的开关没有这段）。 -->
+        <p v-if="state.videoStatus || state.storyboardStatus" class="m-0 pl-[60px] text-[11px] text-neutral-500">
+          <span v-if="state.videoStatus">{{ state.videoStatus }}</span>
+          <span v-if="state.videoStatus && state.storyboardStatus">；</span>
+          <span v-if="state.storyboardStatus">{{ state.storyboardStatus }}</span>
+        </p>
       </section>
 
       <section class="mb-5 grid gap-3">
@@ -123,27 +146,16 @@ const chipClass = (active) => (active
           <output class="text-right font-mono">{{ volumePercent }}%</output>
         </label>
 
-        <!-- 打击音与音乐音量相互独立：两者用途不同，用户可能只想听其中一个。 -->
-        <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
-          <span class="text-xs text-neutral-400">打击音</span>
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="h-8 shrink-0 rounded-md border px-2.5 text-xs transition"
-              :class="chipClass(state.hitsound)"
-              @click="setHitsoundEnabled(!state.hitsound)"
-            >
-              {{ state.hitsound ? '开' : '关' }}
-            </button>
-            <input
-              type="range" min="0" max="100" step="1" class="h-8 w-full cursor-pointer disabled:opacity-40"
-              :disabled="!state.hitsound"
-              :value="hitsoundPercent"
-              @input="setHitsoundVolume(Number($event.target.value))"
-            >
-            <output class="w-11 shrink-0 text-right font-mono">{{ hitsoundPercent }}%</output>
-          </div>
-        </div>
+        <!-- 打击音与音乐音量相互独立；没有单独的开关，滑杆拉到 0 就是关闭。 -->
+        <label class="grid grid-cols-[52px_minmax(0,1fr)_44px] items-center gap-2 text-xs text-neutral-300">
+          打击音
+          <input
+            type="range" min="0" max="100" step="1" class="h-8 w-full cursor-pointer"
+            :value="hitsoundPercent"
+            @input="setHitsoundVolume($event.target.value)"
+          >
+          <output class="text-right font-mono">{{ hitsoundPercent }}%</output>
+        </label>
         <p v-if="state.hitsoundStatus" class="m-0 text-[11px] text-neutral-500">{{ state.hitsoundStatus }}</p>
       </section>
 

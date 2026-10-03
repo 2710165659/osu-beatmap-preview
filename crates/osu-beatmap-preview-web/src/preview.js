@@ -25,7 +25,9 @@ export const RESOLUTIONS = Object.freeze({
 
 /** 可选渲染帧率；120 FPS 只在高刷屏上生效，默认 60 FPS。 */
 export const FPS_CHOICES = [30, 60, 120];
-export const SPEED_CHOICES = [0.5, 0.75, 1, 1.5, 2];
+/** 倍速滑杆的取值范围（0.1～3 倍速，含端点）；长按快进固定 3 倍速 = 上限。 */
+export const SPEED_MIN = 0.1;
+export const SPEED_MAX = 3;
 
 /** 允许的转谱模式；也用于校验 URL 里的 convert 参数。 */
 export const CONVERT_MODES = ['standard', 'taiko', 'catch', 'mania'];
@@ -33,10 +35,16 @@ export const CONVERT_MODES = ['standard', 'taiko', 'catch', 'mania'];
 /** 数字模式 → 谱面模式 key（`hitsoundDefaults` 的参数）。 */
 const MODE_KEYS = ['standard', 'taiko', 'catch', 'mania'];
 
-/** 浏览器 `<video>` 放得了的容器；osu 白名单里的 .avi/.flv/.mpg 播不了。 */
-const PLAYABLE_VIDEO_EXTENSIONS = ['mp4', 'm4v', 'mov', 'webm', 'ogv', 'ogg'];
+/**
+ * 网页端放得了的视频容器（按扩展名判断）：
+ * - 浏览器 `<video>` 放得了的容器原样送进去；
+ * - `.avi` 由 WASM 重封装成 MP4 再喂 `<video>`（H.264 只换容器不转码，见 wasm
+ *   crate 的 `remux` 模块），所以虽然浏览器原生放不了 AVI，网页端照样能播；
+ * - osu 白名单里的 `.flv`/`.mpg`/`.wmv` 两头都救不了，只能回退背景图。
+ */
+const PLAYABLE_VIDEO_EXTENSIONS = ['mp4', 'm4v', 'mov', 'webm', 'ogv', 'ogg', 'avi'];
 
-/** 视频文件名的容器是否是浏览器能直接播放的（按扩展名判断）。 */
+/** 视频文件名的容器是否是网页端放得了的（按扩展名判断）。 */
 const canPlayVideoExtension = (name) =>
   PLAYABLE_VIDEO_EXTENSIONS.includes(String(name ?? '').split('.').pop().toLowerCase());
 
@@ -49,14 +57,14 @@ const canPlayVideoExtension = (name) =>
 const DEFAULT_VOLUME = 0.5;
 
 /**
- * 打击音（hit sound）默认为开，音量 50%。
+ * 打击音（hit sound）默认音量 50%。
  *
  * 50% 与网页的音乐默认音量 [`DEFAULT_VOLUME`] 取同一刻度；CLI 输出视频走
  * `shared_config.yml` 的 100%，那是另一套（音乐也满音量）的场景。
  *
  * 与音乐音量分开：用户可能想只听音乐、或只听打击音，两者的用途不同。
+ * 没有单独的打击音开关：滑杆拉到 0 就是关闭。
  */
-const DEFAULT_HITSOUND_ENABLED = true;
 const DEFAULT_HITSOUND_VOLUME = 50;
 
 /**
@@ -131,28 +139,33 @@ export const state = reactive({
   speed: 1,
   /** 音乐音量（0–1）；0 即静音，与「静音播放中」角标无关。 */
   volume: DEFAULT_VOLUME,
-  /** 是否启用打击音（hit sound）。 */
-  hitsound: DEFAULT_HITSOUND_ENABLED,
+  /**
+   * 背景暗化百分比（0–100）：背景图、背景视频与故事板三层共用的暗化系数。
+   *
+   * 默认 70（osu! 的 `BACKGROUND_DIM` 默认值）；运行时可调（`setBackgroundDim`），
+   * 拖动即时生效，用户调过之后沿用到下一个谱面。
+   */
+  backgroundDim: 70,
   /**
    * 是否渲染谱面背景视频。
    *
-   * 默认关闭：视频解码有实打实的 CPU 开销，且不少谱面（尤其在线镜像下载的
-   * novideo 包）根本没有视频。解码在 WASM 内进行（与 CLI 导出同一套语义），
-   * 前端只负责开关。用户在「画面」里打开后沿用到下一个谱面。
+   * 默认开启（「画面 · 其他」默认全开）：解码在 WASM 内进行（与 CLI 导出同一套
+   * 语义），前端只负责开关；没有可用视频的谱面自动回退背景图。用户在「画面」里
+   * 关掉后沿用到下一个谱面。
    */
-  backgroundVideo: false,
-  /** 当前谱面是否有可用背景视频（`.osz` 里取到了可解的 mp4）；控制开关是否可点。 */
+  backgroundVideo: true,
+  /** 当前谱面是否有可用背景视频（`.osz` 里取到了可解的 mp4/avi）；控制开关是否可点。 */
   videoAvailable: false,
   /** 背景视频不可用的原因（开关旁的说明文字）；可用时为空。 */
   videoStatus: '',
   /**
    * 是否渲染故事板（`.osb` / `[Events]` 的 Sprite/Animation）。
    *
-   * 默认关闭：故事板贴图解码与逐帧合成有实打实的开销，且不少谱面根本没有
-   * 故事板。解析与绘制都在 WASM/会话内（与 CLI 导出同一套语义），前端只负责
-   * 开关；用户在「画面」里打开后沿用到下一个谱面。
+   * 默认开启（「画面 · 其他」默认全开）：解析与绘制都在 WASM/会话内（与 CLI
+   * 导出同一套语义），前端只负责开关；没有故事板的谱面自动无效果。用户在
+   * 「画面」里关掉后沿用到下一个谱面。
    */
-  storyboard: false,
+  storyboard: true,
   /** 当前谱面是否有可绘制的故事板元素；控制开关是否可点。 */
   storyboardAvailable: false,
   /** 故事板不可用的原因（开关旁的说明文字）；可用时为空。 */
@@ -174,8 +187,9 @@ export const state = reactive({
   /**
    * 是否使用谱面自带的自定义打击音（`ENABLE_BEATMAP_HITSOUND`）。
    *
-   * 与打击音开关一样来自 `assets/shared_config.yml`（由 WASM 转出）；默认启用。
-   * 它在会话创建时生效（决定装载哪些样本）。
+   * 「画面 · 其他」里的「谱面打击音」开关，默认开启；关闭后只用内嵌皮肤样本。
+   * 运行时可切（`setBeatmapHitsound`，重新装载样本并重建时间轴），用户的选择
+   * 沿用到下一个谱面。
    */
   hitsoundBeatmap: true,
   /** 界面上勾选的 Mod token；DA 提交时会展开成 DAAR..CS..。 */
@@ -689,8 +703,12 @@ function modeKeyOf(mode) {
  *
  * 音量**不**取配置里的值：CLI 输出视频时背景音乐与打击音都是满音量（100%），
  * 而网页的音乐默认是 [`DEFAULT_VOLUME`]（50%），打击音跟着取同一个刻度听感才平衡，
- * 因此这里保持 [`DEFAULT_HITSOUND_VOLUME`]，只同步开关。
+ * 因此这里保持 [`DEFAULT_HITSOUND_VOLUME`]。
+ *
+ * 「谱面打击音」的默认值只在首次生效：用户在「画面 · 其他」里切过开关之后，
+ * 后续加载沿用他的选择，不再被配置默认值覆盖。
  */
+let hitsoundDefaultApplied = false;
 function applyHitsoundDefaults(wasm, mode) {
   let defaults = null;
   try {
@@ -699,9 +717,11 @@ function applyHitsoundDefaults(wasm, mode) {
     logPlay(`打击音默认配置读取失败：${errorText(error)}`);
   }
   if (!defaults) return;
-  state.hitsound = Boolean(defaults.enabled);
   // 旧版 wasm 没有这个字段：缺省按「启用谱面自带音效」处理（与配置默认值一致）。
-  state.hitsoundBeatmap = defaults.beatmapEnabled !== false;
+  if (!hitsoundDefaultApplied) {
+    state.hitsoundBeatmap = defaults.beatmapEnabled !== false;
+    hitsoundDefaultApplied = true;
+  }
 }
 
 /** 释放音频输出与它的 AudioContext，音频线程不残留。 */
@@ -1023,7 +1043,7 @@ export async function loadPreview() {
       width,
       height,
       sampleRate: audioContext?.sampleRate ?? 48000,
-      hitsoundEnabled: state.hitsound,
+      hitsoundEnabled: state.hitsoundVolume > 0,
       hitsoundVolume: state.hitsoundVolume,
       musicVolume: Math.round(state.volume * 100),
       beatmapHitsound: state.hitsoundBeatmap,
@@ -1046,19 +1066,20 @@ export async function loadPreview() {
     state.mode = state.modeKey.toUpperCase();
     // Mod 面板按实际模式（含转谱结果）取一次；HD/FL 是否可选由 core 决定。
     applyModOptions(wasm, state.modeKey);
-    // 背景视频在 WASM 内驱动浏览器硬解；开关默认关闭，用户上次打开过就沿用
-    //（与音量等设置一致）。可用性 = 包里真的取到视频 + 浏览器放得了这个容器。
+    // 背景视频在 WASM 内驱动浏览器硬解；「画面 · 其他」默认全开，用户上次关过
+    // 就沿用（与音量等设置一致）。可用性 = WASM 会话里真的打开了视频：容器要么
+    // 浏览器直接放得了，要么 WASM 能重封装（.avi）。
     const videoName = state.info?.videoFilename ?? '';
-    const inPackage = Boolean(session.hasBackgroundVideo?.());
+    const opened = Boolean(session.hasBackgroundVideo?.());
     const playable = canPlayVideoExtension(videoName);
-    state.videoAvailable = inPackage && playable;
+    state.videoAvailable = opened && playable;
     state.videoStatus = !videoName
       ? '当前谱面没有背景视频'
       : !playable
-        ? `背景视频容器（.${videoName.split('.').pop().toLowerCase()}）浏览器不支持，网页端无法播放`
-        : inPackage
+        ? `背景视频容器（.${videoName.split('.').pop().toLowerCase()}）网页端不支持，无法播放`
+        : opened
           ? ''
-          : `包内缺失背景视频文件（${videoName}），可本地上传完整 .osz`;
+          : `包内背景视频不可用（${videoName} 缺失或编码不受支持），可本地上传完整 .osz`;
     state.backgroundVideo = state.videoAvailable && state.backgroundVideo;
     session.setBackgroundVideo?.(state.backgroundVideo);
     // 故事板默认关闭，用户上次打开过就沿用（与背景视频一致）；可用性看会话里
@@ -1081,7 +1102,7 @@ export async function loadPreview() {
       logPlay('音频输出不可用：AudioWorklet 或 SharedArrayBuffer 缺失，将继续只播放画面');
     } else {
       audioOutput.setRate(session.rate());
-      state.hitsoundStatus = state.hitsound ? '已启用' : '已关闭';
+      state.hitsoundStatus = state.hitsoundVolume > 0 ? '已启用' : '已关闭（音量 0）';
     }
 
     canvasEl.width = session.width();
@@ -1311,8 +1332,15 @@ function applyRate() {
   audioOutput?.setRate(session.rate());
 }
 
+/**
+ * 调整倍速（0.1～3 倍速的连续滑杆）；非法值忽略，越界夹紧。
+ *
+ * 长按快进的 3 倍速是临时覆盖（`speedOverride`），松手回到这里的值。
+ */
 export function setSpeed(value) {
-  state.speed = value;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return;
+  state.speed = Math.min(SPEED_MAX, Math.max(SPEED_MIN, number));
   applyRate();
 }
 
@@ -1374,7 +1402,7 @@ export function setShowFps(value) {
 }
 
 /**
- * 开关背景视频（默认关闭）。
+ * 开关背景视频（「画面 · 其他」默认开启）。
  *
  * 解码与合成都在 WASM 内（`setBackgroundVideo`），前端只切开关：打开后
  * 视频按会话时钟逐帧解码、叠在背景图上，时间对齐与淡入淡出和 CLI 导出一致。
@@ -1395,7 +1423,7 @@ export function setBackgroundVideo(value) {
 }
 
 /**
- * 开关故事板（默认关闭）。
+ * 开关故事板（「画面 · 其他」默认开启）。
  *
  * 解析与合成都在 WASM/会话内（`setStoryboard`），前端只切开关：开启后
  * `.osb` / `[Events]` 的故事板层画在背景之上、物件之下，前景层压在物件之上，
@@ -1413,24 +1441,10 @@ export function setStoryboard(value) {
   render();
 }
 
-/** 切换是否启用打击音；关闭时音乐照常输出。 */
-export function setHitsoundEnabled(value) {
-  state.hitsound = Boolean(value);
-  if (!session) return;
-  try {
-    session.setHitsoundEnabled(state.hitsound);
-  } catch (error) {
-    state.hitsound = false;
-    state.hitsoundStatus = `打击音启用失败：${errorText(error)}`;
-    return;
-  }
-  state.hitsoundStatus = state.hitsound ? '已启用' : '已关闭';
-}
-
 /**
- * 更新打击音音量（0–100）。
+ * 更新打击音音量（0–100）；滑杆拉到 0 就是关闭打击音（不再单设开关）。
  *
- * 只写 WASM 的混音增益，不重建会话、不重新加载样本，滑动过程中即时生效。
+ * 只写 WASM 的混音增益与启用位，不重建会话、不重新加载样本，滑动过程中即时生效。
  */
 export function setHitsoundVolume(value) {
   const number = Number(value);
@@ -1438,8 +1452,48 @@ export function setHitsoundVolume(value) {
   state.hitsoundVolume = Math.min(100, Math.max(0, Math.round(number)));
   try {
     session?.setHitsoundVolume(state.hitsoundVolume);
+    session?.setHitsoundEnabled(state.hitsoundVolume > 0);
+    state.hitsoundStatus = state.hitsoundVolume > 0 ? '已启用' : '已关闭（音量 0）';
   } catch (error) {
     logPlay(`打击音音量设置失败：${errorText(error)}`);
+  }
+}
+
+/**
+ * 更新背景暗化（0–100）。
+ *
+ * 背景图、背景视频与故事板三层共用同一系数：WASM 里按新系数重算背景图的调暗
+ * 副本、改视频抓帧亮度，故事板亮度由会话在合成时切换，拖动即时生效。
+ */
+export function setBackgroundDim(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return;
+  state.backgroundDim = Math.min(100, Math.max(0, Math.round(number)));
+  try {
+    session?.setBackgroundDim?.(state.backgroundDim);
+  } catch (error) {
+    logPlay(`背景暗化设置失败：${errorText(error)}`);
+    return;
+  }
+  render();
+  // 视频层换亮度后要重抓一帧，而 <video> 出帧是异步的：暂停状态下没有渲染循环
+  // 兜底，延后补一帧（与背景视频开关同一处理）。
+  window.setTimeout(render, 300);
+}
+
+/**
+ * 切换「谱面打击音」：是否优先使用谱面自带的自定义打击音样本（关闭时只用
+ * 内嵌皮肤）。
+ *
+ * 样本重新装载与时间轴重建都在 WASM（`setBeatmapHitsound`），切换即时生效；
+ * 用户的选择沿用到下一个谱面（见 `applyHitsoundDefaults`）。
+ */
+export function setBeatmapHitsound(value) {
+  state.hitsoundBeatmap = Boolean(value);
+  try {
+    session?.setBeatmapHitsound?.(state.hitsoundBeatmap);
+  } catch (error) {
+    logPlay(`谱面打击音切换失败：${errorText(error)}`);
   }
 }
 
