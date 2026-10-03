@@ -26,6 +26,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- 修复 CLI 导出里故事板 underlay（Background/Pass/Foreground）被玩法层底色**整块盖住**的问题：没有背景素材垫底时（`ReplacesBackground` 隐藏背景图后最常见），四个模式的玩法层帧会自填不透明的内容框底色，而故事板 underlay 画在玩法层之下，于是整屏只剩玩法层框外的两侧露边，看起来像开头一块长时间的黑色背景（Overlay 层画在玩法层之上所以不受影响）；Web 预览的玩法层是透明的、没有这个问题。现在玩法层之下还有内容要透出（背景素材或故事板 underlay）时玩法层帧保持透明，与 Web 层序一致，四模式（std/taiko/ctb/mania）同修复。
+- 修复超大 `.osb` 的故事板被**整份静默丢弃**的问题：`.osb` 字节上限（CLI 与 WASM 各一份）原先只有 16 MiB，而真实故事板可以远超它（如 Mili - world.execute(me); 的 `.osb` 有 18.9 MB、Camellia - Spin Eternally 的 `.osb` 有 40.9 MB），超限后整个 `.osb` 被跳过，Web 端开关置灰为「当前谱面没有故事板」、MP4 导出也完全不出画，表现是「谱面明明有故事板却无法预览」。上限提到 64 MiB（仍是防炸包的硬上限，文本量级决定命令展开后的内存量级），CLI 与 WASM 各补一条超过旧上限的 `.osb` 回归测试。
 - 修复 CLI 背景视频在**带 B 帧**的视频上「只动几帧后全程定格」的问题：openh264 解码器每次取帧后强制 flush 会冲坏重排缓冲、在第 10 个样本附近直接报错断流（实测 24fps B 帧视频 3432 帧只解出 9 帧）；改为只在流尾冲刷收尾，输出严格按显示序推进。同时只对「被选中的画面」做缩放暗化，中间被超越的帧不再浪费处理。
 - Web 渲染循环的帧调度在目标帧率恰好等于屏幕刷新率（如 120FPS @ 120Hz）时，会因 rAF 到达抖动被「≥ 精确间隔」的判定隔帧误砍到一半；阈值改为留 1ms 容差。
 - Web 背景视频的 GPU 直拷纹理缺 `RENDER_ATTACHMENT` usage，`copyExternalImageToTexture` 被 WebGPU 静默拒绝（验证错误不抛异常），视频层完全不显示；先开背景视频再切分辨率还会因渲染器重建清空外部纹理表而 panic（release 构建 `panic = "abort"` 直接杀死 wasm 实例，页面卡死）。现已补上 usage、缺槽位时跳过绘制，并在渲染器重建后强制重新取帧。

@@ -25,8 +25,8 @@ const MAX_TEXTURE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_TEXTURE_PIXELS: u64 = 4096 * 4096;
 /// 贴图数量上限：storyboard 通常只有几十张，超限部分按缺图跳过。
 const MAX_TEXTURES: usize = 512;
-/// `.osb` 的压缩字节上限。
-const MAX_OSB_BYTES: u64 = 16 * 1024 * 1024;
+/// `.osb` 的字节上限。
+const MAX_OSB_BYTES: u64 = 64 * 1024 * 1024;
 
 /// 已装载的故事板：解析结果 + 贴图。
 pub(crate) struct MediaStoryboard {
@@ -151,6 +151,14 @@ impl MediaStoryboard {
         background_path.is_some_and(|path| self.storyboard.replaces_background(path))
     }
 
+    /// 是否有画在玩法层之下的可绘制元素（Background/Pass/Foreground 层）。
+    ///
+    /// 有则玩法层帧必须保持透明：这些层画在玩法层之下，玩法层自填的不透明
+    /// 内容框底色会把它们整块盖住（见 [`super::MediaBackground::needs_playfield_base`]）。
+    pub(crate) fn draws_behind_playfield(&self) -> bool {
+        self.storyboard.has_behind_drawable_elements()
+    }
+
     /// 把物件下层（Background/Pass/Foreground）或 Overlay 层画到画布上。
     ///
     /// `chart_ms` 是谱面绝对毫秒（.osu 时间轴）；`brightness` 是用户暗度亮度
@@ -237,5 +245,53 @@ mod tests {
     fn broken_texture_bytes_decode_to_none() {
         assert!(decode_texture(b"not an image").is_none());
         assert!(decode_texture(&[]).is_none());
+    }
+
+    /// 超过旧 16 MiB 的大 `.osb` 必须照常装载：真实故事板（如 world.execute(me) 的
+    /// 18.9 MB、Spin Eternally 的 40.9 MB）会超过旧上限，整份丢弃后表现是
+    /// 「谱面明明有故事板却完全不显示」。填充用注释行：夹具足够大但解析开销小。
+    #[test]
+    fn oversized_osb_beyond_legacy_cap_is_still_loaded() {
+        use std::io::Write as _;
+        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+        use osu_beatmap_preview_core::support::timeout::RequestDeadline;
+        use zip::write::SimpleFileOptions;
+
+        let padding = "// padding line for an oversized storyboard fixture\n".repeat(350_000);
+        let osb = format!(
+            "[Events]\nSprite,Background,Centre,\"sb/white.png\",320,240\n F,0,0,1000,1\n{padding}"
+        );
+        assert!(
+            osb.len() as u64 > 16 * 1024 * 1024,
+            "夹具必须超过旧的 16 MiB 上限"
+        );
+
+        // 临时 .osz 用 Stored 存储：测试只关心字节上限，不需要压缩耗时。
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "osu-beatmap-preview-storyboard-{}-{unique}.osz",
+            std::process::id()
+        ));
+        let file = File::create(&path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file(
+                "map.osb",
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(osb.as_bytes()).unwrap();
+        writer.finish().unwrap();
+
+        let deadline = RequestDeadline::new(Instant::now(), "mp4", Duration::from_secs(30));
+        let loaded = MediaStoryboard::load("[Events]\n", &path, &deadline).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let loaded = loaded.expect("大 .osb 不能被整份丢弃");
+        assert!(loaded.storyboard.has_drawable_elements());
+        assert_eq!(loaded.storyboard.layers[0].elements.len(), 1);
     }
 }

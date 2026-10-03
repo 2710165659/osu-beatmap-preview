@@ -93,12 +93,14 @@ pub(crate) fn render_taiko_video(
     let static_bg = {
         // 背景图在最终视频画布上统一处理；这里仅绘制 Taiko 自身的轨道面板。
         // 物件层与视频画布同尺寸，底色只填内容带，补边仍由画布底色决定。
+        // 玩法层之下还有内容要透出（背景素材或故事板的 underlay）时不填底色，
+        // 否则会把它们整块盖住。
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
             [0, 0, 0, 0],
         );
-        if background.is_empty() {
+        if background.needs_playfield_base(storyboard.as_ref()) {
             let content = layout.content;
             bg.fill_rect_size(
                 content.x,

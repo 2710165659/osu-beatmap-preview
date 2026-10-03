@@ -35,7 +35,7 @@ const MAX_SAMPLE_ENTRIES: usize = 64;
 /// 自带音效的合计字节上限。
 const MAX_SAMPLE_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
 /// `.osb`（故事板脚本）的最大字节数。
-const MAX_OSB_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_OSB_BYTES: u64 = 64 * 1024 * 1024;
 /// 单张故事板贴图的最大字节数。
 const MAX_STORYBOARD_TEXTURE_BYTES: u64 = 64 * 1024 * 1024;
 /// 故事板贴图的条目数上限。
@@ -619,6 +619,46 @@ mod tests {
         ]);
         let content = read_input(&bytes, &DifficultySelector::First, true).unwrap();
         assert!(content.background.is_none());
+    }
+
+    /// 超过旧 16 MiB 的大 `.osb` 必须照常取出：真实故事板（如 world.execute(me) 的
+    /// 18.9 MB、Spin Eternally 的 40.9 MB）会超过旧上限，整份丢弃后表现是
+    /// 「谱面明明有故事板却完全不显示」。填充用注释行：夹具足够大但解析开销小。
+    #[test]
+    fn oversized_osb_beyond_legacy_cap_is_extracted() {
+        let padding = "// padding line for an oversized storyboard fixture\n".repeat(350_000);
+        let osb = format!(
+            "[Events]\nSprite,Background,Centre,\"sb/white.png\",320,240\n F,0,0,1000,1\n{padding}"
+        );
+        assert!(
+            osb.len() as u64 > 16 * 1024 * 1024,
+            "夹具必须超过旧的 16 MiB 上限"
+        );
+
+        // 夹具走 Stored 存储：测试只关心字节上限，不需要压缩耗时。
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let stored =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            for (name, content) in [
+                (
+                    "Hard.osu",
+                    osu_text(Some(200), "Hard", "audio.mp3", "").into_bytes(),
+                ),
+                ("audio.mp3", b"fake-mp3".to_vec()),
+                ("map.osb", osb.clone().into_bytes()),
+            ] {
+                writer.start_file(name, stored).unwrap();
+                writer.write_all(&content).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+
+        let content =
+            read_input(&cursor.into_inner(), &DifficultySelector::ById(200), true).unwrap();
+        let loaded = content.osb.as_deref().expect("大 .osb 不能被整份丢弃");
+        assert_eq!(loaded.len(), osb.len());
     }
 
     /// `want_media = false` 只解析难度结构，不解压媒体。

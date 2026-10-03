@@ -49,6 +49,20 @@ impl MediaBackground {
     pub(crate) fn is_empty(&self) -> bool {
         self.image.is_none() && self.video.is_none()
     }
+
+    /// 玩法层帧是否需要自填不透明的内容框底色。
+    ///
+    /// 只有「玩法层之下没有任何内容要透出来」时才填：背景图/背景视频垫在玩法层
+    /// 之下，故事板的 underlay（Background/Pass/Foreground）同样画在玩法层之下，
+    /// 在这里填不透明底色会把它们整块盖住——`ReplacesBackground` 隐藏背景图后尤其
+    /// 明显（故事板只剩玩法层框外的两侧露边，看起来像一块黑背景）。这些情况下
+    /// 玩法层保持透明，由 `media::video::compose_frame` 的画布底色兜底。
+    pub(crate) fn needs_playfield_base(
+        &self,
+        storyboard: Option<&super::storyboard::MediaStoryboard>,
+    ) -> bool {
+        self.is_empty() && !storyboard.is_some_and(|sb| sb.draws_behind_playfield())
+    }
 }
 
 /// 并行解码的共享上下文（只读，跨线程安全）。
@@ -642,5 +656,53 @@ mod tests {
         // 视频结束后回退背景图。
         let after = backgrounds.background_at(3_000).expect("必须有背景");
         assert_eq!(after.get(0, 0), [60, 60, 60, 255]);
+    }
+
+    /// 玩法层底色决策：只有玩法层之下没有内容要透出时才自填不透明底色。故事板
+    /// underlay（Background/Pass/Foreground）画在玩法层之下，填了底色会把它整块
+    /// 盖住（`ReplacesBackground` 隐藏背景图后只剩框外两侧露边，像一块黑背景）。
+    #[test]
+    fn playfield_base_is_skipped_when_storyboard_draws_behind() {
+        use osu_beatmap_preview_core::storyboard::{parse_storyboard, Textures};
+
+        fn storyboard(events: &str) -> Option<crate::media::storyboard::MediaStoryboard> {
+            Some(crate::media::storyboard::MediaStoryboard {
+                storyboard: parse_storyboard(&format!("[Events]\n{events}"), None),
+                textures: Textures::new(),
+            })
+        }
+
+        let bare = MediaBackground {
+            image: None,
+            video: None,
+        };
+        assert!(bare.needs_playfield_base(None), "没有内容透出时填底色");
+        assert!(
+            !bare.needs_playfield_base(
+                storyboard("Sprite,Background,Centre,\"a.png\",320,240\n F,0,0,1000,1\n").as_ref()
+            ),
+            "故事板 underlay 要透出来，不能填底色"
+        );
+        assert!(
+            bare.needs_playfield_base(
+                storyboard("Sprite,Overlay,Centre,\"a.png\",320,240\n F,0,0,1000,1\n").as_ref()
+            ),
+            "只有 Overlay 层（画在玩法层之上）时不冲突，照常填底色"
+        );
+        assert!(
+            bare.needs_playfield_base(
+                storyboard("Sprite,Background,Centre,\"a.png\",320,240\n").as_ref()
+            ),
+            "无命令的元素不绘制，照常填底色"
+        );
+
+        let with_image = MediaBackground {
+            image: Some(Img::new(1, 1, [0, 0, 0, 255])),
+            video: None,
+        };
+        assert!(
+            !with_image.needs_playfield_base(None),
+            "背景图垫在玩法层之下，保持透明"
+        );
     }
 }

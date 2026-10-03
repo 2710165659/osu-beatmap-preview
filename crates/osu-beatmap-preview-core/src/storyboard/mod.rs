@@ -397,6 +397,25 @@ impl Storyboard {
             .any(Element::is_drawable)
     }
 
+    /// 是否有画在玩法层之下的可绘制元素（[`Self::sprites_at`] 的 `behind` 半区，
+    /// 即 Background/Pass/Foreground 层，无命令的元素不算）。
+    ///
+    /// 宿主据此保持玩法层帧透明：这些层画在背景之上、玩法层之下，玩法层若自填
+    /// 不透明的内容框底色（没有背景素材时的兜底），会把它们整块盖住，只剩玩法层
+    /// 框外的两侧露边。
+    pub fn has_behind_drawable_elements(&self) -> bool {
+        self.layers
+            .iter()
+            .filter(|layer| {
+                matches!(
+                    layer.layer,
+                    Layer::Background | Layer::Pass | Layer::Foreground
+                )
+            })
+            .flat_map(|layer| &layer.elements)
+            .any(Element::is_drawable)
+    }
+
     /// osu! 的 `ReplacesBackground` 语义：背景层存在与谱面背景同名（大小写不敏感）
     /// 的元素时，宿主应隐藏谱面背景图。
     pub fn replaces_background(&self, background_path: &str) -> bool {
@@ -571,5 +590,34 @@ mod tests {
         );
         assert!(element.is_alive_at(2500.0));
         assert!(!element.is_alive_at(1500.0));
+    }
+
+    /// 「画在玩法层之下」的判定与 [`Storyboard::sprites_at`] 的 behind/front 划分
+    /// 同口径：只有 Background/Pass/Foreground 层的可绘制元素才算，Overlay 层与
+    /// 无命令元素都不算。
+    #[test]
+    fn behind_drawable_elements_follow_the_sprites_at_split() {
+        let underlay = parse_storyboard(
+            "[Events]\nSprite,Background,Centre,\"a.png\",320,240\n F,0,0,1000,1\n",
+            None,
+        );
+        assert!(underlay.has_behind_drawable_elements());
+        assert!(!underlay.sprites_at(500.0).0.is_empty(), "应在 behind 半区");
+
+        let overlay_only = parse_storyboard(
+            "[Events]\nSprite,Overlay,Centre,\"a.png\",320,240\n F,0,0,1000,1\n",
+            None,
+        );
+        assert!(!overlay_only.has_behind_drawable_elements());
+        assert!(
+            !overlay_only.sprites_at(500.0).1.is_empty(),
+            "应在 front 半区"
+        );
+
+        let command_less = parse_storyboard(
+            "[Events]\nSprite,Background,Centre,\"a.png\",320,240\n",
+            None,
+        );
+        assert!(!command_less.has_behind_drawable_elements());
     }
 }

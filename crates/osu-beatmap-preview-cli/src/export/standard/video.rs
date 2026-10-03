@@ -73,8 +73,9 @@ pub(crate) fn render_standard_video(
     );
     // 视频背景在最终 16:9 画布上统一处理；playfield 只提供透明对象层，
     // 避免同一张图在 playfield 和画布中被分别缩放、裁剪。背景视频同样
-    // 垫在画布上，因此只要有任何背景素材对象层就保持透明。
-    let frame_background = (!background.is_empty()).then(|| {
+    // 垫在画布上，因此只要玩法层之下还有内容要透出（背景素材或故事板的
+    // underlay），对象层就保持透明、不自填内容框底色。
+    let frame_background = (!background.needs_playfield_base(storyboard.as_ref())).then(|| {
         Img::new(
             context.frame_layout.frame_width as u32,
             context.frame_layout.frame_height as u32,
