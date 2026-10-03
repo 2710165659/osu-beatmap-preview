@@ -14,6 +14,7 @@ use wasm_bindgen::prelude::*;
 
 pub mod archive;
 pub mod decode;
+mod remux;
 pub mod video;
 
 #[cfg(target_arch = "wasm32")]
@@ -59,7 +60,7 @@ pub struct WebGpuSession {
     custom_samples: Vec<(String, Vec<u8>)>,
     /// 是否采用谱面自带音效（`ENABLE_BEATMAP_HITSOUND`）。
     use_beatmap_samples: bool,
-    /// 背景视频解码器（`.osz` 里的 mp4）；缺失或不受支持时为 `None`。
+    /// 背景视频解码器（`.osz` 里的 mp4，或重封装后的 avi）；缺失或不受支持时为 `None`。
     video: Option<video::BackgroundVideo>,
     /// 背景视频开关（默认关闭）：开启后逐帧解码并叠在静态背景上。
     video_enabled: bool,

@@ -1,4 +1,4 @@
-//! 谱面背景视频：mp4 解封装 + H.264 解码，按关键帧**分段并行**取帧。
+//! 谱面背景视频：mp4/avi 解封装 + H.264 解码，按关键帧**分段并行**取帧。
 //!
 //! 行为对齐 osu!（`DrawableStoryboardVideo`）：
 //! - 视频时间 = 谱面时间 − `Video` 事件偏移（[`BackgroundVideo::start_ms`]）；
@@ -25,6 +25,7 @@ use std::sync::Arc;
 
 use openh264::decoder::{DecodeOptions, DecodedYUV, Flush};
 use openh264::formats::YUVSource;
+use osu_beatmap_preview_core::processing::avi;
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use rayon::prelude::*;
 
@@ -65,11 +66,19 @@ impl MediaBackground {
     }
 }
 
+/// 样本来源：不同容器的取样方式不同，解码段只认「第 i 个样本的字节」。
+enum SampleSource {
+    /// MP4：样本在 stbl 里，按序号经 `mp4` reader 读取（每段自建 reader）。
+    Mp4 { track_id: u32 },
+    /// AVI：样本是文件字节里的 `[start, end)` 区间，直接切片。
+    Avi(Vec<(usize, usize)>),
+}
+
 /// 并行解码的共享上下文（只读，跨线程安全）。
 struct DecodeContext {
-    /// 完整 mp4 字节：每个解码线程按借用切片自建 reader，不复制文件。
+    /// 完整容器字节：每个解码线程按借用切片自建 reader / 切样本，不复制文件。
     bytes: Arc<Vec<u8>>,
-    track_id: u32,
+    samples: SampleSource,
     /// Annex-B 的 SPS+PPS 头包；每段开头随首个 access unit 喂入。
     header_packet: Vec<u8>,
     /// 每个样本（= 画面）的显示时间（毫秒，视频自身时间轴）。
@@ -82,6 +91,27 @@ struct DecodeContext {
 }
 
 impl DecodeContext {
+    /// 取第 `index` 个样本的字节：MP4 经 reader 按序号读，AVI 按区间切片。
+    ///
+    /// 返回拥有缓冲是为了统一两种来源（MP4 的 sample 是 `Bytes`、AVI 是切片）；
+    /// 每帧一次小拷贝，远小于解码开销。
+    fn sample_bytes(
+        &self,
+        index: usize,
+        reader: Option<&mut mp4::Mp4Reader<Cursor<&[u8]>>>,
+    ) -> Option<Vec<u8>> {
+        match &self.samples {
+            SampleSource::Mp4 { track_id } => {
+                let sample = reader?.read_sample(*track_id, index as u32 + 1).ok()??;
+                Some(sample.bytes.to_vec())
+            }
+            SampleSource::Avi(ranges) => {
+                let (start, end) = ranges.get(index)?;
+                self.bytes.get(*start..*end).map(<[u8]>::to_vec)
+            }
+        }
+    }
+
     /// 解一段样本（左闭右开，段间独立），返回本段**被选中**的画面。
     ///
     /// 段内解码顺序 = 样本顺序，解码器按显示序吐画面，因此第 k 个画面对应
@@ -90,11 +120,14 @@ impl DecodeContext {
         let mut out = Vec::new();
         let mut order: Vec<usize> = (start..end).collect();
         order.sort_by_key(|&index| self.times_ms[index]);
-        let Ok(mut reader) = mp4::Mp4Reader::read_header(
-            Cursor::new(self.bytes.as_slice()),
-            self.bytes.len() as u64,
-        ) else {
-            return out;
+        // 只有 MP4 需要 reader；AVI 样本是字节区间，跳过这一步。
+        let mut reader = match self.samples {
+            SampleSource::Mp4 { .. } => mp4::Mp4Reader::read_header(
+                Cursor::new(self.bytes.as_slice()),
+                self.bytes.len() as u64,
+            )
+            .ok(),
+            SampleSource::Avi(_) => None,
         };
         let Ok(mut decoder) = openh264::decoder::Decoder::new() else {
             return out;
@@ -116,11 +149,10 @@ impl DecodeContext {
             out.push((self.times_ms[sample_index], Arc::new(prepared)));
         };
         for sample_index in start..end {
-            let Ok(Some(sample)) = reader.read_sample(self.track_id, sample_index as u32 + 1)
-            else {
+            let Some(sample) = self.sample_bytes(sample_index, reader.as_mut()) else {
                 return out;
             };
-            let Some(packet) = sample_to_annexb(&sample.bytes, &mut header) else {
+            let Some(packet) = sample_to_annexb(&sample, &mut header) else {
                 return out;
             };
             match decoder.decode_with_options(&packet, options.clone()) {
@@ -158,9 +190,20 @@ pub struct BackgroundVideo {
 }
 
 impl BackgroundVideo {
-    /// 打开背景视频：解析容器、显示时间表与解码段。容器/轨道/编码不受支持
-    /// 时返回错误，调用方回退静态背景。
+    /// 打开背景视频：按容器分派解封装（MP4 / AVI），统一生成显示时间表与
+    /// 解码段。容器/轨道/编码不受支持时返回错误，调用方回退静态背景。
     pub fn open(bytes: Vec<u8>, start_ms: i64) -> Result<Self> {
+        match container_kind(&bytes) {
+            VideoContainer::Mp4 => Self::open_mp4(bytes, start_ms),
+            VideoContainer::Avi => Self::open_avi(bytes, start_ms),
+            VideoContainer::Unknown => Err(PreviewError::render(
+                "unsupported background video container (expected MP4 or AVI)",
+            )),
+        }
+    }
+
+    /// MP4：解析容器、显示时间表与解码段。
+    fn open_mp4(bytes: Vec<u8>, start_ms: i64) -> Result<Self> {
         let size = bytes.len() as u64;
         let reader = mp4::Mp4Reader::read_header(Cursor::new(bytes.clone()), size)
             .map_err(|e| PreviewError::render(format!("failed to parse background video: {e}")))?;
@@ -190,11 +233,7 @@ impl BackgroundVideo {
         let pps = track
             .picture_parameter_set()
             .map_err(|e| PreviewError::render(format!("background video is missing PPS: {e}")))?;
-        let mut header_packet = Vec::with_capacity(sps.len() + pps.len() + 8);
-        for nal in [sps, pps] {
-            header_packet.extend_from_slice(&[0, 0, 0, 1]);
-            header_packet.extend_from_slice(nal);
-        }
+        let header_packet = parameter_sets_packet(sps, pps);
 
         // 显示时间 = stts 的解码时间 + ctts 的合成偏移，从轨道时基换算成毫秒。
         let stbl = &track.trak.mdia.minf.stbl;
@@ -221,8 +260,7 @@ impl BackgroundVideo {
 
         // 解码段：每个关键帧起一段（IDR 重置参考缓冲，段间解码独立）。
         // stss 缺失视为全帧内编码，整体一段。
-        let mut segments: Vec<(usize, usize)> = Vec::new();
-        let mut starts: Vec<usize> = match &stbl.stss {
+        let starts: Vec<usize> = match &stbl.stss {
             Some(stss) => stss
                 .entries
                 .iter()
@@ -231,24 +269,75 @@ impl BackgroundVideo {
                 .collect(),
             None => vec![0],
         };
-        if starts.first() != Some(&0) {
-            starts.insert(0, 0);
-        }
-        for (position, &segment_start) in starts.iter().enumerate() {
-            let segment_end = starts
-                .get(position + 1)
-                .copied()
-                .unwrap_or(sample_count)
-                .max(segment_start + 1);
-            segments.push((segment_start, segment_end.min(sample_count)));
-        }
+        let segments = build_segments(&starts, sample_count);
 
         let duration_ms = track.duration().as_millis().max(1) as i64;
         Ok(Self {
             segments,
             context: Arc::new(DecodeContext {
                 bytes: Arc::new(bytes),
-                track_id,
+                samples: SampleSource::Mp4 { track_id },
+                header_packet,
+                times_ms,
+                chosen: Vec::new(),
+                width: 0,
+                height: 0,
+                style: VideoStyle::default(),
+            }),
+            next_segment: 0,
+            // 真正的并行度由 begin_decode 按核数与内存预算算出。
+            batch_size: 1,
+            queue: VecDeque::new(),
+            current: None,
+            start_ms,
+            duration_ms,
+        })
+    }
+
+    /// AVI：core 的解封装给出样本区间与时间轴，套用与 MP4 相同的解码结构。
+    ///
+    /// 空样本（重复帧占位，帧率转换产物）不产生解码画面，从取样列表里跳过；
+    /// 它们占的显示槽位由时间表保留——`frame_at_or_before` 在空档里自然沿用
+    /// 上一画面，正对应「重复上一帧」的语义。
+    fn open_avi(bytes: Vec<u8>, start_ms: i64) -> Result<Self> {
+        let avi = avi::parse_avi(&bytes)?;
+        // 画面 = 含 VCL NAL 的样本；时间仍按槽位算（恒定帧率，见 `AviVideo`）。
+        let pictures: Vec<usize> = avi
+            .samples
+            .iter()
+            .enumerate()
+            .filter(|(_, sample)| sample.has_frame)
+            .map(|(index, _)| index)
+            .collect();
+        if pictures.is_empty() {
+            return Err(PreviewError::render("background video has no samples"));
+        }
+        let times_ms: Vec<i64> = pictures
+            .iter()
+            .map(|&slot| avi.sample_time_ms(slot))
+            .collect();
+        let ranges = pictures
+            .iter()
+            .map(|&slot| {
+                let sample = avi.samples[slot];
+                (sample.start, sample.end)
+            })
+            .collect();
+        // 解码段：每个 IDR 画面起一段（IDR 重置参考缓冲，段间解码独立）。
+        let starts: Vec<usize> = pictures
+            .iter()
+            .enumerate()
+            .filter(|(_, &slot)| avi.samples[slot].is_sync)
+            .map(|(position, _)| position)
+            .collect();
+        let segments = build_segments(&starts, pictures.len());
+        let header_packet = parameter_sets_packet(&avi.sps, &avi.pps);
+        let duration_ms = avi.duration_ms();
+        Ok(Self {
+            segments,
+            context: Arc::new(DecodeContext {
+                bytes: Arc::new(bytes),
+                samples: SampleSource::Avi(ranges),
                 header_packet,
                 times_ms,
                 chosen: Vec::new(),
@@ -374,26 +463,71 @@ pub(crate) fn visibility_alpha(video_ms: i64, duration_ms: i64) -> f64 {
     fade_in.min(fade_out).clamp(0.0, 1.0)
 }
 
-/// 把 MP4 sample（4 字节长度前缀的 NAL 组）转成 openh264 需要的 Annex-B。
+/// 背景视频容器：解封装按容器分派，两种之外暂不支持（调用方回退背景图）。
+enum VideoContainer {
+    /// ISO BMFF（`.mp4` / `.mov` / `.m4v`）。
+    Mp4,
+    /// RIFF 的 AVI（`.avi`，老谱面常见）。
+    Avi,
+    Unknown,
+}
+
+/// 按魔数识别容器：AVI 看 `RIFF`/`AVI `，其余按 MP4 顶层 box 类型判。
+fn container_kind(bytes: &[u8]) -> VideoContainer {
+    if bytes.get(0..4) == Some(b"RIFF") && bytes.get(8..12) == Some(b"AVI ") {
+        return VideoContainer::Avi;
+    }
+    // MP4 没有固定魔数，认常见顶层 box：标准文件以 ftyp 开头，但 moov/mdat
+    // 前置或 free/wide 填充的变体同样合法。
+    match bytes.get(4..8) {
+        Some(b"ftyp") | Some(b"styp") | Some(b"moov") | Some(b"mdat") | Some(b"free")
+        | Some(b"wide") | Some(b"skip") => VideoContainer::Mp4,
+        _ => VideoContainer::Unknown,
+    }
+}
+
+/// 按段起点切出解码段（左闭右开）：首段必须从 0 开始，段间不重叠不断档。
+fn build_segments(starts: &[usize], sample_count: usize) -> Vec<(usize, usize)> {
+    let mut segments = Vec::new();
+    let starts = if starts.first() == Some(&0) {
+        starts.to_vec()
+    } else {
+        let mut with_first = vec![0];
+        with_first.extend_from_slice(starts);
+        with_first
+    };
+    for (position, &segment_start) in starts.iter().enumerate() {
+        let segment_end = starts
+            .get(position + 1)
+            .copied()
+            .unwrap_or(sample_count)
+            .max(segment_start + 1);
+        segments.push((segment_start, segment_end.min(sample_count)));
+    }
+    segments
+}
+
+/// SPS+PPS 打成 Annex-B 头包：并行解码每段开头都要喂一次。
+fn parameter_sets_packet(sps: &[u8], pps: &[u8]) -> Vec<u8> {
+    let mut header_packet = Vec::with_capacity(sps.len() + pps.len() + 8);
+    for nal in [sps, pps] {
+        header_packet.extend_from_slice(&[0, 0, 0, 1]);
+        header_packet.extend_from_slice(nal);
+    }
+    header_packet
+}
+
+/// 把一个样本转成 openh264 需要的 Annex-B。
 ///
-/// `header` 是待消耗的头包（SPS/PPS，Annex-B），只在每段首个 access unit 前
-/// 非空；sample 结构损坏时返回 `None`，由调用方停止本段解码。
+/// 样本布局随容器而异：MP4 sample 是 4 字节长度前缀的 NAL 组，AVI 常见
+/// Annex-B（也可能照搬长度前缀），由 [`avi::split_sample_nals`] 统一识别后
+/// 换成起始码。`header` 是待消耗的头包（SPS/PPS，Annex-B），只在每段首个
+/// access unit 前非空；样本结构损坏时返回 `None`，由调用方停止本段解码。
 fn sample_to_annexb(sample: &[u8], header: &mut Vec<u8>) -> Option<Vec<u8>> {
     let mut out = std::mem::take(header);
-    let mut rest = sample;
-    while !rest.is_empty() {
-        let length = rest
-            .get(..4)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_be_bytes)
-            .map(|value| value as usize)?;
-        rest = &rest[4..];
-        if length == 0 || length > rest.len() {
-            return None;
-        }
+    for nal in avi::split_sample_nals(sample)? {
         out.extend_from_slice(&[0, 0, 0, 1]);
-        out.extend_from_slice(&rest[..length]);
-        rest = &rest[length..];
+        out.extend_from_slice(nal);
     }
     (!out.is_empty()).then_some(out)
 }
@@ -704,5 +838,137 @@ mod tests {
             !with_image.needs_playfield_base(None),
             "背景图垫在玩法层之下，保持透明"
         );
+    }
+
+    /// 长度前缀 NAL 组（编码器输出）转 Annex-B（真实 AVI 的常见样本布局）。
+    fn length_prefixed_to_annexb(sample: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut rest = sample;
+        while rest.len() >= 4 {
+            let length = u32::from_be_bytes(rest[..4].try_into().expect("长度固定")) as usize;
+            rest = &rest[4..];
+            assert!(length <= rest.len(), "测试帧的 NAL 长度必须合法");
+            out.extend_from_slice(&[0, 0, 0, 1]);
+            out.extend_from_slice(&rest[..length]);
+            rest = &rest[length..];
+        }
+        out
+    }
+
+    fn avi_chunk(id: &[u8; 4], content: &[u8]) -> Vec<u8> {
+        let mut out = Vec::from(*id);
+        out.extend_from_slice(&(content.len() as u32).to_le_bytes());
+        out.extend_from_slice(content);
+        if content.len() % 2 == 1 {
+            out.push(0);
+        }
+        out
+    }
+
+    fn avi_list(list_type: &[u8; 4], content: &[u8]) -> Vec<u8> {
+        let mut inner = Vec::from(*list_type);
+        inner.extend_from_slice(content);
+        avi_chunk(b"LIST", &inner)
+    }
+
+    /// 把帧样本打包成最小可用 AVI（hdrl + movi），恒定帧率 `scale/rate`。
+    fn pack_avi(samples: &[Vec<u8>], width: u32, height: u32, scale: u32, rate: u32) -> Vec<u8> {
+        let mut avih = vec![0_u8; 56];
+        avih[0..4].copy_from_slice(&20_833_u32.to_le_bytes());
+        avih[16..20].copy_from_slice(&(samples.len() as u32).to_le_bytes());
+        avih[24..28].copy_from_slice(&1_u32.to_le_bytes());
+        avih[32..36].copy_from_slice(&width.to_le_bytes());
+        avih[36..40].copy_from_slice(&height.to_le_bytes());
+        let mut strh = vec![0_u8; 56];
+        strh[0..4].copy_from_slice(b"vids");
+        strh[4..8].copy_from_slice(b"H264");
+        strh[20..24].copy_from_slice(&scale.to_le_bytes());
+        strh[24..28].copy_from_slice(&rate.to_le_bytes());
+        strh[32..36].copy_from_slice(&(samples.len() as u32).to_le_bytes());
+        let mut strf = vec![0_u8; 40];
+        strf[0..4].copy_from_slice(&40_u32.to_le_bytes());
+        strf[4..8].copy_from_slice(&(width as i32).to_le_bytes());
+        strf[8..12].copy_from_slice(&(height as i32).to_le_bytes());
+        strf[16..20].copy_from_slice(b"H264");
+        let strl = avi_list(
+            b"strl",
+            &[avi_chunk(b"strh", &strh), avi_chunk(b"strf", &strf)].concat(),
+        );
+        let hdrl = avi_list(b"hdrl", &[avi_chunk(b"avih", &avih), strl].concat());
+        let mut movi_content = Vec::new();
+        for sample in samples {
+            movi_content.extend_from_slice(&avi_chunk(b"00dc", sample));
+        }
+        let movi = avi_list(b"movi", &movi_content);
+        let mut body = Vec::from(*b"AVI ");
+        body.extend_from_slice(&hdrl);
+        body.extend_from_slice(&movi);
+        let mut out = Vec::from(*b"RIFF");
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(&body);
+        out
+    }
+
+    /// 用 CPU 编码器造 H.264 帧并打包成 AVI（Annex-B 样本）；`interleave_empty`
+    /// 时每帧后插一个零长度 chunk（重复帧占位，帧率转换产物的典型形态）。
+    fn solid_avi_bytes(frame_count: usize, fps: u32, interleave_empty: bool) -> Vec<u8> {
+        use super::super::cpu::CpuEncoder;
+        use super::super::video::{EncodedFrame, FrameEncoder};
+
+        let (width, height) = (16_u32, 16_u32);
+        let mut encoder = CpuEncoder::new(width, height, fps).expect("测试编码器必须可用");
+        let mut samples: Vec<Vec<u8>> = Vec::new();
+        for index in 0..frame_count {
+            let shade = (40 + index * 60) as u8;
+            let img = Img::new(width, height, [shade, shade, shade, 255]);
+            let EncodedFrame {
+                sps, pps, slice, ..
+            } = encoder.encode(&img).expect("测试帧必须可编码");
+            let mut sample = Vec::new();
+            if index == 0 {
+                for nal in [sps.expect("首帧必须带 SPS"), pps.expect("首帧必须带 PPS")] {
+                    sample.extend_from_slice(&[0, 0, 0, 1]);
+                    sample.extend_from_slice(&nal);
+                }
+            }
+            sample.extend_from_slice(&length_prefixed_to_annexb(&slice));
+            samples.push(sample);
+            if interleave_empty {
+                samples.push(Vec::new());
+            }
+        }
+        pack_avi(&samples, width, height, 1, fps)
+    }
+
+    /// AVI 时间轴：空槽位（重复帧占位）不产生画面，取帧时沿用上一画面；
+    /// 关键帧分段下各画面的时间对得上槽位。
+    #[test]
+    fn avi_timeline_holds_the_frame_across_repeat_slots() {
+        // 4 帧 + 每帧后一个占位 = 8 个槽位 @4fps，每槽 250ms。
+        let bytes = solid_avi_bytes(4, 4, true);
+        let mut video = BackgroundVideo::open(bytes, 0).expect("AVI 必须可打开");
+        assert_eq!(video.duration_ms, 2000);
+        video.begin_decode(16, 16, test_style(), &[0, 250, 600, 5_000]);
+
+        assert_eq!(frame_index(&video.frame_at_or_before(0).unwrap()), 0);
+        // 250ms 落在空槽位：按「重复上一帧」语义仍显示第 1 帧。
+        assert_eq!(frame_index(&video.frame_at_or_before(250).unwrap()), 0);
+        assert_eq!(frame_index(&video.frame_at_or_before(600).unwrap()), 1);
+        // 超过最后一帧：保持最后一帧（与 mp4 路径一致的 clamp 行为）。
+        assert_eq!(frame_index(&video.frame_at_or_before(5_000).unwrap()), 3);
+    }
+
+    /// 无法识别的容器给出明确报错，不再借用 mp4 的解析错误误导排查。
+    #[test]
+    fn unknown_container_reports_clear_error() {
+        let Err(error) = BackgroundVideo::open(b"OggS\x00\x02 garbage-garbage".to_vec(), 0) else {
+            panic!("未知容器必须报错");
+        };
+        assert!(error.to_string().contains("container"), "{error}");
+        assert!(matches!(container_kind(b"RIFF\x24\0\0\0AVI "), VideoContainer::Avi));
+        assert!(matches!(
+            container_kind(&[0, 0, 0, 24, b'f', b't', b'y', b'p', 0, 0, 0, 0, b'i', b's', b'o', b'm']),
+            VideoContainer::Mp4
+        ));
     }
 }

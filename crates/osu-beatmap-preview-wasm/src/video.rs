@@ -73,8 +73,16 @@ pub struct BackgroundVideo {
 impl BackgroundVideo {
     /// 用 `.osz` 里的视频字节创建播放器；创建失败返回错误，调用方回退背景图。
     ///
+    /// 浏览器不认 AVI(RIFF) 容器（老谱面背景视频常见），先重封装成 MP4
+    /// （H.264 只换容器不转码，见 [`crate::remux`]）。
+    ///
     /// `dim_brightness` 是背景暗化亮度（osu! 默认 0.3）。
     pub fn open(bytes: Vec<u8>, start_ms: i64, dim_brightness: f64) -> Result<Self, String> {
+        let bytes = if crate::remux::is_avi(&bytes) {
+            crate::remux::remux_avi_to_mp4(&bytes)?
+        } else {
+            bytes
+        };
         let window = web_sys::window().ok_or("缺少 window")?;
         let document = window.document().ok_or("缺少 document")?;
         let element = document

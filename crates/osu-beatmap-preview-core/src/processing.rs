@@ -30,6 +30,13 @@ pub mod media {
     };
 }
 
+/// AVI（RIFF）容器解封装：背景视频是 `.avi` 时按此取 H.264 样本与时间轴。
+pub mod avi {
+    pub use crate::domain::avi::{
+        nal_ref_idc, nal_type, parse_avi, split_sample_nals, AviSample, AviVideo,
+    };
+}
+
 pub mod path {
     pub use crate::domain::shared::slider_path::{
         build_catch_slider_path, path_position_at, slice_path, SliderPath,
