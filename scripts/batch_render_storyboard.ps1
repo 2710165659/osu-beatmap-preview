@@ -1,4 +1,4 @@
-﻿# osu-beatmap-preview 批量渲染脚本 7：背景视频 / 故事板（MP4 配置测试）
+# osu-beatmap-preview 批量渲染脚本 7：背景视频 / 故事板（MP4 配置测试）
 #
 # 用法（可从任意目录运行）：
 #   powershell -File "<repo>\scripts\batch_render_storyboard.ps1"
@@ -6,7 +6,7 @@
 # 渲染内容：
 #   - 背景视频组：开启 ENABLE_BACKGROUND_VIDEO 的 MP4 渲染
 #   - 故事板组：开启 ENABLE_STORYBOARD（并同时开启背景视频）的 MP4 渲染，
-#     个别任务叠加背景暗化、缩放、帧率与 mania 轨道暗化配置
+#     个别任务叠加背景暗化配置
 #   - 全部使用程序默认 MP4 区间行为，配置覆盖经 --config 注入（配置进哈希、命令行参数不进）
 # 输出：
 #   - 产物平铺重命名到默认输出目录的 batch-storyboard 子文件夹（冲突时加序号）：
@@ -298,10 +298,6 @@ $tasks.Add((New-MediaTask "storyboard_mania_4611014" "mania" "mania" "4611014" "
     @{ ENABLE_STORYBOARD = $true; ENABLE_BACKGROUND_VIDEO = $true; BACKGROUND_DIM = 0.3 } $null))
 $tasks.Add((New-MediaTask "storyboard_mania_3970396" "mania" "mania" "3970396" "故事板" "故事板" `
     @{ ENABLE_STORYBOARD = $true; ENABLE_BACKGROUND_VIDEO = $true } $null))
-# 十分钟超长谱面：scale 1.5、帧率 30、mania 轨道暗化层透明度 70%
-$tasks.Add((New-MediaTask "storyboard_mania_5318924" "mania" "mania" "5318924" "故事板+视频" `
-    "故事板+视频、十分钟超长；scale1.5、帧率30、轨道暗化70%" `
-    @{ ENABLE_STORYBOARD = $true; ENABLE_BACKGROUND_VIDEO = $true; FPS = 30; LANE_DARKEN_ALPHA = 0.7 } 1.5))
 
 function New-ConfigJson {
     param($Task, [string]$LogVariant)
@@ -321,7 +317,7 @@ function New-ConfigJson {
             # LOG_DIR 不参与实际绘制；用唯一值生成新的缓存变体，避免命中旧成品。
             LOG_DIR = (Join-Path $outdir ".logs\$LogVariant")
         }
-        # 放宽超时：十分钟超长故事板渲染可能远超默认 300s 超时。
+        # 放宽超时：极端/超长故事板渲染可能远超默认 300s 超时。
         timeout = @{ PNG_TIMEOUT = 3600; GIF_TIMEOUT = 3600; MP4_TIMEOUT = 3600 }
         render = @{
             $Task.configMode = @{

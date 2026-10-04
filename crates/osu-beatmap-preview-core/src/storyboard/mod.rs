@@ -25,6 +25,7 @@ pub use eval::ElementState;
 pub use parse::parse_storyboard;
 
 use crate::render::canvas::Img;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -153,26 +154,14 @@ pub enum Property {
 /// 属性个数（命令求值按属性分桶）。
 pub const PROPERTY_COUNT: usize = 10;
 
-/// 属性枚举与求值桶下标的映射。
-pub(crate) const PROPERTIES: [Property; PROPERTY_COUNT] = [
-    Property::X,
-    Property::Y,
-    Property::Scale,
-    Property::VectorScale,
-    Property::Rotation,
-    Property::Colour,
-    Property::Alpha,
-    Property::Additive,
-    Property::FlipH,
-    Property::FlipV,
-];
-
 impl Property {
+    /// 命令求值桶下标。
+    ///
+    /// 判别值顺序即求值桶顺序（X=0 … FlipV=9，与 osu.Game `StoryboardCommandGroup`
+    /// 一致），直接取判别值，免去逐次线性查表（`state_at` 每帧每元素要取十几次
+    /// 桶下标）。顺序由 `property_index_matches_the_bucket_order` 测试钉住。
     pub(crate) fn index(self) -> usize {
-        PROPERTIES
-            .iter()
-            .position(|p| *p == self)
-            .expect("属性必须在常量表内")
+        self as usize
     }
 }
 
@@ -262,16 +251,84 @@ pub struct Element {
     pub x: f32,
     pub y: f32,
     pub commands: ElementCommands,
+    /// 派生缓存（生命周期、可绘制性、动画帧路径表），构造时一次算好。
+    /// 每帧求值会反复查询这些值，逐帧重扫全部命令是 O(元素×命令) 的大头；
+    /// 直接改动 `kind`/`commands` 后必须调用 [`Element::rebuild_cache`] 同步。
+    cache: ElementCache,
+}
+
+/// [`Element`] 的派生缓存。
+///
+/// 帧间求值是纯函数、多线程乱序出帧，缓存必须是构造期的一次性不可变快照：
+/// 全部字段只在元素构造时计算，运行期只读，不做惰性求值。
+#[derive(Clone, Debug)]
+struct ElementCache {
+    /// `EarliestTransformTime`：全部命令的最早起点。
+    earliest_start_ms: f64,
+    /// `LifetimeStart`：含 lazer 的「alpha 先 0 后亮」修正（见 [`Element::start_time_ms`]）。
+    start_time_ms: f64,
+    /// `LifetimeEnd`：全部命令的最晚终点。
+    end_time_ms: f64,
+    /// `IsDrawable`：无命令的元素不绘制。
+    drawable: bool,
+    /// 动画元素逐帧贴图路径（[`Element::texture_path_at`] 零分配借用）；Sprite 为空表。
+    frame_paths: Vec<String>,
 }
 
 impl Element {
+    /// 构造元素并计算派生缓存（解析器与测试的统一入口）。
+    pub(crate) fn new(
+        kind: ElementKind,
+        layer: Layer,
+        path: String,
+        origin: Origin,
+        x: f32,
+        y: f32,
+        commands: ElementCommands,
+    ) -> Self {
+        let mut element = Self {
+            kind,
+            layer,
+            path,
+            origin,
+            x,
+            y,
+            commands,
+            cache: ElementCache {
+                earliest_start_ms: 0.0,
+                start_time_ms: 0.0,
+                end_time_ms: 0.0,
+                drawable: false,
+                frame_paths: Vec::new(),
+            },
+        };
+        element.rebuild_cache();
+        element
+    }
+
+    /// 重算派生缓存；直接改动 `kind`/`commands` 后必须调用。
+    pub(crate) fn rebuild_cache(&mut self) {
+        self.cache = ElementCache {
+            earliest_start_ms: self.compute_earliest_start_ms(),
+            start_time_ms: self.compute_start_time_ms(),
+            end_time_ms: self.compute_end_time_ms(),
+            drawable: self.commands.has_commands(),
+            frame_paths: self.compute_frame_paths(),
+        };
+    }
+
     /// 无命令的元素在 osu! 中完全不绘制（`IsDrawable => HasCommands`）。
     pub fn is_drawable(&self) -> bool {
-        self.commands.has_commands()
+        self.cache.drawable
     }
 
     /// 元素最早命令开始时间（osu! 的 `EarliestTransformTime`）。
     pub fn earliest_start_ms(&self) -> f64 {
+        self.cache.earliest_start_ms
+    }
+
+    /// [`Self::earliest_start_ms`] 的计算过程（仅缓存重建时执行）。
+    fn compute_earliest_start_ms(&self) -> f64 {
         self.commands
             .lists
             .iter()
@@ -286,6 +343,11 @@ impl Element {
     /// 后现身）时，元素要等到第一条**可见** alpha 命令才存在，否则「几秒后才登场」
     /// 的精灵会被初值提前画出来（比如转场黑幕盖住整首歌）。
     pub fn start_time_ms(&self) -> f64 {
+        self.cache.start_time_ms
+    }
+
+    /// [`Self::start_time_ms`] 的计算过程（仅缓存重建时执行）。
+    fn compute_start_time_ms(&self) -> f64 {
         let alphas = self.commands.list(Property::Alpha);
         let visible = |command: &Command| {
             matches!(command.start_value, Value::Scalar(start) if start > 0.0)
@@ -298,13 +360,18 @@ impl Element {
                 }
             }
         }
-        self.earliest_start_ms()
+        self.compute_earliest_start_ms()
     }
 
     /// 元素的绘制终点（osu! 的 `EndTimeForDisplay`，即 `LifetimeEnd`）。
     /// 循环组已展开进命令桶，取所有命令的最大结束时间即可；超出这个时刻元素不再
     /// 存在——即使数值语义上它还停在最后一帧的状态。
     pub fn end_time_ms(&self) -> f64 {
+        self.cache.end_time_ms
+    }
+
+    /// [`Self::end_time_ms`] 的计算过程（仅缓存重建时执行）。
+    fn compute_end_time_ms(&self) -> f64 {
         self.commands
             .lists
             .iter()
@@ -320,15 +387,17 @@ impl Element {
 
     /// 该时刻实际要取用的贴图路径（动画元素为当前帧路径）。
     ///
-    /// 帧号在扩展名前插入（`sprite.png` → `sprite0.png`，多点文件名按最后一个点插入）；
-    /// lazer 的 `String.Replace` 会在每个点前都插帧号，与格式文档不符，这里取直觉行为。
-    pub fn texture_path_at(&self, frame_index: u32) -> String {
+    /// 动画帧路径在构造期物化成表，逐帧求值零分配；帧号越界不属于求值范围
+    /// （`frame_index_at` 恒落在帧表内），仍按插入规则现拼，保持 API 行为不变。
+    pub fn texture_path_at(&self, frame_index: u32) -> Cow<'_, str> {
         match self.kind {
-            ElementKind::Sprite => self.path.clone(),
-            ElementKind::Animation { .. } => match self.path.rfind('.') {
-                Some(dot) => format!("{}{}{}", &self.path[..dot], frame_index, &self.path[dot..]),
-                None => format!("{}{}", self.path, frame_index),
-            },
+            ElementKind::Sprite => Cow::Borrowed(&self.path),
+            ElementKind::Animation { .. } => self
+                .cache
+                .frame_paths
+                .get(frame_index as usize)
+                .map(|path| Cow::Borrowed(path.as_str()))
+                .unwrap_or_else(|| Cow::Owned(animation_frame_path(&self.path, frame_index))),
         }
     }
 
@@ -336,10 +405,29 @@ impl Element {
     pub fn referenced_paths(&self) -> Vec<String> {
         match self.kind {
             ElementKind::Sprite => vec![self.path.clone()],
+            ElementKind::Animation { .. } => self.cache.frame_paths.clone(),
+        }
+    }
+
+    /// 物化动画帧路径表（帧数下限 1，与旧 [`Self::referenced_paths`] 口径一致）。
+    fn compute_frame_paths(&self) -> Vec<String> {
+        match self.kind {
+            ElementKind::Sprite => Vec::new(),
             ElementKind::Animation { frame_count, .. } => (0..frame_count.max(1))
-                .map(|frame| self.texture_path_at(frame))
+                .map(|frame| animation_frame_path(&self.path, frame))
                 .collect(),
         }
+    }
+}
+
+/// 动画元素第 `frame_index` 帧的贴图路径。
+///
+/// 帧号在扩展名前插入（`sprite.png` → `sprite0.png`，多点文件名按最后一个点插入）；
+/// lazer 的 `String.Replace` 会在每个点前都插帧号，与格式文档不符，这里取直觉行为。
+fn animation_frame_path(path: &str, frame_index: u32) -> String {
+    match path.rfind('.') {
+        Some(dot) => format!("{}{}{}", &path[..dot], frame_index, &path[dot..]),
+        None => format!("{}{}", path, frame_index),
     }
 }
 
@@ -382,8 +470,8 @@ pub struct SpriteDraw<'a> {
 }
 
 impl SpriteDraw<'_> {
-    /// 该时刻实际要取用的贴图路径。
-    pub fn texture_path(&self) -> String {
+    /// 该时刻实际要取用的贴图路径（动画帧路径零分配借用）。
+    pub fn texture_path(&self) -> Cow<'_, str> {
         self.element.texture_path_at(self.state.frame_index)
     }
 }
@@ -518,21 +606,42 @@ mod tests {
     /// 动画帧路径在扩展名前插入帧序号。
     #[test]
     fn animation_frame_paths_insert_index_before_extension() {
-        let element = Element {
-            kind: ElementKind::Animation {
+        let element = Element::new(
+            ElementKind::Animation {
                 frame_count: 3,
                 frame_delay_ms: 100.0,
                 loop_type: AnimationLoop::LoopForever,
             },
-            layer: Layer::Background,
-            path: "sb/anim.png".to_string(),
-            origin: Origin::Centre,
-            x: 0.0,
-            y: 0.0,
-            commands: ElementCommands::default(),
-        };
+            Layer::Background,
+            "sb/anim.png".to_string(),
+            Origin::Centre,
+            0.0,
+            0.0,
+            ElementCommands::default(),
+        );
         assert_eq!(element.texture_path_at(0), "sb/anim0.png");
         assert_eq!(element.texture_path_at(2), "sb/anim2.png");
+    }
+
+    /// 属性判别值即求值桶下标（`Property::index` 直接取判别值，顺序不可改动）。
+    #[test]
+    fn property_index_matches_the_bucket_order() {
+        let expected = [
+            Property::X,
+            Property::Y,
+            Property::Scale,
+            Property::VectorScale,
+            Property::Rotation,
+            Property::Colour,
+            Property::Alpha,
+            Property::Additive,
+            Property::FlipH,
+            Property::FlipV,
+        ];
+        assert_eq!(expected.len(), PROPERTY_COUNT);
+        for (index, property) in expected.iter().enumerate() {
+            assert_eq!(property.index(), index, "{property:?} 的桶下标");
+        }
     }
 
     /// 路径归一化去引号并统一为 `/` 分隔。

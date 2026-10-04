@@ -952,14 +952,17 @@ pub(crate) fn compose_frame(
     // 与背景图同一亮度：背景已按 (1 - BACKGROUND_DIM) 预暗化，故事板同倍率
     // 乘进精灵颜色后，与「整层压暗」的合成结果逐像素一致。
     let brightness = (1.0 - style.background_dim.clamp(0.0, 1.0)) as f32;
-    if let Some(storyboard) = storyboard {
-        storyboard.draw(&mut canvas, chart_ms, true, brightness);
+    // 故事板每帧只求值一次，两半分别画在物件层两侧：分两次求值会让另一半的
+    // 状态结果直接丢弃（元素多的谱面上每帧白算一半的精灵状态）。
+    let storyboard_draws = storyboard.map(|storyboard| storyboard.sprites_at(chart_ms));
+    if let Some((storyboard, draws)) = storyboard.zip(storyboard_draws.as_ref()) {
+        storyboard.draw_sprites(&mut canvas, &draws.0, brightness);
     }
     let ox = ((out_w - pf.w) / 2) as i64;
     let oy = ((out_h - pf.h) / 2) as i64;
     canvas.alpha_composite(&pf, ox, oy);
-    if let Some(storyboard) = storyboard {
-        storyboard.draw(&mut canvas, chart_ms, false, brightness);
+    if let Some((storyboard, draws)) = storyboard.zip(storyboard_draws.as_ref()) {
+        storyboard.draw_sprites(&mut canvas, &draws.1, brightness);
     }
 
     let label = format_progress_label(current_ms, total_ms);

@@ -288,12 +288,10 @@ pub fn apply_easing_f64(easing: u32, time: f64) -> f64 {
     const BACK_CONST_2: f64 = BACK_CONST * 1.525;
     const BOUNCE_CONST: f64 = 1.0 / 2.75;
     // Expo/Elastic 曲线端点修正：保证 0/1 处精确落点（与 osu.Framework 相同）。
+    // 含 sin() 的三个 Elastic 修正常量只在对应分支内计算：本函数在逐帧求值里
+    // 每条插值命令都会调用，而绝大多数命令不是 Elastic，公共路径不该替它们付账。
     let expo_offset = 2f64.powi(-10);
     let elastic_offset_full = 2f64.powi(-11);
-    let elastic_offset_half = 2f64.powi(-10) * ((0.5 - ELASTIC_CONST_2) * ELASTIC_CONST).sin();
-    let elastic_offset_quarter = 2f64.powi(-10) * ((0.25 - ELASTIC_CONST_2) * ELASTIC_CONST).sin();
-    let in_out_elastic_offset =
-        2f64.powi(-10) * ((1.0 - ELASTIC_CONST_2 * 1.5) * ELASTIC_CONST / 1.5).sin();
 
     let mut t = time;
     match easing {
@@ -385,16 +383,22 @@ pub fn apply_easing_f64(easing: u32, time: f64) -> f64 {
         }
         26 => {
             // OutElasticHalf
+            let elastic_offset_half =
+                2f64.powi(-10) * ((0.5 - ELASTIC_CONST_2) * ELASTIC_CONST).sin();
             2f64.powf(-10.0 * t) * ((0.5 * t - ELASTIC_CONST_2) * ELASTIC_CONST).sin() + 1.0
                 - elastic_offset_half * t
         }
         27 => {
             // OutElasticQuarter
+            let elastic_offset_quarter =
+                2f64.powi(-10) * ((0.25 - ELASTIC_CONST_2) * ELASTIC_CONST).sin();
             2f64.powf(-10.0 * t) * ((0.25 * t - ELASTIC_CONST_2) * ELASTIC_CONST).sin() + 1.0
                 - elastic_offset_quarter * t
         }
         28 => {
             // InOutElastic
+            let in_out_elastic_offset =
+                2f64.powi(-10) * ((1.0 - ELASTIC_CONST_2 * 1.5) * ELASTIC_CONST / 1.5).sin();
             t *= 2.0;
             if t < 1.0 {
                 -0.5 * (2f64.powf(-10.0 + 10.0 * t)
@@ -488,15 +492,15 @@ mod tests {
                 lists[command.property.index()].push(command);
             }
         }
-        Element {
-            kind: ElementKind::Sprite,
-            layer: Layer::Background,
-            path: "sb/x.png".to_string(),
-            origin: Origin::Centre,
-            x: 320.0,
-            y: 240.0,
-            commands: build_commands(lists, Vec::<TriggerGroup>::new()),
-        }
+        Element::new(
+            ElementKind::Sprite,
+            Layer::Background,
+            "sb/x.png".to_string(),
+            Origin::Centre,
+            320.0,
+            240.0,
+            build_commands(lists, Vec::<TriggerGroup>::new()),
+        )
     }
 
     /// 造一条标量命令（测试辅助，仅测试构建使用）。
@@ -636,6 +640,7 @@ mod tests {
             frame_delay_ms: 100.0,
             loop_type: AnimationLoop::LoopOnce,
         };
+        element.rebuild_cache();
         assert_eq!(element.state_at(500.0).frame_index, 0);
         assert_eq!(element.state_at(750.0).frame_index, 2);
         assert_eq!(
@@ -649,6 +654,7 @@ mod tests {
             frame_delay_ms: 100.0,
             loop_type: AnimationLoop::LoopForever,
         };
+        element.rebuild_cache();
         assert_eq!(
             element.state_at(800.0).frame_index,
             0,

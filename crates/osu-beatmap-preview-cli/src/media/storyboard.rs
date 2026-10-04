@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use osu_beatmap_preview_core::processing::media::normalize_entry_path;
 use osu_beatmap_preview_core::storyboard::{
-    draw_storyboard, parse_storyboard, Storyboard, StoryboardViewport, Textures,
+    draw_sprites, parse_storyboard, SpriteDraw, Storyboard, StoryboardViewport, Textures,
 };
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
@@ -159,24 +159,25 @@ impl MediaStoryboard {
         self.storyboard.has_behind_drawable_elements()
     }
 
-    /// 把物件下层（Background/Pass/Foreground）或 Overlay 层画到画布上。
+    /// 求值 `chart_ms` 时刻的两半绘制列表：`0` 是物件下层（Background/Pass/
+    /// Foreground），`1` 是 Overlay 层。
     ///
-    /// `chart_ms` 是谱面绝对毫秒（.osu 时间轴）；`brightness` 是用户暗度亮度
-    /// （1 − `BACKGROUND_DIM`），与背景图同一亮度预暗化（lazer 的
-    /// `UserDimContainer.FadeColour(Gray(1-DimLevel))` 语义）。视口按画布尺寸
-    /// 换算（SCALE 已体现在画布尺寸里，映射只做等比缩放）。
-    pub(crate) fn draw(&self, canvas: &mut Img, chart_ms: i64, behind: bool, brightness: f32) {
+    /// 每帧只调一次：[`Self::draw_sprites`] 要把两半分别画在物件层两侧，
+    /// 分两次求值会让另一半结果直接丢弃，元素多的谱面上每帧白算一半。
+    /// `chart_ms` 是谱面绝对毫秒（.osu 时间轴）。
+    pub(crate) fn sprites_at(&self, chart_ms: i64) -> (Vec<SpriteDraw<'_>>, Vec<SpriteDraw<'_>>) {
+        self.storyboard.sprites_at(chart_ms as f64)
+    }
+
+    /// 把 [`Self::sprites_at`] 的一个半区画到画布上。
+    ///
+    /// `brightness` 是用户暗度亮度（1 − `BACKGROUND_DIM`），与背景图同一亮度
+    /// 预暗化（lazer 的 `UserDimContainer.FadeColour(Gray(1-DimLevel))` 语义）。
+    /// 视口按画布尺寸换算（SCALE 已体现在画布尺寸里，映射只做等比缩放）。
+    pub(crate) fn draw_sprites(&self, canvas: &mut Img, draws: &[SpriteDraw<'_>], brightness: f32) {
         let view =
             StoryboardViewport::new(canvas.w as f32, canvas.h as f32, self.storyboard.widescreen);
-        draw_storyboard(
-            canvas,
-            &self.storyboard,
-            &self.textures,
-            chart_ms as f64,
-            behind,
-            &view,
-            brightness,
-        );
+        draw_sprites(canvas, draws, &self.textures, &view, brightness);
     }
 }
 

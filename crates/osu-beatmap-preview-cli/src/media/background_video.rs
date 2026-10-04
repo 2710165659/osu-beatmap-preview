@@ -205,7 +205,9 @@ impl BackgroundVideo {
     /// MP4：解析容器、显示时间表与解码段。
     fn open_mp4(bytes: Vec<u8>, start_ms: i64) -> Result<Self> {
         let size = bytes.len() as u64;
-        let reader = mp4::Mp4Reader::read_header(Cursor::new(bytes.clone()), size)
+        // 借用切片解析容器头，不克隆整个视频文件（峰值内存翻倍 + 全文件 memcpy）；
+        // reader 只在构造期用，`bytes` 随后移入 `DecodeContext` 供各解码段切片。
+        let reader = mp4::Mp4Reader::read_header(Cursor::new(bytes.as_slice()), size)
             .map_err(|e| PreviewError::render(format!("failed to parse background video: {e}")))?;
         let Some((&track_id, track)) = reader.tracks().iter().find(|(_, track)| {
             matches!(track.track_type(), Ok(mp4::TrackType::Video))
@@ -385,6 +387,9 @@ impl BackgroundVideo {
                 chosen[order[position - 1].1] = true;
             }
         }
+        // 只保留真正要解的范围：不含选中画面的段整段跳过，含选中画面的段
+        // 截到最后一个选中画面（其后的样本解完即弃，可以直接不解）。
+        self.segments = select_decode_ranges(&self.segments, &chosen);
         // 批次并行度 = 核数与内存预算的较小者：一批里每段的选中画面都要
         // 常驻到被消费为止，1080p 输出时一段就可能上百 MB，必须按字节封顶。
         let chosen_count = chosen.iter().filter(|keep| **keep).count();
@@ -505,6 +510,28 @@ fn build_segments(starts: &[usize], sample_count: usize) -> Vec<(usize, usize)> 
         segments.push((segment_start, segment_end.min(sample_count)));
     }
     segments
+}
+
+/// 按「选中画面」收缩解码范围：不含任何选中画面的段整体跳过；含选中画面的段
+/// 截到最后一个选中画面（左闭右开，即 `last + 1`）。
+///
+/// 段以 IDR 为界互相独立，段内参考链只向后依赖（解码序上引用先于被引用者），
+/// 因此段尾未选中的样本可以不解——它们本来就解完即弃；段内首个选中画面之前
+/// 的样本仍必须照常解（参考链的一部分）。范围导出时大片段可能完全不含目标
+/// 画面，跳过后省下的就是纯解码时间（解码是导出耗时的绝对大头）。
+fn select_decode_ranges(segments: &[(usize, usize)], chosen: &[bool]) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::with_capacity(segments.len());
+    for &(start, end) in segments {
+        // 反向找最后一个选中画面：段尾通常全是未选中，反向一步到位。
+        let Some(last) = (start..end)
+            .rev()
+            .find(|&index| chosen.get(index).copied().unwrap_or(false))
+        else {
+            continue;
+        };
+        ranges.push((start, last + 1));
+    }
+    ranges
 }
 
 /// SPS+PPS 打成 Annex-B 头包：并行解码每段开头都要喂一次。
@@ -970,5 +997,29 @@ mod tests {
             container_kind(&[0, 0, 0, 24, b'f', b't', b'y', b'p', 0, 0, 0, 0, b'i', b's', b'o', b'm']),
             VideoContainer::Mp4
         ));
+    }
+
+    /// 解码范围收缩：无选中画面的段整段跳过，有选中画面的段截到最后一个选中画面。
+    #[test]
+    fn decode_ranges_skip_untouched_segments_and_stop_after_last_chosen() {
+        let segments = [(0usize, 4usize), (4, 8), (8, 12)];
+        let mut chosen = vec![false; 12];
+        chosen[5] = true;
+        chosen[6] = true;
+        assert_eq!(select_decode_ranges(&segments, &chosen), vec![(4, 7)]);
+    }
+
+    /// 段尾就是选中画面时段范围不变；全部未选中时一段都不解。
+    #[test]
+    fn decode_ranges_keep_tail_chosen_segments_and_drop_empty_ones() {
+        let segments = [(0usize, 3usize), (3, 6)];
+        let mut chosen = vec![false; 6];
+        chosen[2] = true;
+        chosen[5] = true;
+        assert_eq!(
+            select_decode_ranges(&segments, &chosen),
+            vec![(0, 3), (3, 6)]
+        );
+        assert!(select_decode_ranges(&segments, &[false; 6]).is_empty());
     }
 }

@@ -312,7 +312,8 @@ pub fn draw_sprites(
     brightness: f32,
 ) {
     for draw in draws {
-        let Some(texture) = textures.get(&draw.texture_path()) else {
+        // 贴图路径零分配借用（动画帧路径表在元素构造期物化）。
+        let Some(texture) = textures.get(draw.texture_path().as_ref()) else {
             continue;
         };
         draw_sprite(
@@ -340,7 +341,7 @@ pub fn append_scene_sprites(
         if !draw.state.x.is_finite() || !draw.state.y.is_finite() {
             continue;
         }
-        let Some(texture) = textures.get(&draw.texture_path()) else {
+        let Some(texture) = textures.get(draw.texture_path().as_ref()) else {
             continue;
         };
         let Some(geometry) = sprite_geometry(
@@ -560,19 +561,19 @@ mod tests {
     /// 元素辅助函数保底可编译（绘制路径使用同一套元素类型）。
     #[test]
     fn element_helpers_stay_consistent() {
-        let element = Element {
-            kind: ElementKind::Animation {
+        let element = Element::new(
+            ElementKind::Animation {
                 frame_count: 1,
                 frame_delay_ms: 100.0,
                 loop_type: AnimationLoop::LoopForever,
             },
-            layer: Layer::Foreground,
-            path: "a.png".to_string(),
-            origin: Origin::Centre,
-            x: 0.0,
-            y: 0.0,
-            commands: ElementCommands::default(),
-        };
+            Layer::Foreground,
+            "a.png".to_string(),
+            Origin::Centre,
+            0.0,
+            0.0,
+            ElementCommands::default(),
+        );
         assert_eq!(element.texture_path_at(0), "a0.png");
     }
 }

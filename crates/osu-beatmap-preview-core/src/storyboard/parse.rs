@@ -151,15 +151,16 @@ impl ElementBuilder {
                     })
             });
         }
-        Element {
-            kind: self.kind,
-            layer: self.layer,
-            path: self.path,
-            origin: self.origin,
-            x: self.x,
-            y: self.y,
-            commands: ElementCommands::from_sorted(lists, self.triggers),
-        }
+        // 构造期一次性算好生命周期与动画帧路径缓存，逐帧求值不再重扫命令。
+        Element::new(
+            self.kind,
+            self.layer,
+            self.path,
+            self.origin,
+            self.x,
+            self.y,
+            ElementCommands::from_sorted(lists, self.triggers),
+        )
     }
 }
 
