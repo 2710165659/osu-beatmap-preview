@@ -36,7 +36,7 @@ node backend/server.js
 
 ## Docker 部署
 
-`Docker/Dockerfile-web` 会把整个 Web 包从源码构建成镜像（Rust → wasm、Vite → `dist/`、Node 运行时），最终镜像里没有 `node_modules`，宿主机也不需要装 Node 或 Rust。**构建上下文必须是仓库根目录**（wasm 需要整个 Cargo workspace），所以在根目录执行：
+`Docker/Dockerfile-web` 会把整个 Web 包从源码构建成镜像（Rust → wasm、Vite → `dist/`、Node 运行时），**构建上下文必须是仓库根目录**（wasm 需要整个 Cargo workspace），所以在根目录执行：
 
 ```bash
 docker build -f Docker/Dockerfile-web -t osu-beatmap-preview-web .
@@ -46,28 +46,9 @@ docker run -d --name osu-preview --restart unless-stopped \
 # 打开 http://<服务器地址>:8787
 ```
 
-几个要点：
-
-- 首次构建要编译 wasm 与前端（本机实测约 2 分钟，慢一些的服务器通常 5–15 分钟）；之后 `target/` 与 cargo registry 都留在 BuildKit 缓存里，只改前端通常几十秒。
-- 镜像约 240 MiB（基础镜像是 `node:22-bookworm-slim`），运行时不含 `node_modules`。
-- 容器内固定监听 `0.0.0.0:8787`，端口用 `-p` 映射；`--host` 在容器里必须保持 `0.0.0.0`，否则端口映射进不来。
-- 容器以 **root** 运行：挂载进来的缓存目录属主可能是 root 或别的 uid（宿主目录、`docker` 自动创建的相对路径目录都是 `root:root`），用非 root 用户会在 `mkdir /data/osu-download-cache` 上报 `EACCES: permission denied`。这个服务只在本机/内网自用，用 root 就省掉了挂载目录的属主问题。
-- 下载缓存固定在 `/data`（`OSU_PREVIEW_CACHE_DIR`），命名卷和宿主目录都行，不需要预先 `chown`。注意 `-v ./osu-preview-cache:/data` 在 Linux 上是绑定 `$PWD/osu-preview-cache`，而在 Docker Desktop（Windows/macOS）上会被当成名为 `osu-preview-cache` 的命名卷。
-- 局域网/手机访问需要 HTTPS：推荐在前面放反向代理（Caddy/Nginx）终止 TLS；也可以让容器自己开 HTTPS，镜像里已经装了 `openssl`，证书会生成到 `/data/.tls`。
-- 想换端口或加参数就直接覆盖 `CMD`：
-
-```bash
-docker run -d -p 8443:8443 -v osu-preview-cache:/data osu-beatmap-preview-web \
-  node backend/server.js --host=0.0.0.0 --port=8443 --https
-```
-
-镜像自带健康检查（每 30 秒请求一次 `/`），`docker ps` 里可以直接看到 `healthy`。
-
 ### 服务器上必须用 HTTPS，否则页面提示没有 WebGPU
 
-WebGPU 只在**安全上下文**里可用：`https://`、`localhost`、`127.0.0.1` 算，`http://<IP>` 或 `http://<域名>` **不算**。所以在服务器上用 `http://服务器IP` 打开时，`navigator.gpu` 是 `undefined`，页面会提示“当前页面不是安全上下文”——这不是部署出错，浏览器里的渲染也一样（服务端不需要 GPU，渲染全在浏览器）。本机用 `127.0.0.1` 正常、服务器上不正常，就是这个原因。
-
-两条路：
+WebGPU 只在**安全上下文**里可用：
 
 **① 有域名：前面放反向代理拿真证书（推荐）**
 
@@ -90,7 +71,7 @@ Nginx 同理：`proxy_pass http://127.0.0.1:8787;` 再配 `certbot` 签证书。
 
 **② 只有 IP：用容器自带的 `--https` + `--tls-host`**
 
-自签证书会被浏览器标记为不受信任，点“高级 → 继续访问”后仍然是 https，WebGPU 就能用。注意容器里自动探测到的是**容器自己的**网卡地址，必须用 `--tls-host` 补上你实际访问的地址，否则证书会报“名称不匹配”——下面命令里的 `你的服务器IP` 要换成真实值（**别照抄示例，`203.0.113.7` 是文档专用测试地址**）：
+自签证书会被浏览器标记为不受信任，点“高级 → 继续访问”后仍然是 https，WebGPU 就能用：
 
 ```bash
 docker run -d --name osu-preview --restart unless-stopped \
@@ -99,72 +80,6 @@ docker run -d --name osu-preview --restart unless-stopped \
   node backend/server.js --host=0.0.0.0 --port=8443 --https \
     --tls-host=你的服务器IP
 ```
-
-启动日志里会打印 `证书覆盖的地址：…` 和 `浏览器访问这些地址：https://…`，直接照着那行打开即可（`-p 443:8443` 时 URL 不用写端口）。
-
-**②′ 没有域名但想要不报警告的证书：sslip.io + Caddy**
-
-`sslip.io` / `nip.io` 会把你 IP 嵌进域名解析，比如公网 IP 是 `203.0.113.7`，那 `203-0-113-7.sslip.io` 就解析到这台机器。它是一个真实的 DNS 名字，所以 Caddy 能自动向 Let's Encrypt 申请**受信任**的证书，浏览器不会再报警告（需要 80 和 443 都能对外访问）：
-
-```caddyfile
-# Caddyfile
-203-0-113-7.sslip.io {
-    reverse_proxy osu-preview:8787
-}
-```
-
-```bash
-docker network create osu-net 2>/dev/null || true
-docker run -d --name osu-preview --restart unless-stopped --network osu-net \
-  -v osu-preview-cache:/data osu-beatmap-preview-web
-docker run -d --name caddy --restart unless-stopped --network osu-net \
-  -p 80:80 -p 443:443 -v $PWD/Caddyfile:/etc/caddy/Caddyfile caddy:2
-# 浏览器打开 https://203-0-113-7.sslip.io
-```
-
-证书会生成到 `/data/.tls/`（`hosts.txt` 记录签发时的地址列表，换了地址再启动会自动重新生成），启动日志里会打印 `证书覆盖的地址：…`，可以直接核对。
-
-**访问不了时按顺序排查：**
-
-1. 浏览器地址必须是 `https://`：容器在 443 上说的是 TLS，用 `http://` 打开会被直接断连。
-2. 启动日志里的 `证书覆盖的地址` 必须包含你现在用的 IP/域名；不包含就说明 `--tls-host` 没写对，补上后重启（证书会自动重签）。
-3. 在服务器上自检：宿主机执行 `curl -kI https://127.0.0.1/` 返回 `200`，说明服务本身正常，问题在浏览器地址或网络。容器里没装 `curl`，可以直接用镜像自带的检查脚本：`docker exec osu-preview node /app/healthcheck.js`（成功时打印 `ok https://127.0.0.1:8443/`）。
-4. 云服务器要在控制台的**安全组**里放行 443（腾讯云/阿里云默认只开部分端口）。
-5. `docker ps` 显示 `unhealthy` 只代表镜像里的健康检查没探通：旧版镜像把检查地址写死成 `http://127.0.0.1:8787/`，用 `--https --port=8443` 启动时必然 unhealthy（服务本身没问题）。现在的检查会自己读启动参数，换端口/开 HTTPS 都能正确探活。
-
-`gpu-check.html` 会打印 `isSecureContext` 与 `navigator.gpu`，可以直接判断当前是不是踩到了安全上下文限制。
-
-**③ 只有自己用：SSH 端口转发到本机，直接是安全上下文**
-
-不需要任何证书，也不需要对外开放端口：
-
-```bash
-docker run -d --name osu-preview --restart unless-stopped \
-  -p 127.0.0.1:8787:8787 -v osu-preview-cache:/data osu-beatmap-preview-web
-# 本机执行
-ssh -N -L 8787:127.0.0.1:8787 user@服务器
-# 浏览器打开 http://127.0.0.1:8787
-```
-
-## 手机同网测试
-
-WebGPU 只在**安全上下文**中可用：`http://localhost` 算安全上下文，但 `http://192.168.x.x` 不算，此时手机浏览器里 `navigator.gpu` 是 `undefined`，页面无法渲染。所以局域网访问要开 HTTPS：
-
-```bash
-node backend/server.js --host 0.0.0.0 --port 8443 --https
-```
-
-启动时会打印本机可用的地址，手机用同一个 Wi-Fi 打开 `https://<局域网IP>:8443`。自签证书不受信任，首次访问需要在警告页选择继续访问（Chrome 的“高级 → 继续前往”，Safari 的“显示详细信息 → 访问此网站”）。
-
-还需要注意两点：
-
-- Windows 防火墙默认会拦截入站连接。首次从手机访问时如果弹出 Node.js 的防火墙提示，勾选专用/公用网络并允许；已经拦截过的话，用管理员权限执行
-  `netsh advfirewall firewall add rule name="osu-beatmap-preview-web" dir=in action=allow protocol=TCP localport=8443 profile=any`。
-- 浏览器本身要支持 WebGPU（Android Chrome 121+、iOS Safari 26+ 默认开启，iOS 18.2 起可在“高级 → 功能开关”里打开）。确实没有 WebGPU 时，只能用桌面浏览器打开。
-
-如果页面提示「No suitable graphics adapter found」或一直停在“等待渲染”，在手机上打开 **`/gpu-check.html`**：这个页面不加载 wasm，只列出 `isSecureContext`、`navigator.gpu`、硬件适配器与 CPU 回退适配器、`getContext("webgpu")` 的结果，可以直接定位是浏览器不支持、设备 GPU 被浏览器屏蔽，还是应用内浏览器。
-
-wasm 侧会先请求硬件适配器，失败后再请求一次 CPU 回退适配器（`force_fallback_adapter`），因此 GPU 被屏蔽的设备仍能以软件光栅化运行，只是帧率较低。
 
 ## 目录结构
 
@@ -181,94 +96,6 @@ crates/osu-beatmap-preview-web/
 └─ test/              # node --test 回归测试与 OSZ fixture
 ```
 
-后端与前端是两套独立的构建：`backend/` 是普通的 ESM，直接 `node` 运行；`src/` 由 Vite 编译成 `dist/`，`public/` 里的文件原样拷贝进 `dist/`。`dist/` 是后端唯一托管的目录。
-
-## 前端
-
-- **框架**：Vue 3 单文件组件，没有路由、没有状态管理库；`src/preview.js` 用一份模块级单例状态承载会话、音频输出、播放时钟与 Mod，组件只画界面。
-- **样式**：Tailwind CSS v4（`@tailwindcss/vite`），全部是构建期生成的静态 CSS，运行时不请求任何 CDN。
-- **深链**：`/?bid=<BID>` 直接进入预览，可选 `&convert=taiko`；加载成功后地址栏会写回这两个参数，刷新或分享都能回到同一个预览，点「返回加载」时清除。
-- **本地文件**：加载页可以选择本地 `.osu` / `.osz`，文件不出浏览器（不经后端、不上传）。两种文件都整份交给 WASM（`src/preview.js` → `WebGpuSession.create`），`.osz` 的解包与音乐/背景/自带音效的解码都在 WASM 内完成，规则与 CLI 的 `application/local.rs` 同一张用例表（由 wasm crate 的 Rust 测试钉住）：只认压缩包顶层的 `.osu`（stable / osu!lazer 的导入规则），多个难度在加载页上选择（填了 BID 时按 `.osu` 的 `BeatmapID` 匹配，找不到直接报错）。本地 `.osu` 只有谱面与内嵌音效：没有音乐与背景，背景退化成纯色、时钟由 WASM 自驱（**没有静音 WAV、没有 `<audio>` 元素**），画面、音效、倍速与 seek 全部照常工作（CLI 侧对应规则：`.osu` 只允许 PNG / GIF，`.osz` 才支持 MP4）。本地文件没有可分享的深链，加载成功后地址栏不写参数。
-- **默认视图**：只保留一行谱面信息、视频和进度条，视频区域最大。进度条在鼠标移动或触摸时显示，停下约 1 秒后淡出；淡出只改透明度，进度条原来的位置始终占着，所以画面不会上下位移。画面参数（帧率 30/60/120 FPS、清晰度 480P/720P/1080P、倍速 0.1x–3x 滑杆、背景暗化 0–100% 滑杆）、「其他」四个开关按钮（背景视频、故事板、谱面打击音、帧率显示，点名称即切换，默认全开）、声音（音乐音量与打击音两根滑杆）、Mod 与运行日志都收在右上角齿轮打开的抽屉里。
-- **背景暗化**：抽屉「画面」里的滑杆（0–100%，默认 70%，对应 osu! 的 `BACKGROUND_DIM`），背景图、背景视频与故事板三层共用同一暗化系数，拖动即时生效——背景图在 WASM 里保留原图、按系数重算调暗副本注入会话，视频帧改 canvas `filter` 亮度并重抓，故事板精灵亮度由会话在合成时切换；WASM 的 `setBackgroundDim` 与 core 的 `RealtimeSession::set_background_dim` 支持运行时切换。
-- **背景视频**：抽屉「画面 · 其他」里的「背景视频」开关（**默认开启**）打开后，`.osz` 里的背景视频按会话时钟逐帧叠到预览画面上——视频时间 = 会话时钟 − `Video` 事件偏移，开始 500ms 淡入、结束前 500ms 淡出、与背景图共用同一个暗化系数，与 CLI 的 MP4 导出同一套行为。解码管线收在 WASM（`src/video.rs`：驱动隐藏的 `<video>` 硬解、对时、取帧；`.avi` 背景视频浏览器原生放不了，由 WASM 重封装成 MP4 再喂 `<video>`，H.264 只换容器不转码），前端只切开关。实时预算全压在 GPU 侧：视频帧由渲染器 `copy_external_frame`（WebGPU `copyExternalImageToTexture`）**GPU→GPU 直拷进纹理**，帧像素不进 CPU；暗化挂在 canvas `filter: brightness()` 上由 GPU 完成（老浏览器回退整数查找表）；抓帧分辨率跟随预览画布并封顶 720p，换帧才拷贝。开关置灰时旁边会写明原因（谱面没有视频 / 包内视频缺失或编码不受支持 / `.flv`、`.mpg`、`.wmv` 等容器网页端放不了）。这里刻意不用 wasm 软解：实测纯 Rust 解码 720p 需要 60～145 ms/帧（标量路径），720p30 实时播放要求 ≤33 ms/帧，软解只能放成幻灯片。
-- **故事板**：抽屉「画面 · 其他」里的「故事板」开关（**默认开启**）打开后，`.osb` 与 `[Events]` 里的 `Sprite`/`Animation` 按会话时钟合成到预览画面上，层序与 osu! 一致（Background/Pass/Foreground 等 underlay 在背景之上、物件之下，**只有 Overlay 层**压在物件之上），并像背景一样吃暗化（亮度预乘进精灵颜色）。解析、命令求值（`F`/`M`/`MX`/`MY`/`S`/`V`/`R`/`C`/`P`、`L` 循环组、`Animation` 帧动画）与 640×480→画布的等比映射都在 core 的 `storyboard` 模块（与 CLI 同一套实现，含生命周期语义——元素只在命令时间跨度内存在，不提前登场、不残留）；贴图在会话创建时从 `.osz` 取出并解码、随帧以变换精灵命令（旋转/缩放/翻转/颜色调制/加色混合）交给 WebGPU 合成，同一 `Arc` 图像跨帧复用同一张 GPU 纹理（不随场景编号重排重传）。开关置灰时旁边会写明原因（当前谱面没有故事板）；`T` 触发组与 `Sample` 事件只解析不生效。
-- **帧率显示**：画面右上角的角标实时显示最近 1 秒的**实际**渲染帧率（不是目标帧率），GPU 忙碌或页面被降速时数字会掉下来，抽屉「画面」里的「帧率显示」可开关（默认开启）。
-- **谱面信息**：名称与难度取自 WASM 的 `beatmapInfo`（见下）。
-- **Mod 面板**：可选 Mod 由 WASM 的 `supportedMods(mode)` 按**转谱后的实际模式**给出（列表住在 core 的支持矩阵里，包含 HD/FL），前端不再自带支持表——手抄一份的结果就是新增 Mod 之后网页点不到。勾选项经 `session.set_mods()` 热切换（`DA` 会展开成 `DAAR..CS..`），被拒绝的组合会把勾选状态回滚并在运行日志里说明原因。
-- **操作**：点击画面播放/暂停，空格同样；`Esc` 关闭抽屉。左右方向键短按在**松开时**跳转 ±5 秒（按下不跳），长按右键进入 3 倍速播放、长按左键持续向前倒带，两种情况都会在画面上显示角标。
-- **音频（音乐 + 打击音）**：打击音默认音量 50%，与音乐音量分开调节（抽屉「声音」里的两根滑杆）；没有单独的打击音开关，**滑杆拉到 0 就是关闭**。音乐与音效由 WASM **混成一条 PCM 流**输出：`.osz` 里的音乐与自带音效在会话创建时解好，音效按「谱面自带同名条目 > 内嵌皮肤」取用（内嵌皮肤按模式选用：Standard / Catch / Mania 用 argon pro (2022)，Taiko 用 osu! "classic" (2013)）；谱面音效组与音量按 osu! 规则从 timing point 读取，滑条 tick、滑行音、转盘旋转音、果汁流小果都会还原（转盘旋转音按 autoplay 转速换算进度做音高调制，奖励音每转满一圈响一次），候选名包含自定义音效索引后缀（如 `soft-hitclap20`）。是否采用谱面自带音效由「画面 · 其他」里的「谱面打击音」开关决定（默认开启，对应 `ENABLE_BEATMAP_HITSOUND`，运行时切换会重新装载样本并重建时间轴）。某个样本读不出来时按静音处理，不影响播放；倍速下音乐与音效一起变速变调（与 CLI MP4 导出一致）。
-
-  音频的送出一条链路：WASM 按会话时钟混出「音乐 + 打击音」PCM（`pullAudio`）→ `src/hitsound.js` 写入与音频线程共享的环形缓冲（两端统一使用相对帧数，写入前沿始终领先音频线程约 170ms）→ `public/hitsound-worklet.js` 按硬件时钟消费，并把「已读到哪」回报给 `session.onAudioClock()`——它是画面时钟的锚点。预读窗口与走散重对齐（seek、音频停滞后恢复）在 WASM 内部（core 的 `api/stream.rs`，Rust 单测覆盖）；宿主只在输出流纪元（`audioEpoch`）变化时把环形读写指针一起归零。
-
-### 音频输出与跨源隔离
-
-音频输出需要 `SharedArrayBuffer` 把 WASM 的混音结果交给音频线程，而浏览器只在跨源隔离下
-允许使用它，因此后端与开发服务器都会发送：
-
-```text
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-```
-
-站点自身的字体、贴图与 wasm 全部同源，开启隔离不影响页面加载。如果你的部署
-在前面又套了一层反向代理，需要把这两个响应头一起透传；缺少时音频会自动退化成无声
-（抽屉里会显示原因），页面其余部分照常工作。
-
-## 后端接口
-
-前端只会用到下面这些路由；后端也不提供其他写操作。
-
-| 路由 | 说明 |
-| --- | --- |
-| `GET /`、`/assets/<哈希>` | `dist/` 下的静态站点页面、脚本与样式 |
-| `GET /pkg/<文件>` | wasm 产物（`.js`、`.wasm`、`.d.ts`），打击音皮肤内嵌在 `.wasm` 里 |
-| `GET /hitsound-worklet.js` | 音频播放内核（AudioWorklet） |
-| `GET /gpu-check.html` | WebGPU 自检页 |
-| `GET /resource/file?bid=<BID>` | 该谱面的完整 `.osz` 字节（解包与解码都在浏览器的 WASM 里完成），支持 `Range` |
-| `GET /resource/progress?bid=<BID>` | 加载进度快照（JSON）：`phase`、`received`、`total` |
-
-`bid` 必须是纯数字，否则返回 `400`；下载或解析失败返回 `502` 并附带原因文本，前端会把它显示在日志里。
-
-`/resource/progress` 的阶段依次是 `osu`（定位谱面）→ `osz`（下载谱面包，带字节进度）→ `transfer`（传输到客户端）→ `ready`，失败时为 `error`。前端在加载期间每 400 ms 轮询一次，`total` 未知时显示不确定态进度条。进度快照按 bid 保留 10 分钟。
-
-## 下载与缓存
-
-下载策略与 CLI 一致，两边共用同一套缓存目录，已经用 CLI 下载过的谱面在 Web 端会直接命中：
-
-- `.osu` 从 `https://osu.ppy.sh/osu/<bid>` 获取；`.osu` 里缺少 `BeatmapSetID` 时，跟随 `https://osu.ppy.sh/beatmaps/<bid>` 的重定向解析真实谱面集 ID。
-- `.osz` 在 sayobot、osu.direct、nekoha、catboy 之间竞速，最多 3 个尝试同时进行；尝试失败立即补位，出现「3 秒没有首字节」或「5 秒窗口内低于 128 KiB/s」时触发回退，必要时取消最慢的尝试。
-- 单个尝试先用 `Range: bytes=0-0` 探测分块支持，支持则按 4 块并行下载，失败回退单流；超过 `Content-Length`、超过 50 MiB 或不是有效 ZIP 的结果都会被拒绝。
-- osu.direct 会从 Cloudflare 网段采样候选 IP，先测 TCP 再测 HTTPS，胜者写入缓存并在 24 小时内复用。
-- 同一 `bid` 的并发请求会合并成一次下载，不会重复拉包。
-
-缓存布局：
-
-| 内容 | 位置 |
-| --- | --- |
-| `.osu` | `<缓存目录>/osu-download-cache/<bid>.osu` |
-| OSZ | `<缓存目录>/osz-download-cache/<setId>.osz` |
-| osu.direct 优选 IP | `<缓存目录>/osu-direct-preferred-ip.json` |
-
-缓存不会自动清理，空间占用过大时可以直接删除整个缓存目录。所有写入都先落临时文件再改名，中断不会留下半个文件。
-
-## WASM 接口：谱面内部信息
-
-`beatmapInfo(bytes, options?)` 按传入的文件字节（`.osu` 或 `.osz`）返回谱面内部信息与 `.osz` 难度清单（WASM 没有网络能力，`bid` → 字节由宿主的 `/resource/file` 或本地文件完成；`options` 的 `bid` / `difficulty` 决定 `.osz` 里选哪个难度）：
-
-```js
-const module = await import('/pkg/osu_beatmap_preview_wasm.js');
-await module.default();
-const bytes = new Uint8Array(await (await fetch('/resource/file?bid=738063')).arrayBuffer());
-const info = module.beatmapInfo(bytes, { bid: 738063 });
-info.title;          // 'No title'
-info.version;        // "Lust's Insane"（难度名）
-info.difficulties;   // [{ entry: 'Hard.osu', label: '... [Lust's Insane]', beatmapId: 738063 }]
-info.metadata;       // [Metadata] 全量键值
-```
-
-返回值覆盖概览字段（`title`、`titleUnicode`、`artist`、`artistUnicode`、`creator`、`version`、`source`、`tags`、`beatmapId`、`beatmapSetId`、`mode`、`modeName`、`formatVersion`、`audioFilename`、`audioLeadInMs`、`stackLeniency`、`backgroundFilename`、`beatDivisor`）、统计（`hitObjectCount`、`firstObjectMs`、`lastObjectEndMs`、`chartDurationMs`、`bpm`、`timingPointCount`、`breakPeriodCount`、`comboColors`）、难度（`ar`、`cs`、`hp`、`od`）、`general` / `metadata` / `difficulty` 三个区段的全量键值，以及 `.osz` 的难度清单 `difficulties`（单独的 `.osu` 为空数组）。当前界面只用到名称、难度与清单，其余字段保留给后续展示。
-
 ## 开发
 
 需要 Node.js 20.19+（Vite 7 的要求）：
@@ -281,7 +108,7 @@ npm run build:wasm   # 构建 wasm 产物到 public/pkg
 npm start            # node backend/server.js
 ```
 
-Windows 上也可以直接运行 `run_web.ps1`：它会切到本目录，缺 `node_modules` 时装依赖、依次构建 wasm 与前端，然后前台启动 `backend/server.js`，日志与 `Ctrl+C` 停止都在同一个窗口里。
+Windows 上也可以直接运行 `run_web.ps1`：
 
 ```powershell
 .\run_web.ps1                         # 全部构建后启动（http://127.0.0.1:8787）
@@ -291,28 +118,6 @@ Windows 上也可以直接运行 `run_web.ps1`：它会切到本目录，缺 `no
 .\run_web.ps1 -NoServe                # 只构建，不启动
 .\run_web.ps1 -Help                   # 选项说明
 ```
-
-本机禁用了脚本执行策略时改成 `powershell -ExecutionPolicy Bypass -File .\run_web.ps1`（`pwsh -File .\run_web.ps1` 同理）。脚本会检查 node（并要求主版本 ≥ 20）/ npm / cargo / wasm-bindgen 是否就绪，缺 `wasm32-unknown-unknown` 目标时自动 `rustup target add`；`-NoWasm` 与 `-NoBuild` 只在对应产物确实是最新时使用，否则浏览器会继续跑旧逻辑（wasm 在页面加载时只导入一次，换了以后要刷新页面）。
-
-维护这个脚本时有两点不要改：文件必须保持 **UTF-8 with BOM**（Windows PowerShell 5.1 对没有 BOM 的 UTF-8 会按 ANSI 解码，中文提示全变乱码），以及调用 npm 时必须走 `npm.cmd`——PowerShell 会把 `npm` 解析到 Node 自带的 `npm.ps1` 垫片，该垫片在脚本里被调用时会重新解析调用行并传错参数（实测报 `Unknown command: "Command"`）。
-
-改前端时可以用 Vite 开发服务器（前端热更新，后端要另开一个终端）：
-
-```bash
-npm run dev:server   # 终端 1：后端，默认 127.0.0.1:8787
-npm run dev          # 终端 2：Vite，默认 5173，/resource 会代理到后端
-```
-
-`npm run build:wasm` 需要 Rust 工具链、`wasm32-unknown-unknown` 目标和与 `Cargo.lock` 中 `wasm-bindgen` 版本一致的 `wasm-bindgen-cli`：
-
-```bash
-rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.128 --locked
-```
-
-改了 core / renderer / wasm 之后要跑 `npm run build:wasm` **再跑一次 `npm run build`**（后端只托管 `dist/`），并且**刷新浏览器页面**：wasm 模块在页面加载时只导入一次，切换谱面或重新开始预览都不会重新加载它，不刷新就会继续用旧逻辑。静态响应都是 `no-store`，普通刷新（F5）即可。
-
-发布包里已经带好 `dist/` 与 `public/pkg`，最终用户只需要 Node.js，不需要 Rust，也不需要 `npm install`。
 
 ## 相关文档
 

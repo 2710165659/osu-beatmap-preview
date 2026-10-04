@@ -13,14 +13,14 @@
 
 </div>
 
-独立的 osu! 谱面预览工具，支持 osu!standard、osu!taiko、osu!catch、osu!mania 四种模式：既可以把谱面导出成 PNG、GIF 和带原曲音频的 MP4，也可以在浏览器里用 WebGPU 实时播放谱面。
+独立的 osu! 谱面预览工具，支持 osu!standard、osu!taiko、osu!catch、osu!mania 四模式，支持背景视频、打击音、故事板，支持导出png、gif、mp4 和 web 实时预览。
 
 ![四种模式的渲染效果](docs/total.png)
 
 ## 功能亮点
 
-- **Mod 支持**：`EZ` `HR` `HD` `FL` `DA` `TC` `SW` `CS` `DS` `IN` `HO` 以及 `1K`–`10K` 键数可自由组合；`DT`、`HT` 保调变速，`NC`、`DC` 按固定 `1.5x` / `0.75x` 音高变速（`NC` 还叠加节拍鼓点）；四种倍速 Mod 都支持自定义倍速（加速类 `1.01`–`2.00x`、减速类 `0.50`–`0.99x`）。
-- **故事板（可选）**：MP4 导出与网页预览都能合成 `.osb` / `[Events]` 的故事板（Sprite/Animation、`F`/`M`/`S`/`V`/`R`/`C`/`P` 命令、循环组与帧动画，语义对齐 osu!），层序、坐标映射与怪癖行为（如 `alpha > 1` 闪烁）与游戏一致；四模式 MP4 各有 `ENABLE_STORYBOARD` 配置项、网页有独立开关，**默认关闭**。
+- **Mod 支持**：`EZ` `HR` `HD` `FL` `DA` `TC` `SW` `CS` `DS` `IN` `HO` `1K`–`10K` `DT`、`HT` 等 mod，部分 mod 支持指定一参数。
+- **背景视频与故事板**：MP4 导出与网页预览都支持故事板，**默认关闭**，可通过配置项打开。
 - **转谱**：Standard 谱面可转到 Taiko、Catch 或 Mania，并在此基础上可以应用 mod。
 - **四种模式**：osu!standard、osu!taiko、osu!catch、osu!mania 各有独立的布局、皮肤和配色，都能输出 PNG 概览、GIF 分段预览和带原曲音频的 H.264 MP4。
 - **浏览器实时预览**：Web 包解压后 `node backend/server.js`（或 `npm start`）就能在浏览器里播放谱面，支持 Mod 热切换、转谱、seek、倍速、音量（默认 50%）、分辨率（480P/720P/1080P）与 30/60/120 FPS 切换。

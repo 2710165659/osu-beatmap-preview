@@ -43,8 +43,6 @@ chmod +x ./osu-beatmap-preview-*-cli
 ./osu-beatmap-preview-macos-arm64-cli --bid=738063
 ```
 
-macOS 发布文件未经过 Apple 签名或公证。若系统阻止首次启动，可在“系统设置 > 隐私与安全性”中选择仍要打开，或在 Finder 中右键程序并选择“打开”。
-
 也可以按[从源码构建](#从源码构建)自行编译。
 
 ## 快速开始
@@ -110,18 +108,18 @@ osu-beatmap-preview-cli [--bid=<BID>] [--input-file=<PATH>] [--convert=mania|ctb
 
 | 参数 | 说明 |
 | --- | --- |
-| `--bid` | 纯数字的 Beatmap ID。未提供 `--input-file` 时必填；`--input-file` 为 `.osz` 时必填（用于在压缩包内查找难度）；为 `.osu` 时可省略（给了也只用于产物命名）。 |
-| `--input-file` | 本地谱面文件路径（`.osu` 或 `.osz`），提供时不再从网络下载。`.osu` 只支持 PNG / GIF（没有音源，不支持视频）；`.osz` 需同时提供 `--bid`，支持 PNG / GIF / MP4。规则见「本地谱面文件」。 |
+| `--bid` | 纯数字的 Beatmap ID。|
+| `--input-file` | 本地谱面文件路径（`.osu` 或 `.osz`），提供时不再从网络下载。 |
 | `--convert` | 目标模式：`mania`、`ctb`、`taiko`、`standard` 或 `std`。只有 Standard 谱面能转换到其他模式；目标与原模式相同时按不转谱处理。 |
 | `--fmt` | 输出格式：`png`、`gif` 或 `mp4`。省略时，Standard 使用 GIF，其他模式使用 PNG。 |
 | `--mod` | 单个 Mod。组合时重复传入；参数不区分大小写。 |
 | `--time-points` | 游戏时间点，单位为秒，也可传 `preview`。GIF 和 Standard PNG 可重复传入，MP4 与 Taiko/Catch/Mania PNG 最多传入一次。 |
-| `--duration-time` | GIF 每个时间点、MP4 的输出时长，或 Taiko/Catch/Mania PNG 的区间段时长，单位为秒，必须为有限正数，不能用于 Standard PNG。GIF 未指定时使用对应模式配置的片段时长；MP4 默认 `600`；区间段 PNG 必须与 `--time-points` 成对给出。 |
-| `--fps` | GIF 或 MP4 输出帧率，必须为 `1` 至 `60` 的整数。省略时使用对应模式和格式配置中的帧率；PNG 不接受该参数。 |
+| `--duration-time` | GIF 每个时间点、MP4 的输出时长，或 Taiko/Catch/Mania PNG 的区间段时长，单位为秒；MP4 默认 `600`；区间段 PNG 必须与 `--time-points` 成对给出。 |
+| `--fps` | GIF 或 MP4 输出帧率，必须为 `1` 至 `60` 的整数。省略时使用对应模式和格式配置中的帧率。 |
 | `--no-cache` | 跳过 `.osu`、OSZ 和输出文件缓存，强制重新下载和渲染。 |
 | `--no-log` | 关闭文件日志。 |
 | `--config` | 配置文件路径，或内联 JSON/YAML 对象。只能传入一次。 |
-| `--scale` | 本次输出倍率，必须为有限正数。 |
+| `--scale` | 本次输出缩放倍率。 |
 | `--output-dir` | 指定本次请求的输出根目录。 |
 | `--version` | 向 stdout 打印版本号后退出，退出码为 `0`。 |
 | `--help`、`-h` | 向 stdout 打印用法后退出，退出码为 `0`。 |
@@ -132,7 +130,6 @@ osu-beatmap-preview-cli [--bid=<BID>] [--input-file=<PATH>] [--convert=mania|ctb
 
 - **`.osu`**：单个谱面文件，`--bid` 可省略（给了也只用于产物命名）。没有音源，因此**只支持 PNG / GIF，不支持 MP4（视频）**。
 - **`.osz`**：谱面包（ZIP），`--bid` 必填。程序在压缩包内查找 `[Metadata] BeatmapID` 等于 `--bid` 的 `.osu`，找到即用它预览，**支持 PNG / GIF / MP4**（音频、背景图与谱面自带打击音都取自同一个 `.osz`）；找不到任何 `.osu`、或没有任何难度匹配 `--bid` 时报错，不会随便挑一个难度。
-- 压缩包内 `.osu` 的判定与 osu! 的导入规则一致（参考 osu!lazer `BeatmapImporter`）：后缀 `.osu` 不区分大小写，且只认压缩包**顶层**的谱面，子目录里的 `.osu` 会被忽略。
 
 ### 时间轴与选段
 
@@ -141,9 +138,8 @@ osu-beatmap-preview-cli [--bid=<BID>] [--input-file=<PATH>] [--convert=mania|ctb
 - GIF 和 Standard PNG 会把每个 `--time-points` 作为一个分段起点。指定点未占满布局容量时，程序优先补入谱面的 `PreviewTime`，再以确定性方式补齐其他不重叠片段；相同谱面和配置会得到相同选段。
 - 时间点数量不能超过当前布局的分段容量。GIF 默认共 4 段（Standard/Catch 为 2 × 2 网格，Taiko 为 4 行，Mania 为 4 列）；Standard PNG 默认有 5 行，因此最多指定 5 个行起点。
 - MP4 默认从游戏时间 `0` 开始，请求 600 秒。谱面较短时输出完整可播放范围，不填充到 600 秒；请求区间超过谱面尾部时会整体前移以保留时长。
-- MP4 支持负数起点，早于音频起点的部分输出静音。`--time-points=preview` 使用 `.osu` 文件中的 `PreviewTime`；缺失或无效时回退到首个物件。
-- Taiko、Catch 和 Mania 的 PNG 支持区间段生成：`--time-points` 与 `--duration-time` 必须同时给出，且各最多一个（与 MP4 的单段限制一致），输出只覆盖 `[起点, 起点 + 时长]` 这一段。两者都缺时保持整谱渲染。
-- 区间段 PNG 超过谱面长度的处理与 MP4 一致：区间尾部超出谱面时整体前移以保留请求时长；请求时长超过整谱时长时输出完整谱面，不填充空白。起点早于谱面开头时整体后移进入谱面（静态图没有 MP4 前置静音的语义）。
+- `--time-points=preview` 使用 `.osu` 文件中的 `PreviewTime`；缺失或无效时回退到首个物件。
+- Taiko、Catch 和 Mania 的 PNG 支持区间段生成：`--time-points` 与 `--duration-time` 必须同时给出，且各最多一个，输出只覆盖 `[起点, 起点 + 时长]` 这一段。两者都缺时保持整谱渲染。
 - `--time-points` 适用于 GIF、Standard PNG、MP4 以及 Taiko/Catch/Mania 的区间段 PNG。
 
 ## 输出格式
@@ -165,19 +161,17 @@ Taiko、Catch 和 Mania 可用 `--time-points` 与 `--duration-time` 只渲染�
 
 ### MP4 视频
 
-四种模式均可输出带谱面原始音频的 MP4，支持 MP3、OGG 和 WAV 音源。视频默认读取 OSZ 中 `[Events]` 声明的背景图，并按 `BACKGROUND_DIM=0.7` 暗化；可通过配置关闭背景图。
+四种模式均可输出带谱面原始音频的 MP4，支持 MP3、OGG 和 WAV 音源。视频默认读取背景图，并应用 70% 暗化。
 
-谱面带背景视频（`[Events]` 的 `Video,<offset>,"file"` 事件）时可打开 `ENABLE_BACKGROUND_VIDEO`（四模式的 `mp4` 小节各一份，**默认关闭**）把视频合成进背景：视频时间 = 谱面时间 − 事件偏移，叠在背景图之上并共用同一个 `BACKGROUND_DIM` 暗化，开始处 500ms 淡入、结束前 500ms 淡出（与 osu! 的 `DrawableStoryboardVideo` 一致）。视频缺失、不是 H.264 mp4 或解码失败时自动回退背景图，不影响导出。
+谱面带背景视频时可打开 `ENABLE_BACKGROUND_VIDEO`（四模式的 `mp4` 小节各一份，**默认关闭**）把视频合成进背景。
 
-谱面带故事板（`.osb` 或 `[Events]` 里的 `Sprite`/`Animation`）时可打开 `ENABLE_STORYBOARD`（四模式的 `mp4` 小节各一份，**默认关闭**）把故事板合成进视频，层序与 osu! 一致：Background/Pass/Foreground（underlay）画在背景之上、游玩物件之下，**只有 Overlay 层**压在游玩物件之上（时间标签之下）；`Fail` 层只在失败时可见，预览是自动游玩、恒为通过状态，因此不绘制。故事板与背景同吃 `BACKGROUND_DIM` 暗度（亮度预乘进精灵颜色，等价 lazer 的 `UserDimContainer` 暗化）。640×480 的故事板坐标按高度等比缩放并居中映射到画布，宽屏标记（`WidescreenStoryboard: 1`）会放宽层遮罩的水平范围。支持 `F`/`M`/`MX`/`MY`/`S`/`V`/`R`/`C`/`P`（含加色混合与翻转）命令、`L` 循环组与 `Animation` 帧动画（时间求值对齐 osu! 的 Transform 语义，含 `alpha > 1` 取模闪烁等怪癖）；元素**只在其命令时间跨度内存在**（osu! 的生命周期语义）：命令未开始的精灵不靠初值提前出现（`alpha` 先 0 后亮的元素等到第一条可见 `F` 命令才登场），命令结束后也不残留，因此不会出现转场黑幕盖满全片之类的错位。`T` 触发组与 `Sample` 事件只解析不生效（触发依赖运行时游玩状态）。贴图缺失或解码失败按缺图静默跳过；背景层存在与谱面背景同名的元素时按 osu! 的 `ReplacesBackground` 由故事板接管背景（仅在故事板实际绘制时生效，关闭开关后背景照常显示）。
+谱面带故事板时可打开 `ENABLE_STORYBOARD`（四模式的 `mp4` 小节各一份，**默认关闭**）把故事板合成进视频。
 
 MP4 默认还会把打击音（hit sound）混入音轨，音量 100%：
 
 - Standard / Catch / Mania 使用 argon pro (2022) 音效，Taiko 使用 osu! "classic" (2013) 音效；
-- 音效资源已内嵌进可执行文件（`assets/hitsound/*.ogg`），不需要额外文件；
-- 谱面采样点（bank、音量、自定义音效文件名）以及滑条 tick、滑条滑行音、转盘旋转音、果汁流小果等都按 osu! 的规则还原；转盘的旋转音会按 autoplay 转速（477 RPM）换算旋转进度做音高调制，奖励音每转满一圈响一次（预览无法预知玩家表现，因此统一按 autoplay）；
-- **谱面自带的自定义打击音优先**：谱面包里的同名条目（如 `soft-hitnormal.ogg`，以及 `hitSample` 里写死的文件名）会盖过内嵌音效，找不到才回退到内嵌皮肤；
-- **自定义音效索引（custom sample bank）同样生效**：物件 `hitSample` 的 `index` 与 timing point 的 `sampleIndex` 会生成带后缀的候选名（索引 20 → `soft-hitclap20`、`taiko-drum-hitnormal3`），因此谱面包里按 `{bank}-{name}{index}` 命名的成组音效会按段切换；索引 1 用无后缀名（`soft-hitclap`）；
+- 转盘的旋转音会按 autoplay 转速播放；
+- **谱面自带的自定义打击音优先**；
 - 某个音效文件无法读取时按静音处理，不会中断导出；
 - 各模式可分别用 `ENABLE_HITSOUND`、`ENABLE_BEATMAP_HITSOUND` 与 `HITSOUND_VOLUME` 控制（见下方配置示例）。
 
@@ -194,16 +188,13 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 
 主要规则如下：
 
-- `DT`、`HT`、`NC`、`DC` 四者互斥（游戏里同属 `ModRateAdjust`）。加速类默认 `1.5x`、可设为 `1.01` 至 `2.00`；减速类默认 `0.75x`、可设为 `0.50` 至 `0.99`，例如 `--mod=dt1.25`、`--mod=nc1.4`。
+- `DT`、`HT`、`NC`、`DC` 四者互斥。加速类默认 `1.5x`、可设为 `1.01` 至 `2.00`；减速类默认 `0.75x`、可设为 `0.50` 至 `0.99`，例如 `--mod=dt1.25`、`--mod=nc1.4`。
 - `EZ` 与 `HR`、`TC` 与 `HD`、`IN` 与 `HO` 分别互斥。
 - Mania 的 `HD` 与 `FL` 互斥，其余三种模式允许 `HD+FL`。
-- Taiko HD 让普通音符和连打刻度渐隐，保留连打条与气球；Mania HD 对音符头与长按主体统一渐隐，遮罩随连击扩大，判定线、键道和 SV 提示保留。
-- Catch HD 在 Kiai 区段持续保留淡淡的物件轮廓，不随 BPM 闪烁；区段结束后恢复普通 HD。圆形预览样式暂用约 30% 不透明度近似轮廓亮度，不逐像素复刻皮肤 lighting 纹理。
-- FL 在 Standard 跟随自动光标，滑条期间额外暗化；Catch 跟随接盘；Taiko 固定于判定区；Mania 保留中部横向可视带。前三种模式在 100/200 combo 时缩圈，休息段扩张。
-- 预览没有玩家输入或回放：FL 轨迹由物件间插值估算，连击按无 miss 进度计算；Standard 跟随延迟使用连续阻尼近似，Catch 香蕉雨沿用相邻水果的插值路线。
+- 除 Catch HD 外，`HD`、`FL` 与游戏内 Autoplay 效果一致。
+- Catch HD 在 Kiai 区段持续保留淡淡的物件轮廓，与游戏内效果不一致。
 - `DA` 仅适用于 Standard，不能与 `EZ` 或 `HR` 同时使用。格式为 `da<参数><值>`，参数支持 `cs`、`ar`、`od`、`hp`，例如 `--mod=dacs5ar9.5`。
 - `1K` 至 `10K` 互斥；`DS` 和键数 Mod 只会在 Standard 转 Mania 时改变转谱结果。
-- `DT`、`HT`、`NC`、`DC` 不适用于 PNG；MP4 使用与 GIF 相同的 Mod 支持规则。
 - 重复的 Mod 或不受当前模式、格式支持的 Mod 会直接报错，不会静默忽略。
 
 ### 变速与音高
@@ -246,7 +237,7 @@ osu-beatmap-preview-cli --bid=738063 --config='{"render":{"standard":{"gif":{"st
 osu-beatmap-preview-cli --bid=738063 --config='{render: {standard: {gif: {structure: {ROW_COUNT: 1}}}}}'
 ```
 
-以下示例关闭 Standard MP4 背景图、调整暗化程度、为 Standard 打开背景视频与故事板、让 Taiko 只用内嵌皮肤（忽略谱面自带音效）并关闭 Mania 打击音，同时分别设置三种格式的整次请求超时：
+以下示例关闭 Standard MP4 背景图、调整暗化程度、为 Standard 打开背景视频与故事板、让 Taiko 忽略谱面自带音效，关闭 Mania 打击音，同时分别设置三种格式的整次请求超时：
 
 ```yaml
 render:
@@ -274,11 +265,7 @@ timeout:
   MP4_TIMEOUT: 900
 ```
 
-`ENABLE_BEATMAP_HITSOUND` 控制是否使用谱面自带的自定义打击音（默认 `true`）：打开时先在该谱面的 OSZ 里找同名条目，找不到再回退到内嵌皮肤；关闭后一律使用内嵌皮肤。
-
-`HITSOUND_VOLUME` 为 0～100 的百分比，按 osu! 的音量曲线 `10^((v - 100) / 25)` 换算为线性增益，因此 50 与游戏内默认音量一致、100 为满音量。
-
-在线下载的谱面包跟随**当前模式的 `ENABLE_BACKGROUND_VIDEO`**：开启背景视频时下载带视频的完整包（背景视频功能需要素材），关闭时下载 novideo 去视频包（明显更省流量）。只有 sayobot / nekoha 提供两种变体，其余镜像本来就是完整包；两种包在缓存里分开存放（`<set_id>-video.osz` / `<set_id>-novideo.osz`），切换开关会自动改用对应缓存。包大小上限 `download.osz.MAX_OSZ_BYTES` 默认 256MB（带视频的包常超过 50MB）。
+在线下载的谱面包跟随**当前模式的 `ENABLE_BACKGROUND_VIDEO`**：开启背景视频时下载带视频的完整包（背景视频功能需要素材），关闭时下载 novideo 去视频包（明显更省流量）。两种包在缓存里分开存放（`<set_id>-video.osz` / `<set_id>-novideo.osz`），切换开关会自动改用对应缓存。包大小上限 `download.osz.MAX_OSZ_BYTES` 默认 256MB。
 
 超时单位为秒且必须是正整数。计时从请求入口开始，覆盖下载、解析、转谱、缓存检查、渲染、音频处理、编码和落盘。
 

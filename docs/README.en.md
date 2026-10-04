@@ -13,16 +13,17 @@
 
 </div>
 
-A standalone osu! beatmap preview tool for osu!standard, osu!taiko, osu!catch, and osu!mania. It exports beatmaps as PNG images, GIF animations, or MP4 videos with the original audio, and can also play a beatmap in real time in the browser with WebGPU.
+A standalone osu! beatmap preview tool for osu!standard, osu!taiko, osu!catch, and osu!mania, with background video, hitsounds, and storyboard support. It exports PNG, GIF, and MP4 and supports real-time web preview.
 
 ![Rendering results for all four modes](total.png)
 
 ## Highlights
 
-- **Mods**: `EZ` `HR` `HD` `FL` `DA` `TC` `SW` `CS` `DS` `IN` `HO` and `1K`-`10K` key counts combine freely; `DT`/`HT` change speed with pitch preserved, `NC`/`DC` change speed with a fixed `1.5x`/`0.75x` pitch shift (`NC` also layers beat drums), and all four rate mods accept custom multipliers (`1.01`-`2.00x` / `0.50`-`0.99x`).
+- **Mods**: `EZ` `HR` `HD` `FL` `DA` `TC` `SW` `CS` `DS` `IN` `HO`, `1K`–`10K`, `DT`, `HT`, and more; some Mods accept a custom parameter.
+- **Background video and storyboard**: supported by both MP4 export and the web preview, **disabled by default** and switchable via the settings.
 - **Conversion**: Standard beatmaps convert to Taiko, Catch, or Mania, and Mods can be applied on top of the conversion.
 - **Four modes**: osu!standard, osu!taiko, osu!catch, and osu!mania each have their own layout, skin, and colors, and each can export PNG overviews, segmented GIF previews, and H.264 MP4 videos with the original audio.
-- **Real-time preview in the browser**: Unzip the web package and run `node backend/server.js` (or `npm start`) to play beatmaps in the browser with Mod hot-swapping, conversion, seek, speed, resolution (480P/720P/1080P) and 30/60/120 FPS switching, or jump straight in with `/?bid=<BID>`. The backend only downloads, caches, and reports download progress; every frame is rendered locally with WebGPU.
+- **Real-time preview in the browser**: Unzip the web package and run `node backend/server.js` (or `npm start`) to play beatmaps in the browser with Mod hot-swapping, conversion, seek, speed, volume (default 50%), resolution (480P/720P/1080P) and 30/60/120 FPS switching, or jump straight in with `/?bid=<BID>`. The backend only downloads, caches, and reports download progress; every frame is rendered locally with WebGPU.
 - **Fast and lightweight**: Frame rendering runs in configurable parallel chunks whose batch size is bounded by the per-frame byte count, keeping temporary memory peaks low on large canvases. GIF encoding reuses its frame buffer, Standard MP4 precomputes the visible objects per frame, and slider ticks and drum-roll ticks use procedural sprite caches. See the [batch rendering report](report.md) for measured numbers.
 - **Standalone CLI with no external dependencies**: A single executable embeds skins, fonts, and the H.264 and AAC encoders, so no FFmpeg, extra shared libraries, or resource files are needed at runtime. Windows tries NVENC and AMF automatically and falls back to the built-in CPU encoder (`OSU_PREVIEW_NO_GPU=1` forces CPU). Download and output caches are reused locally, with a separate output directory per effective configuration.
 
