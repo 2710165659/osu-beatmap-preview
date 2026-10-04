@@ -579,35 +579,6 @@ fn draw_break_overlay(
         context.frame_layout.frame_width,
     );
 
-    let break_label = format!(
-        "Break {} - {}",
-        crate::render::text::format_mmssmmm(context.time_axis.to_display(break_period.start_time)),
-        crate::render::text::format_mmssmmm(context.time_axis.to_display(break_period.end_time))
-    );
-    let info_y = py_round(center_y)
-        + crate::render::geometry::scale_px(
-            super::constants::BREAK_OVERLAY_INFO_TOP_GAP as f64,
-            render_scale,
-        );
-    let info_color = [
-        super::constants::BREAK_OVERLAY_INFO_COLOR[0],
-        super::constants::BREAK_OVERLAY_INFO_COLOR[1],
-        super::constants::BREAK_OVERLAY_INFO_COLOR[2],
-        py_round(super::constants::BREAK_OVERLAY_INFO_COLOR[3] as f64 * alpha).clamp(0, 255) as u8,
-    ];
-    draw_centered_text(
-        &mut layer,
-        &break_label,
-        0,
-        info_y,
-        crate::render::text::scaled_bitmap_font_height(
-            super::constants::BREAK_OVERLAY_INFO_FONT_SIZE,
-            render_scale,
-        ),
-        info_color,
-        context.frame_layout.frame_width,
-    );
-
     frame.alpha_composite(&layer, 0, 0);
 }
 

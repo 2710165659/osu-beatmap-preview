@@ -36,7 +36,6 @@ struct PreparedSlider {
 struct PreparedBreak {
     period: BreakPeriod,
     counters: Vec<Arc<Img>>,
-    info: Arc<Img>,
 }
 
 /// 预旋转好的跟随点图标：按连接方向的角度取整后共享，逐帧只做缩放与合成。
@@ -660,7 +659,6 @@ fn draw_number(
 fn prepare_breaks(periods: &[BreakPeriod], context: &RenderContext) -> Vec<PreparedBreak> {
     let scale = crate::render::geometry::output_scale(GameMode::Standard, context.output_format);
     let counter_size = scaled_bitmap_font_height(BREAK_OVERLAY_COUNTER_FONT_SIZE, scale);
-    let info_size = scaled_bitmap_font_height(BREAK_OVERLAY_INFO_FONT_SIZE, scale);
     periods
         .iter()
         .map(|period| {
@@ -674,17 +672,9 @@ fn prepare_breaks(periods: &[BreakPeriod], context: &RenderContext) -> Vec<Prepa
                     ))
                 })
                 .collect();
-            let label = format!(
-                "Break {} - {}",
-                crate::render::text::format_mmssmmm(
-                    context.time_axis.to_display(period.start_time)
-                ),
-                crate::render::text::format_mmssmmm(context.time_axis.to_display(period.end_time)),
-            );
             PreparedBreak {
                 period: *period,
                 counters,
-                info: Arc::new(render_text_sprite(&label, info_size, [255, 255, 255, 255])),
             }
         })
         .collect()
@@ -756,18 +746,6 @@ fn draw_break(
             [238, 238, 238, alpha_to_byte(alpha)],
         );
     }
-    scene.glyph(
-        Arc::clone(&prepared.info),
-        rect(
-            (width - prepared.info.w as f64) / 2.0,
-            center_y
-                + crate::render::geometry::scale_px(BREAK_OVERLAY_INFO_TOP_GAP as f64, scale)
-                    as f64,
-            prepared.info.w as f64,
-            prepared.info.h as f64,
-        ),
-        [185, 185, 185, alpha_to_byte(alpha)],
-    );
 }
 
 fn break_alpha(period: &BreakPeriod, time: i64) -> f64 {
