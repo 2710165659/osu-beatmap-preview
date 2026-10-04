@@ -177,17 +177,22 @@ impl Img {
         }
         let mut out = Img::new(nw, nh, [0, 0, 0, 255]);
         let (sx_ratio, sy_ratio) = (w as f32 / nw as f32, h as f32 / nh as f32);
+        // 横向采样位置与行号无关，预计算后复用；保留原来的权重与累加顺序，
+        // 避免浮点舍入变化影响视频背景的最终像素。
+        let columns: Vec<_> = (0..nw)
+            .map(|x| {
+                let sx = ((x as f32 + 0.5) * sx_ratio - 0.5).clamp(0.0, (w - 1) as f32);
+                let x0 = sx.floor() as usize;
+                (x0, (x0 + 1).min(w as usize - 1), sx - x0 as f32)
+            })
+            .collect();
         for y in 0..nh {
             // 像素中心对齐的采样坐标，边界截断到有效范围。
             let sy = ((y as f32 + 0.5) * sy_ratio - 0.5).clamp(0.0, (h - 1) as f32);
             let y0 = sy.floor() as usize;
             let y1 = (y0 + 1).min(h as usize - 1);
             let fy = sy - y0 as f32;
-            for x in 0..nw {
-                let sx = ((x as f32 + 0.5) * sx_ratio - 0.5).clamp(0.0, (w - 1) as f32);
-                let x0 = sx.floor() as usize;
-                let x1 = (x0 + 1).min(w as usize - 1);
-                let fx = sx - x0 as f32;
+            for (x, &(x0, x1, fx)) in columns.iter().enumerate() {
                 let mut acc = [0.0_f32; 4];
                 for (row, wy) in [(y0, 1.0 - fy), (y1, fy)] {
                     for (col, wx) in [(x0, 1.0 - fx), (x1, fx)] {
@@ -201,7 +206,7 @@ impl Img {
                         }
                     }
                 }
-                let base = (y as usize * nw as usize + x as usize) * 4;
+                let base = (y as usize * nw as usize + x) * 4;
                 for (channel, value) in acc.iter().enumerate() {
                     out.data[base + channel] = value.round().clamp(0.0, 255.0) as u8;
                 }

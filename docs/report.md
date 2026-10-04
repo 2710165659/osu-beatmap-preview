@@ -1,215 +1,340 @@
 # 批量渲染报告
 
-本文件汇总三类批量渲染任务的原始报告。每份报告均保留生成脚本输出的完整内容，便于对比不同渲染流程的耗时、资源占用和成功率。
+本文件由 `scripts/batch_render_all.ps1` 自动生成，汇总七类批量渲染任务的全部单项结果、按格式与模式的汇总以及总体总结。生成时间：2026-10-04 20:21:20。
 
-## Rust 批处理报告
+- 渲染器：`E:\MyCodes\rust\osu-beatmap-preview\target\release\osu-beatmap-preview-cli.exe`
+- 输出根目录：`C:\Users\27101\AppData\Local\Temp\osu-beatmap-preview\outputs`
+- 报告列说明：`渲染ms` 为单项渲染墙钟时间；`覆盖s` 为该任务覆盖的谱面时长（GIF 按各时间窗合计、MP4 按输出视频时长、PNG 按整谱时长）；`每sms` = 渲染ms ÷ 覆盖s；GPU 采样不到时记 `-`。
 
-该部分对应 `batch-rust/report.txt`，记录 Rust 批量渲染 PNG 和 GIF（包括 Mod、转谱及时间点组合）的任务耗时、峰值内存、输出大小和 CPU 使用率。
+## 总览
 
-```text
-osu-beatmap-preview (Rust) 批量渲染报告
-生成时间: 2026-09-19 15:46:03
-任务总数: 90    成功: 90    失败: 0
-总耗时: 55438ms (55.4s)    峰值内存(单进程最大): 590.7MB
-CPU 统计: 平均 131.8%    最高 398.2%    总CPU时间 92.0s
+| 脚本 | 任务 | 成功 | 跳过 | 失败 | 总渲染时间(s) | 总覆盖时长(s) | 总体每s(ms/s) | 峰值内存(MB) | 墙钟(s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 一般测试集（PNG + GIF） | 54 | 54 | 0 | 0 | 119.5 | 5445.4 | 21.94 | 7.3 | 120.8 |
+| 极端测试谱面（PNG + GIF） | 22 | 22 | 0 | 0 | 53.2 | 2183.2 | 24.38 | 545.2 | 54.1 |
+| mod 测试（GIF + PNG/跳过） | 52 | 52 | 0 | 0 | 149.9 | 4472.6 | 33.51 | 14.9 | 151.0 |
+| 转谱测试（PNG + GIF） | 28 | 28 | 0 | 0 | 57.9 | 2421.0 | 23.92 | 6.9 | 58.8 |
+| 视频渲染（MP4） | 13 | 13 | 0 | 0 | 51.4 | 2098.1 | 24.49 | 570.3 | 53.0 |
+| 配置渲染 | 47 | 47 | 0 | 0 | 114.2 | 855.0 | 133.62 | 229.7 | 118.8 |
+| 背景视频 / 故事板 | 14 | 14 | 0 | 0 | 326.0 | 2561.4 | 127.29 | 1807.1 | 328.3 |
+| **全部合计** | **230** | **230** | **0** | **0** | **872.1** | **20036.5** | **43.53** | **1807.1** | **884.8** |
 
-  #  MODE    LABEL                                      STATUS        TIME   PEAKMEM        SIZE       %
---------------------------------------------------------------------------------------------------------------
-  1  std     standard_738063.png                        success      827ms    73.5MB     409.7KB   45.3%
-  2  std     standard_2875069.png                       success      347ms    73.6MB     328.3KB   90.1%
-  3  std     standard_4897202.png                       success      310ms    73.6MB     375.5KB  100.8%
-  4  std     standard_1024742.png                       success      325ms    74.4MB     434.4KB   76.9%
-  5  std     standard_372245.png                        success      789ms    77.8MB    1605.9KB   93.1%
-  6  std     standard_1529760.png                       success     2363ms   147.9MB       763KB   99.8%
-  7  std     standard_5467386.png                       success      659ms      80MB     220.1KB   94.8%
-  8  std     standard_738063.gif                        success     1005ms   111.5MB    2021.2KB  247.2%
-  9  std     standard_2875069.gif                       success      939ms      98MB      1583KB  204.7%
- 10  std     standard_4897202.gif                       success      979ms    90.5MB    2039.8KB  191.5%
- 11  std     standard_1024742.gif                       success     1004ms     106MB    2154.7KB  224.1%
- 12  std     standard_372245.gif                        success     1749ms   125.9MB    7685.7KB  340.4%
- 13  std     standard_1529760.gif                       success     2900ms   590.7MB    3911.3KB  398.2%
- 14  std     standard_5467386.gif                       success     1380ms   118.6MB    1201.6KB  289.9%
- 15  taiko   taiko_4242023.png                          success      199ms    82.5MB     199.2KB   86.4%
- 16  taiko   taiko_1418246.png                          success      386ms   120.1MB     486.2KB     85%
- 17  taiko   taiko_4590053.png                          success      164ms    60.2MB     115.9KB   66.7%
- 18  taiko   taiko_2923535.png                          success      293ms    85.4MB     358.9KB   90.7%
- 19  taiko   taiko_5651058.png                          success      507ms   242.1MB     506.1KB   98.6%
- 20  taiko   taiko_3726150.png                          success      257ms   116.1MB     201.4KB   91.2%
- 21  taiko   taiko_4242023.gif                          success      355ms    28.1MB    1079.6KB  140.8%
- 22  taiko   taiko_1418246.gif                          success      356ms    31.2MB    1365.1KB  131.7%
- 23  taiko   taiko_4590053.gif                          success      319ms      28MB     823.1KB  122.5%
- 24  taiko   taiko_2923535.gif                          success      414ms    32.6MB      2409KB  184.9%
- 25  taiko   taiko_5651058.gif                          success      324ms    29.4MB      1158KB  115.7%
- 26  taiko   taiko_3726150.gif                          success      292ms    27.8MB     787.9KB  133.8%
- 27  catch   catch_3852338.png                          success      232ms    57.6MB     253.3KB   87.6%
- 28  catch   catch_3807626.png                          success      445ms   156.2MB     716.4KB   91.3%
- 29  catch   catch_944502.png                           success      225ms      44MB     556.3KB   69.4%
- 30  catch   catch_2571609.png                          success      883ms   358.7MB    2329.5KB   93.8%
- 31  catch   catch_265177.png                           success      383ms     102MB    1246.6KB   73.4%
- 32  catch   catch_3852338.gif                          success      666ms      53MB     972.8KB  133.7%
- 33  catch   catch_3807626.gif                          success      755ms    53.7MB    1104.7KB  171.8%
- 34  catch   catch_944502.gif                           success      824ms    53.6MB    3828.1KB  144.1%
- 35  catch   catch_2571609.gif                          success      726ms    65.2MB      1146KB    142%
- 36  catch   catch_265177.gif                           success      850ms    53.7MB    3710.7KB  145.2%
- 37  mania   mania_4312004.png                          success      480ms   226.7MB     256.1KB   78.1%
- 38  mania   mania_4610729.png                          success      168ms    74.1MB      57.6KB   74.4%
- 39  mania   mania_5061439.png                          success      134ms    60.8MB      67.4KB   81.6%
- 40  mania   mania_4789195.png                          success      354ms   145.3MB     379.6KB   92.7%
- 41  mania   mania_3793380.png                          success      259ms   118.4MB     229.3KB   66.4%
- 42  mania   mania_4665942.png                          success      189ms    98.3MB      81.1KB   82.7%
- 43  mania   mania_5354177.png                          success      260ms   127.2MB      96.1KB   84.1%
- 44  mania   mania_5221843.png                          success      137ms    46.7MB     102.3KB     57%
- 45  mania   mania_5369780.png                          success      289ms   127.5MB      91.5KB   86.5%
- 46  mania   mania_4972672.png                          success      356ms   193.9MB     149.5KB   92.2%
- 47  mania   mania_5013742.png                          success      319ms   182.4MB      84.9KB   88.2%
- 48  mania   mania_4312004.gif                          success      665ms    31.2MB    1117.8KB  110.4%
- 49  mania   mania_4610729.gif                          success      588ms    29.8MB     375.3KB  106.3%
- 50  mania   mania_5061439.gif                          success      599ms    29.5MB     582.3KB  122.6%
- 51  mania   mania_4789195.gif                          success      634ms      35MB     813.6KB  145.4%
- 52  mania   mania_3793380.gif                          success      512ms    32.6MB     531.4KB  100.7%
- 53  mania   mania_4665942.gif                          success      663ms    31.5MB     756.8KB  157.9%
- 54  mania   mania_5354177.gif                          success      575ms    30.6MB     303.4KB   92.4%
- 55  mania   mania_5221843.gif                          success      724ms    35.5MB       922KB  107.9%
- 56  mania   mania_5369780.gif                          success      697ms    33.4MB     390.4KB  123.3%
- 57  mania   mania_4972672.gif                          success      847ms    39.3MB     613.9KB    131%
- 58  mania   mania_5013742.gif                          success     1131ms      52MB       344KB   95.3%
- 59  std     standard_738063_hd-hr.gif                  success      879ms    96.8MB     942.3KB    208%
- 60  std     standard_2875069_hr.png                    success      292ms    72.9MB     204.3KB   96.3%
- 61  std     standard_4897202_dt1.3.gif                 success     1038ms    94.9MB    2014.9KB  188.2%
- 62  std     standard_1024742_daar9.5-dacs4.5.gif       success     1109ms   104.3MB    2091.6KB  232.5%
- 63  std     standard_5467386_ez-hd.gif                 success     1851ms   158.6MB    1859.2KB  319.9%
- 64  taiko   taiko_4242023_hr.gif                       success      292ms    27.6MB     670.6KB  160.5%
- 65  taiko   taiko_1418246_dt.gif                       success      347ms    31.3MB    1091.8KB  139.6%
- 66  taiko   taiko_4590053_sw.png                       success      137ms      60MB     117.3KB   91.2%
- 67  taiko   taiko_2923535_cs.gif                       success      411ms    33.7MB    2273.6KB  159.7%
- 68  catch   catch_3852338_hr.gif                       success      660ms    52.7MB     657.6KB  168.1%
- 69  catch   catch_3807626_ez.png                       success      356ms    86.5MB     737.2KB  109.7%
- 70  catch   catch_944502_dt1.4.gif                     success      991ms    53.7MB    3815.6KB  159.2%
- 71  mania   mania_4312004_in.png                       success      546ms   226.7MB     267.8KB   91.6%
- 72  mania   mania_4610729_ho.gif                       success      607ms    29.7MB     375.3KB  115.8%
- 73  mania   mania_5061439_cs.gif                       success      603ms    29.2MB     539.8KB  134.7%
- 74  convert mania_5473947_convert_ds.gif               success     1072ms    48.5MB     628.4KB  100.6%
- 75  convert taiko_738063_convert.png                   success      134ms    54.6MB        74KB  104.9%
- 76  convert taiko_2875069_convert.gif                  success      296ms    28.8MB       670KB  153.1%
- 77  convert catch_4897202_convert.png                  success      294ms   121.7MB       500KB     85%
- 78  convert catch_1024742_convert.gif                  success      665ms    54.1MB    1094.3KB  152.7%
- 79  convert mania_372245_convert.png                   success      198ms    73.2MB     109.8KB   86.8%
- 80  convert mania_1529760_convert.gif                  success      290ms    33.4MB      66.6KB  118.5%
- 81  convert taiko_5467386_convert.gif                  success      294ms    32.4MB     186.2KB  170.1%
- 82  convert taiko_260177_convert.png                   success      168ms    61.6MB        88KB   65.1%
- 83  convert catch_260177_convert.png                   success      761ms   148.5MB     408.1KB   96.5%
- 84  std     standard_738063_time-points30-40-50-60.gif success      973ms   112.8MB    2002.1KB  247.3%
- 85  std     standard_2875069_time-points10-25-60.gif   success      882ms    96.8MB    1615.1KB  207.3%
- 86  std     standard_4897202_time-points45.gif         success      915ms    89.3MB    2013.5KB  174.2%
- 87  convert mania_738063_convert_in.gif                success      665ms    33.3MB       717KB   91.6%
- 88  convert catch_2875069_convert_hr.gif               success      590ms      54MB     537.6KB  140.4%
- 89  std     standard_4897202_hd-dt1.25_time-points20-40.gif success      851ms    94.2MB    1001.9KB  229.5%
- 90  convert taiko_5467386_convert_hr_time-points15-30.gif success      260ms    32.3MB     120.6KB   90.1%
-```
+## 一般测试集（PNG + GIF）
 
-## 视频批处理报告
+四个模式的一般测试谱面，每张渲染 png 与 gif 各一次，覆盖常规滑条、串、变速与 reading 等典型场景。
 
-该部分对应 `batch-video/report.txt`，记录四种游戏模式生成 MP4 视频时的渲染耗时、GPU/CPU 使用率、进程内存和输出文件大小。
+| # | 模式 | BID | 格式 | 任务 | 状态 | 渲染(ms) | 覆盖(s) | 每s(ms) | 大小(KB) | 峰值(MB) | CPU | GPU峰值 | 备注 |
+| ---: | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | std | 738063 | png | - | success | 2811.0 | 67.20 | 41.83 | 414.1 | 7.3 | 16.1% | 0.0% | No title 跳 |
+| 2 | std | 131564 | png | - | success | 2293.0 | 171.38 | 13.38 | 438.7 | 4.3 | 23.8% | 0.0% | 折返滑条tech |
+| 3 | std | 4378877 | png | - | success | 2301.0 | 201.60 | 11.41 | 424.3 | 3.9 | 27.8% | 0.0% | tech |
+| 4 | std | 1259653 | png | - | success | 2152.0 | 248.78 | 8.65 | 398.7 | 4.0 | 20.3% | 0.0% | alt |
+| 5 | std | 1024742 | png | - | success | 2182.0 | 316.35 | 6.90 | 440.3 | 4.0 | 15.0% | 0.0% | 间距串 |
+| 6 | std | 4137259 | png | - | success | 2084.0 | 87.77 | 23.74 | 453.1 | 3.7 | 18.0% | 0.0% | 串 |
+| 7 | std | 2824953 | png | - | success | 2107.0 | 290.45 | 7.25 | 358.9 | 4.1 | 23.7% | 0.0% | 滑条变速多 |
+| 8 | std | 4763983 | png | - | success | 2037.0 | 189.97 | 10.72 | 736.7 | 4.3 | 22.2% | 0.0% | reading |
+| 9 | std | 738063 | gif | - | success | 2346.0 | 20.00 | 117.30 | 2054.1 | 4.0 | 110.6% | 0.0% | No title 跳 |
+| 10 | std | 131564 | gif | - | success | 2401.0 | 20.00 | 120.05 | 2614.5 | 3.9 | 126.2% | 0.0% | 折返滑条tech |
+| 11 | std | 4378877 | gif | - | success | 2517.0 | 20.00 | 125.85 | 2203.1 | 3.4 | 147.1% | 0.0% | tech |
+| 12 | std | 1259653 | gif | - | success | 2341.0 | 20.00 | 117.05 | 2220.8 | 3.7 | 100.8% | 0.0% | alt |
+| 13 | std | 1024742 | gif | - | success | 2299.0 | 20.00 | 114.95 | 2440.2 | 4.0 | 97.9% | 0.0% | 间距串 |
+| 14 | std | 4137259 | gif | - | success | 2358.0 | 20.00 | 117.90 | 3007.3 | 4.0 | 102.7% | 0.0% | 串 |
+| 15 | std | 2824953 | gif | - | success | 2429.0 | 20.00 | 121.45 | 1553.4 | 3.9 | 106.1% | 0.0% | 滑条变速多 |
+| 16 | std | 4763983 | gif | - | success | 2363.0 | 20.00 | 118.15 | 3224.0 | 3.7 | 119.7% | 0.0% | reading |
+| 17 | taiko | 5108359 | png | - | success | 2245.0 | 305.31 | 7.35 | 415.2 | 2.9 | 14.6% | 0.0% | 综合高难 |
+| 18 | taiko | 1491996 | png | - | success | 2133.0 | 93.73 | 22.76 | 106.8 | 3.5 | 5.9% | 0.0% | 一般图 |
+| 19 | taiko | 5115616 | png | - | success | 2200.0 | 224.57 | 9.80 | 223.4 | 3.9 | 10.7% | 0.0% | sv |
+| 20 | taiko | 5175577 | png | - | success | 2041.0 | 124.23 | 16.43 | 78.2 | 3.9 | 4.6% | 0.0% | sv |
+| 21 | taiko | 4590051 | png | - | success | 2166.0 | 109.06 | 19.86 | 147.1 | 4.0 | 5.8% | 0.0% | 变速爆发图 |
+| 22 | taiko | 5108359 | gif | - | success | 2111.0 | 20.00 | 105.55 | 1214.9 | 3.4 | 20.0% | 0.0% | 综合高难 |
+| 23 | taiko | 1491996 | gif | - | success | 2071.0 | 20.00 | 103.55 | 1123.9 | 4.0 | 22.6% | 0.0% | 一般图 |
+| 24 | taiko | 5115616 | gif | - | success | 2144.0 | 20.00 | 107.20 | 1259.2 | 4.0 | 14.6% | 0.0% | sv |
+| 25 | taiko | 5175577 | gif | - | success | 2179.0 | 20.00 | 108.95 | 1384.5 | 4.0 | 26.5% | 0.0% | sv |
+| 26 | taiko | 4590051 | gif | - | success | 2115.0 | 20.00 | 105.75 | 1101.8 | 3.9 | 19.9% | 0.0% | 变速爆发图 |
+| 27 | ctb | 3232957 | png | - | success | 2260.0 | 188.86 | 11.97 | 1198.0 | 2.6 | 29.7% | 0.0% | 一般图 |
+| 28 | ctb | 944502 | png | - | success | 2093.0 | 37.46 | 55.87 | 542.5 | 3.9 | 7.5% | 0.0% | No Dash |
+| 29 | ctb | 5342747 | png | - | success | 2185.0 | 95.03 | 22.99 | 486.5 | 3.9 | 15.7% | 0.0% | 一般图 |
+| 30 | ctb | 3232957 | gif | - | success | 2216.0 | 20.00 | 110.80 | 1527.7 | 4.0 | 58.5% | 0.0% | 一般图 |
+| 31 | ctb | 944502 | gif | - | success | 2342.0 | 20.00 | 117.10 | 3930.3 | 3.9 | 66.0% | 0.0% | No Dash |
+| 32 | ctb | 5342747 | gif | - | success | 2306.0 | 20.00 | 115.30 | 1308.2 | 4.5 | 42.7% | 0.0% | 一般图 |
+| 33 | mania | 5369780 | png | - | success | 2273.0 | 189.20 | 12.01 | 91.5 | 3.9 | 9.6% | 0.0% | 7k大叠 |
+| 34 | mania | 3222380 | png | - | success | 2179.0 | 130.44 | 16.71 | 61.4 | 4.0 | 7.9% | 0.0% | 4k中叠 |
+| 35 | mania | 5170802 | png | - | success | 2173.0 | 98.43 | 22.08 | 66.0 | 3.8 | 5.8% | 0.0% | 4k rc |
+| 36 | mania | 5416965 | png | - | success | 2246.0 | 365.24 | 6.15 | 270.7 | 3.4 | 19.5% | 0.0% | 4k tb |
+| 37 | mania | 4665942 | png | - | success | 2195.0 | 153.75 | 14.28 | 81.1 | 4.0 | 10.7% | 0.0% | 6k ln |
+| 38 | mania | 2473984 | png | - | success | 2154.0 | 131.55 | 16.37 | 90.2 | 3.2 | 10.2% | 0.0% | 7k 夜曲 |
+| 39 | mania | 5156942 | png | - | success | 2422.0 | 241.00 | 10.05 | 141.8 | 3.9 | 16.1% | 0.0% | 9k ln |
+| 40 | mania | 4701252 | png | - | success | 2226.0 | 99.31 | 22.41 | 68.5 | 3.9 | 11.9% | 0.0% | 16k |
+| 41 | mania | 4789195 | png | - | success | 2253.0 | 260.57 | 8.65 | 379.6 | 3.8 | 16.0% | 0.0% | 4k sv |
+| 42 | mania | 3793380 | png | - | success | 2163.0 | 207.58 | 10.42 | 229.3 | 2.1 | 10.1% | 0.0% | 4k sv |
+| 43 | mania | 5221843 | png | - | success | 2054.0 | 56.56 | 36.31 | 102.3 | 4.8 | 6.1% | 0.0% | 7k sv |
+| 44 | mania | 5369780 | gif | - | success | 2152.0 | 40.00 | 53.80 | 392.9 | 3.7 | 45.7% | 0.0% | 7k大叠 |
+| 45 | mania | 3222380 | gif | - | success | 2092.0 | 40.00 | 52.30 | 378.3 | 3.9 | 35.1% | 0.0% | 4k中叠 |
+| 46 | mania | 5170802 | gif | - | success | 2066.0 | 40.00 | 51.65 | 400.4 | 4.0 | 35.5% | 0.0% | 4k rc |
+| 47 | mania | 5416965 | gif | - | success | 2097.0 | 40.00 | 52.42 | 834.2 | 4.0 | 32.8% | 0.0% | 4k tb |
+| 48 | mania | 4665942 | gif | - | success | 2083.0 | 40.00 | 52.08 | 759.1 | 3.9 | 45.8% | 0.0% | 6k ln |
+| 49 | mania | 2473984 | gif | - | success | 2137.0 | 40.00 | 53.42 | 695.4 | 3.9 | 36.6% | 0.0% | 7k 夜曲 |
+| 50 | mania | 5156942 | gif | - | success | 2149.0 | 40.00 | 53.72 | 487.6 | 3.6 | 53.8% | 0.0% | 9k ln |
+| 51 | mania | 4701252 | gif | - | success | 2165.0 | 40.00 | 54.12 | 388.2 | 3.9 | 64.2% | 0.0% | 16k |
+| 52 | mania | 4789195 | gif | - | success | 2123.0 | 40.00 | 53.08 | 815.7 | 3.4 | 37.5% | 0.0% | 4k sv |
+| 53 | mania | 3793380 | gif | - | success | 2097.0 | 40.00 | 52.42 | 533.4 | 3.9 | 21.6% | 0.0% | 4k sv |
+| 54 | mania | 5221843 | gif | - | success | 2128.0 | 40.00 | 53.20 | 924.6 | 3.9 | 50.7% | 0.0% | 7k sv |
 
-```text
-osu-beatmap-preview full MP4 benchmark
-Generated: 2026-09-18 20:13:14
-Binary: E:\MyCodes\rust\osu-beatmap-preview\target\release\osu-beatmap-preview-cli.exe
-Output: C:\Users\27101\AppData\Local\Temp\osu-beatmap-preview\outputs\batch-video
-NoCache: False
-GPU sampling interval: 500ms
-GPU scope: process = Windows per-process GPU Engine; system = nvidia-smi whole GPU
+## 极端测试谱面（PNG + GIF）
 
-Tasks: 13  Success: 13  Failed: 0
-Total chart/video duration: 2098.066s
-Total wall time: 47413.5ms (47.41s)
-Overall average render cost: 22.60ms per chart-second
-Peak GPU: 43.0%  Peak process memory: 546.2MB
+极端谱面压力测试：超多滑条控制点、aspire、几万 BPM、超高密度与 vibro 等。
 
-GPU AVG includes download, audio preparation, rendering, and final mux wait.
-GPU ACTIVE AVG excludes samples at or below 0.5%.
+| # | 模式 | BID | 格式 | 任务 | 状态 | 渲染(ms) | 覆盖(s) | 每s(ms) | 大小(KB) | 峰值(MB) | CPU | GPU峰值 | 备注 |
+| ---: | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | std | 5467386 | png | - | success | 2431.0 | 125.16 | 19.42 | 221.9 | 6.8 | 27.6% | 0.0% | 滑条控制点非常多 |
+| 2 | std | 2571858 | png | - | success | 2172.0 | 154.04 | 14.10 | 336.1 | 4.0 | 46.8% | 0.0% | aspire |
+| 3 | std | 372245 | png | - | success | 2127.0 | 95.79 | 22.21 | 1605.9 | 3.9 | 37.5% | 0.0% | 观赏谱 |
+| 4 | std | 1529760 | png | - | success | 4491.0 | 223.05 | 20.13 | 759.9 | 148.3 | 53.2% | 0.0% | 极端滑条图 |
+| 5 | std | 5467386 | gif | - | success | 2298.0 | 20.00 | 114.90 | 1235.2 | 5.0 | 199.2% | 0.0% | 滑条控制点非常多 |
+| 6 | std | 2571858 | gif | - | success | 2186.0 | 20.00 | 109.30 | 2022.4 | 3.4 | 112.2% | 0.0% | aspire |
+| 7 | std | 372245 | gif | - | success | 2320.0 | 20.00 | 116.00 | 7846.4 | 4.3 | 287.6% | 0.0% | 观赏谱 |
+| 8 | std | 1529760 | gif | - | success | 5098.0 | 20.00 | 254.90 | 3892.8 | 545.2 | 274.9% | 0.0% | 极端滑条图 |
+| 9 | taiko | 1418246 | png | - | success | 2084.0 | 282.35 | 7.38 | 486.2 | 3.5 | 17.2% | 0.0% | 几万bpm |
+| 10 | taiko | 2923535 | png | - | success | 2008.0 | 121.63 | 16.51 | 355.0 | 3.4 | 14.0% | 0.0% | 超多滑条（lazer原生渲染有问题） |
+| 11 | taiko | 1418246 | gif | - | success | 2116.0 | 20.00 | 105.80 | 1411.3 | 3.0 | 19.2% | 0.0% | 几万bpm |
+| 12 | taiko | 2923535 | gif | - | success | 2116.0 | 20.00 | 105.80 | 2537.7 | 4.0 | 38.4% | 0.0% | 超多滑条（lazer原生渲染有问题） |
+| 13 | ctb | 2571609 | png | - | success | 2143.0 | 344.38 | 6.22 | 2381.8 | 4.0 | 45.9% | 0.0% | 躲避note |
+| 14 | ctb | 265177 | png | - | success | 2013.0 | 136.41 | 14.76 | 1259.2 | 4.0 | 18.6% | 0.0% | 观赏谱 |
+| 15 | ctb | 780330 | png | - | success | 2032.0 | 56.33 | 36.08 | 738.9 | 4.0 | 19.2% | 0.0% | 密集note |
+| 16 | ctb | 2571609 | gif | - | success | 2364.0 | 20.00 | 118.20 | 1206.9 | 4.7 | 58.2% | 0.0% | 躲避note |
+| 17 | ctb | 265177 | gif | - | success | 2223.0 | 20.00 | 111.15 | 3907.0 | 3.6 | 68.2% | 0.0% | 观赏谱 |
+| 18 | ctb | 780330 | gif | - | success | 2230.0 | 20.00 | 111.50 | 3322.4 | 3.8 | 58.9% | 0.0% | 密集note |
+| 19 | mania | 2785403 | png | - | success | 2181.0 | 132.72 | 16.43 | 140.3 | 3.9 | 10.0% | 0.0% | 高密度谱面 |
+| 20 | mania | 3261941 | png | - | success | 2232.0 | 251.31 | 8.88 | 114.6 | 4.0 | 12.6% | 0.0% | vibro |
+| 21 | mania | 2785403 | gif | - | success | 2225.0 | 40.00 | 55.62 | 1122.2 | 3.9 | 37.9% | 0.0% | 高密度谱面 |
+| 22 | mania | 3261941 | gif | - | success | 2139.0 | 40.00 | 53.48 | 430.4 | 2.9 | 32.9% | 0.0% | vibro |
 
-  # MODE   BID       STATUS     CHART(s)    WALL(ms)  ms/chart-s   GPU AVG   GPU ACTIVE   GPU PEAK      CPU    MEM MB   SIZE MB
-------------------------------------------------------------------------------------------------------------------------------------------------------
-  1 std    5242890   success      35.133      1818.2       51.75      0.0%         0.0%       0.0%   354.1%       4.0      4.40
-  2 std    4897202   success     149.467      3323.0       22.23     14.5%        29.0%      29.0%   397.8%     285.8     18.94
-  3 std    1024742   success     320.333      7337.9       22.91     27.3%        29.6%      42.0%   379.7%     546.2     41.25
-  4 taiko  5619629   success      94.600      2010.8       21.26     21.2%        28.3%      30.0%   253.3%     156.8      8.62
-  5 taiko  5175577   success     128.267      2760.2       21.52     20.2%        25.2%      27.0%   255.3%     173.3     15.15
-  6 taiko  1418246   success     286.333      6172.1       21.56     26.5%        29.2%      35.0%   264.8%     259.4     35.67
-  7 ctb    944502    success      41.467      1770.2       42.69     15.5%        20.7%      29.0%   227.7%     115.5      5.09
-  8 ctb    2103068   success      92.600      1954.0       21.10     19.8%        26.3%      29.0%   280.7%     146.2     11.61
-  9 ctb    2182842   success     241.933      4909.2       20.29     25.1%        28.2%      30.0%   307.8%     229.3     30.87
- 10 mania  4624418   success      40.933      1044.0       25.51      6.0%        12.0%      12.0%   215.5%     111.0      3.34
- 11 mania  5572554   success     142.267      2791.0       19.62     22.0%        27.5%      31.0%   262.0%     174.6     10.96
- 12 mania  3562727   success      97.600      2073.8       21.25     20.8%        27.7%      30.0%   239.6%     150.5      7.49
- 13 mania  4312004   success     427.133      9449.1       22.12     26.5%        30.1%      43.0%   304.4%     338.0     40.84
+## mod 测试（GIF + PNG/跳过）
 
-Per-mode summary:
-  ctb    count= 3 duration=  376.000s wall=    8633.4ms cost=   22.96ms/chart-s avgGPU= 20.1%
-  mania  count= 4 duration=  707.933s wall=   15357.9ms cost=   21.69ms/chart-s avgGPU= 18.8%
-  std    count= 3 duration=  504.933s wall=   12479.1ms cost=   24.71ms/chart-s avgGPU= 13.9%
-  taiko  count= 3 duration=  509.200s wall=   10943.1ms cost=   21.49ms/chart-s avgGPU= 22.6%
-```
+四个模式的 mod 组合渲染；gif 全量渲染，png 在该模式不支持对应 mod 时跳过（状态记 SKIP）。
 
-## 配置批处理报告
+| # | 模式 | BID | 格式 | 任务 | 状态 | 渲染(ms) | 覆盖(s) | 每s(ms) | 大小(KB) | 峰值(MB) | CPU | GPU峰值 | 备注 |
+| ---: | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | std | 5405910 | png | - | success | 2377.0 | 185.45 | 12.82 | 346.9 | 7.1 | 16.4% | 0.0% | 不加mod |
+| 2 | std | 5405910 | png | hd | success | 2305.0 | 185.45 | 12.43 | 212.2 | 4.3 | 15.6% | 0.0% | hd |
+| 3 | std | 5405910 | png | ez | success | 2290.0 | 185.45 | 12.35 | 596.6 | 4.3 | 23.2% | 0.0% | ez |
+| 4 | std | 5405910 | png | hr | success | 2027.0 | 185.45 | 10.93 | 221.2 | 4.1 | 15.4% | 0.0% | hr |
+| 5 | std | 5405910 | png | hd+ez | success | 2093.0 | 185.45 | 11.29 | 357.8 | 3.8 | 25.4% | 0.0% | hd+ez |
+| 6 | std | 5405910 | png | hd+hr | success | 2168.0 | 185.45 | 11.69 | 147.2 | 4.0 | 14.4% | 0.0% | hd+hr |
+| 7 | std | 5405910 | png | tc | success | 2092.0 | 185.45 | 11.28 | 287.4 | 4.0 | 17.9% | 0.0% | tc |
+| 8 | std | 5405910 | png | fl | success | 2008.0 | 185.45 | 10.83 | 167.5 | 4.0 | 23.3% | 0.0% | fl |
+| 9 | std | 5405910 | png | daar9.5 | success | 2065.0 | 185.45 | 11.13 | 285.0 | 4.0 | 21.2% | 0.0% | daar9.5 |
+| 10 | std | 5405910 | gif | - | success | 2260.0 | 20.00 | 113.00 | 2168.6 | 3.9 | 104.4% | 0.0% | 不加mod |
+| 11 | std | 5405910 | gif | hd | success | 2247.0 | 20.00 | 112.35 | 1284.5 | 3.9 | 106.4% | 0.0% | hd |
+| 12 | std | 5405910 | gif | ez | success | 2319.0 | 20.00 | 115.95 | 3589.3 | 4.1 | 150.3% | 0.0% | ez |
+| 13 | std | 5405910 | gif | hr | success | 2224.0 | 20.00 | 111.20 | 1426.1 | 3.5 | 82.2% | 0.0% | hr |
+| 14 | std | 5405910 | gif | hd+ez | success | 2377.0 | 20.00 | 118.85 | 2075.6 | 4.0 | 128.8% | 0.0% | hd+ez |
+| 15 | std | 5405910 | gif | hd+hr | success | 2370.0 | 20.00 | 118.50 | 902.3 | 3.9 | 77.8% | 0.0% | hd+hr |
+| 16 | std | 5405910 | gif | dt | success | 2414.0 | 20.00 | 120.70 | 2784.2 | 3.7 | 86.1% | 0.0% | dt |
+| 17 | std | 5405910 | gif | ht0.7 | success | 2382.0 | 20.00 | 119.10 | 2067.2 | 3.0 | 103.0% | 0.0% | ht0.7 |
+| 18 | std | 5405910 | gif | tc | success | 2278.0 | 20.00 | 113.90 | 1714.7 | 3.0 | 83.7% | 0.0% | tc |
+| 19 | std | 5405910 | gif | fl | success | 2415.0 | 20.00 | 120.75 | 1014.4 | 4.2 | 145.6% | 0.0% | fl |
+| 20 | std | 5405910 | gif | daar9.5 | success | 2307.0 | 20.00 | 115.35 | 1747.6 | 4.0 | 90.1% | 0.0% | daar9.5 |
+| 21 | taiko | 5115616 | png | - | success | 2132.0 | 224.57 | 9.49 | 223.4 | 3.3 | 8.1% | 0.0% | 不加mod |
+| 22 | taiko | 5115616 | png | ez | success | 2075.0 | 224.57 | 9.24 | 205.8 | 3.4 | 8.3% | 0.0% | ez |
+| 23 | taiko | 5115616 | png | hr | success | 2210.0 | 224.57 | 9.84 | 327.4 | 2.5 | 14.1% | 0.0% | hr |
+| 24 | taiko | 5115616 | png | sw | success | 2049.0 | 224.57 | 9.12 | 225.9 | 4.2 | 8.4% | 0.0% | sw |
+| 25 | taiko | 5115616 | gif | - | success | 2126.0 | 20.00 | 106.30 | 1259.2 | 3.8 | 14.7% | 0.0% | 不加mod |
+| 26 | taiko | 5115616 | gif | ez | success | 2102.0 | 20.00 | 105.10 | 1470.0 | 4.0 | 24.5% | 0.0% | ez |
+| 27 | taiko | 5115616 | gif | hd | success | 18117.0 | 20.00 | 905.85 | 1502.5 | 14.8 | 92.0% | 0.0% | hd |
+| 28 | taiko | 5115616 | gif | fl | success | 18049.0 | 20.00 | 902.45 | 1656.3 | 13.9 | 86.7% | 0.0% | fl |
+| 29 | taiko | 5115616 | gif | hr | success | 2056.0 | 20.00 | 102.80 | 787.4 | 4.7 | 16.7% | 0.0% | hr |
+| 30 | taiko | 5115616 | gif | cs | success | 2088.0 | 20.00 | 104.40 | 1290.1 | 3.6 | 16.5% | 0.0% | cs |
+| 31 | taiko | 5115616 | gif | sw | success | 2108.0 | 20.00 | 105.40 | 1260.6 | 4.0 | 20.8% | 0.0% | sw |
+| 32 | taiko | 5115616 | gif | sw+hr+hd | success | 7248.0 | 20.00 | 362.40 | 1189.8 | 14.9 | 89.5% | 0.0% | sw+hr+hd |
+| 33 | ctb | 3232957 | png | - | success | 2157.0 | 188.86 | 11.42 | 1198.0 | 4.0 | 29.7% | 0.0% | 不加mod |
+| 34 | ctb | 3232957 | png | ez | success | 2103.0 | 188.86 | 11.14 | 1169.3 | 3.8 | 20.1% | 0.0% | ez |
+| 35 | ctb | 3232957 | png | hr | success | 2184.0 | 188.86 | 11.56 | 1017.9 | 4.0 | 30.8% | 0.0% | hr |
+| 36 | ctb | 3232957 | gif | - | success | 2162.0 | 20.00 | 108.10 | 1527.7 | 3.7 | 52.8% | 0.0% | 不加mod |
+| 37 | ctb | 3232957 | gif | ez | success | 2153.0 | 20.00 | 107.65 | 3626.4 | 3.9 | 68.9% | 0.0% | ez |
+| 38 | ctb | 3232957 | gif | hr | success | 2149.0 | 20.00 | 107.45 | 1147.1 | 4.0 | 46.5% | 0.0% | hr |
+| 39 | ctb | 3232957 | gif | hd | success | 2176.0 | 20.00 | 108.80 | 918.3 | 5.0 | 40.2% | 0.0% | hd |
+| 40 | ctb | 3232957 | gif | fl | success | 2194.0 | 20.00 | 109.70 | 922.0 | 4.4 | 85.5% | 0.0% | fl |
+| 41 | ctb | 3232957 | gif | hr+hd | success | 2127.0 | 20.00 | 106.35 | 699.1 | 3.2 | 52.2% | 0.0% | hr+hd |
+| 42 | mania | 5326553 | png | - | success | 2081.0 | 140.13 | 14.85 | 95.2 | 3.7 | 8.3% | 0.0% | 不加mod |
+| 43 | mania | 5326553 | png | in | success | 2103.0 | 140.13 | 15.01 | 105.5 | 2.8 | 8.2% | 0.0% | in |
+| 44 | mania | 5326553 | png | ho | success | 2155.0 | 140.13 | 15.38 | 85.2 | 3.9 | 7.3% | 0.0% | ho |
+| 45 | mania | 5572554 | png | - | success | 2053.0 | 138.24 | 14.85 | 87.5 | 3.0 | 7.6% | 0.0% | 不加mod |
+| 46 | mania | 5326553 | gif | - | success | 2143.0 | 40.00 | 53.58 | 651.5 | 4.0 | 30.6% | 0.0% | 不加mod |
+| 47 | mania | 5326553 | gif | hd | success | 2092.0 | 40.00 | 52.30 | 467.0 | 4.0 | 37.3% | 0.0% | hd |
+| 48 | mania | 5326553 | gif | fl | success | 2068.0 | 40.00 | 51.70 | 142.9 | 3.8 | 28.7% | 0.0% | fl |
+| 49 | mania | 5326553 | gif | in | success | 2112.0 | 40.00 | 52.80 | 1206.9 | 3.9 | 36.3% | 0.0% | in |
+| 50 | mania | 5326553 | gif | ho | success | 2045.0 | 40.00 | 51.12 | 373.8 | 5.2 | 34.4% | 0.0% | ho |
+| 51 | mania | 5572554 | gif | - | success | 2120.0 | 40.00 | 53.00 | 350.4 | 3.6 | 31.7% | 0.0% | 不加mod |
+| 52 | mania | 5572554 | gif | cs | success | 2129.0 | 40.00 | 53.22 | 274.7 | 3.6 | 27.9% | 0.0% | cs |
 
-该部分对应 `batch-config/report.txt`，覆盖不同游戏模式、输出格式、分辨率、帧率、Mod、转谱和时间点配置，用于验证配置组合的渲染结果与资源占用。
+## 转谱测试（PNG + GIF）
 
-```text
-osu-beatmap-preview configuration render report
-Generated: 2026-09-18 20:14:12
-Output: C:\Users\27101\AppData\Local\Temp\osu-beatmap-preview\outputs\batch-config
-Tasks: 47  Success: 47  Failed: 0
-Total measured time: 34209ms (34.209s)  Peak memory: 335.6MB
+std 谱面转 taiko / ctb / mania，含 mania 键数（1K~10K）与 DS mod 组合。
 
-  # MODE     LABEL                                    STATUS   RESOLUTION       TIME   PEAKMEM       SIZE     CPU
------------------------------------------------------------------------------------------------------------------------------
-  1 standard standard_gif_no_time.gif                 success  1120x828        849ms    97.1MB   2059.9KB  187.7%
-  2 standard standard_gif_no_time_1x1.gif             success  570x424         281ms    40.9MB    533.5KB  166.8%
-  3 standard standard_png_0.5x.png                    success  2210x1390       157ms    27.6MB    172.2KB   59.7%
-  4 standard standard_png_1x.png                      success  4420x2780       292ms    74.4MB    425.8KB     91%
-  5 standard standard_png_2x.png                      success  8840x5560       885ms   259.7MB     1022KB   95.3%
-  6 standard standard_gif_0.5x.gif                    success  560x498         228ms    38.6MB    210.6KB  205.6%
-  7 standard standard_gif_1x.gif                      success  1120x996        945ms   106.2MB   2150.3KB  213.3%
-  8 standard standard_gif_2x.gif                      success  2240x1992      2755ms   234.4MB   3438.7KB  170.7%
-  9 standard standard_mp4_0.5x.mp4                    success  342x192         913ms   148.6MB     3747KB  195.1%
- 10 standard standard_mp4_1x.mp4                      success  684x384        1005ms   206.6MB   3640.3KB  312.5%
- 11 standard standard_mp4_2x.mp4                      success  1366x768       1798ms   335.6MB   3755.8KB  455.4%
- 12 taiko    taiko_gif_no_time.gif                    success  699x437         293ms    24.9MB   1182.1KB     80%
- 13 taiko    taiko_gif_no_time_1x1.gif                success  699x116         103ms    14.8MB    308.3KB   75.8%
- 14 taiko    taiko_png_0.5x.png                       success  2236x1643        91ms    28.8MB    102.7KB   68.7%
- 15 taiko    taiko_png_1x.png                         success  4473x3286       190ms    84.2MB    223.4KB   90.5%
- 16 taiko    taiko_png_2x.png                         success  8945x6572       561ms   306.1MB    502.3KB  100.3%
- 17 taiko    taiko_gif_0.5x.gif                       success  349x284         136ms    15.8MB    466.8KB   91.9%
- 18 taiko    taiko_gif_1x.gif                         success  699x569         328ms      29MB   1234.2KB  128.6%
- 19 taiko    taiko_gif_2x.gif                         success  1397x1138      1069ms    84.1MB   3133.7KB  146.2%
- 20 taiko    taiko_mp4_0.5x.mp4                       success  342x192         723ms   126.1MB   2466.8KB  162.1%
- 21 taiko    taiko_mp4_1x.mp4                         success  684x386         913ms   146.4MB   3316.1KB  241.3%
- 22 taiko    taiko_mp4_2x.mp4                         success  1366x768       1813ms   239.8MB   4309.6KB    281%
- 23 catch    catch_gif_no_time.gif                    success  990x818         624ms    46.7MB   1356.2KB  127.7%
- 24 catch    catch_gif_no_time_1x1.gif                success  500x414         170ms      24MB      330KB  174.6%
- 25 catch    catch_png_0.5x.png                       success  1576x1888        91ms    21.7MB    151.6KB   85.9%
- 26 catch    catch_png_1x.png                         success  3135x3774       187ms    70.1MB    391.7KB   91.9%
- 27 catch    catch_png_2x.png                         success  6270x7539       505ms   248.7MB    869.8KB   92.8%
- 28 catch    catch_gif_0.5x.gif                       success  496x494         229ms    21.5MB    603.3KB  109.2%
- 29 catch    catch_gif_1x.gif                         success  990x986         667ms      53MB   1397.5KB  182.7%
- 30 catch    catch_gif_2x.gif                         success  1980x1972      2507ms   100.6MB   3179.1KB  132.8%
- 31 catch    catch_mp4_0.5x.mp4                       success  342x192         667ms    99.5MB   3681.1KB  175.7%
- 32 catch    catch_mp4_1x.mp4                         success  684x384         854ms     124MB   3677.1KB  232.4%
- 33 catch    catch_mp4_2x.mp4                         success  1366x768       1805ms     213MB   4474.2KB  292.6%
- 34 mania    mania_gif_no_time.gif                    success  972x424         504ms    28.2MB      347KB   99.2%
- 35 mania    mania_gif_no_time_1x1.gif                success  228x424         157ms      15MB    133.7KB   79.6%
- 36 mania    mania_png_0.5x.png                       success  1131x3144        70ms    24.1MB     38.5KB   89.3%
- 37 mania    mania_png_1x.png                         success  2262x6289       160ms    81.5MB     87.5KB   97.7%
- 38 mania    mania_png_2x.png                         success  4524x12578      476ms   295.5MB    166.3KB   95.2%
- 39 mania    mania_gif_0.5x.gif                       success  486x236         204ms    15.6MB    147.1KB  199.1%
- 40 mania    mania_gif_1x.gif                         success  972x472         507ms    30.4MB    348.2KB    114%
- 41 mania    mania_gif_2x.gif                         success  1944x944       1940ms    88.2MB    819.3KB  103.9%
- 42 mania    mania_mp4_0.5x.mp4                       success  342x192         607ms     106MB   2088.8KB  180.2%
- 43 mania    mania_mp4_1x.mp4                         success  684x384         843ms   130.6MB   2407.2KB  194.6%
- 44 mania    mania_mp4_2x.mp4                         success  1366x768       1806ms   220.8MB   3592.8KB  285.5%
- 45 mania    mania_png_no_sv.png                      success  2262x6289       197ms    81.4MB     50.7KB  103.1%
- 46 mania    mania_gif_no_sv_30fps.gif                success  972x472         786ms    29.8MB    412.6KB  147.1%
- 47 mania    mania_mp4_no_sv_30fps.mp4                success  684x384        1318ms   130.3MB   2511.7KB  221.7%
-```
+| # | 模式 | BID | 格式 | 任务 | 状态 | 渲染(ms) | 覆盖(s) | 每s(ms) | 大小(KB) | 峰值(MB) | CPU | GPU峰值 | 备注 |
+| ---: | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | ctb | 260177 | png | 转ctb | success | 2462.0 | 133.12 | 18.49 | 408.1 | 6.9 | 34.3% | 0.0% | 全是香蕉 |
+| 2 | ctb | 4817853 | png | 转ctb | success | 2108.0 | 103.36 | 20.39 | 611.3 | 4.0 | 11.9% | 0.0% | - |
+| 3 | ctb | 260177 | gif | 转ctb | success | 2124.0 | 20.00 | 106.20 | 599.8 | 5.1 | 51.5% | 0.0% | 全是香蕉 |
+| 4 | ctb | 4817853 | gif | 转ctb | success | 2130.0 | 20.00 | 106.50 | 1834.3 | 5.1 | 51.3% | 0.0% | - |
+| 5 | taiko | 260177 | png | 转taiko | success | 1948.0 | 133.12 | 14.63 | 88.0 | 3.9 | 6.4% | 0.0% | 全是转谱 |
+| 6 | taiko | 5506948 | png | 转taiko | success | 2018.0 | 557.70 | 3.62 | 234.1 | 4.0 | 17.8% | 0.0% | 全是红色的 |
+| 7 | taiko | 4817853 | png | 转taiko | success | 1999.0 | 103.36 | 19.34 | 250.2 | 4.7 | 14.9% | 0.0% | - |
+| 8 | taiko | 260177 | gif | 转taiko | success | 1942.0 | 20.00 | 97.10 | 1019.6 | 3.9 | 20.9% | 0.0% | 全是转谱 |
+| 9 | taiko | 5506948 | gif | 转taiko | success | 2007.0 | 20.00 | 100.35 | 1067.5 | 4.0 | 14.0% | 0.0% | 全是红色的 |
+| 10 | taiko | 4817853 | gif | 转taiko | success | 1965.0 | 20.00 | 98.25 | 1206.0 | 3.9 | 23.9% | 0.0% | - |
+| 11 | mania | 4817853 | png | 转mania | success | 2007.0 | 103.36 | 19.42 | 61.2 | 3.9 | 7.0% | 0.0% | - |
+| 12 | mania | 4817853 | png | 转mania+1k | success | 1929.0 | 103.36 | 18.66 | 37.7 | 4.0 | 4.1% | 0.0% | - |
+| 13 | mania | 4817853 | png | 转mania+2k | success | 1937.0 | 103.36 | 18.74 | 43.1 | 2.8 | 5.6% | 0.0% | - |
+| 14 | mania | 4817853 | png | 转mania+4k | success | 2037.0 | 103.36 | 19.71 | 52.9 | 4.0 | 8.4% | 0.0% | - |
+| 15 | mania | 4817853 | png | 转mania+5k | success | 1934.0 | 103.36 | 18.71 | 55.3 | 3.0 | 7.3% | 0.0% | - |
+| 16 | mania | 4817853 | png | 转mania+6k | success | 1986.0 | 103.36 | 19.21 | 60.1 | 3.8 | 7.1% | 0.0% | - |
+| 17 | mania | 4817853 | png | 转mania+10k | success | 2146.0 | 103.36 | 20.76 | 69.6 | 4.0 | 8.7% | 0.0% | - |
+| 18 | mania | 4817853 | png | 转mania+6k+ds | success | 2117.0 | 103.36 | 20.48 | 77.0 | 3.9 | 9.6% | 0.0% | - |
+| 19 | mania | 4817853 | png | 转mania+9k+ds | success | 2097.0 | 103.36 | 20.29 | 90.5 | 4.0 | 11.2% | 0.0% | - |
+| 20 | mania | 4817853 | gif | 转mania | success | 2103.0 | 40.00 | 52.58 | 516.0 | 3.9 | 31.2% | 0.0% | - |
+| 21 | mania | 4817853 | gif | 转mania+1k | success | 2037.0 | 40.00 | 50.92 | 326.2 | 3.9 | 17.6% | 0.0% | - |
+| 22 | mania | 4817853 | gif | 转mania+2k | success | 2069.0 | 40.00 | 51.72 | 315.9 | 3.9 | 16.6% | 0.0% | - |
+| 23 | mania | 4817853 | gif | 转mania+4k | success | 2150.0 | 40.00 | 53.75 | 413.0 | 3.9 | 31.2% | 0.0% | - |
+| 24 | mania | 4817853 | gif | 转mania+5k | success | 2102.0 | 40.00 | 52.55 | 462.1 | 3.2 | 29.0% | 0.0% | - |
+| 25 | mania | 4817853 | gif | 转mania+6k | success | 2144.0 | 40.00 | 53.60 | 493.2 | 3.9 | 30.6% | 0.0% | - |
+| 26 | mania | 4817853 | gif | 转mania+10k | success | 2120.0 | 40.00 | 53.00 | 543.6 | 3.9 | 48.6% | 0.0% | - |
+| 27 | mania | 4817853 | gif | 转mania+6k+ds | success | 2176.0 | 40.00 | 54.40 | 582.4 | 3.1 | 51.7% | 0.0% | - |
+| 28 | mania | 4817853 | gif | 转mania+9k+ds | success | 2122.0 | 40.00 | 53.05 | 545.6 | 4.5 | 56.7% | 0.0% | - |
+
+## 视频渲染（MP4）
+
+四模式共 13 张谱面，使用程序默认 MP4 区间行为，统计渲染耗时、每s渲染时长与资源占用。
+
+| # | 模式 | BID | 格式 | 任务 | 状态 | 渲染(ms) | 覆盖(s) | 每s(ms) | 大小(KB) | 峰值(MB) | CPU | GPU峰值 | 备注 |
+| ---: | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | std | 5242890 | mp4 | - | success | 2990.3 | 35.13 | 85.11 | 4512.6 | 6.7 | 210.1% | 0.0% | - |
+| 2 | std | 4897202 | mp4 | - | success | 3436.7 | 149.47 | 22.99 | 19444.3 | 288.0 | 402.4% | 27.0% | - |
+| 3 | std | 1024742 | mp4 | - | success | 7736.6 | 320.33 | 24.15 | 42251.0 | 570.3 | 429.0% | 41.0% | - |
+| 4 | taiko | 5619629 | mp4 | - | success | 2046.1 | 94.60 | 21.63 | 8636.2 | 142.1 | 273.4% | 28.0% | - |
+| 5 | taiko | 5175577 | mp4 | - | success | 2737.7 | 128.27 | 21.34 | 15529.0 | 159.4 | 275.7% | 26.0% | - |
+| 6 | taiko | 1418246 | mp4 | - | success | 6440.5 | 286.33 | 22.49 | 36582.3 | 253.4 | 296.0% | 40.0% | - |
+| 7 | ctb | 944502 | mp4 | - | success | 1988.2 | 41.47 | 47.95 | 5206.4 | 112.9 | 233.4% | 27.0% | - |
+| 8 | ctb | 2103068 | mp4 | - | success | 2018.3 | 92.60 | 21.80 | 11898.3 | 140.9 | 308.9% | 25.0% | - |
+| 9 | ctb | 2182842 | mp4 | - | success | 5653.8 | 241.93 | 23.37 | 31592.7 | 222.0 | 269.5% | 36.0% | - |
+| 10 | mania | 4624418 | mp4 | - | success | 1006.6 | 40.93 | 24.59 | 3443.3 | 106.9 | 256.1% | 28.0% | - |
+| 11 | mania | 5572554 | mp4 | - | success | 2918.4 | 142.27 | 20.51 | 11392.2 | 166.7 | 247.4% | 28.0% | - |
+| 12 | mania | 3562727 | mp4 | - | success | 2037.2 | 97.60 | 20.87 | 7778.3 | 139.7 | 246.2% | 29.0% | - |
+| 13 | mania | 4312004 | mp4 | - | success | 10370.4 | 427.13 | 24.28 | 43003.2 | 324.8 | 291.8% | 40.0% | - |
+
+## 配置渲染
+
+47 项配置组合：无时间标签 GIF、1x1 GIF、三档缩放 PNG/GIF/MP4、关闭 SV 标签与 30FPS 等。
+
+| # | 模式 | BID | 格式 | 任务 | 状态 | 渲染(ms) | 覆盖(s) | 每s(ms) | 大小(KB) | 峰值(MB) | CPU | GPU峰值 | 备注 |
+| ---: | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | standard | 1024742 | png | standard_png_0.5x | success | 2355.0 | - | - | 176.5 | 7.1 | 6.0% | 0.0% | 缩放 0.5x（2210x1390） |
+| 2 | standard | 1024742 | png | standard_png_1x | success | 2113.0 | - | - | 440.3 | 4.0 | 12.6% | 0.0% | 缩放 1x（4420x2780） |
+| 3 | standard | 1024742 | png | standard_png_2x | success | 2251.0 | - | - | 1060.3 | 3.8 | 45.8% | 0.0% | 缩放 2x（8840x5560） |
+| 4 | standard | 1024742 | gif | standard_gif_no_time | success | 2283.0 | 20.00 | 114.15 | 2234.4 | 4.4 | 95.8% | 0.0% | 关闭时间标签（1120x828） |
+| 5 | standard | 1024742 | gif | standard_gif_no_time_1x1 | success | 2098.0 | 5.00 | 419.60 | 610.9 | 3.6 | 35.0% | 0.0% | 关闭时间标签；1x1 单图（570x424） |
+| 6 | standard | 1024742 | gif | standard_gif_0.5x | success | 2040.0 | 20.00 | 102.00 | 233.5 | 4.0 | 32.9% | 0.0% | 缩放 0.5x（560x498） |
+| 7 | standard | 1024742 | gif | standard_gif_1x | success | 2355.0 | 20.00 | 117.75 | 2440.2 | 4.2 | 108.8% | 0.0% | 缩放 1x（1120x996） |
+| 8 | standard | 1024742 | gif | standard_gif_2x | success | 4851.0 | 20.00 | 242.55 | 3835.5 | 229.7 | 108.5% | 0.0% | 缩放 2x（2240x1992） |
+| 9 | standard | 1024742 | mp4 | standard_mp4_0.5x | success | 2272.0 | 30.00 | 75.73 | 3749.8 | 3.9 | 124.5% | 0.0% | 缩放 0.5x（342x192） |
+| 10 | standard | 1024742 | mp4 | standard_mp4_1x | success | 2453.0 | 30.00 | 81.77 | 3639.7 | 3.9 | 191.7% | 0.0% | 缩放 1x（684x384） |
+| 11 | standard | 1024742 | mp4 | standard_mp4_2x | success | 2958.0 | 30.00 | 98.60 | 3763.6 | 3.6 | 370.8% | 0.0% | 缩放 2x（1366x768） |
+| 12 | taiko | 5115616 | png | taiko_png_0.5x | success | 2578.0 | - | - | 102.7 | 3.0 | 5.5% | 0.0% | 缩放 0.5x（2236x1643） |
+| 13 | taiko | 5115616 | png | taiko_png_1x | success | 2408.0 | - | - | 223.4 | 3.4 | 9.1% | 0.0% | 缩放 1x（4473x3286） |
+| 14 | taiko | 5115616 | png | taiko_png_2x | success | 2406.0 | - | - | 502.3 | 3.6 | 31.2% | 0.0% | 缩放 2x（8945x6572） |
+| 15 | taiko | 5115616 | gif | taiko_gif_no_time | success | 2172.0 | 20.00 | 108.60 | 1239.4 | 3.8 | 18.7% | 0.0% | 关闭时间标签（699x437） |
+| 16 | taiko | 5115616 | gif | taiko_gif_no_time_1x1 | success | 2190.0 | 5.00 | 438.00 | 316.0 | 4.0 | 5.0% | 0.0% | 关闭时间标签；1x1 单图（699x116） |
+| 17 | taiko | 5115616 | gif | taiko_gif_0.5x | success | 2397.0 | 20.00 | 119.85 | 471.9 | 3.2 | 5.2% | 0.0% | 缩放 0.5x（349x284） |
+| 18 | taiko | 5115616 | gif | taiko_gif_1x | success | 2383.0 | 20.00 | 119.15 | 1259.2 | 4.2 | 16.4% | 0.0% | 缩放 1x（699x569） |
+| 19 | taiko | 5115616 | gif | taiko_gif_2x | success | 2565.0 | 20.00 | 128.25 | 3195.6 | 4.0 | 57.9% | 0.0% | 缩放 2x（1397x1138） |
+| 20 | taiko | 5115616 | mp4 | taiko_mp4_0.5x | success | 2495.0 | 30.00 | 83.17 | 2576.4 | 3.7 | 72.0% | 0.0% | 缩放 0.5x（342x192） |
+| 21 | taiko | 5115616 | mp4 | taiko_mp4_1x | success | 2561.0 | 30.00 | 85.37 | 3323.6 | 3.9 | 97.0% | 0.0% | 缩放 1x（684x386） |
+| 22 | taiko | 5115616 | mp4 | taiko_mp4_2x | success | 2928.0 | 30.00 | 97.60 | 4302.4 | 3.2 | 241.7% | 0.0% | 缩放 2x（1366x768） |
+| 23 | ctb | 2103068 | png | catch_png_0.5x | success | 2257.0 | - | - | 151.1 | 4.0 | 6.9% | 0.0% | 缩放 0.5x（1576x1888） |
+| 24 | ctb | 2103068 | png | catch_png_1x | success | 2390.0 | - | - | 385.9 | 3.2 | 10.5% | 0.0% | 缩放 1x（3135x3774） |
+| 25 | ctb | 2103068 | png | catch_png_2x | success | 2487.0 | - | - | 871.9 | 4.0 | 26.4% | 0.0% | 缩放 2x（6270x7539） |
+| 26 | ctb | 2103068 | gif | catch_gif_no_time | success | 2490.0 | 20.00 | 124.50 | 1429.4 | 4.1 | 44.6% | 0.0% | 关闭时间标签（990x818） |
+| 27 | ctb | 2103068 | gif | catch_gif_no_time_1x1 | success | 2228.0 | 5.00 | 445.60 | 340.7 | 3.9 | 12.6% | 0.0% | 关闭时间标签；1x1 单图（500x414） |
+| 28 | ctb | 2103068 | gif | catch_gif_0.5x | success | 2305.0 | 20.00 | 115.25 | 619.0 | 3.4 | 19.0% | 0.0% | 缩放 0.5x（496x494） |
+| 29 | ctb | 2103068 | gif | catch_gif_1x | success | 2503.0 | 20.00 | 125.15 | 1440.5 | 3.3 | 58.7% | 0.0% | 缩放 1x（990x986） |
+| 30 | ctb | 2103068 | gif | catch_gif_2x | success | 2992.0 | 20.00 | 149.60 | 3389.6 | 93.5 | 143.6% | 0.0% | 缩放 2x（1980x1972） |
+| 31 | ctb | 2103068 | mp4 | catch_mp4_0.5x | success | 2564.0 | 30.00 | 85.47 | 3684.0 | 2.9 | 87.8% | 0.0% | 缩放 0.5x（342x192） |
+| 32 | ctb | 2103068 | mp4 | catch_mp4_1x | success | 2490.0 | 30.00 | 83.00 | 3712.9 | 3.4 | 124.9% | 0.0% | 缩放 1x（684x384） |
+| 33 | ctb | 2103068 | mp4 | catch_mp4_2x | success | 2676.0 | 30.00 | 89.20 | 4507.3 | 3.6 | 243.5% | 0.0% | 缩放 2x（1366x768） |
+| 34 | mania | 5572554 | png | mania_png_0.5x | success | 2123.0 | - | - | 38.5 | 4.0 | 2.9% | 0.0% | 缩放 0.5x（1131x3144） |
+| 35 | mania | 5572554 | png | mania_png_1x | success | 2166.0 | - | - | 87.5 | 3.9 | 8.7% | 0.0% | 缩放 1x（2262x6289） |
+| 36 | mania | 5572554 | png | mania_png_2x | success | 2198.0 | - | - | 166.3 | 3.8 | 25.6% | 0.0% | 缩放 2x（4524x12578） |
+| 37 | mania | 5572554 | png | mania_png_no_sv | success | 2197.0 | - | - | 50.7 | 4.8 | 7.8% | 0.0% | 关闭 SV 标签（2262x6289） |
+| 38 | mania | 5572554 | gif | mania_gif_no_time | success | 2125.0 | 40.00 | 53.12 | 349.1 | 3.9 | 39.7% | 0.0% | 关闭时间标签（972x424） |
+| 39 | mania | 5572554 | gif | mania_gif_no_time_1x1 | success | 2038.0 | 10.00 | 203.80 | 133.7 | 3.6 | 6.1% | 0.0% | 关闭时间标签；1x1 单图（228x424） |
+| 40 | mania | 5572554 | gif | mania_gif_0.5x | success | 2142.0 | 40.00 | 53.55 | 148.0 | 4.1 | 12.4% | 0.0% | 缩放 0.5x（486x236） |
+| 41 | mania | 5572554 | gif | mania_gif_1x | success | 2172.0 | 40.00 | 54.30 | 350.4 | 3.8 | 31.7% | 0.0% | 缩放 1x（972x472） |
+| 42 | mania | 5572554 | gif | mania_gif_2x | success | 2334.0 | 40.00 | 58.35 | 824.1 | 3.9 | 100.4% | 0.0% | 缩放 2x（1944x944） |
+| 43 | mania | 5572554 | gif | mania_gif_no_sv_30fps | success | 2188.0 | 40.00 | 54.70 | 414.9 | 3.9 | 39.3% | 0.0% | 关闭 SV 标签；30FPS（972x472） |
+| 44 | mania | 5572554 | mp4 | mania_mp4_0.5x | success | 2286.0 | 30.00 | 76.20 | 2204.0 | 4.0 | 54.0% | 0.0% | 缩放 0.5x（342x192） |
+| 45 | mania | 5572554 | mp4 | mania_mp4_1x | success | 2455.0 | 30.00 | 81.83 | 2479.2 | 4.0 | 100.6% | 0.0% | 缩放 1x（684x384） |
+| 46 | mania | 5572554 | mp4 | mania_mp4_2x | success | 2710.0 | 30.00 | 90.33 | 3542.3 | 4.2 | 233.5% | 0.0% | 缩放 2x（1366x768） |
+| 47 | mania | 5572554 | mp4 | mania_mp4_no_sv_30fps | success | 2617.0 | 30.00 | 87.23 | 2546.5 | 3.7 | 152.8% | 0.0% | 关闭 SV 标签；30FPS（684x384） |
+
+## 背景视频 / 故事板
+
+开启背景视频与故事板的 MP4 渲染，含背景暗化、缩放、帧率与 mania 轨道暗化等配置覆盖。
+
+| # | 模式 | BID | 格式 | 任务 | 状态 | 渲染(ms) | 覆盖(s) | 每s(ms) | 大小(KB) | 峰值(MB) | CPU | GPU峰值 | 备注 |
+| ---: | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | std | 5748062 | mp4 | 背景视频 | success | 11327.0 | 87.60 | 129.30 | 11714.3 | 876.7 | 481.8% | 309.4% | -（684x384） |
+| 2 | std | 5725171 | mp4 | 背景视频 | success | 29931.0 | 237.40 | 126.08 | 30624.6 | 817.0 | 301.0% | 34.9% | -（684x384） |
+| 3 | taiko | 5591138 | mp4 | 背景视频 | success | 19650.0 | 228.80 | 85.88 | 27192.3 | 574.0 | 190.8% | 52.0% | -（684x386） |
+| 4 | ctb | 5815199 | mp4 | 背景视频 | success | 38901.0 | 308.20 | 126.22 | 39993.8 | 1134.0 | 476.7% | 49.0% | -（684x384） |
+| 5 | mania | 5705679 | mp4 | 背景视频 | success | 12509.0 | 140.07 | 89.31 | 17965.5 | 689.6 | 731.5% | 44.0% | -（684x384） |
+| 6 | std | 1006822 | mp4 | 故事板 | success | 24288.0 | 210.53 | 115.36 | 27250.8 | 484.0 | 678.9% | 44.0% | 故事板极端测试（684x384） |
+| 7 | std | 5839941 | mp4 | 故事板 | success | 29818.0 | 183.13 | 162.82 | 23533.3 | 922.6 | 693.3% | 46.0% | 故事板aspire；背景暗化0（684x384） |
+| 8 | std | 4621898 | mp4 | 故事板 | success | 6765.0 | 65.47 | 103.34 | 8258.9 | 288.1 | 661.3% | 46.0% | 故事板一般（684x384） |
+| 9 | std | 5238831 | mp4 | 故事板 | success | 30600.0 | 181.53 | 168.56 | 23853.7 | 1438.2 | 673.7% | 35.0% | 故事板一般（684x384） |
+| 10 | taiko | 2315669 | mp4 | 故事板 | success | 14043.0 | 192.20 | 73.06 | 24635.0 | 310.4 | 697.3% | 42.0% | -（684x386） |
+| 11 | ctb | 5778411 | mp4 | 故事板+视频 | success | 52510.0 | 274.87 | 191.04 | 35863.2 | 1807.1 | 719.8% | 29.0% | 故事板+视频（684x384） |
+| 12 | mania | 3928732 | mp4 | 故事板 | success | 17025.0 | 228.33 | 74.56 | 30272.1 | 301.0 | 735.8% | 42.0% | 故事板图；背景暗化0.3（684x384） |
+| 13 | mania | 4611014 | mp4 | 故事板 | success | 24760.0 | 121.93 | 203.06 | 16185.9 | 1397.8 | 669.6% | 42.0% | 故事板图；背景暗化0.3（684x384） |
+| 14 | mania | 3970396 | mp4 | 故事板 | success | 13910.0 | 101.33 | 137.27 | 13015.6 | 210.9 | 732.3% | 26.0% | 故事板（684x384） |
+
+### 按输出格式
+
+| 分组 | 任务 | 成功 | 跳过 | 失败 | 总渲染时间(s) | 总覆盖时长(s) | 平均每s(ms/s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| gif | 105 | 105 | 0 | 0 | 274.3 | 2725.0 | 100.68 |
+| mp4 | 40 | 40 | 0 | 0 | 410.9 | 5049.5 | 81.37 |
+| png | 85 | 85 | 0 | 0 | 186.9 | 12262.1 | 15.24 |
+
+### 按游戏模式
+
+| 分组 | 任务 | 成功 | 跳过 | 失败 | 总渲染时间(s) | 总覆盖时长(s) | 平均每s(ms/s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ctb | 41 | 41 | 0 | 0 | 183.1 | 3075.6 | 59.53 |
+| mania | 77 | 77 | 0 | 0 | 233.0 | 6596.2 | 35.32 |
+| standard | 11 | 11 | 0 | 0 | 28.0 | 175.0 | 160.17 |
+| std | 53 | 53 | 0 | 0 | 252.1 | 5771.2 | 43.67 |
+| taiko | 48 | 48 | 0 | 0 | 176.0 | 4418.6 | 39.82 |
+
+### 每s 渲染耗时最高的 10 个任务
+
+| 脚本 | 模式 | BID | 格式 | 任务 | 渲染(ms) | 覆盖(s) | 每s(ms) | 峰值(MB) | 备注 |
+| --- | --- | ---: | --- | --- | ---: | ---: | ---: | ---: | --- |
+| mod 测试（GIF + PNG/跳过） | taiko | 5115616 | gif | hd | 18117.0 | 20.00 | 905.85 | 14.8 | hd |
+| mod 测试（GIF + PNG/跳过） | taiko | 5115616 | gif | fl | 18049.0 | 20.00 | 902.45 | 13.9 | fl |
+| 配置渲染 | ctb | 2103068 | gif | catch_gif_no_time_1x1 | 2228.0 | 5.00 | 445.60 | 3.9 | 关闭时间标签；1x1 单图（500x414） |
+| 配置渲染 | taiko | 5115616 | gif | taiko_gif_no_time_1x1 | 2190.0 | 5.00 | 438.00 | 4.0 | 关闭时间标签；1x1 单图（699x116） |
+| 配置渲染 | standard | 1024742 | gif | standard_gif_no_time_1x1 | 2098.0 | 5.00 | 419.60 | 3.6 | 关闭时间标签；1x1 单图（570x424） |
+| mod 测试（GIF + PNG/跳过） | taiko | 5115616 | gif | sw+hr+hd | 7248.0 | 20.00 | 362.40 | 14.9 | sw+hr+hd |
+| 极端测试谱面（PNG + GIF） | std | 1529760 | gif | - | 5098.0 | 20.00 | 254.90 | 545.2 | 极端滑条图 |
+| 配置渲染 | standard | 1024742 | gif | standard_gif_2x | 4851.0 | 20.00 | 242.55 | 229.7 | 缩放 2x（2240x1992） |
+| 配置渲染 | mania | 5572554 | gif | mania_gif_no_time_1x1 | 2038.0 | 10.00 | 203.80 | 3.6 | 关闭时间标签；1x1 单图（228x424） |
+| 背景视频 / 故事板 | mania | 4611014 | mp4 | 故事板 | 24760.0 | 121.93 | 203.06 | 1397.8 | 故事板图；背景暗化0.3（684x384） |
+
+## 总结
+
+- 全部 7 个脚本共 230 个任务：成功 230、跳过 0（PNG 不支持对应 mod）、失败 0；全部脚本墙钟 884.8s。
+- 累计渲染时间 872.1s，累计覆盖谱面 20036.5s，总体每s渲染 43.53ms/s；单进程峰值内存最大 1807.1MB。
+- 全部任务渲染成功，PNG 跳过项均为支持矩阵内的正常跳过，渲染结果可用于回归对比。
+- 明细见上文各脚本的单项表格；原始报告见输出目录各 `batch-*` 子文件夹下的 `report.txt`。
+

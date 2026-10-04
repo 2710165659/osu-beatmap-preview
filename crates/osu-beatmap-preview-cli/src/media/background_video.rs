@@ -136,6 +136,9 @@ impl DecodeContext {
         let mut emitted = 0_usize;
         // 不要逐次 flush（见模块文档）：只在段尾冲刷重排缓冲。
         let options = DecodeOptions::new().flush_after_decode(Flush::NoFlush);
+        // 原始 RGBA 只供当前画面缩放读取，不会进入输出队列；每段复用缓冲，
+        // 避免每个选中画面重新分配并初始化整张解码分辨率的图像。
+        let mut raw = Img::new(0, 0, [0, 0, 0, 0]);
         let mut consume = |yuv: DecodedYUV<'_>, out: &mut Vec<(i64, Arc<Img>)>| {
             let Some(&sample_index) = order.get(emitted) else {
                 return;
@@ -144,7 +147,7 @@ impl DecodeContext {
             if !self.chosen[sample_index] {
                 return;
             }
-            let raw = decoded_picture(&yuv);
+            decoded_picture(&yuv, &mut raw);
             let prepared = prepare_video_background(&raw, self.width, self.height, self.style);
             out.push((self.times_ms[sample_index], Arc::new(prepared)));
         };
@@ -560,11 +563,13 @@ fn sample_to_annexb(sample: &[u8], header: &mut Vec<u8>) -> Option<Vec<u8>> {
 }
 
 /// 解码画面（YUV420）转 RGBA。
-fn decoded_picture(frame: &DecodedYUV<'_>) -> Img {
+fn decoded_picture(frame: &DecodedYUV<'_>, img: &mut Img) {
     let (width, height) = frame.dimensions();
-    let mut img = Img::new(width as u32, height as u32, [0, 0, 0, 255]);
+    img.w = width as u32;
+    img.h = height as u32;
+    // 解码器完整写入 RGBA（含不透明 alpha）；尺寸变化时才调整缓冲长度。
+    img.data.resize(width * height * 4, 0);
     frame.write_rgba8(&mut img.data);
-    img
 }
 
 /// 按输出帧时间轴逐帧给出最终背景。

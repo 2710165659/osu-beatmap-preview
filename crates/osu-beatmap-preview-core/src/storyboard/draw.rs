@@ -190,12 +190,15 @@ pub fn draw_transformed_sprite(
     let alpha_factor = sprite.alpha;
 
     for py in y0..y1 {
+        // 同一行的纵向位移和旋转项固定，提前计算且不改变逆映射的运算顺序。
+        let dy = py as f32 + 0.5 - sprite.position[1];
+        let dy_sin = dy * sin;
+        let dy_cos = dy * cos;
         for px in x0..x1 {
             // 以像素中心 (px+0.5, py+0.5) 逆映射回纹理坐标。
             let dx = px as f32 + 0.5 - sprite.position[0];
-            let dy = py as f32 + 0.5 - sprite.position[1];
-            let lx = dx * cos + dy * sin;
-            let ly = -dx * sin + dy * cos;
+            let lx = dx * cos + dy_sin;
+            let ly = -dx * sin + dy_cos;
             let u = lx / kx + anchor_px[0];
             let v = ly / ky + anchor_px[1];
             if u < 0.0 || v < 0.0 || u > tw || v > th {
@@ -246,12 +249,19 @@ fn sample_bilinear_clamped(texture: &Img, u: f32, v: f32) -> [f32; 4] {
     let y1 = (y0 + 1).min(texture.h - 1);
     let fx = x - x0 as f32;
     let fy = y - y0 as f32;
+    // 四个邻接像素的地址与颜色通道无关，避免每个通道重复索引计算。
+    let offsets = [
+        (y0 * texture.w + x0) as usize * 4,
+        (y0 * texture.w + x1) as usize * 4,
+        (y1 * texture.w + x0) as usize * 4,
+        (y1 * texture.w + x1) as usize * 4,
+    ];
     let mut result = [0.0; 4];
     for (channel, value) in result.iter_mut().enumerate() {
-        let top = texture.data[(y0 * texture.w + x0) as usize * 4 + channel] as f32 * (1.0 - fx)
-            + texture.data[(y0 * texture.w + x1) as usize * 4 + channel] as f32 * fx;
-        let bottom = texture.data[(y1 * texture.w + x0) as usize * 4 + channel] as f32 * (1.0 - fx)
-            + texture.data[(y1 * texture.w + x1) as usize * 4 + channel] as f32 * fx;
+        let top = texture.data[offsets[0] + channel] as f32 * (1.0 - fx)
+            + texture.data[offsets[1] + channel] as f32 * fx;
+        let bottom = texture.data[offsets[2] + channel] as f32 * (1.0 - fx)
+            + texture.data[offsets[3] + channel] as f32 * fx;
         *value = top * (1.0 - fy) + bottom * fy;
     }
     result
