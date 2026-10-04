@@ -307,47 +307,7 @@ fn draw_spinner(
     hit_object: &StandardHitObject,
     snapshot_time: i64,
 ) {
-    let alpha = spinner_alpha(hit_object, snapshot_time, &context.settings);
-    if alpha <= 0.0 {
-        return;
-    }
-    let center = to_frame_point(
-        super::constants::PLAYFIELD_WIDTH / 2.0,
-        super::constants::PLAYFIELD_HEIGHT / 2.0,
-        &context.frame_layout,
-    );
-    let scale = context.spinner_size as f64 / 256.0;
-    let base_r = 80.0 * scale;
-    let alpha_byte = super::slider::alpha_to_byte(alpha);
-
-    let progress = ((snapshot_time - hit_object.start_time) as f64
-        / (hit_object.end_time - hit_object.start_time).max(1) as f64)
-        .clamp(0.0, 1.0);
-    let disc_r = base_r * (0.8 + 0.6 * progress);
-    let pink = super::constants::ARGON_SPINNER_PINK;
-    frame.fill_circle_aa(
-        center.0,
-        center.1,
-        disc_r,
-        [pink[0], pink[1], pink[2], (30.0 * alpha) as u8],
-    );
-
-    draw_ring_aa(
-        frame,
-        center.0,
-        center.1,
-        base_r * 0.8,
-        (10.0 * scale).max(1.0),
-        [255, 255, 255, alpha_byte],
-    );
-    draw_ring_aa(
-        frame,
-        center.0,
-        center.1,
-        base_r,
-        (3.0 * scale).max(1.0),
-        [255, 255, 255, alpha_byte],
-    );
+    super::spinner::draw_cpu(frame, context, hit_object, snapshot_time);
 }
 
 // ——— 接近圈 ———

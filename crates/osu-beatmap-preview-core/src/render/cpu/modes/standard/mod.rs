@@ -4,6 +4,7 @@ pub mod alpha;
 pub mod constants;
 pub mod context;
 mod frame;
+pub mod spinner;
 pub use frame::render_frame;
 pub mod digits;
 pub mod follow_points;

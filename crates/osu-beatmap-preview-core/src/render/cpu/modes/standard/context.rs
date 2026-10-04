@@ -141,6 +141,8 @@ pub struct RenderContext {
     pub frame_circle_diameter: i64,
     pub slider_body_width: i64,
     pub spinner_size: i64,
+    pub spinner_od: f64,
+    pub spinner_rate: f64,
     pub slider_follow_size: i64,
     pub slider_ball_size: i64,
     pub slider_tick_rate: f64,
@@ -423,7 +425,21 @@ pub fn build_render_context(
     // 因此在这里一次算好，PNG/GIF/MP4 与实时预览共用同一份。
     // 注意颜色不跟随连击色：lazer `ArgonFollowPoint` 用的是固定渐变。
     let follow_points = super::follow_points::build_follow_points(&hit_objects, &settings);
+    let mut spinner_od = beatmap.difficulty.get_f64_or("OverallDifficulty", 5.0);
+    if let Some(mods) = mods {
+        if mods.easy {
+            spinner_od *= 0.5;
+        }
+        if mods.hard_rock {
+            spinner_od = (spinner_od * 1.4).min(10.0);
+        }
+        if let Some(od) = mods.da_od {
+            spinner_od = od;
+        }
+    }
     RenderContext {
+        spinner_od,
+        spinner_rate: mods.map_or(1.0, |mods| mods.speed_multiplier),
         hit_objects,
         combo_info,
         follow_points,

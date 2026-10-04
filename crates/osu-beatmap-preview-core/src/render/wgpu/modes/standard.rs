@@ -505,43 +505,7 @@ fn draw_spinner(
     object: &StandardHitObject,
     time: i64,
 ) {
-    let alpha = spinner_alpha(object, time, &context.settings);
-    if alpha <= 0.0 {
-        return;
-    }
-    let center = to_frame_point(
-        PLAYFIELD_WIDTH / 2.0,
-        PLAYFIELD_HEIGHT / 2.0,
-        &context.frame_layout,
-    );
-    let point = [center.0 as f32, center.1 as f32];
-    let scale = context.spinner_size as f64 / 256.0;
-    let base = 80.0 * scale;
-    let progress = ((time - object.start_time) as f64
-        / (object.end_time - object.start_time).max(1) as f64)
-        .clamp(0.0, 1.0);
-    scene.circle(
-        point,
-        (base * (0.8 + 0.6 * progress)) as f32,
-        [
-            ARGON_SPINNER_PINK[0],
-            ARGON_SPINNER_PINK[1],
-            ARGON_SPINNER_PINK[2],
-            (30.0 * alpha) as u8,
-        ],
-    );
-    scene.ring(
-        point,
-        (base * 0.8) as f32,
-        (10.0 * scale).max(1.0) as f32,
-        [255, 255, 255, alpha_to_byte(alpha)],
-    );
-    scene.ring(
-        point,
-        base as f32,
-        (3.0 * scale).max(1.0) as f32,
-        [255, 255, 255, alpha_to_byte(alpha)],
-    );
+    crate::render::cpu::modes::standard::spinner::draw_gpu(scene, context, object, time);
 }
 
 fn draw_approach_circle(
