@@ -408,7 +408,7 @@ pub fn prepare_hit_objects_with_mods(
 }
 
 /// 普通音符从 preempt 起线性淡出，经过滚动距离的 37.5% 后完全消失。
-/// 连打条/气球保留；连打刻度与普通音符使用同一规则，且跟随自己的 SV。
+/// 连打条/气球按头部时间整体淡出，连打刻度仍跟随自己的 SV。
 pub fn hidden_alpha(note_time: f64, snapshot_time: i64, multiplier: f64, time_range: f64) -> f64 {
     let preempt = time_range / multiplier;
     if preempt <= 0.0 {
@@ -785,7 +785,7 @@ pub fn can_skip(
     latest_x < left_bound || earliest_x > right_bound
 }
 
-fn draw_hit_object(
+pub(crate) fn draw_hit_object(
     image: &mut Img,
     hit_object: &PreparedTaikoHitObject,
     layout: &AnimationLayout,
@@ -794,6 +794,31 @@ fn draw_hit_object(
     cache: &mut RenderCache,
 ) {
     let base = &hit_object.hit_object;
+    if hit_object.hidden && base.hit_type & (SWELL_FLAG | DRUMROLL_FLAG) != 0 {
+        let alpha = hidden_alpha(
+            base.start_time as f64,
+            snapshot_time,
+            hit_object.start_multiplier,
+            layout.time_range,
+        );
+        if alpha <= 0.0 {
+            return;
+        }
+        // 整条物件先合成再淡出，避免头尾重叠处因重复混合而出现亮斑。
+        let mut layer = Img::new(image.w, image.h, [0, 0, 0, 0]);
+        let mut visible = hit_object.clone();
+        visible.hidden = false;
+        draw_hit_object(
+            &mut layer,
+            &visible,
+            layout,
+            row_index,
+            snapshot_time,
+            cache,
+        );
+        image.alpha_composite_scaled(&layer, 0, 0, alpha);
+        return;
+    }
     if base.hit_type & SWELL_FLAG != 0 {
         draw_span_object(
             image,
@@ -1197,6 +1222,54 @@ fn draw_time_label(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_spans_fade_and_disappear_as_a_whole() {
+        let layout = build_animation_layout(1000.0);
+        for hit_type in [DRUMROLL_FLAG, SWELL_FLAG] {
+            let mut object = PreparedTaikoHitObject {
+                hit_object: TaikoHitObject {
+                    start_time: 2000,
+                    end_time: 2200,
+                    hit_type,
+                    hitsound: 0,
+                    samples: Vec::new(),
+                },
+                start_multiplier: 1.0,
+                end_multiplier: 1.0,
+                min_multiplier: 1.0,
+                max_multiplier: 1.0,
+                drum_roll_ticks: vec![PreparedAnimationPoint {
+                    time: 2100.0,
+                    multiplier: 1.0,
+                }],
+                hidden: true,
+            };
+            let render = |object: &PreparedTaikoHitObject, time| {
+                let mut image = Img::new(
+                    layout.image_width as u32,
+                    layout.image_height as u32,
+                    [0, 0, 0, 0],
+                );
+                draw_hit_object(
+                    &mut image,
+                    object,
+                    &layout,
+                    0,
+                    time,
+                    &mut RenderCache::default(),
+                );
+                image
+            };
+            assert!(render(&object, 1375).alpha_bbox().is_none());
+            let faded = render(&object, 1188);
+            assert!(faded.alpha_bbox().is_some());
+            assert!(faded.data.chunks_exact(4).all(|pixel| pixel[3] <= 128));
+            object.hidden = false;
+            let normal = render(&object, 1375);
+            assert!(normal.data.chunks_exact(4).any(|pixel| pixel[3] == 255));
+        }
+    }
 
     #[test]
     fn hidden_notes_fade_with_preempt_and_scroll_velocity() {

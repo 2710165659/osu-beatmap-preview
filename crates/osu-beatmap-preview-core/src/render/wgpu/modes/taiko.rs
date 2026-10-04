@@ -289,6 +289,37 @@ fn draw_hit_object_scene(
     hidden_sprite: Option<&Arc<Img>>,
 ) {
     let base = &object.hit_object;
+    if object.hidden && base.hit_type & (SWELL_FLAG | DRUMROLL_FLAG) != 0 {
+        if hidden_alpha(
+            base.start_time as f64,
+            snapshot_time,
+            object.start_multiplier,
+            layout.time_range,
+        ) <= 0.0
+        {
+            return;
+        }
+        // HD 长条使用同一物件层，确保 GPU 与 CPU 的整体淡出及重叠边缘一致。
+        let mut layer = Img::new(
+            layout.image_width as u32,
+            layout.image_height as u32,
+            [0, 0, 0, 0],
+        );
+        crate::render::cpu::modes::taiko::animation_render::draw_hit_object(
+            &mut layer,
+            object,
+            layout,
+            0,
+            snapshot_time,
+            &mut crate::render::cpu::modes::taiko::notes::RenderCache::default(),
+        );
+        scene.sprite(
+            Arc::new(layer),
+            rect(0, 0, layout.image_width, layout.image_height),
+            1.0,
+        );
+        return;
+    }
     if base.hit_type & SWELL_FLAG != 0 {
         draw_span_scene(
             scene,

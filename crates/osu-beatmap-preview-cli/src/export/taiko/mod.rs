@@ -21,5 +21,14 @@ pub(crate) fn render_taiko_gif(
     deadline: &osu_beatmap_preview_core::support::timeout::RequestDeadline,
 ) -> osu_beatmap_preview_core::Result<()> {
     let frames = animation_render::prepare_taiko_gif_frames(beatmap, mods, options, fps, deadline)?;
+    if mods.is_some_and(|mods| mods.hidden || mods.flashlight) {
+        return crate::media::image::save_animated_gif_with_frame_palettes(
+            frames.frame_count(),
+            |index| frames.render(index),
+            output_path,
+            frames.frame_rate(),
+            deadline,
+        );
+    }
     super::save_animation_frames(frames, output_path, deadline)
 }

@@ -82,17 +82,64 @@ pub fn save_png(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<
     })
 }
 
+/// 使用逐帧调色板保留连续淡出的合成颜色，不对 RGB 做预量化。
+/// GIF 不支持半透明，必须编码已与背景合成的颜色；全局采样调色板容易遗漏暗色。
+pub fn save_animated_gif_with_frame_palettes(
+    frame_count: usize,
+    render: impl Fn(usize) -> Img + Send + Sync,
+    path: &Path,
+    frame_rate: f64,
+    deadline: &RequestDeadline,
+) -> Result<()> {
+    deadline.check()?;
+    if frame_count == 0 {
+        return Err(PreviewError::render("no frames to encode"));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
+    }
+    let first = render(0);
+    let (width, height) = (first.w as u16, first.h as u16);
+    crate::cache::with_atomic_output_deadline(path, "gif.tmp", deadline, |tmp_path| {
+        let file = std::fs::File::create(tmp_path)
+            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+        let mut encoder = gif::Encoder::new(std::io::BufWriter::new(file), width, height, &[])
+            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+        encoder
+            .set_repeat(gif::Repeat::Infinite)
+            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+        let mut first = Some(first);
+        // 调色板随帧变化，索引不能用于帧间差分；逐帧写完整画面，内存只保留一帧。
+        for index in 0..frame_count {
+            deadline.check()?;
+            let mut image = first.take().unwrap_or_else(|| render(index));
+            let mut frame = gif::Frame::from_rgba_speed(width, height, &mut image.data, 1);
+            frame.delay = (((index + 1) as f64 * 100.0 / frame_rate).round()
+                - (index as f64 * 100.0 / frame_rate).round())
+            .max(1.0) as u16;
+            frame.dispose = gif::DisposalMethod::Keep;
+            encoder
+                .write_frame(&frame)
+                .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+        }
+        drop(encoder);
+        deadline.check()?;
+        Ok(())
+    })
+}
+
 /// 将通道海报化为 5 位（32 级），复制高位以保持完整 0..255 范围。
 /// 这能稳定帧间抗锯齿/渐变像素，缩小差分区域并延长 LZW 连续段。
 #[inline]
 fn posterize(v: u8) -> u8 {
-    (v & 0xF0) | (v >> 4)
+    (v & 0xF8) | (v >> 5)
 }
 
 /// 预计算将海报化 RGB 映射到调色板索引的 32³ 查找表。
 ///
-/// `posterize()` 每通道产生 16 个值（0x00…0xFF），`>> 3` 把它们无冲突地映射到 32 个
-/// 槽位中的 16 个，因此完整颜色空间可放入 32768 项数组；`transparent_idx` 映射到前
+/// `posterize()` 每通道产生 32 个值，`>> 3` 把它们无冲突地映射到 32 个
+/// 槽位，因此完整颜色空间可放入 32768 项数组；`transparent_idx` 映射到前
 /// 一个调色板项，避免被当作普通像素索引。每个槽位由 `posterize(ri << 3)` 构建，与查
 /// 找时的颜色精确对齐，命中与逐像素 `index_of()` 相同的结果、无量化漂移。
 fn build_gif_lut(nq: &color_quant::NeuQuant, transparent_idx: u8) -> [[[u8; 32]; 32]; 32] {
@@ -177,6 +224,9 @@ pub fn save_animated_gif_streamed(
     deadline.check()?;
 
     let mut sample: Vec<u8> = Vec::new();
+    // 背景面积远大于淡出中的音符；限制同色样本权重，避免 HD/FL 的暗色音符
+    // 被 NeuQuant 忽略后映射到灰色。海报化后的颜色空间只有 32³ 项。
+    let mut color_samples = [0u8; 32768];
     let mut first_dims = (0u32, 0u32);
     for frame in palette_frames {
         if first_dims == (0, 0) {
@@ -184,6 +234,13 @@ pub fn save_animated_gif_streamed(
         }
         // 每 4 个像素采样 1 个，以限制量化器开销。
         for px in frame.data.chunks_exact(16) {
+            let key = ((px[0] as usize >> 3) << 10)
+                | ((px[1] as usize >> 3) << 5)
+                | (px[2] as usize >> 3);
+            if color_samples[key] >= 64 {
+                continue;
+            }
+            color_samples[key] += 1;
             sample.extend_from_slice(&[posterize(px[0]), posterize(px[1]), posterize(px[2]), 255]);
         }
         if sample.len() > 4 * 1_500_000 {
@@ -216,7 +273,7 @@ pub fn save_animated_gif_streamed(
     let transparent_idx: u8 = crate::config::current().advance.gif.PALETTE_COLORS as u8;
 
     // 预计算将海报化 RGB 映射到调色板索引的 32³ 三维查找表。
-    // 每个通道会缩减为 16 个值，>>3 后无冲突地落入 32 个槽位中的 16 个，
+    // 每个通道会缩减为 32 个值，>>3 后无冲突地落入 32 个槽位，
     // 因此数组覆盖全部颜色空间，以一次数组访问替代逐像素 HashMap 和神经网络查找。
     // 构建成本为一次 32768 × index_of()，单像素查找为 O(1)。
     let lut = build_gif_lut(&nq, transparent_idx);
@@ -524,6 +581,86 @@ mod timeout_tests {
         assert!(error.to_string().contains("GIF preview request timed out"));
         assert!(!rendered.load(Ordering::Relaxed));
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn frame_palettes_preserve_note_rgb_during_fade() {
+        let path =
+            std::env::temp_dir().join(format!("osu-preview-fade-rgb-{}.gif", std::process::id()));
+        let deadline = RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(60));
+        let render = |index| {
+            let mut image = Img::new(64, 16, [51, 51, 51, 255]);
+            for (position, color) in [[235, 69, 44, 255], [67, 142, 172, 255], [232, 198, 61, 255]]
+                .into_iter()
+                .enumerate()
+            {
+                image.alpha_composite_scaled(
+                    &Img::new(16, 16, color),
+                    position as i64 * 16,
+                    0,
+                    1.0 - index as f64 / 20.0,
+                );
+            }
+            image
+        };
+        save_animated_gif_with_frame_palettes(21, render, &path, 20.0, &deadline).unwrap();
+        let mut options = gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::RGBA);
+        let mut decoder = options
+            .read_info(std::fs::File::open(&path).unwrap())
+            .unwrap();
+        for index in 0..21 {
+            let frame = decoder.read_next_frame().unwrap().unwrap();
+            assert_eq!(
+                frame.buffer.as_ref(),
+                render(index).data.as_slice(),
+                "第 {index} 帧只能改变透明度合成结果"
+            );
+        }
+        drop(decoder);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn gif_preserves_dim_note_colors_on_large_gray_background() {
+        let path = std::env::temp_dir().join(format!(
+            "osu-preview-gif-note-colors-{}.gif",
+            std::process::id()
+        ));
+        let deadline = RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(60));
+        let colors = [[68, 51, 51, 255], [51, 68, 85, 255]];
+        save_animated_gif_streamed(
+            4,
+            |_| {
+                let mut image = Img::new(700, 500, [51, 51, 51, 255]);
+                for (index, color) in colors.iter().enumerate() {
+                    image.fill_rect_size(100 + index as i64 * 100, 100, 20, 20, *color);
+                }
+                image
+            },
+            &path,
+            20.0,
+            &deadline,
+        )
+        .unwrap();
+        let mut options = gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::RGBA);
+        let mut decoder = options
+            .read_info(std::fs::File::open(&path).unwrap())
+            .unwrap();
+        let frame = decoder.read_next_frame().unwrap().unwrap();
+        for (index, expected) in colors.iter().enumerate() {
+            let offset = (110 * 700 + 110 + index * 100) * 4;
+            let actual = &frame.buffer[offset..offset + 3];
+            for channel in 0..3 {
+                assert!(
+                    (actual[channel] as i16 - expected[channel] as i16).abs() <= 8,
+                    "暗色音符被错误量化：{expected:?} -> {actual:?}"
+                );
+            }
+        }
+        drop(decoder);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
