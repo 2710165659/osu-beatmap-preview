@@ -54,7 +54,7 @@ impl StandardFlashlight {
                 hit_times.push(end);
             } else if object.hit_type & 2 != 0 {
                 let data = get_slider_render_data(&mut cache, context, index);
-                let path = &data.frame_path;
+                let path = &data.timing_path;
                 let spans = object.slider_repeats.max(1) as usize;
                 let span_duration = (end - start) / spans as f64;
                 hit_times.push(start);

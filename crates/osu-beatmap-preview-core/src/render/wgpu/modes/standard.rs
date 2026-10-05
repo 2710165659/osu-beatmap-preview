@@ -285,11 +285,7 @@ fn draw_slider(
     let path = if snake_start <= 0.001 && snake_end >= 0.999 {
         Arc::clone(&slider.full_path)
     } else {
-        path_vertices(&crate::domain::shared::slider_path::slice_path(
-            &slider.data.frame_path,
-            snake_start,
-            snake_end,
-        ))
+        path_vertices(&slider.data.body_path(snake_start, snake_end))
     };
     if path.len() >= 2 && body_alpha > 0.0 {
         let alpha = alpha_to_byte(body_alpha);
@@ -442,7 +438,8 @@ fn draw_slider_ball(
     let completion =
         (time - object.start_time) as f64 / (object.end_time - object.start_time).max(1) as f64;
     let progress = slider_path_progress(object.slider_repeats.max(1) as i64, completion);
-    let center = crate::domain::shared::slider_path::path_position_at(&slider.frame_path, progress);
+    let center =
+        crate::domain::shared::slider_path::path_position_at(&slider.timing_path, progress);
     let point = [center.0 as f32, center.1 as f32];
     let follow_radius = context.slider_follow_size as f32 / 2.0;
     let follow_border = (4.0 * context.frame_circle_diameter as f64 / 128.0).max(1.0) as f32;
@@ -477,7 +474,7 @@ fn draw_slider_ball(
     // 方向箭头：与 CPU 路径共用几何参数，用两段线段加三个圆头拼出 `>` 形
     // （`Line` 命令没有旋转，圆头也要显式补上），朝向由共享的旋转函数解析计算。
     if let Some(angle) = slider_ball_arrow_angle(
-        &slider.frame_path,
+        &slider.timing_path,
         object.slider_repeats.max(1) as i64,
         completion,
     ) {

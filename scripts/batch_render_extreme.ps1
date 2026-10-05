@@ -217,6 +217,7 @@ function Format-Number {
 # ── 谱面列表（备注取用户给的注释原文） ──
 $maps = @(
     [pscustomobject]@{ mode = "std";   bid = "5467386"; note = "滑条控制点非常多" }
+    [pscustomobject]@{ mode = "std";   bid = "4858443"; note = "超长滑条，约20万个控制点" }
     [pscustomobject]@{ mode = "std";   bid = "2571858"; note = "aspire" }
     [pscustomobject]@{ mode = "std";   bid = "372245";  note = "观赏谱" }
     [pscustomobject]@{ mode = "std";   bid = "1529760"; note = "极端滑条图" }

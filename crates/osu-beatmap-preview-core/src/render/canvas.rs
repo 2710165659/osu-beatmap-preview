@@ -535,7 +535,24 @@ impl Img {
         let mut covered = vec![false; grid_w * grid_h];
         let half_sq = half * half;
 
-        let mark_segment = |covered: &mut Vec<bool>, a: (f64, f64), b: (f64, f64)| {
+        // 长滑条大量回绕：完全覆盖的 16×16 网格块不再逐像素检查。
+        // 计数只在像素首次覆盖时递减，因此跳过不会改变线段并集和半透明叠加结果。
+        let tile_size = if pts.len() > 256 {
+            16
+        } else {
+            grid_w.max(grid_h)
+        };
+        let tiles_w = grid_w.div_ceil(tile_size);
+        let tiles_h = grid_h.div_ceil(tile_size);
+        let mut remaining: Vec<usize> = (0..tiles_h)
+            .flat_map(|ty| {
+                (0..tiles_w).map(move |tx| {
+                    (grid_w - tx * tile_size).min(tile_size)
+                        * (grid_h - ty * tile_size).min(tile_size)
+                })
+            })
+            .collect();
+        let mut mark_segment = |covered: &mut Vec<bool>, a: (f64, f64), b: (f64, f64)| {
             let sx0 = ((a.0.min(b.0) - half - 1.0).floor().max(xa as f64)) as i64;
             let sy0 = ((a.1.min(b.1) - half - 1.0).floor().max(ya as f64)) as i64;
             let sx1 = ((a.0.max(b.0) + half + 1.0).ceil().min(xb as f64)) as i64;
@@ -543,22 +560,37 @@ impl Img {
             let abx = b.0 - a.0;
             let aby = b.1 - a.1;
             let len_sq = abx * abx + aby * aby;
-            for y in sy0..=sy1 {
-                let py = y as f64 + 0.5;
-                for x in sx0..=sx1 {
-                    let gi = (y - ya) as usize * grid_w + (x - xa) as usize;
-                    if covered[gi] {
+            if sx0 > sx1 || sy0 > sy1 {
+                return;
+            }
+            for ty in (sy0 - ya) as usize / tile_size..=(sy1 - ya) as usize / tile_size {
+                for tx in (sx0 - xa) as usize / tile_size..=(sx1 - xa) as usize / tile_size {
+                    let tile = ty * tiles_w + tx;
+                    if remaining[tile] == 0 {
                         continue;
                     }
-                    let px = x as f64 + 0.5;
-                    let dist_sq = if len_sq <= 1e-12 {
-                        (px - a.0).powi(2) + (py - a.1).powi(2)
-                    } else {
-                        let t = (((px - a.0) * abx + (py - a.1) * aby) / len_sq).clamp(0.0, 1.0);
-                        (px - (a.0 + t * abx)).powi(2) + (py - (a.1 + t * aby)).powi(2)
-                    };
-                    if dist_sq <= half_sq {
-                        covered[gi] = true;
+                    let tile_x = xa + (tx * tile_size) as i64;
+                    let tile_y = ya + (ty * tile_size) as i64;
+                    for y in sy0.max(tile_y)..=sy1.min(tile_y + tile_size as i64 - 1) {
+                        let py = y as f64 + 0.5;
+                        for x in sx0.max(tile_x)..=sx1.min(tile_x + tile_size as i64 - 1) {
+                            let gi = (y - ya) as usize * grid_w + (x - xa) as usize;
+                            if covered[gi] {
+                                continue;
+                            }
+                            let px = x as f64 + 0.5;
+                            let dist_sq = if len_sq <= 1e-12 {
+                                (px - a.0).powi(2) + (py - a.1).powi(2)
+                            } else {
+                                let t = (((px - a.0) * abx + (py - a.1) * aby) / len_sq)
+                                    .clamp(0.0, 1.0);
+                                (px - (a.0 + t * abx)).powi(2) + (py - (a.1 + t * aby)).powi(2)
+                            };
+                            if dist_sq <= half_sq {
+                                covered[gi] = true;
+                                remaining[tile] -= 1;
+                            }
+                        }
                     }
                 }
             }
@@ -781,5 +813,36 @@ mod tests {
         image.set_rect_size(0, 0, 3, -1, [255, 0, 0, 255]);
 
         assert!(image.data.chunks_exact(4).all(|pixel| pixel == background));
+    }
+    #[test]
+    fn tiled_polyline_matches_pixel_distance_union() {
+        // 密集回绕、透明颜色、退化线段及越界端点都必须保持原来的覆盖并集。
+        let mut points: Vec<_> = (0..400)
+            .map(|i| (((i * 37) % 96) as f64 - 16.0, ((i * 23) % 80) as f64 - 16.0))
+            .collect();
+        points.extend_from_slice(&[(20.0, 20.0), (20.0, 20.0)]);
+        for width in [1.0, 7.5, 32.0] {
+            let color = [12, 34, 56, 123];
+            let mut image = Img::new(67, 49, [0; 4]);
+            image.stroke_polyline(&points, width, color, true);
+            for y in 0..image.h {
+                for x in 0..image.w {
+                    let covered = points.windows(2).any(|pair| {
+                        let (a, b) = (pair[0], pair[1]);
+                        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+                        let length = dx * dx + dy * dy;
+                        let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+                        let t = if length <= 1e-12 {
+                            0.0
+                        } else {
+                            (((px - a.0) * dx + (py - a.1) * dy) / length).clamp(0.0, 1.0)
+                        };
+                        (px - (a.0 + t * dx)).powi(2) + (py - (a.1 + t * dy)).powi(2)
+                            <= width * width / 4.0
+                    });
+                    assert_eq!(image.get(x, y), if covered { color } else { [0; 4] });
+                }
+            }
+        }
     }
 }

@@ -2,7 +2,7 @@
 
 use crate::domain::models::StandardHitObject;
 use crate::domain::shared::slider_path::{
-    build_path, build_standard_slider_path, path_position_at, SliderPath,
+    build_path, build_standard_slider_paths, path_position_at, slice_path, SliderPath,
 };
 use crate::render::canvas::Img;
 use std::collections::HashMap;
@@ -17,10 +17,25 @@ use super::context::{
 
 pub struct SliderRenderData {
     pub frame_path: SliderPath,
+    /// 滑条球、tick 和蛇入/蛇出的端点使用完整曲线，避免显示简化吞掉局部停顿。
+    pub timing_path: SliderPath,
     pub head_center: (f64, f64),
     pub reverse_centers: Vec<(f64, f64)>,
     pub reverse_angles: Vec<f64>,
     pub ticks: Vec<SliderTickRenderData>,
+}
+
+impl SliderRenderData {
+    /// 蛇入/蛇出仍使用稀疏主体，但切割端点必须与完整计时曲线的滑条球一致。
+    pub fn body_path(&self, start: f64, end: f64) -> Vec<(f64, f64)> {
+        let mut points = slice_path(&self.frame_path, start, end);
+        if points.len() >= 2 {
+            points[0] = path_position_at(&self.timing_path, start.min(end));
+            let last = points.len() - 1;
+            points[last] = path_position_at(&self.timing_path, start.max(end));
+        }
+        points
+    }
 }
 
 pub struct SliderTickRenderData {
@@ -220,9 +235,17 @@ pub fn get_slider_render_data(
         return Arc::clone(cached);
     }
 
+    let data = context
+        .body_layers
+        .slider_data(index, || build_slider_render_data(context, index));
+    cache.slider_data.insert(index, Arc::clone(&data));
+    data
+}
+
+fn build_slider_render_data(context: &RenderContext, index: usize) -> SliderRenderData {
     let hit_object = &context.hit_objects[index];
     let slider_type = hit_object.slider_type.as_deref().unwrap_or("B");
-    let world_path = build_standard_slider_path(
+    let (world_path, timing_world_path) = build_standard_slider_paths(
         hit_object.x,
         hit_object.y,
         &hit_object.slider_points,
@@ -235,7 +258,30 @@ pub fn get_slider_render_data(
         .iter()
         .map(|&(x, y)| to_frame_point(x + offset, y + offset, &context.frame_layout))
         .collect();
-    let frame_path = build_path(&frame_points);
+    // 显示点虽然稀疏，累计进度仍来自完整曲线；统一缩放不会改变弧长比例。
+    let frame_path = SliderPath {
+        points: frame_points,
+        cumulative_lengths: world_path
+            .cumulative_lengths
+            .iter()
+            .map(|length| length * context.frame_layout.scale)
+            .collect(),
+        total_length: world_path.total_length * context.frame_layout.scale,
+    };
+    let timing_frame_points: Vec<(f64, f64)> = timing_world_path
+        .points
+        .iter()
+        .map(|&(x, y)| to_frame_point(x + offset, y + offset, &context.frame_layout))
+        .collect();
+    let timing_path = SliderPath {
+        points: timing_frame_points,
+        cumulative_lengths: timing_world_path
+            .cumulative_lengths
+            .iter()
+            .map(|length| length * context.frame_layout.scale)
+            .collect(),
+        total_length: timing_world_path.total_length * context.frame_layout.scale,
+    };
 
     let (beat_length, slider_velocity) = context
         .slider_timings
@@ -243,9 +289,9 @@ pub fn get_slider_render_data(
         .copied()
         .unwrap_or((500.0, 1.0));
     let ticks = generate_slider_ticks(
-        &frame_path,
+        &timing_path,
         SliderTickParams {
-            world_length: world_path.total_length,
+            world_length: timing_world_path.total_length,
             start_time: hit_object.start_time,
             end_time: hit_object.end_time,
             repeats: hit_object.slider_repeats,
@@ -283,15 +329,14 @@ pub fn get_slider_render_data(
     }
 
     let head_center = frame_path.points.first().copied().unwrap_or((0.0, 0.0));
-    let data = Arc::new(SliderRenderData {
+    SliderRenderData {
         frame_path,
+        timing_path,
         head_center,
         reverse_centers,
         reverse_angles,
         ticks,
-    });
-    cache.slider_data.insert(index, Arc::clone(&data));
-    data
+    }
 }
 
 /// 滑条 tick 生成参数：路径长度、时间跨度与速度配置打包成结构体，
@@ -609,7 +654,7 @@ pub fn draw_slider_ball(
         / (hit_object.end_time - hit_object.start_time).max(1) as f64;
     let progress =
         super::alpha::slider_path_progress(hit_object.slider_repeats.max(1) as i64, completion);
-    let center = path_position_at(&slider_data.frame_path, progress);
+    let center = path_position_at(&slider_data.timing_path, progress);
 
     {
         let follow = cache
@@ -657,7 +702,7 @@ pub fn draw_slider_ball(
         // 方向箭头为白色，与游戏一致：不随 combo 颜色变化，只按角度缓存旋转结果。
         // 角度取整到 1°，与折返箭头一致地复用精灵。
         let Some(angle) = slider_ball_arrow_angle(
-            &slider_data.frame_path,
+            &slider_data.timing_path,
             hit_object.slider_repeats.max(1) as i64,
             completion,
         ) else {
@@ -955,6 +1000,53 @@ pub fn draw_ring_aa(img: &mut Img, cx: f64, cy: f64, outer_r: f64, thickness: f6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dense_slider_render_data_is_shared_and_scale_independent() {
+        use super::super::context::build_render_context;
+        use crate::domain::models::HitObjects;
+        use crate::domain::parser::parse_beatmap_bytes;
+        use crate::domain::shared::time_selection::TimeAxis;
+        use crate::render::geometry::OutputFormat;
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/testdata_slider");
+        for file in ["4858443.osu", "5467386.osu"] {
+            let beatmap = parse_beatmap_bytes(&std::fs::read(root.join(file)).unwrap()).unwrap();
+            let HitObjects::Standard(objects) = &beatmap.hit_objects else {
+                panic!("需要 standard 谱面")
+            };
+            let index = objects
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, object)| object.slider_points.len())
+                .unwrap()
+                .0;
+            for format in [OutputFormat::Png, OutputFormat::Gif, OutputFormat::Mp4] {
+                let context =
+                    build_render_context(&beatmap, objects.clone(), None, TimeAxis::new(0), format);
+                let first = get_slider_render_data(&mut RenderCache::default(), &context, index);
+                let second = get_slider_render_data(&mut RenderCache::default(), &context, index);
+                assert!(Arc::ptr_eq(&first, &second));
+                assert!(
+                    (first.timing_path.total_length / context.frame_layout.scale
+                        - objects[index].slider_pixel_length)
+                        .abs()
+                        < 1e-6
+                );
+                for start in [0.0, 0.1, 0.5, 0.9] {
+                    let body = first.body_path(start, 0.95);
+                    assert_eq!(
+                        body.first().copied(),
+                        Some(path_position_at(&first.timing_path, start))
+                    );
+                    assert_eq!(
+                        body.last().copied(),
+                        Some(path_position_at(&first.timing_path, 0.95))
+                    );
+                }
+            }
+        }
+    }
 
     fn path(length: f64) -> SliderPath {
         build_path(&[(0.0, 0.0), (length, 0.0)])

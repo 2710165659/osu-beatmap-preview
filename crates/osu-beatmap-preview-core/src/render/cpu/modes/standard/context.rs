@@ -67,6 +67,8 @@ pub struct CachedLayer {
 /// 重复构建约「线程数」次）。不同上下文之间不共享，同一上下文的多帧全程复用。
 pub struct SharedBodyLayers {
     slots: Box<[OnceLock<CachedLayer>]>,
+    /// 完整计时曲线可能含几十万个点，必须跨线程共享，避免每个 worker 重算并持有副本。
+    slider_data: Box<[OnceLock<Arc<SliderRenderData>>]>,
     cache_identity: Arc<()>,
 }
 
@@ -74,6 +76,10 @@ impl SharedBodyLayers {
     pub fn new(hit_object_count: usize) -> Self {
         Self {
             slots: (0..hit_object_count)
+                .map(|_| OnceLock::new())
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            slider_data: (0..hit_object_count)
                 .map(|_| OnceLock::new())
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
@@ -86,6 +92,14 @@ impl SharedBodyLayers {
     /// 所需数据，不能依赖调用方的可变借用。
     pub fn get_or_init(&self, index: usize, build: impl FnOnce() -> CachedLayer) -> &CachedLayer {
         self.slots[index].get_or_init(build)
+    }
+
+    pub fn slider_data(
+        &self,
+        index: usize,
+        build: impl FnOnce() -> SliderRenderData,
+    ) -> Arc<SliderRenderData> {
+        Arc::clone(self.slider_data[index].get_or_init(|| Arc::new(build())))
     }
 }
 

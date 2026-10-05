@@ -234,8 +234,7 @@ fn draw_slider(
             context.settings.traceable,
         );
     } else {
-        let visible_path =
-            crate::processing::path::slice_path(&slider_data.frame_path, snaked_start, snaked_end);
+        let visible_path = slider_data.body_path(snaked_start, snaked_end);
         draw_slider_body(
             frame,
             &visible_path,
