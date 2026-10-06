@@ -132,6 +132,36 @@ pub fn render_frame(
         draw_break_overlay(&mut frame, current_break, snapshot_time, context);
     }
 
+    if context.show_cursor {
+        if let Some(cache) = &context.autoplay {
+            let cursor = cache.get(context);
+            cursor.visit_trail(
+                snapshot_time,
+                context.frame_layout.scale,
+                |from, to, width, alpha| {
+                    frame.draw_line(
+                        from[0],
+                        from[1],
+                        to[0],
+                        to[1],
+                        width,
+                        [255, 255, 255, alpha],
+                    );
+                },
+            );
+            if let (Some(position), Some(sprite)) = (
+                cursor.position_at(snapshot_time),
+                cursor.sprite_at(snapshot_time),
+            ) {
+                frame.alpha_composite(
+                    sprite,
+                    py_round(position[0] - sprite.w as f64 / 2.0),
+                    py_round(position[1] - sprite.h as f64 / 2.0),
+                );
+            }
+        }
+    }
+
     frame
 }
 
@@ -724,9 +754,15 @@ mod tests {
                     .unwrap()
                     .get(&context)
                     .at(&context, 5200);
-                let expected = to_frame_point(0.0, 192.0, &context.frame_layout);
-                assert!((mask.center[0] - expected.0).abs() < 1.0 * scale);
-                assert!((mask.center[1] - expected.1).abs() < 0.01);
+                let expected = context
+                    .autoplay
+                    .as_ref()
+                    .unwrap()
+                    .get(&context)
+                    .flashlight_path(context.spinner_rate)
+                    .position_at(5200);
+                assert!((mask.center[0] - expected[0]).abs() < 0.01);
+                assert!((mask.center[1] - expected[1]).abs() < 0.01);
                 assert_eq!(mask.radius, 125.0 * context.frame_layout.scale);
                 let image = render_single(&context, 5200);
                 assert_eq!(image.get(image.w - 1, 0), [0, 0, 0, 255]);

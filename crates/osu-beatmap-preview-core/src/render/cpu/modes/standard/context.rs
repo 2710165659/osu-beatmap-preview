@@ -169,6 +169,9 @@ pub struct RenderContext {
     pub output_format: crate::render::geometry::OutputFormat,
     /// 等最终画布布局就绪后初始化，避免 MP4 居中偏移使自动光圈错位。
     pub flashlight: Option<super::visibility::StandardFlashlightCache>,
+    /// AT 的轨迹与精灵在最终布局确定后按需初始化，并跨导出线程共享。
+    pub autoplay: Option<super::autoplay::AutoplayCache>,
+    pub show_cursor: bool,
 }
 
 pub struct RowTiming {
@@ -491,6 +494,10 @@ pub fn build_render_context(
         flashlight: mods
             .is_some_and(|mods| mods.flashlight)
             .then(|| super::visibility::StandardFlashlightCache::new(&beatmap.break_periods)),
+        autoplay: mods
+            .is_some_and(|mods| mods.autoplay || mods.flashlight)
+            .then(super::autoplay::AutoplayCache::new),
+        show_cursor: mods.is_some_and(|mods| mods.autoplay),
     }
 }
 

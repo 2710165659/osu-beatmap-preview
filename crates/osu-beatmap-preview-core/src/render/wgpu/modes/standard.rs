@@ -57,6 +57,9 @@ pub fn prepare_realtime(
     // 与 MP4 导出用同一套画布布局：物件层就是 16:9 画布本身。
     // 内容框布局下 FL 遮罩只盖住 playfield，合成阶段补出的背景不会被压暗。
     let context = build_video_render_context(beatmap, objects, mods, time_axis, OutputFormat::Mp4);
+    if let Some(autoplay) = &context.autoplay {
+        autoplay.get(&context);
+    }
     if let Some(flashlight) = &context.flashlight {
         flashlight.get(&context);
     }
@@ -210,6 +213,33 @@ fn render_scene(
         .find(|value| break_alpha(&value.period, time) > 0.0)
     {
         draw_break(&mut scene, context, current, time);
+    }
+    if let Some(cache) = &context.autoplay {
+        let cursor = cache.get(context);
+        cursor.visit_trail(
+            time,
+            context.frame_layout.scale,
+            |from, to, width, alpha| {
+                scene.line(
+                    [from[0] as f32, from[1] as f32],
+                    [to[0] as f32, to[1] as f32],
+                    width as f32,
+                    [255, 255, 255, alpha],
+                );
+            },
+        );
+        if let (Some(position), Some(sprite)) = (cursor.position_at(time), cursor.sprite_at(time)) {
+            scene.sprite(
+                Arc::clone(sprite),
+                rect(
+                    position[0] - sprite.w as f64 / 2.0,
+                    position[1] - sprite.h as f64 / 2.0,
+                    sprite.w as f64,
+                    sprite.h as f64,
+                ),
+                1.0,
+            );
+        }
     }
     scene.finish()
 }

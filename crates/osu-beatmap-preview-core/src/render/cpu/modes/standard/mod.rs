@@ -1,6 +1,7 @@
 //! osu!standard 场景预计算辅助模块。
 
 pub mod alpha;
+pub mod autoplay;
 pub mod constants;
 pub mod context;
 mod frame;

@@ -181,7 +181,7 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 
 | 模式 | GIF / MP4 | PNG |
 | --- | --- | --- |
-| Standard | `EZ` `HR` `HD` `FL` `DA` `TC` `DT` `HT` `NC` `DC` | `EZ` `HR` `HD` `FL` `DA` `TC` |
+| Standard | `EZ` `HR` `HD` `FL` `AT` `DA` `TC` `DT` `HT` `NC` `DC` | `EZ` `HR` `HD` `FL` `AT` `DA` `TC` |
 | Taiko | `EZ` `HR` `HD` `FL` `SW` `CS` `DT` `HT` `NC` `DC` | `EZ` `HR` `SW` |
 | Catch | `EZ` `HR` `HD` `FL` `DT` `HT` `NC` `DC` | `EZ` `HR` |
 | Mania | `HD` `FL` `CS` `DT` `HT` `NC` `DC` `1K`-`10K` `DS` `IN` `HO` | `1K`-`10K` `DS` `IN` `HO` |
@@ -196,6 +196,8 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 - `DA` 仅适用于 Standard，不能与 `EZ` 或 `HR` 同时使用。格式为 `da<参数><值>`，参数支持 `cs`、`ar`、`od`、`hp`，例如 `--mod=dacs5ar9.5`。
 - `1K` 至 `10K` 互斥；`DS` 和键数 Mod 只会在 Standard 转 Mania 时改变转谱结果。
 - 重复的 Mod 或不受当前模式、格式支持的 Mod 会直接报错，不会静默忽略。
+- `AT`（Autoplay）仅支持 Standard；用 `--mod AT` 显示自动光标，轨迹参考 lazer 的物件间缓动、滑条跟随与转盘旋转。实时预览、PNG、GIF 和 MP4 共用轨迹缓存，不增加判定或计分功能。
+- Standard 光标采用 Argon Pro 的粉红渐变环、白色中心与点击缩放；`FL` 消费同一份光标轨迹，按游戏默认 120ms 延迟跟随。只开启 `FL` 时计算轨迹但不绘制光标，也不分配光标精灵。
 
 ### 变速与音高
 

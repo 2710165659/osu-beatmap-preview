@@ -20,6 +20,8 @@ pub struct ModSettings {
     pub hard_rock: bool,
     pub hidden: bool,
     pub flashlight: bool,
+    /// Autoplay 光标。
+    pub autoplay: bool,
     pub traceable: bool,
 
     pub swap: bool,
@@ -72,6 +74,7 @@ impl ModSettings {
             || self.hard_rock
             || self.hidden
             || self.flashlight
+            || self.autoplay
             || self.traceable
             || self.swap
             || self.cs_override
@@ -171,6 +174,7 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         "HR" => s.hard_rock = true,
         "HD" => s.hidden = true,
         "FL" => s.flashlight = true,
+        "AT" => s.autoplay = true,
         "TC" => s.traceable = true,
         "SW" => s.swap = true,
         "CS" => s.cs_override = true,
@@ -389,11 +393,11 @@ fn da_range(mode: i32, param: &str) -> Option<(f64, f64)> {
 
 fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
     match (fmt, mode) {
-        ("gif", 0) => &["EZ", "HR", "HD", "FL", "DA", "TC"],
+        ("gif", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC"],
         ("gif", 1) => &["EZ", "HR", "HD", "FL", "SW", "CS"],
         ("gif", 2) => &["EZ", "HR", "HD", "FL"],
         ("gif", 3) => &["K", "DS", "CS", "IN", "HO", "HD", "FL"],
-        ("png", 0) => &["EZ", "HR", "HD", "FL", "DA", "TC"],
+        ("png", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC"],
         ("png", 1) => &["EZ", "HR", "SW"],
         ("png", 2) => &["EZ", "HR"],
         ("png", 3) => &["K", "DS", "IN", "HO"],
@@ -443,6 +447,9 @@ fn active_switch_mods(settings: &ModSettings) -> Vec<(String, String)> {
     }
     if settings.flashlight {
         active.push(("FL".into(), "FL".into()));
+    }
+    if settings.autoplay {
+        active.push(("AT".into(), "AT".into()));
     }
     if settings.traceable {
         active.push(("TC".into(), "TC".into()));
@@ -495,6 +502,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         daycore: settings.daycore,
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
+        autoplay: settings.autoplay && mode == 0,
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
     };
@@ -554,9 +562,11 @@ fn rate_mod_count(settings: &ModSettings) -> usize {
 /// 参数的 token）；网页端不再自带一份列表，避免两侧走偏。
 pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
     match mode {
-        0 => ["EZ", "HR", "HD", "FL", "DA", "TC", "DT", "HT", "NC", "DC"]
-            .map(str::to_string)
-            .to_vec(),
+        0 => [
+            "EZ", "HR", "HD", "FL", "AT", "DA", "TC", "DT", "HT", "NC", "DC",
+        ]
+        .map(str::to_string)
+        .to_vec(),
         1 => ["EZ", "HR", "HD", "FL", "SW", "CS", "DT", "HT", "NC", "DC"]
             .map(str::to_string)
             .to_vec(),
@@ -577,6 +587,20 @@ pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn autoplay_is_standard_only_and_case_insensitive() {
+        let settings = super::parse_mods(&["at".into()]).unwrap();
+        assert!(settings.autoplay && settings.has_any_mod());
+        for format in ["png", "gif", "mp4"] {
+            assert!(super::validate_mods(&settings, Some(0), Some(format)).is_empty());
+            for mode in 1..=3 {
+                assert!(!super::validate_mods(&settings, Some(mode), Some(format)).is_empty());
+                assert!(!super::mods_for_mode(&settings, mode).autoplay);
+                assert!(!super::supported_mod_tokens(mode).contains(&"AT".into()));
+            }
+        }
+    }
+
     use super::*;
 
     #[test]
