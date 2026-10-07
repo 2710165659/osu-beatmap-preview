@@ -304,11 +304,14 @@ impl WebGpuSession {
 
     /// 按内部时钟渲染一帧到 Canvas。
     ///
-    /// 返回 `false` 表示这一帧没画：画布被浏览器标记为不可见（窗口被遮挡/最小化）
-    /// 或 GPU 暂时取不到帧。宿主据此可以说明「为什么画面是黑的」，而不是让用户
-    /// 面对一块没有线索的黑画布。
+    /// 返回 `false` 表示最新画面尚未就绪：画布不可见、GPU 忙碌或视频 seek 未完成。
+    /// 宿主暂停时也要重试，确保在途帧结束、视频解码完成后能补绘目标时刻。
     #[wasm_bindgen(js_name = renderFrame)]
     pub fn render_frame(&mut self) -> Result<bool, JsValue> {
+        // 不积压旧时间戳的场景；seek 和播放都在下一次空闲时读取最新会话时间。
+        if self.renderer.frame_pending() {
+            return Ok(false);
+        }
         let chart_ms = self.inner.clock_ms(wall_ms()).round() as i64;
         self.update_background_video(chart_ms);
         let scene = self.inner.scene_at_absolute(chart_ms).map_err(js_error)?;
@@ -320,7 +323,7 @@ impl WebGpuSession {
             .render_to_view(&scene, &view)
             .map_err(js_error)?;
         frame.present();
-        Ok(true)
+        Ok(!self.video_enabled || !self.video.as_ref().is_some_and(|video| video.seeking()))
     }
 
     /// 取一帧可绘制的 surface 纹理；`None` 表示这一帧跳过。
@@ -641,9 +644,10 @@ fn load_samples(
     use_beatmap_samples: bool,
 ) {
     session.reset_hitsound_samples();
+    let storyboard_samples = session.storyboard_sample_names();
     for name in session.hitsound_required_names() {
         let mut loaded = false;
-        if use_beatmap_samples {
+        if use_beatmap_samples || storyboard_samples.contains(&name) {
             if let Some((entry, bytes)) = custom
                 .iter()
                 .find(|(entry, _)| osu_beatmap_preview_core::sample_entry_matches(entry, &name))
@@ -694,7 +698,7 @@ fn build_storyboard(
         .map(|raw| String::from_utf8_lossy(raw).into_owned());
     let storyboard =
         osu_beatmap_preview_core::storyboard::parse_storyboard(&osu_text, osb_text.as_deref());
-    if !storyboard.has_drawable_elements() {
+    if !storyboard.has_drawable_elements() && storyboard.samples.is_empty() {
         return Ok(None);
     }
     let paths = storyboard.referenced_paths();

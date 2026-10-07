@@ -10,7 +10,7 @@
 //!   层代理到物件之上、HUD 之下；用户暗度（`BACKGROUND_DIM`）乘在所有精灵颜色上。
 //!
 //! 有意裁剪（均在文档中标注）：`T` 触发组只解析保留不求值（逐帧乱序并行出帧要求
-//! 求值是纯函数）、`Sample` 事件不播放（音频归 `hitsound` 模块）、`UseSkinSprites`
+//! 求值是纯函数）、`Sample` 事件由实时会话交给 `hitsound` 混音、`UseSkinSprites`
 //! 贴图只从谱面包取。
 
 pub mod draw;
@@ -431,7 +431,7 @@ fn animation_frame_path(path: &str, frame_index: u32) -> String {
     }
 }
 
-/// `Sample` 事件（当前只解析保留、不播放）。
+/// `Sample` 事件（由宿主装载音频后并入混音时间轴）。
 #[derive(Clone, Debug)]
 pub struct Sample {
     pub time_ms: f64,
@@ -458,7 +458,7 @@ pub struct Storyboard {
     pub use_skin_sprites: bool,
     /// 各层元素，按绘制顺序从底到顶排列。
     pub layers: Vec<LayerElements>,
-    /// `Sample` 事件（只解析保留）。
+    /// `Sample` 音效事件。
     pub samples: Vec<Sample>,
 }
 
@@ -477,6 +477,42 @@ impl SpriteDraw<'_> {
 }
 
 impl Storyboard {
+    /// 游戏开局考虑所有故事板事件，包括负时间音效；背景视频不参与。
+    pub fn earliest_event_ms(&self) -> Option<f64> {
+        self.layers
+            .iter()
+            .flat_map(|layer| &layer.elements)
+            .map(Element::start_time_ms)
+            .chain(self.samples.iter().map(|sample| sample.time_ms))
+            .filter(|time| time.is_finite())
+            .min_by(f64::total_cmp)
+    }
+
+    /// 将故事板音效并入统一音频时间轴；失败层在自动播放预览中不触发。
+    pub fn sample_timeline(
+        &self,
+        library: &crate::hitsound::SampleLibrary,
+    ) -> crate::hitsound::HitsoundTimeline {
+        let mut events: Vec<_> = self
+            .samples
+            .iter()
+            .filter(|sample| sample.layer != Layer::Fail)
+            .filter_map(|sample| {
+                library
+                    .id_of(&sample.path)
+                    .map(|source_id| crate::hitsound::PlayEvent {
+                        start_ms: sample.time_ms,
+                        duration_ms: 0.0,
+                        source_id,
+                        gain: f64::from(sample.volume) / 100.0,
+                        looping: false,
+                        frequency: crate::hitsound::PlayFrequency::UNITY,
+                    })
+            })
+            .collect();
+        events.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
+        crate::hitsound::HitsoundTimeline { events }
+    }
     /// 是否包含可绘制元素（无命令的元素不算）。
     pub fn has_drawable_elements(&self) -> bool {
         self.layers

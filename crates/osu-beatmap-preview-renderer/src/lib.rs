@@ -2,6 +2,8 @@
 //!
 //! 平台负责创建 `Device`、`Queue`、surface 和目标 view；本 crate 不持有窗口或 Canvas 句柄。
 
+#[cfg(target_arch = "wasm32")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use osu_beatmap_preview_core::{FrameScene, PreviewError, Result};
@@ -31,6 +33,8 @@ pub struct SurfaceConfig {
 ///
 /// `Device` 和 `Queue` 由平台创建并通过 `Arc` 共享，renderer 不持有窗口或 Canvas。
 pub struct SurfaceRenderer {
+    #[cfg(target_arch = "wasm32")]
+    frame_pending: Arc<AtomicBool>,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     config: SurfaceConfig,
@@ -53,6 +57,8 @@ impl SurfaceRenderer {
         let (present_layout, present_sampler, present_pipeline, present_bind_group) =
             create_present_resources(&device, config.format, rasterizer.output_view());
         Ok(Self {
+            #[cfg(target_arch = "wasm32")]
+            frame_pending: Arc::new(AtomicBool::new(false)),
             device,
             queue,
             config,
@@ -68,6 +74,11 @@ impl SurfaceRenderer {
     }
     pub fn device(&self) -> &wgpu::Device {
         &self.device
+    }
+    /// 浏览器只保留一帧在途，GPU 忙时丢弃提交机会，恢复后直接绘制最新时刻。
+    #[cfg(target_arch = "wasm32")]
+    pub fn frame_pending(&self) -> bool {
+        self.frame_pending.load(Ordering::Acquire)
     }
     /// 把外部图像源（如浏览器视频帧）拷进槽位纹理，供场景的
     /// `DrawCommand::ExternalSprite` 绘制。
@@ -165,6 +176,14 @@ impl SurfaceRenderer {
             pass.draw(0..3, 0..1);
         }
         self.queue.submit([encoder.finish()]);
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.frame_pending.store(true, Ordering::Release);
+            let pending = Arc::clone(&self.frame_pending);
+            self.queue.on_submitted_work_done(move || {
+                pending.store(false, Ordering::Release);
+            });
+        }
         Ok(())
     }
 }

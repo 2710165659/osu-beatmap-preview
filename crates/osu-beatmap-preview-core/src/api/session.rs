@@ -273,14 +273,15 @@ impl RealtimeSession {
 
     /// 会话是否包含可绘制的故事板元素（宿主用于决定开关是否可用）。
     pub fn has_storyboard(&self) -> bool {
-        self.storyboard
-            .as_ref()
-            .is_some_and(|(storyboard, _)| storyboard.has_drawable_elements())
+        self.storyboard.as_ref().is_some_and(|(storyboard, _)| {
+            storyboard.has_drawable_elements() || !storyboard.samples.is_empty()
+        })
     }
 
     /// 开关故事板绘制（默认关闭）；无故事板素材时切换无效果。
     pub fn set_storyboard_enabled(&mut self, enabled: bool) {
         self.storyboard_enabled = enabled;
+        self.rebuild_hitsound_timeline();
     }
 
     /// 当前故事板开关状态。
@@ -359,10 +360,28 @@ impl RealtimeSession {
     /// 时按静音处理，宿主只装载拿得到的名字。NC 生效时额外带上 4 个节拍鼓点样本名。
     pub fn hitsound_required_names(&self) -> Vec<String> {
         let mut names = hitsound::referenced_names(&self.beatmap);
+        if let Some((storyboard, _)) = &self.storyboard {
+            names.extend(storyboard.samples.iter().map(|sample| sample.path.clone()));
+        }
         if self.settings.nightcore {
             names.extend(hitsound::NIGHTCORE_SAMPLE_NAMES.map(str::to_string));
         }
+        let mut seen = std::collections::HashSet::new();
+        names.retain(|name| seen.insert(name.clone()));
         names
+    }
+
+    /// 故事板音效始终取自谱面包，不受皮肤打击音来源开关影响。
+    pub fn storyboard_sample_names(&self) -> Vec<String> {
+        self.storyboard
+            .as_ref()
+            .map_or_else(Vec::new, |(storyboard, _)| {
+                storyboard
+                    .samples
+                    .iter()
+                    .map(|sample| sample.path.clone())
+                    .collect()
+            })
     }
 
     /// 放入一段已解码的样本 PCM。只放进样本库、不重建时间轴：宿主应把样本全部放完后
@@ -398,6 +417,20 @@ impl RealtimeSession {
                 self.mixer.library(),
                 end_ms,
             ));
+        }
+        if self.storyboard_enabled {
+            if let Some((storyboard, _)) = &self.storyboard {
+                let mut samples = storyboard.sample_timeline(self.mixer.library());
+                let start = self.timeline.absolute_start_ms as f64;
+                // 游戏允许故事板音效晚启动不足 100ms；开场前 98ms 的 intro.mp3
+                // 应从样本头开始播放，远早于起点的事件则仍跳过，不能改变预览起点。
+                for event in &mut samples.events {
+                    if event.start_ms < start && start - event.start_ms < 100.0 {
+                        event.start_ms = start;
+                    }
+                }
+                timeline.merge(samples);
+            }
         }
         self.mixer.rebuild_timeline_events(timeline);
     }
@@ -509,7 +542,7 @@ impl RealtimeSession {
             self.source.render(absolute_time_ms)
         })
         .map_err(|error| PreviewError::render(error.to_string()))?;
-        // 故事板求值用谱面显示时间（与合成层的 current_ms 同坐标系）；用户暗度
+        // 故事板命令使用 .osu 绝对时间，不能减去首个物件时间；用户暗度
         // 与背景一致（`video_style.background_dim`），亮度预乘进精灵颜色。
         let storyboard_layers = self
             .storyboard
@@ -519,7 +552,7 @@ impl RealtimeSession {
                 |(storyboard, textures)| crate::render::wgpu::composition::StoryboardLayers {
                     storyboard,
                     textures,
-                    chart_ms: (absolute_time_ms - self.timeline.first_object_ms) as f64,
+                    chart_ms: absolute_time_ms as f64,
                     brightness: (1.0 - self.options.video_style.background_dim).clamp(0.0, 1.0)
                         as f32,
                 },
@@ -803,6 +836,74 @@ mod tests {
         };
         RealtimeSession::from_bundle(ResourceBundle::new(beatmap), RealtimeOptions::default())
             .expect("测试会话必须可以创建")
+    }
+
+    /// 首个物件偏移不能影响故事板绝对时间，来回 seek 也要得到相同场景。
+    #[test]
+    fn storyboard_scene_uses_absolute_time_after_seek() {
+        for (first, start) in [(5_000, 6_000), (-45_614, -47_000)] {
+            let mut session = session_with_lead_in(first, 0);
+            session.storyboard_enabled = true;
+            let texture = Arc::new(Img {
+                w: 1,
+                h: 1,
+                data: vec![255; 4],
+            });
+            let events = format!(
+                "[Events]\nSprite,Overlay,Centre,\"ring.png\",320,240\n F,0,{start},{},1\n",
+                start + 1_000,
+            );
+            session.storyboard = Some((
+                crate::storyboard::parse_storyboard(&events, None),
+                [("ring.png".to_string(), texture)].into_iter().collect(),
+            ));
+            for time in [start + 500, start + 6_000, start + 250] {
+                session.seek(0.0, time as f64);
+                let scene = session.scene_at_absolute(time).unwrap();
+                let sprites = scene
+                    .commands
+                    .iter()
+                    .filter(|command| {
+                        matches!(
+                            command,
+                            crate::render::scene::DrawCommand::TransformedSprite { .. }
+                        )
+                    })
+                    .count();
+                assert_eq!(sprites, usize::from(time < start + 1_000));
+            }
+        }
+    }
+
+    /// Aspire 的开场音乐来自负时间 Sample，必须装载并按事件起点播放。
+    #[test]
+    fn storyboard_intro_samples_play_before_music_zero() {
+        let mut session = session_with_lead_in(-45_614, 0);
+        session.storyboard_enabled = true;
+        session.storyboard = Some((
+            crate::storyboard::parse_storyboard("[Events]\nSample,-500000,0,\"HelloThere.wav\",100\nSample,-47712,0,\"intro.mp3\",100\n", None),
+            Textures::new(),
+        ));
+        assert_eq!(session.timeline.absolute_start_ms, -47_614);
+        assert!(session
+            .hitsound_required_names()
+            .contains(&"intro.mp3".to_string()));
+        session.mixer = HitsoundMixer::new(SampleLibrary::new(), HitsoundTimeline::default(), 1000);
+        session.set_hitsound_sample(
+            "intro.mp3",
+            hitsound::Channels::Mono(vec![0.5; 1000]),
+            1000,
+            0,
+        );
+        session.rebuild_hitsound_timeline();
+        session.mixer.seek(-47_616.0);
+        let audio = session.mixer.render(4);
+        assert_eq!(&audio[..4], &[0.0; 4]);
+        assert!(audio[4] > 0.0);
+        session.mixer.seek(-47_500.0);
+        assert!(session.mixer.render(4).iter().all(|sample| *sample == 0.0));
+        session.mixer.seek(-47_615.0);
+        assert!(session.mixer.render(4)[2] > 0.0);
     }
 
     /// 会话起点与预览起点共用同一条规则。

@@ -38,8 +38,6 @@ const MAX_SAMPLE_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_OSB_BYTES: u64 = 64 * 1024 * 1024;
 /// 单张故事板贴图的最大字节数。
 const MAX_STORYBOARD_TEXTURE_BYTES: u64 = 64 * 1024 * 1024;
-/// 故事板贴图的条目数上限。
-const MAX_STORYBOARD_TEXTURES: usize = 512;
 
 /// 难度选择方式。
 #[derive(Debug, Clone, Default)]
@@ -126,7 +124,8 @@ pub fn read_storyboard_textures(
         }
     }
     let mut textures = Vec::new();
-    for path in paths.iter().take(MAX_STORYBOARD_TEXTURES) {
+    // 大型故事板可能先定义数百张滑条贴图，再定义缩圈；不能按引用顺序截断。
+    for path in paths {
         for candidate in texture_candidates(path) {
             let Some(index) = names.get(&candidate.to_lowercase()).copied() else {
                 continue;
@@ -286,7 +285,27 @@ fn read_archive(
     // 单个条目损坏只影响这一个音效（解码阶段按静音处理）。
     let audio_name = audio_entry.name.to_ascii_lowercase();
     let mut total = 0_u64;
-    for candidate in &media.samples {
+    let storyboard = osu_beatmap_preview_core::storyboard::parse_storyboard(
+        &String::from_utf8_lossy(&content.beatmap),
+        content
+            .osb
+            .as_deref()
+            .map(String::from_utf8_lossy)
+            .as_deref(),
+    );
+    // 故事板 Sample 可引用任意音频名，不能只按物件打击音候选装载。
+    let sample_names: Vec<_> = storyboard
+        .samples
+        .iter()
+        .map(|sample| sample.path.as_str())
+        .chain(
+            media
+                .samples
+                .iter()
+                .map(|candidate| candidate.name.as_str()),
+        )
+        .collect();
+    for candidate in sample_names {
         if content.samples.len() >= MAX_SAMPLE_ENTRIES || total >= MAX_SAMPLE_TOTAL_BYTES {
             break;
         }
@@ -300,7 +319,7 @@ fn read_archive(
             if name.to_ascii_lowercase() == audio_name {
                 continue;
             }
-            if size > MAX_SAMPLE_BYTES || !sample_entry_matches(&name, &candidate.name) {
+            if size > MAX_SAMPLE_BYTES || !sample_entry_matches(&name, candidate) {
                 continue;
             }
             if content.samples.iter().any(|(seen, _)| seen == &name) {
@@ -449,6 +468,59 @@ mod tests {
     use super::*;
     use std::io::Write;
     use zip::write::SimpleFileOptions;
+
+    /// 开场音乐只在故事板 Sample 中引用，也必须从包内装载。
+    #[test]
+    fn storyboard_intro_audio_is_extracted() {
+        let mut map = osu_text(Some(2571858), "Aspire", "audio.mp3", "bg.jpg");
+        map.push_str("\n[Events]\nSample,-47712,0,\"intro.mp3\",100\n");
+        let bytes = osz_bytes(&[
+            ("map.osu", map.as_bytes()),
+            ("audio.mp3", b"music"),
+            ("intro.mp3", b"intro"),
+        ]);
+        let content = read_input(&bytes, &DifficultySelector::First, true).unwrap();
+        assert!(content
+            .samples
+            .iter()
+            .any(|(name, bytes)| name == "intro.mp3" && bytes == b"intro"));
+    }
+
+    /// 本地真实谱面夹具验证解包、解码及开场事件的时间与声音内容。
+    #[test]
+    #[ignore = "需要 OSU_STORYBOARD_AUDIO_FIXTURE 指向 2571858 的完整谱面包"]
+    fn real_storyboard_intro_decodes_and_mixes() {
+        let bytes = std::fs::read(std::env::var("OSU_STORYBOARD_AUDIO_FIXTURE").unwrap()).unwrap();
+        let content = read_input(&bytes, &DifficultySelector::ById(2571858), true).unwrap();
+        let storyboard = osu_beatmap_preview_core::storyboard::parse_storyboard(&String::from_utf8_lossy(&content.beatmap), None);
+        assert_eq!(storyboard.earliest_event_ms(), Some(-500_000.0));
+        let mut library = osu_beatmap_preview_core::hitsound::SampleLibrary::new();
+        for name in ["HelloThere.wav", "intro.mp3"] {
+            let (_, bytes) = content.samples.iter().find(|(entry, _)| entry == name).unwrap();
+            let sample = crate::decode::decode_music(bytes, name.rsplit('.').next()).unwrap();
+            assert!(sample.frames() > 0);
+            library.insert(name, sample);
+        }
+        let timeline = storyboard.sample_timeline(&library);
+        assert!(timeline.events.iter().any(|event| event.start_ms == -47_712.0));
+        let mut mixer = osu_beatmap_preview_core::hitsound::HitsoundMixer::new(library, timeline, 1000);
+        mixer.seek(-47_713.0);
+        let audio = mixer.render(2000);
+        assert!(audio.iter().any(|sample| sample.abs() > 0.001));
+    }
+
+    /// 缩圈可能排在数百张滑条贴图之后，仍必须装载而不能被数量上限截断。
+    #[test]
+    fn storyboard_textures_include_paths_after_512_entries() {
+        let paths: Vec<String> = (0..610).map(|index| format!("sb/{index}.png")).collect();
+        let entries: Vec<(&str, &[u8])> = paths
+            .iter()
+            .map(|path| (path.as_str(), &b"texture"[..]))
+            .collect();
+        let loaded = read_storyboard_textures(&osz_bytes(&entries), &paths).unwrap();
+        assert_eq!(loaded.len(), 610);
+        assert_eq!(loaded.last().unwrap().0, "sb/609.png");
+    }
 
     /// 用给定条目构造一个内存 .osz。
     fn osz_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {

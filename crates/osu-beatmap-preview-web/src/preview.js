@@ -833,11 +833,15 @@ function updateFpsSample(now) {
   state.renderFps = Math.round(((fpsSamples.length - 1) * 1000) / span);
 }
 
+let renderRetry = 0;
+
 /** 按 WASM 内部时钟渲染一帧（时钟由会话维护，宿主不再算时间）。 */
 function render() {
+  window.clearTimeout(renderRetry);
+  renderRetry = 0;
   if (!session) return;
   try {
-    // 返回 false = 这一帧没画（画布被浏览器标记为不可见 / GPU 暂时取不到帧）。
+    // 返回 false = 尚未完成最新画面（GPU 忙碌、画布不可见或视频正在 seek）。
     // 不报错也不暂停，但连着跳过一段时间必须说清原因：否则用户只看到黑屏，
     // 日志里也只有音频的线索。
     if (session.renderFrame()) {
@@ -848,8 +852,10 @@ function render() {
       return;
     }
     skippedFrames += 1;
+    // 暂停时没有 tick；GPU 在途或视频 seek 尚未完成也必须继续尝试最新画面。
+    if (!state.playing) renderRetry = window.setTimeout(render, 16);
     if (skippedFrames >= SKIPPED_FRAME_HINT && state.playing && !document.hidden) {
-      state.renderError = '画面暂时无法显示：浏览器把画布标记为不可见（窗口被遮挡或最小化），恢复后会自动继续';
+      state.renderError = '画面暂时无法显示：GPU 忙碌或画布不可见，恢复后会自动继续';
     }
   } catch (error) {
     playState(false);

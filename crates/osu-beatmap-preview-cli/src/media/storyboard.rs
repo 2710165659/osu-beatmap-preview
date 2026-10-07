@@ -23,8 +23,6 @@ use osu_beatmap_preview_core::Img;
 const MAX_TEXTURE_BYTES: u64 = 64 * 1024 * 1024;
 /// 单张贴图的解码像素上限（4096×4096）：防止病态大图撑爆逐帧合成的内存。
 const MAX_TEXTURE_PIXELS: u64 = 4096 * 4096;
-/// 贴图数量上限：storyboard 通常只有几十张，超限部分按缺图跳过。
-const MAX_TEXTURES: usize = 512;
 /// `.osb` 的字节上限。
 const MAX_OSB_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -111,9 +109,6 @@ impl MediaStoryboard {
         // 贴图按引用路径逐张取用；无扩展名的路径按 osu! 的 .jpg → .jpeg → .png 顺序尝试。
         let mut textures = Textures::new();
         for path in storyboard.referenced_paths() {
-            if textures.len() >= MAX_TEXTURES {
-                break;
-            }
             deadline.check()?;
             let candidates = texture_candidates(&path);
             let mut bytes = None;

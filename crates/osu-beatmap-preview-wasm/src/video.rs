@@ -218,6 +218,8 @@ impl BackgroundVideo {
         // 播放中允许 0.3 秒漂移（与音频时钟同源，正常远小于此）；暂停帧必须对准。
         let limit_s = if playing { 0.3 } else { 0.05 };
         if (self.element.current_time() - target_s).abs() > limit_s {
+            // currentTime 会立即变成目标值，但解码画面仍是旧帧；不能缓存为新帧。
+            self.invalidate_capture();
             self.element.set_current_time(target_s);
         }
         self.capture()
@@ -225,6 +227,9 @@ impl BackgroundVideo {
 
     /// 抓取当前呈现的画面；时间没变就跳过（回读与拷贝都按像素数计费）。
     fn capture(&mut self) -> Capture {
+        if self.element.seeking() {
+            return self.capture_or_missing();
+        }
         if self.element.ready_state() < 2 {
             return self.capture_or_missing();
         }
@@ -298,6 +303,11 @@ impl BackgroundVideo {
         } else {
             Capture::Missing
         }
+    }
+
+    /// 宿主暂停时也要等待异步 seek 落地，再补绘视频画面。
+    pub fn seeking(&self) -> bool {
+        self.element.seeking()
     }
 }
 
