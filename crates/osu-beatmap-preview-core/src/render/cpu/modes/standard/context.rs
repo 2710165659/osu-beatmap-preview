@@ -688,6 +688,43 @@ pub fn build_visible_indexes_by_snapshot(
     visible_groups
 }
 
+/// 预先排序可见性边界，供实时渲染逐帧复用，避免每帧对整张谱面排序。
+pub struct VisibleIndexCache {
+    starts: Vec<(i64, usize)>,
+    end_times: Vec<i64>,
+}
+
+impl VisibleIndexCache {
+    pub fn new(hit_objects: &[StandardHitObject], preempt_ms: i64) -> Self {
+        let mut starts: Vec<_> = hit_objects
+            .iter()
+            .enumerate()
+            .map(|(i, o)| (o.start_time - preempt_ms, i))
+            .collect();
+        starts.sort_unstable();
+        let end_times = hit_objects
+            .iter()
+            .map(visible_end_time)
+            .collect();
+        Self { starts, end_times }
+    }
+
+    pub fn at(&self, snapshot_time: i64) -> Vec<usize> {
+        let mut active = Vec::new();
+        let start_count = self.starts.partition_point(|&(time, _)| time <= snapshot_time);
+        if start_count == 0 {
+            return active;
+        }
+        // 物件通常按时间排序；只需过滤仍未淡出的物件，避免维护逐帧可变集合。
+        for &(_, index) in self.starts[..start_count].iter().rev() {
+            if self.end_times[index] >= snapshot_time {
+                active.push(index);
+            }
+        }
+        active
+    }
+}
+
 pub fn visible_end_time(hit_object: &StandardHitObject) -> i64 {
     if hit_object.hit_type & 2 != 0 {
         return hit_object.end_time
