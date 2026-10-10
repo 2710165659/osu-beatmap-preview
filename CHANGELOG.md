@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.4.1] - 2026.10.10
+
+### Added
+
+- Standard 新增 `AT`（Autoplay），支持显示自动光标。
+
+### Changed
+
+- Standard 转盘改为 Argon 样式，移除休息段文字提示。
+- 优化极端滑条谱面、背景视频和故事板的渲染性能。
+
+### Fixed
+
+- 修复部分滑条形状和滑条中途停顿效果错误。
+- 修复 Aspire 谱面的音频混合与音画不同步问题。
+- 修复 Taiko `HD` / `FL` 下音符颜色变灰，以及 `HD` 跳过滑条和转盘的问题。
+
+---
+
 ## [1.4.0] - 2026.10.04
 
 ### Added
