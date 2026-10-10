@@ -202,10 +202,12 @@ fn flag_at(list: &[Command], time_ms: f64) -> bool {
     }
 }
 
-/// 命令内的插值进度：`t` 在 `[start,end]` 内按 easing 映射，区间外不进入本函数。
+/// 命令内的插值进度：结束后保持终值，只在区间内允许缓动过冲。
 fn eased_ratio(command: &Command, time_ms: f64) -> f32 {
     let duration = command.end_ms - command.start_ms;
-    if duration <= 0.0 {
+    // 矢量缩放和颜色也会在命令结束后求值，不能把超出区间的时间继续送入缓动。
+    // 否则白色边框的 OutCubic 缩放会不断放大并遮住整个故事板。
+    if duration <= 0.0 || time_ms >= command.end_ms {
         return 1.0;
     }
     let ratio = ((time_ms - command.start_ms) / duration) as f32;
@@ -680,5 +682,39 @@ mod tests {
             (mid - 0.7354).abs() < 5e-3,
             "中点应为 gamma 校正值，实际 {mid}"
         );
+    }
+
+    /// 5271750 的白色上下边框在缩放结束后仍存活，不能继续外推 OutCubic。
+    #[test]
+    fn storyboard_border_holds_vector_scale_after_easing_ends() {
+        let storyboard = crate::storyboard::parse_storyboard(
+            "[Events]\nSprite,Background,TopCentre,\"sb/white.jpg\",320,0\n F,0,-30,,1\n V,0,57475,,0,0\n V,7,68505,69093,1,0.51,1,0.1\n V,0,104681,,0,0\n F,0,138799,,0\n",
+            None,
+        );
+        let element = &storyboard.layers[0].elements[0];
+        // 模拟导出乱序取帧，终值不能依赖上一帧的求值状态。
+        for time in [100_000.0, 70_000.0, 80_000.0, 69_093.0] {
+            assert!(element.is_alive_at(time));
+            let scale = element.state_at(time).vector_scale;
+            assert!((scale[0] - 1.0).abs() < 1e-6);
+            assert!((scale[1] - 0.1).abs() < 1e-6, "{time}: {scale:?}");
+        }
+        let during = element.state_at(68_799.0).vector_scale[1];
+        assert!((during - 0.15125).abs() < 1e-6);
+        assert_eq!(element.state_at(104_681.0).vector_scale, [0.0, 0.0]);
+    }
+
+    /// 非单调缓动结束后，颜色必须保持终值而不能沿曲线返回初值。
+    #[test]
+    fn colour_holds_end_value_after_out_quad_ends() {
+        let element = element_with(vec![vec![Command {
+            property: Property::Colour,
+            easing: 1,
+            start_ms: 0.0,
+            end_ms: 1000.0,
+            start_value: Value::Rgb(0.0, 0.0, 0.0),
+            end_value: Value::Rgb(1.0, 1.0, 1.0),
+        }]]);
+        assert_eq!(element.state_at(3000.0).colour, [1.0; 3]);
     }
 }
