@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.4.2] - 2026.10.13
+
+### Added
+
+- Catch 新增 `AT`，支持自动接盘、Dash 拖尾和香蕉雨路线。
+
+### Changed
+
+- Catch `FL` 光圈跟随接盘位置。
+- 调整 Taiko 转盘显示：PNG 新增击打次数和时长，GIF、MP4 与实时预览更新转盘样式和配色（#7）。
+
+### Fixed
+
+- 修正 Taiko 判定圆显示（#7）。
+- 修复部分故事板缩放和颜色命令结束后显示异常的问题。
+
+### Contributors
+
+- `yaowan233`（#7）。
+
+---
+
 ## [1.4.1] - 2026.10.10
 
 ### Added
