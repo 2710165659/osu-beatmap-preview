@@ -20,7 +20,7 @@ pub struct ModSettings {
     pub hard_rock: bool,
     pub hidden: bool,
     pub flashlight: bool,
-    /// Autoplay 光标。
+    /// Autoplay 光标或 catch 接盘。
     pub autoplay: bool,
     pub traceable: bool,
 
@@ -395,7 +395,7 @@ fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
     match (fmt, mode) {
         ("gif", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC"],
         ("gif", 1) => &["EZ", "HR", "HD", "FL", "SW", "CS"],
-        ("gif", 2) => &["EZ", "HR", "HD", "FL"],
+        ("gif", 2) => &["EZ", "HR", "HD", "FL", "AT"],
         ("gif", 3) => &["K", "DS", "CS", "IN", "HO", "HD", "FL"],
         ("png", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC"],
         ("png", 1) => &["EZ", "HR", "SW"],
@@ -502,7 +502,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         daycore: settings.daycore,
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
-        autoplay: settings.autoplay && mode == 0,
+        autoplay: settings.autoplay && matches!(mode, 0 | 2),
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
     };
@@ -570,7 +570,7 @@ pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
         1 => ["EZ", "HR", "HD", "FL", "SW", "CS", "DT", "HT", "NC", "DC"]
             .map(str::to_string)
             .to_vec(),
-        2 => ["EZ", "HR", "HD", "FL", "DT", "HT", "NC", "DC"]
+        2 => ["EZ", "HR", "HD", "FL", "AT", "DT", "HT", "NC", "DC"]
             .map(str::to_string)
             .to_vec(),
         3 => {
@@ -588,12 +588,18 @@ pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn autoplay_is_standard_only_and_case_insensitive() {
+    fn autoplay_is_standard_and_catch_and_case_insensitive() {
         let settings = super::parse_mods(&["at".into()]).unwrap();
         assert!(settings.autoplay && settings.has_any_mod());
         for format in ["png", "gif", "mp4"] {
             assert!(super::validate_mods(&settings, Some(0), Some(format)).is_empty());
-            for mode in 1..=3 {
+            assert_eq!(
+                super::validate_mods(&settings, Some(2), Some(format)).is_empty(),
+                format != "png"
+            );
+            assert!(super::mods_for_mode(&settings, 2).autoplay);
+            assert!(super::supported_mod_tokens(2).contains(&"AT".into()));
+            for mode in [1, 3] {
                 assert!(!super::validate_mods(&settings, Some(mode), Some(format)).is_empty());
                 assert!(!super::mods_for_mode(&settings, mode).autoplay);
                 assert!(!super::supported_mod_tokens(mode).contains(&"AT".into()));

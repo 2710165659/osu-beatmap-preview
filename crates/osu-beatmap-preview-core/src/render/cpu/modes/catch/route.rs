@@ -10,9 +10,9 @@ const BANANA_ROUTE_RIGHT: usize = 2;
 const BANANA_ROUTE_SCORE_SCALE: f64 = 1_000.0;
 
 #[derive(Clone, Copy)]
-struct BananaRouteAnchor {
-    x: f64,
-    time: f64,
+pub(super) struct BananaRouteAnchor {
+    pub(super) x: f64,
+    pub(super) time: f64,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -101,10 +101,6 @@ fn banana_route_state_index(position: usize, direction: usize) -> usize {
     position * BANANA_ROUTE_DIRECTION_COUNT + direction
 }
 
-fn banana_route_position(state: usize, grid_step: usize) -> f64 {
-    (state / BANANA_ROUTE_DIRECTION_COUNT * grid_step) as f64
-}
-
 fn banana_route_anchor(object: &RenderObject) -> Option<BananaRouteAnchor> {
     matches!(object.object_type, ObjType::Fruit | ObjType::Droplet).then_some(BananaRouteAnchor {
         x: object.x,
@@ -121,16 +117,15 @@ fn choose_banana_route_terminal(
     last_time: f64,
     exit: Option<BananaRouteAnchor>,
     half_catch_width: f64,
-    grid_step: usize,
+    positions: &[f64],
 ) -> Option<usize> {
-    let grid_size = PLAYFIELD_WIDTH as usize / grid_step + 1;
     let mut best: Option<(usize, BananaRouteScore)> = None;
 
     for (state_index, state) in states.iter().enumerate() {
         let Some(score) = state else {
             continue;
         };
-        let from_x = banana_route_position(state_index, grid_step);
+        let from_x = positions[state_index / BANANA_ROUTE_DIRECTION_COUNT];
         let previous_direction = state_index % BANANA_ROUTE_DIRECTION_COUNT;
         let candidate = if let Some(exit) = exit {
             let duration = exit.time - last_time;
@@ -138,8 +133,7 @@ fn choose_banana_route_terminal(
                 continue;
             }
             let mut best_exit = None;
-            for position in 0..grid_size {
-                let to_x = (position * grid_step) as f64;
+            for &to_x in positions {
                 if !anchor_contains(exit, to_x, half_catch_width) {
                     continue;
                 }
@@ -175,6 +169,17 @@ fn highlight_recommended_banana_route(
     entry: Option<BananaRouteAnchor>,
     exit: Option<BananaRouteAnchor>,
 ) {
+    plan_banana_route(bananas, circle_size, entry, exit, false);
+}
+
+/// 动态盘子入口必须固定在实际位置，不能借用水果判定范围任选初始中心。
+pub(super) fn plan_banana_route(
+    bananas: &mut [RenderObject],
+    circle_size: f64,
+    entry: Option<BananaRouteAnchor>,
+    exit: Option<BananaRouteAnchor>,
+    exact_entry: bool,
+) {
     if bananas.is_empty() {
         return;
     }
@@ -182,23 +187,38 @@ fn highlight_recommended_banana_route(
     let catcher_scale = (1.0 - 0.7 * ((circle_size - 5.0) / 5.0)).abs();
     let half_catch_width = CATCHER_BASE_SIZE * catcher_scale * ALLOWED_CATCH_RANGE / 2.0;
     let grid_step = banana_route_grid_step(bananas.len());
-    let grid_size = PLAYFIELD_WIDTH as usize / grid_step + 1;
-    let state_count = grid_size * BANANA_ROUTE_DIRECTION_COUNT;
+    let mut positions: Vec<f64> = (0..=PLAYFIELD_WIDTH as usize / grid_step)
+        .map(|i| (i * grid_step) as f64)
+        .collect();
     let first_time = bananas[0].event_time_or_start();
     let initial_time = entry.map_or(0.0f64.min(first_time), |anchor| anchor.time);
     let initial_anchor = entry.unwrap_or(BananaRouteAnchor {
         x: PLAYFIELD_WIDTH / 2.0,
         time: initial_time,
     });
+    // 保留精确入口作为额外状态，零间隔及小数坐标也不会因网格量化失去全部路线。
+    if exact_entry && !positions.contains(&initial_anchor.x) {
+        positions.push(initial_anchor.x);
+        positions.sort_by(f64::total_cmp);
+    }
+    let grid_size = positions.len();
+    let state_count = grid_size * BANANA_ROUTE_DIRECTION_COUNT;
     let initial_half_width = if entry.is_some() {
         half_catch_width
     } else {
         grid_step as f64 / 2.0
     };
     let mut states = vec![None; state_count];
-    for position in 0..grid_size {
-        let x = (position * grid_step) as f64;
-        if anchor_contains(initial_anchor, x, initial_half_width) {
+    for (position, &x) in positions.iter().enumerate() {
+        if anchor_contains(
+            initial_anchor,
+            x,
+            if exact_entry {
+                grid_step as f64 / 2.0
+            } else {
+                initial_half_width
+            },
+        ) {
             states[banana_route_state_index(position, BANANA_ROUTE_STILL)] =
                 Some(BananaRouteScore::default());
         }
@@ -206,10 +226,14 @@ fn highlight_recommended_banana_route(
 
     let mut traces = Vec::with_capacity(bananas.len());
     let mut previous_time = initial_time;
-    for banana in bananas.iter() {
+    for (event_index, banana) in bananas.iter().enumerate() {
         let current_time = banana.event_time_or_start();
         let duration = (current_time - previous_time).max(0.0);
-        let maximum_grid_distance = (duration * BASE_DASH_SPEED / grid_step as f64).ceil() as usize;
+        // 超长空白区间只需要覆盖整个场地，避免浮点转整数后再加一溢出。
+        let maximum_grid_distance = ((duration * BASE_DASH_SPEED / grid_step as f64)
+            .ceil()
+            .min(grid_size as f64) as usize)
+            .saturating_add(usize::from(exact_entry));
         let mut next_states = vec![None; state_count];
         let mut event_trace = vec![None; state_count];
 
@@ -219,12 +243,24 @@ fn highlight_recommended_banana_route(
             };
             let previous_position = previous_index / BANANA_ROUTE_DIRECTION_COUNT;
             let previous_direction = previous_index % BANANA_ROUTE_DIRECTION_COUNT;
-            let minimum_position = previous_position.saturating_sub(maximum_grid_distance);
-            let maximum_position = (previous_position + maximum_grid_distance).min(grid_size - 1);
+            let minimum_position = if exact_entry && event_index == 0 {
+                0
+            } else {
+                previous_position.saturating_sub(maximum_grid_distance)
+            };
+            let maximum_position = if exact_entry && event_index == 0 {
+                grid_size - 1
+            } else {
+                (previous_position + maximum_grid_distance).min(grid_size - 1)
+            };
 
             for position in minimum_position..=maximum_position {
-                let from_x = (previous_position * grid_step) as f64;
-                let to_x = (position * grid_step) as f64;
+                let from_x = if exact_entry && event_index == 0 {
+                    initial_anchor.x
+                } else {
+                    positions[previous_position]
+                };
+                let to_x = positions[position];
                 let Some((mut candidate, direction)) =
                     previous_score.after_movement(from_x, to_x, duration, previous_direction)
                 else {
@@ -260,10 +296,10 @@ fn highlight_recommended_banana_route(
         previous_time,
         valid_exit,
         half_catch_width,
-        grid_step,
+        &positions,
     )
     .or_else(|| {
-        choose_banana_route_terminal(&states, previous_time, None, half_catch_width, grid_step)
+        choose_banana_route_terminal(&states, previous_time, None, half_catch_width, &positions)
     });
     let Some(mut state_index) = terminal else {
         return;
@@ -276,7 +312,7 @@ fn highlight_recommended_banana_route(
             return;
         };
         caught[event_index] = trace.caught;
-        catcher_positions[event_index] = banana_route_position(state_index, grid_step);
+        catcher_positions[event_index] = positions[state_index / BANANA_ROUTE_DIRECTION_COUNT];
         state_index = trace.previous as usize;
     }
 
@@ -284,7 +320,11 @@ fn highlight_recommended_banana_route(
     drop(traces);
     drop(states);
 
-    let mut last_x = banana_route_position(state_index, grid_step);
+    let mut last_x = if exact_entry {
+        initial_anchor.x
+    } else {
+        positions[state_index / BANANA_ROUTE_DIRECTION_COUNT]
+    };
     let mut last_time = initial_time;
     for (index, banana) in bananas.iter_mut().enumerate() {
         banana.banana_route_x = Some(catcher_positions[index]);
@@ -372,6 +412,20 @@ mod tests {
             x,
             time: time as f64,
         }
+    }
+
+    #[test]
+    fn exact_fractional_entry_remains_reachable_at_zero_interval() {
+        let mut bananas = vec![banana(100.25, 1000), banana(110.0, 1100)];
+        plan_banana_route(
+            &mut bananas,
+            5.0,
+            Some(anchor(100.25, 1000)),
+            Some(anchor(120.0, 1200)),
+            true,
+        );
+        assert_eq!(bananas[0].banana_route_x, Some(100.25));
+        assert!(bananas[1].banana_route_x.is_some());
     }
 
     #[test]

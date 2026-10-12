@@ -26,9 +26,22 @@ pub fn prepare_realtime(
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects =
         build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
-    let flashlight = mods
-        .is_some_and(|mods| mods.flashlight)
-        .then(|| CatchFlashlight::new(&render_objects, &beatmap.break_periods));
+    let catcher = mods.filter(|m| m.autoplay || m.flashlight).map(|_| {
+        std::sync::Arc::new(
+            crate::render::cpu::modes::catch::catcher::build_catcher_path(
+                &render_objects,
+                difficulty.cs,
+            ),
+        )
+    });
+    let show_catcher = mods.is_some_and(|m| m.autoplay);
+    let flashlight = mods.is_some_and(|mods| mods.flashlight).then(|| {
+        CatchFlashlight::new(
+            &render_objects,
+            &beatmap.break_periods,
+            catcher.as_ref().unwrap().clone(),
+        )
+    });
     // 与 MP4 导出用同一套画布布局：物件层就是 16:9 画布本身，
     // 否则 FL 遮罩只盖住 playfield，合成阶段补出的背景不会被压暗。
     let layout = build_video_animation_layout(difficulty.cs, difficulty.ar, OutputFormat::Mp4)
@@ -47,6 +60,7 @@ pub fn prepare_realtime(
                 absolute_time_ms,
                 &layout,
                 flashlight.as_ref(),
+                catcher.as_deref().filter(|_| show_catcher),
             ))
         },
     ))
@@ -58,6 +72,7 @@ fn render_scene(
     absolute_time_ms: i64,
     layout: &AnimationLayout,
     flashlight: Option<&CatchFlashlight>,
+    catcher: Option<&crate::render::cpu::modes::catch::catcher::CatcherPath>,
 ) -> crate::render::scene::FrameScene {
     let mut scene = FrameSceneBuilder::new(
         layout.frame_width as u32,
@@ -105,6 +120,9 @@ fn render_scene(
             layout,
             kiai_active,
         );
+    }
+    if let Some(catcher) = catcher {
+        catcher.draw_scene(&mut scene, absolute_time_ms, layout);
     }
     if let Some(flashlight) = flashlight {
         flashlight.at(absolute_time_ms, layout).draw_scene(

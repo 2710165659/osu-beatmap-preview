@@ -1198,4 +1198,39 @@ mod tests {
         session.set_background_dim(2.0);
         assert_eq!(session.options().video_style.background_dim, 1.0);
     }
+    /// Tewi Maze 同刻多物件曾触发零时长 hyperdash 切片崩溃，需反复热切换验证。
+    #[test]
+    fn catch_overlapping_objects_allow_repeated_at_and_fl_switches() {
+        // 内嵌最小复现：双物件、七物件重叠及后续跳转，不依赖额外谱面文件。
+        let beatmap = crate::parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:2\n\
+              [Difficulty]\nCircleSize:4\nApproachRate:8\n\
+              [TimingPoints]\n0,500,4,1,0,100,1,0\n\
+              [HitObjects]\n256,192,3000,1,0\n\
+              0,192,4266,1,0\n512,192,4266,1,0\n\
+              0,192,8484,1,0\n85,192,8484,1,0\n170,192,8484,1,0\n\
+              256,192,8484,1,0\n340,192,8484,1,0\n425,192,8484,1,0\n\
+              512,192,8484,1,0\n0,192,9656,1,0\n512,192,9656,1,0\n",
+        )
+        .unwrap();
+        let mut session =
+            RealtimeSession::from_bundle(ResourceBundle::new(beatmap), RealtimeOptions::default())
+                .unwrap();
+        for tokens in [
+            vec!["AT"],
+            vec![],
+            vec!["AT", "FL"],
+            vec!["FL"],
+            vec!["AT", "HR"],
+            vec!["AT", "EZ"],
+            vec!["AT"],
+        ] {
+            session
+                .set_mods(tokens.into_iter().map(str::to_string).collect(), 0.0)
+                .unwrap();
+            for time in [4266, 8484, 8485, 9656, 4266] {
+                assert!(!session.scene_at_absolute(time).unwrap().commands.is_empty());
+            }
+        }
+    }
 }

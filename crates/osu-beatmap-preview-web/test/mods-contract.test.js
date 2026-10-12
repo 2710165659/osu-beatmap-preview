@@ -38,7 +38,7 @@ async function loadModule() {
 const EXPECTED = {
   standard: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DA', 'TC', 'DT', 'HT', 'NC', 'DC'],
   taiko: ['EZ', 'HR', 'HD', 'FL', 'SW', 'CS', 'DT', 'HT', 'NC', 'DC'],
-  catch: ['EZ', 'HR', 'HD', 'FL', 'DT', 'HT', 'NC', 'DC'],
+  catch: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DT', 'HT', 'NC', 'DC'],
   mania: [
     'HD', 'FL', 'CS', 'DT', 'HT', 'NC', 'DC',
     '1K', '2K', '3K', '4K', '5K', '6K', '7K', '8K', '9K', '10K',

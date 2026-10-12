@@ -14,36 +14,25 @@ use crate::render::text::{draw_text, text_size};
 
 use super::drawing::{draw_catch_object_with_alpha, object_diameter};
 use super::objects::{build_catch_render_objects, effective_difficulty, ObjType, RenderObject};
-use crate::render::visibility::{
-    AutoplayPath, Flashlight, FlashlightKind, KiaiTimeline, VisibilityTimeline,
-};
+use crate::render::visibility::{Flashlight, FlashlightKind, KiaiTimeline, VisibilityTimeline};
 
 pub struct CatchFlashlight {
-    path: AutoplayPath,
+    path: std::sync::Arc<super::catcher::CatcherPath>,
     timeline: VisibilityTimeline,
 }
 
 impl CatchFlashlight {
-    pub fn new(objects: &[RenderObject], breaks: &[crate::domain::models::BreakPeriod]) -> Self {
-        // 小水滴和香蕉不增加 combo。接盘在水果/大水滴之间插值，香蕉雨沿用已知路线。
-        let points = objects
-            .iter()
-            .filter_map(|object| {
-                if matches!(object.object_type, ObjType::Fruit | ObjType::Droplet) {
-                    Some((object.start_time as f64, [object.x, 0.0]))
-                } else {
-                    object
-                        .banana_route_x
-                        .map(|x| (object.start_time as f64, [x, 0.0]))
-                }
-            })
-            .collect();
+    pub fn new(
+        objects: &[RenderObject],
+        breaks: &[crate::domain::models::BreakPeriod],
+        path: std::sync::Arc<super::catcher::CatcherPath>,
+    ) -> Self {
         let hit_times = objects
             .iter()
             .filter(|object| matches!(object.object_type, ObjType::Fruit | ObjType::Droplet))
             .map(|object| object.start_time as f64);
         Self {
-            path: AutoplayPath::new(points, 0.0),
+            path,
             timeline: VisibilityTimeline::new(hit_times, breaks),
         }
     }
@@ -51,7 +40,7 @@ impl CatchFlashlight {
     pub fn at(&self, time: i64, layout: &AnimationLayout) -> Flashlight {
         Flashlight {
             center: [
-                layout.playfield_left + self.path.position_at(time)[0] * layout.playfield_scale,
+                layout.playfield_left + self.path.position_at(time) * layout.playfield_scale,
                 layout.playfield_top
                     + crate::render::cpu::modes::catch::constants::STABLE_CATCHER_Y
                         * layout.playfield_scale,
@@ -306,9 +295,19 @@ fn prepare_catch_segment_gif_frames(
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects =
         build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
-    let flashlight = mods
-        .is_some_and(|mods| mods.flashlight)
-        .then(|| CatchFlashlight::new(&render_objects, &beatmap.break_periods));
+    let catcher = mods.filter(|m| m.autoplay || m.flashlight).map(|_| {
+        std::sync::Arc::new(super::catcher::build_catcher_path(
+            &render_objects,
+            difficulty.cs,
+        ))
+    });
+    let flashlight = mods.is_some_and(|mods| mods.flashlight).then(|| {
+        CatchFlashlight::new(
+            &render_objects,
+            &beatmap.break_periods,
+            catcher.as_ref().unwrap().clone(),
+        )
+    });
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let segment_duration_ms = duration_seconds
@@ -366,6 +365,7 @@ fn prepare_catch_segment_gif_frames(
     // 各段按时间二分裁剪可见窗口，避免每帧全量遍历
     let start_times: Vec<i64> = render_objects.iter().map(|o| o.start_time).collect();
 
+    let show_catcher = mods.is_some_and(|m| m.autoplay);
     let render = move |frame_index: usize| -> Img {
         let mut canvas = Img::new(
             layout.canvas_width as u32,
@@ -382,6 +382,11 @@ fn prepare_catch_segment_gif_frames(
             let (frame_x, frame_y) = frame_origin(segment_index, &layout);
             let mut frame =
                 render_animation_frame(&render_objects, &start_times, snapshot_time, &layout, None);
+            if show_catcher {
+                if let Some(catcher) = &catcher {
+                    catcher.draw_cpu(&mut frame, snapshot_time, &layout);
+                }
+            }
             if let Some(flashlight) = &flashlight {
                 flashlight.at(snapshot_time, &layout).apply(
                     &mut frame,
