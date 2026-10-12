@@ -70,6 +70,7 @@ pub(crate) fn render_taiko_video(
         &multiplier_lookup,
         &timing_points,
         slider_tick_rate,
+        effective_overall_difficulty(beatmap, mods),
         mods,
     );
     let flashlight = mods

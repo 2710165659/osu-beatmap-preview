@@ -105,6 +105,9 @@ render:
         INFO_MARGIN_LEFT: 0 # 每行左侧信息区
         LABEL_RIGHT_PADDING: 1 # 行末标签右侧内边距
         TIME_LABEL_FONT_SIZE: 24 # 时间标签字号
+        SWELL_HIT_COUNT_FONT_SIZE: 32 # 静态转盘圆内的总击打数字号
+        SWELL_DURATION_FONT_SIZE: 16 # 静态转盘圆下的时长字号
+        SWELL_DURATION_TOP_GAP: 3 # 转盘圆与时长文字之间的间距
         TIME_LABEL_NOTE_FONT_SIZE: 17 # 时间标签附注字号
         BPM_FONT_SIZE: 22 # BPM 标签字号
         TIME_LABEL_TOP_GAP: 0 # 时间标签与轨道的垂直间距
@@ -157,7 +160,7 @@ render:
         TIME_LABEL_COLOR: [232, 232, 232, 255] # 时间标签颜色（RGBA）
         TIME_LABEL_NOTE_COLOR: [170, 170, 170, 255] # 附注颜色（RGBA）
         PREVIEW_TIME_LABEL_COLOR: [95, 221, 108, 255] # 预览时间点标签颜色（RGBA）
-        JUDGEMENT_LINE_COLOR: [255, 255, 255, 255] # 判定线颜色（RGBA）
+        JUDGEMENT_LINE_COLOR: [255, 255, 255, 255] # 太鼓判定圆颜色（RGBA），保留原配置键
     mp4:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
       sizing:
@@ -176,6 +179,7 @@ render:
         TRACK_ACCENT_COLOR: [254, 59, 1, 255] # 轨道强调色（RGBA）
         SHOW_MEASURE_LINES: true # 是否绘制随谱面滚动的小节线
         FPS: 15.0 # MP4 帧率
+        JUDGEMENT_LINE_COLOR: [255, 255, 255, 255] # 太鼓判定圆颜色（RGBA）
         ENABLE_HITSOUND: true # 是否启用打击音（hit sound）
         ENABLE_BEATMAP_HITSOUND: true # 是否使用谱面自带的自定义打击音（OSZ 内同名条目优先于内嵌音效）
         HITSOUND_VOLUME: 100 # 打击音音量百分比（0～100）：100 与 osu! 默认 effect 音量等效（地图每音音量再叠乘）

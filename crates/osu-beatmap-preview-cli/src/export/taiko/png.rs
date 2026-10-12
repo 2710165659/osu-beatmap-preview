@@ -108,13 +108,14 @@ pub(crate) fn render_taiko_grid(
         first_note_time,
         time_axis.to_display(chart_start_time),
     );
-    let layout = build_png_layout(
+    let mut layout = build_png_layout(
         effective_chart_end_time,
         mapper.end_position(),
         &redline_sections,
         &timing_lines,
         chart_start_time,
     );
+    layout.overall_difficulty = effective_overall_difficulty(beatmap, mods);
     let sv_changes = build_sv_changes(&timing_points, effective_chart_end_time, &mapper);
     deadline.check()?;
 
@@ -264,6 +265,7 @@ fn build_png_layout(
         big_note_diameter,
         row_start_positions,
         chart_start_time,
+        overall_difficulty: 5.0,
     }
 }
 

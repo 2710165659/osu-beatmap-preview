@@ -13,13 +13,20 @@ use crate::render::cpu::modes::taiko::animation_render::{
 };
 use crate::render::cpu::modes::taiko::constants::*;
 use crate::render::cpu::modes::taiko::timing::{
-    apply_taiko_object_mods, effective_slider_multiplier, effective_timing_points,
-    taiko_hit_objects,
+    apply_taiko_object_mods, effective_overall_difficulty, effective_slider_multiplier,
+    effective_timing_points, taiko_hit_objects,
 };
 use crate::render::geometry::{GameMode, OutputFormat};
 use crate::render::scene::{FrameSceneBuilder, SceneRect};
 use crate::render::wgpu::RealtimeFrameSource;
+use std::cell::RefCell;
 use std::sync::Arc;
+
+thread_local! {
+    // 实时转盘的直径随动画变化，按线程复用圆环缓存，避免每帧重复光栅化。
+    static TAIKO_REALTIME_CACHE: RefCell<crate::render::cpu::modes::taiko::notes::RenderCache> =
+        RefCell::new(crate::render::cpu::modes::taiko::notes::RenderCache::default());
+}
 
 /// 预计算 Taiko 滚动倍率、物件和小节线，供任意时间点重复取景。
 pub fn prepare_realtime(
@@ -40,6 +47,7 @@ pub fn prepare_realtime(
         &multiplier_lookup,
         &timing_points,
         beatmap.difficulty.get_f64_or("SliderTickRate", 1.0),
+        effective_overall_difficulty(beatmap, mods),
         mods,
     );
     let prepared_measure_lines = prepare_measure_lines(
@@ -184,14 +192,14 @@ fn draw_background_scene(scene: &mut FrameSceneBuilder, layout: &AnimationLayout
         ),
         layout.track_edge_color,
     );
-    let judgement_width = crate::render::geometry::scale_stroke_px(3.0, layout.render_scale);
-    scene.rectangle(
-        rect(
-            judgement_line_x(layout) - judgement_width / 2,
-            top,
-            judgement_width,
-            layout.row_height,
-        ),
+    let diameter = layout.normal_note_diameter as f32;
+    scene.ring(
+        [
+            judgement_line_x(layout) as f32,
+            gif_row_center_y(0, layout) as f32,
+        ],
+        diameter / 2.0,
+        diameter * NOTE_RING_THICKNESS_RATIO as f32,
         layout.judgement_line_color,
     );
 }
@@ -228,7 +236,7 @@ fn draw_objects_scene(
 
         // CPU 路径的普通 note 不裁剪判定线左侧：圆心到达判定线前始终绘制整颗
         // note，越线后一次性隐藏。长条/滚奏仍需裁剪，避免尾部穿过判定线。
-        let clipped = hit_object.hit_object.hit_type & (SWELL_FLAG | DRUMROLL_FLAG) != 0;
+        let clipped = hit_object.hit_object.hit_type & DRUMROLL_FLAG != 0;
         if clipped {
             scene.push_clip(rect(
                 clip_left,
@@ -289,30 +297,33 @@ fn draw_hit_object_scene(
     hidden_sprite: Option<&Arc<Img>>,
 ) {
     let base = &object.hit_object;
-    if object.hidden && base.hit_type & (SWELL_FLAG | DRUMROLL_FLAG) != 0 {
-        if hidden_alpha(
-            base.start_time as f64,
-            snapshot_time,
-            object.start_multiplier,
-            layout.time_range,
-        ) <= 0.0
+    if base.hit_type & SWELL_FLAG != 0 || (object.hidden && base.hit_type & DRUMROLL_FLAG != 0) {
+        if object.hidden
+            && hidden_alpha(
+                base.start_time as f64,
+                snapshot_time,
+                object.start_multiplier,
+                layout.time_range,
+            ) <= 0.0
         {
             return;
         }
-        // HD 长条使用同一物件层，确保 GPU 与 CPU 的整体淡出及重叠边缘一致。
+        // 转盘和 HD 长条复用物件层，确保 GPU 与 CPU 的计数、淡出及重叠边缘一致。
         let mut layer = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
             [0, 0, 0, 0],
         );
-        crate::render::cpu::modes::taiko::animation_render::draw_hit_object(
-            &mut layer,
-            object,
-            layout,
-            0,
-            snapshot_time,
-            &mut crate::render::cpu::modes::taiko::notes::RenderCache::default(),
-        );
+        TAIKO_REALTIME_CACHE.with(|cache| {
+            crate::render::cpu::modes::taiko::animation_render::draw_hit_object(
+                &mut layer,
+                object,
+                layout,
+                0,
+                snapshot_time,
+                &mut cache.borrow_mut(),
+            )
+        });
         scene.sprite(
             Arc::new(layer),
             rect(0, 0, layout.image_width, layout.image_height),
@@ -320,17 +331,7 @@ fn draw_hit_object_scene(
         );
         return;
     }
-    if base.hit_type & SWELL_FLAG != 0 {
-        draw_span_scene(
-            scene,
-            object,
-            layout,
-            snapshot_time,
-            true,
-            SWELL_COLOR,
-            true,
-        );
-    } else if base.hit_type & DRUMROLL_FLAG != 0 {
+    if base.hit_type & DRUMROLL_FLAG != 0 {
         draw_span_scene(
             scene,
             object,
@@ -505,5 +506,48 @@ fn draw_note_disc_scene(
         let inner = fill_radius * 0.55;
         scene.circle(center, inner, NOTE_RING_COLOR);
         scene.circle(center, (inner - ring).max(0.0), fill);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::scene::DrawCommand;
+
+    #[test]
+    fn realtime_uses_a_judgement_ring_and_does_not_clip_swell_to_the_track() {
+        let layout = build_video_animation_layout(1000.0, OutputFormat::Mp4);
+        let mut builder =
+            FrameSceneBuilder::new(layout.image_width as u32, layout.image_height as u32, 1200);
+        draw_background_scene(&mut builder, &layout);
+        let scene = builder.finish();
+        assert!(scene.commands.iter().any(|command| matches!(command, DrawCommand::Ring { center, .. } if center[0] == judgement_line_x(&layout) as f32 && center[1] == gif_row_center_y(0, &layout) as f32)));
+
+        let objects = crate::render::cpu::modes::taiko::animation_render::prepare_hit_objects(
+            &[crate::domain::models::TaikoHitObject {
+                start_time: 1000,
+                end_time: 4000,
+                hit_type: SWELL_FLAG,
+                hitsound: 0,
+                samples: Vec::new(),
+            }],
+            &MultiplierLookup {
+                points: build_multiplier_points(&[], 1.0),
+            },
+            &[],
+            1.0,
+        );
+        let mut builder =
+            FrameSceneBuilder::new(layout.image_width as u32, layout.image_height as u32, 1200);
+        draw_objects_scene(&mut builder, &objects, &[], &layout, 1200, &[None]);
+        let scene = builder.finish();
+        assert!(!scene
+            .commands
+            .iter()
+            .any(|command| matches!(command, DrawCommand::PushClip(_))));
+        assert!(scene
+            .commands
+            .iter()
+            .any(|command| matches!(command, DrawCommand::Sprite { .. })));
     }
 }
