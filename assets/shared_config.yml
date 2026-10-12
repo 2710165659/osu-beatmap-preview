@@ -116,6 +116,8 @@ render:
         SV_TEXT_FONT_SIZE: 15 # SV 文本字号
         SV_TOP_GAP: 0 # SV 文本与轨道顶部的间距
       style:
+        SWELL_COLOR: [82, 204, 180] # 静态转盘圆头、主体与圆尾颜色（RGB）
+        SWELL_TEXT_COLOR: [245, 242, 235, 255] # 转盘击打数颜色（RGBA）
         MAX_SUPPORTED_DURATION_MS: 600000 # 支持的谱面最大时长
         ROW_WIDTH_MULTIPLIER_BPM_0_TO_180: 1.0 # BPM 0～180 时的行宽倍率
         ROW_WIDTH_MULTIPLIER_BPM_180_TO_240: 1.15 # BPM 180～240 时的行宽倍率
@@ -137,6 +139,8 @@ render:
       structure:
         ROW_COUNT: 4 # 同时显示的轨道行数
       sizing:
+        SWELL_HIT_COUNT_FONT_SIZE: 24 # 动画转盘剩余击打数字号
+        SWELL_CLEAR_FONT_SIZE: 16 # 动画转盘 CLEAR 字号
         ROW_GAP: 7 # 动画中轨道行之间的纯空白
         PAGE_MARGIN_TOP: 8 # 画布上边距
         PAGE_MARGIN_RIGHT: 8 # 画布右边距
@@ -149,6 +153,13 @@ render:
         TIME_LABEL_FONT_SIZE: 20 # 时间标签字号
         TIME_LABEL_NOTE_FONT_SIZE: 14 # 时间标签附注字号
       style:
+        SWELL_COLOR: [82, 204, 180, 255] # 动画转盘外圈颜色（RGBA）
+        SWELL_TEXT_COLOR: [245, 242, 235, 255] # 转盘数字、内圈与 CLEAR 颜色（RGBA）
+        SWELL_RING_THICKNESS_RATIO: 0.08 # 转盘外圈及中心标志的线宽与直径之比
+        SHOW_SWELL_MARKER: true # 是否在击打前显示中心转盘标志（开始击打后隐藏）
+        SHOW_SWELL_HIT_COUNT: true # 是否显示剩余击打数
+        SHOW_SWELL_APPROACH_CIRCLE: true # 是否显示随时间收缩的内圈
+        SHOW_SWELL_CLEAR: true # 是否显示完成提示 CLEAR
         IMAGE_BACKGROUND: [0, 0, 0, 255] # 图片背景色（RGBA）
         TRACK_BACKGROUND_COLOR: [55, 55, 55, 255] # 轨道背景色（RGBA）
         TRACK_EDGE_COLOR: [80, 80, 80, 255] # 轨道边缘颜色（RGBA）
@@ -164,9 +175,18 @@ render:
     mp4:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
       sizing:
+        SWELL_HIT_COUNT_FONT_SIZE: 24 # 动画转盘剩余击打数字号
+        SWELL_CLEAR_FONT_SIZE: 16 # 动画转盘 CLEAR 字号
         LABEL_FONT_SIZE: 24 # 时间标签字号
         LABEL_PAD: 12 # 时间标签与画布边缘的内边距
       style:
+        SWELL_COLOR: [82, 204, 180, 255] # 动画转盘外圈颜色（RGBA）
+        SWELL_TEXT_COLOR: [245, 242, 235, 255] # 转盘数字、内圈与 CLEAR 颜色（RGBA）
+        SWELL_RING_THICKNESS_RATIO: 0.08 # 转盘外圈及中心标志的线宽与直径之比
+        SHOW_SWELL_MARKER: true # 是否在击打前显示中心转盘标志（开始击打后隐藏）
+        SHOW_SWELL_HIT_COUNT: true # 是否显示剩余击打数
+        SHOW_SWELL_APPROACH_CIRCLE: true # 是否显示随时间收缩的内圈
+        SHOW_SWELL_CLEAR: true # 是否显示完成提示 CLEAR
         ENABLE_BACKGROUND_IMAGE: true # 是否启用谱面背景图
         ENABLE_BACKGROUND_VIDEO: false # 是否启用谱面背景视频（.osz 内 mp4 背景视频，按时间轴逐帧合成；缺失或未开始时回退背景图）
         ENABLE_STORYBOARD: false # 是否启用故事板（.osb / [Events] 的 Sprite/Animation；背景层画在背景之上、物件之下，前景层压在物件之上）

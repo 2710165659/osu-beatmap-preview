@@ -309,16 +309,70 @@ fn draw_hit_object_scene(
             return;
         }
         // 转盘和 HD 长条复用物件层，确保 GPU 与 CPU 的计数、淡出及重叠边缘一致。
+        // 转盘仅占轨道内的小区域，避免逐物件分配并上传整张视频画布。
+        // HD 滚奏仍沿用完整画布，避免大音符的边缘被局部图层裁剪。
+        let is_swell = base.hit_type & SWELL_FLAG != 0;
+        let diameter = (layout.row_height as f64 * 0.88).round().max(1.0) as i64;
+        let padding = crate::render::geometry::scale_stroke_px(2.0, layout.render_scale);
+        let approaching = is_swell && snapshot_time < base.start_time;
+        let warning_x = object_x(
+            base.start_time as f64,
+            snapshot_time as f64,
+            object.start_multiplier,
+            layout,
+        )
+        .max(judgement_line_x(layout));
+        let left = if approaching {
+            warning_x - layout.normal_note_diameter / 2 - padding
+        } else if is_swell {
+            judgement_line_x(layout) - layout.normal_note_diameter / 2 - padding
+        } else {
+            0
+        };
+        // round-half-even 在半像素处依赖整数奇偶，局部原点取偶数以保持像素一致。
+        let left = left.div_euclid(2) * 2;
+        let row_top = gif_row_top(0, layout);
+        let top = if is_swell {
+            row_top.div_euclid(2) * 2
+        } else {
+            0
+        };
+        // 尚未到达判定点时只有预告圆，图层也只包围这颗圆。
+        let right = if approaching {
+            warning_x + (layout.normal_note_diameter + 1) / 2 + padding
+        } else if !is_swell {
+            layout.image_width
+        } else if snapshot_time
+            >= base.start_time
+                + crate::render::cpu::modes::taiko::animation::SWELL_TRANSITION_MS as i64
+        {
+            judgement_line_x(layout) + diameter + padding
+        } else {
+            layout.playfield_left
+                + layout.left_panel_width
+                + layout.right_panel_width
+                + layout.normal_note_diameter / 2
+                + padding
+        };
+        let mut local_layout = layout.clone();
+        local_layout.playfield_left -= left;
+        local_layout.first_row_top -= top;
+        local_layout.image_width = (right - left).max(1);
+        local_layout.image_height = if is_swell {
+            layout.row_height + row_top - top
+        } else {
+            layout.image_height
+        };
         let mut layer = Img::new(
-            layout.image_width as u32,
-            layout.image_height as u32,
+            local_layout.image_width as u32,
+            local_layout.image_height as u32,
             [0, 0, 0, 0],
         );
         TAIKO_REALTIME_CACHE.with(|cache| {
             crate::render::cpu::modes::taiko::animation_render::draw_hit_object(
                 &mut layer,
                 object,
-                layout,
+                &local_layout,
                 0,
                 snapshot_time,
                 &mut cache.borrow_mut(),
@@ -326,7 +380,12 @@ fn draw_hit_object_scene(
         });
         scene.sprite(
             Arc::new(layer),
-            rect(0, 0, layout.image_width, layout.image_height),
+            rect(
+                left,
+                top,
+                local_layout.image_width,
+                local_layout.image_height,
+            ),
             1.0,
         );
         return;
@@ -549,5 +608,75 @@ mod tests {
             .commands
             .iter()
             .any(|command| matches!(command, DrawCommand::Sprite { .. })));
+    }
+    #[test]
+    fn compact_swell_layer_matches_full_canvas_with_hidden_and_scales() {
+        for scale in [0.5, 1.0, 2.0] {
+            let mut config = crate::config::CoreConfig::default();
+            config.render.taiko.mp4.SCALE = scale;
+            crate::config::with_config(Arc::new(config), || {
+                let layout = build_video_animation_layout(1000.0, OutputFormat::Mp4);
+                let objects =
+                    crate::render::cpu::modes::taiko::animation_render::prepare_hit_objects(
+                        &[crate::domain::models::TaikoHitObject {
+                            start_time: 1000,
+                            end_time: 4000,
+                            hit_type: SWELL_FLAG,
+                            hitsound: 0,
+                            samples: Vec::new(),
+                        }],
+                        &MultiplierLookup {
+                            points: build_multiplier_points(&[], 1.0),
+                        },
+                        &[],
+                        1.0,
+                    );
+                for hidden in [false, true] {
+                    let mut object = objects[0].clone();
+                    object.hidden = hidden;
+                    for time in [400, 999, 1000, 1100, 1199, 1200, 1500, 2250, 2500] {
+                        let mut expected = Img::new(
+                            layout.image_width as u32,
+                            layout.image_height as u32,
+                            [0, 0, 0, 0],
+                        );
+                        crate::render::cpu::modes::taiko::animation_render::draw_hit_object(
+                            &mut expected,
+                            &object,
+                            &layout,
+                            0,
+                            time,
+                            &mut crate::render::cpu::modes::taiko::notes::RenderCache::default(),
+                        );
+                        let mut builder = FrameSceneBuilder::new(expected.w, expected.h, time);
+                        draw_hit_object_scene(&mut builder, &object, &layout, time, None);
+                        let scene = builder.finish();
+                        let mut actual = Img::new(expected.w, expected.h, [0, 0, 0, 0]);
+                        for command in scene.commands.iter() {
+                            if let DrawCommand::Sprite {
+                                resource,
+                                destination,
+                                ..
+                            } = command
+                            {
+                                let sprite = &scene.resources[resource];
+                                assert!(sprite.h <= layout.row_height as u32 + 1);
+                                actual.alpha_composite(
+                                    sprite,
+                                    destination.x as i64,
+                                    destination.y as i64,
+                                );
+                            }
+                        }
+                        let difference = actual
+                            .data
+                            .iter()
+                            .zip(&expected.data)
+                            .position(|(a, b)| a != b);
+                        assert!(difference.is_none(), "局部图层不能改变转盘像素：{scale}/{time}/{hidden}，首个差异 {difference:?}");
+                    }
+                }
+            });
+        }
     }
 }

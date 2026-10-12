@@ -16,7 +16,8 @@ fn pyround(v: f64) -> i64 {
 /// 渲染缓存：note 圆盘与滚奏尾端按（颜色, 尺寸）缓存，避免重复光栅化。
 #[derive(Default)]
 pub struct RenderCache {
-    swells: HashMap<i64, Img>,
+    swells: HashMap<(i64, [u8; 4]), Img>,
+    animation_swells: HashMap<(i64, [u8; 4], i64, bool), Img>,
     discs: HashMap<([u8; 3], i64, i64, bool), Img>,
     tails: HashMap<([u8; 3], i64), Img>,
     drum_roll_ticks: HashMap<(i64, u8), Img>,
@@ -113,7 +114,7 @@ pub fn build_note_disc(color: [u8; 3], diameter: i64, edge_width: i64, swell_mar
     img
 }
 
-/// 转盘圆内透明，缓存键只需要实际直径。
+/// 默认转盘图标为空心圆，动画圆环另按直径与颜色缓存。
 fn build_swell_disc(diameter: i64) -> Img {
     use super::constants::{NOTE_RING_COLOR, NOTE_RING_THICKNESS_RATIO};
     let diameter = diameter.max(1);
@@ -130,10 +131,59 @@ fn build_swell_disc(diameter: i64) -> Img {
 }
 
 pub fn cached_swell_disc(cache: &mut RenderCache, diameter: i64) -> &Img {
+    cached_colored_swell_disc(cache, diameter, super::constants::NOTE_RING_COLOR)
+}
+
+/// 圆环颜色参与缓存键，静态图标与动画转盘分别复用各自的配色。
+pub fn cached_colored_swell_disc(cache: &mut RenderCache, diameter: i64, color: [u8; 4]) -> &Img {
     cache
         .swells
-        .entry(diameter.max(1))
-        .or_insert_with(|| build_swell_disc(diameter))
+        .entry((diameter.max(1), color))
+        .or_insert_with(|| {
+            let diameter = diameter.max(1);
+            let mut image = Img::new(diameter as u32, diameter as u32, [0, 0, 0, 0]);
+            let center = diameter as f64 / 2.0;
+            image.stroke_circle_aa(
+                center,
+                center,
+                center,
+                diameter as f64 * super::constants::NOTE_RING_THICKNESS_RATIO,
+                color,
+            );
+            image
+        })
+}
+
+/// 外圈和固定中心标志一次光栅化，线宽与标志开关参与缓存，避免逐帧重绘。
+pub fn cached_animation_swell_disc(
+    cache: &mut RenderCache,
+    diameter: i64,
+    color: [u8; 4],
+    thickness_ratio: f64,
+    marker: bool,
+) -> &Img {
+    let diameter = diameter.max(1);
+    // 非法倍率回退默认值，线宽不超过半径，避免圆环退化为实心圆。
+    let ratio = if thickness_ratio.is_finite() {
+        thickness_ratio.clamp(0.01, 0.2)
+    } else {
+        0.08
+    };
+    let thickness = pyround(diameter as f64 * ratio).max(1);
+    cache
+        .animation_swells
+        .entry((diameter, color, thickness, marker))
+        .or_insert_with(|| {
+            let mut image = Img::new(diameter as u32, diameter as u32, [0, 0, 0, 0]);
+            let center = diameter as f64 / 2.0;
+            image.stroke_circle_aa(center, center, center, thickness as f64, color);
+            if marker {
+                // 沿用原转盘标志的 0.55 半径比例，小环包围数字，保持圆心透明。
+                let radius = (center - thickness as f64) * 0.55;
+                image.stroke_circle_aa(center, center, radius, thickness as f64, color);
+            }
+            image
+        })
 }
 
 pub fn cached_note_disc(

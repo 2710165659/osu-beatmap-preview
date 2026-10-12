@@ -7,9 +7,7 @@ use crate::render::text::{draw_text, text_size};
 
 use super::animation::required_swell_hits;
 use super::constants::*;
-use super::notes::{
-    cached_roll_tail, cached_swell_disc, draw_note_disc, draw_track_background, RenderCache,
-};
+use super::notes::{cached_roll_tail, draw_note_disc, draw_track_background, RenderCache};
 use super::timing::*;
 
 #[derive(Debug, Clone)]
@@ -439,7 +437,7 @@ fn draw_hit_object(
     draw_circle_object(image, hit_object, mapper, layout, cache);
 }
 
-/// 转盘圆心对齐轨道，圆内标注总击打数，圆下标注持续时间。
+/// 转盘沿用原来的青绿色长条，起点圆内标注总击打数，圆下保留时长。
 fn draw_swell_object(
     image: &mut Img,
     hit_object: &TaikoHitObject,
@@ -455,10 +453,16 @@ fn draw_swell_object(
     let config = &runtime.render.taiko.png.sizing;
     let center_y = png_row_center_y(row_index);
     let diameter = layout.big_note_diameter;
-    image.alpha_composite(
-        cached_swell_disc(cache, diameter),
-        pyround(center_x as f64 - diameter as f64 / 2.0),
-        pyround(center_y as f64 - diameter as f64 / 2.0),
+    // 恢复原来的实色长条、圆头与圆尾，只在起点叠加数字和时长。
+    draw_span_object(
+        image,
+        hit_object,
+        mapper,
+        layout,
+        cache,
+        true,
+        runtime.render.taiko.png.style.SWELL_COLOR,
+        false,
     );
 
     let duration_ms = (hit_object.end_time - hit_object.start_time).max(0);
@@ -478,7 +482,7 @@ fn draw_swell_object(
         center_y - height as i64 / 2,
         &label,
         font_size,
-        NOTE_RING_COLOR,
+        runtime.render.taiko.png.style.SWELL_TEXT_COLOR,
     );
 
     let duration = crate::render::text::format_seconds_tenths(duration_ms);
@@ -801,7 +805,7 @@ mod tests {
                 layout.overall_difficulty = od;
                 let image = render_taiko_png_scene(
                     &layout,
-                    &[object.clone()],
+                    std::slice::from_ref(&object),
                     &mapper,
                     &[],
                     &[],
@@ -818,7 +822,12 @@ mod tests {
                 assert_eq!(
                     image.get((x + 100) as u32, y as u32),
                     image.get((x + 50) as u32, y as u32),
-                    "转盘不得保留长条尾部"
+                    "转盘持续范围必须连续"
+                );
+                assert_ne!(
+                    image.get((x + 100) as u32, y as u32),
+                    image.get((x + 200) as u32, y as u32),
+                    "转盘结束后必须恢复轨道背景"
                 );
                 let size = config.render.taiko.png.sizing.SWELL_HIT_COUNT_FONT_SIZE;
                 let (width, height) = text_size(label, size);
@@ -827,7 +836,7 @@ mod tests {
                 let mut expected = Img::new(
                     width,
                     height,
-                    config.render.taiko.png.style.TRACK_BACKGROUND_COLOR,
+                    [SWELL_COLOR[0], SWELL_COLOR[1], SWELL_COLOR[2], 255],
                 );
                 draw_text(&mut expected, 0, 0, label, size, NOTE_RING_COLOR);
                 assert_eq!(
@@ -857,5 +866,45 @@ mod tests {
                 );
             }
         });
+    }
+    #[test]
+    fn png_swell_interval_continues_on_next_row_and_stops_at_end() {
+        let layout = TaikoPngLayout {
+            row_count: 2,
+            max_row_width: 400,
+            content_width: 466,
+            image_width: 482,
+            image_height: 400,
+            normal_note_diameter: 48,
+            big_note_diameter: 74,
+            row_start_positions: vec![0.0, 400.0],
+            chart_start_time: 0,
+            overall_difficulty: 5.0,
+        };
+        let mapper = ScrollPositionMapper::new(vec![ScrollSegment {
+            start_time: 0,
+            end_time: 10000,
+            pixels_per_ms: 0.1,
+            start_position: 0.0,
+        }]);
+        let object = TaikoHitObject {
+            start_time: 3000,
+            end_time: 6000,
+            hit_type: SWELL_FLAG,
+            hitsound: 0,
+            samples: Vec::new(),
+        };
+        let image = render_taiko_png_scene(&layout, &[object], &mapper, &[], &[], TimeAxis::new(0));
+        let left = png_row_chart_left(&layout, 1) as u32;
+        let y = png_row_center_y(1) as u32;
+        assert_eq!(image.get(left + 50, y), image.get(left + 150, y));
+        assert_ne!(image.get(left + 50, y), image.get(left + 250, y));
+        assert_ne!(image.get(left + 200, y - 12), image.get(left + 250, y - 12));
+
+        let first_left = png_row_chart_left(&layout, 0) as u32;
+        assert_eq!(
+            image.get(first_left + 390, png_row_center_y(0) as u32),
+            image.get(left + 50, y)
+        );
     }
 }

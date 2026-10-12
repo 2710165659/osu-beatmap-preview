@@ -523,7 +523,7 @@ fn bitmap_font_sizes_follow_fractional_output_scales() {
         r#"{
                 "render": {
                     "standard": {"png": {"SCALE": 0.5}},
-                    "taiko": {"png": {"SCALE": 0.5}},
+                    "taiko": {"png": {"SCALE": 0.5}, "gif": {"SCALE": 0.5}, "mp4": {"SCALE": 1.5}},
                     "mania": {"gif": {"SCALE": 0.5}, "mp4": {"SCALE": 0.5}}
                 }
             }"#,
@@ -533,6 +533,13 @@ fn bitmap_font_sizes_follow_fractional_output_scales() {
     assert_eq!(half.render.taiko.png.sizing.SWELL_HIT_COUNT_FONT_SIZE, 16);
     assert_eq!(half.render.taiko.png.sizing.SWELL_DURATION_FONT_SIZE, 8);
     assert_eq!(half.render.taiko.png.sizing.SWELL_DURATION_TOP_GAP, 2);
+    assert_eq!(half.render.taiko.gif.sizing.SWELL_HIT_COUNT_FONT_SIZE, 12);
+    assert_eq!(half.render.taiko.gif.sizing.SWELL_CLEAR_FONT_SIZE, 8);
+    assert_eq!(half.render.taiko.mp4.sizing.SWELL_HIT_COUNT_FONT_SIZE, 36);
+    assert_eq!(half.render.taiko.mp4.sizing.SWELL_CLEAR_FONT_SIZE, 24);
+    assert!(half.render.taiko.gif.style.SHOW_SWELL_HIT_COUNT);
+    assert!(half.render.taiko.gif.style.SHOW_SWELL_APPROACH_CIRCLE);
+    assert!(half.render.taiko.gif.style.SHOW_SWELL_CLEAR);
     assert_eq!(half.render.mania.gif.sizing.SV_TEXT_FONT_SIZE, 4);
     assert_eq!(half.render.mania.mp4.sizing.SV_TEXT_FONT_SIZE, 4);
 
@@ -902,4 +909,32 @@ fn storyboard_toggle_defaults_off_and_enters_config_hash() {
     let hit =
         variant(r#"{"render":{"standard":{"mp4":{"style":{"ENABLE_HITSOUND":false}}}}}"#).unwrap();
     assert_ne!(storyboard.hash, hit.hash);
+}
+
+#[test]
+fn taiko_swell_styles_are_independent_and_change_the_config_hash() {
+    let configured = load_snapshot(Some(
+        r#"{"render":{"taiko":{
+        "png":{"style":{"SWELL_COLOR":[10,20,30],"SWELL_TEXT_COLOR":[40,50,60,255]}},
+        "gif":{"style":{"SWELL_COLOR":[70,80,90,255],"SHOW_SWELL_HIT_COUNT":false,
+            "SHOW_SWELL_APPROACH_CIRCLE":false,"SHOW_SWELL_CLEAR":false}}
+    }}}"#,
+    ))
+    .unwrap();
+    assert_eq!(configured.render.taiko.png.style.SWELL_COLOR, [10, 20, 30]);
+    assert_eq!(
+        configured.render.taiko.gif.style.SWELL_COLOR,
+        [70, 80, 90, 255]
+    );
+    assert_eq!(
+        configured.render.taiko.mp4.style.SWELL_COLOR,
+        [82, 204, 180, 255]
+    );
+    assert!(!configured.render.taiko.gif.style.SHOW_SWELL_HIT_COUNT);
+    assert!(!configured.render.taiko.gif.style.SHOW_SWELL_APPROACH_CIRCLE);
+    assert!(!configured.render.taiko.gif.style.SHOW_SWELL_CLEAR);
+    assert!(configured.render.taiko.mp4.style.SHOW_SWELL_HIT_COUNT);
+    assert!(
+        variant(r#"{"render":{"taiko":{"gif":{"style":{"SHOW_SWELL_CLEAR":false}}}}}"#).is_some()
+    );
 }
