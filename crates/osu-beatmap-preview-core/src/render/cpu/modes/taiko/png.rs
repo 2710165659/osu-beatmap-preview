@@ -5,8 +5,11 @@ use crate::processing::timeline::TimeAxis;
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
 
+use super::animation::required_swell_hits;
 use super::constants::*;
-use super::notes::{cached_roll_tail, draw_note_disc, draw_track_background, RenderCache};
+use super::notes::{
+    cached_roll_tail, cached_swell_disc, draw_note_disc, draw_track_background, RenderCache,
+};
 use super::timing::*;
 
 #[derive(Debug, Clone)]
@@ -22,6 +25,7 @@ pub struct TaikoPngLayout {
     /// 每行的滚动空间起始位置（已对齐到小节线）。
     pub row_start_positions: Vec<f64>,
     pub chart_start_time: i64,
+    pub overall_difficulty: f64,
 }
 
 impl TaikoPngLayout {
@@ -408,15 +412,13 @@ fn draw_hit_object(
     cache: &mut RenderCache,
 ) {
     if hit_object.hit_type & SWELL_FLAG != 0 {
-        draw_span_object(
+        draw_swell_object(
             image,
             hit_object,
             mapper,
             layout,
             cache,
-            true,
-            super::constants::SWELL_COLOR,
-            true,
+            layout.overall_difficulty,
         );
         return;
     }
@@ -435,6 +437,69 @@ fn draw_hit_object(
         return;
     }
     draw_circle_object(image, hit_object, mapper, layout, cache);
+}
+
+/// 转盘圆心对齐轨道，圆内标注总击打数，圆下标注持续时间。
+fn draw_swell_object(
+    image: &mut Img,
+    hit_object: &TaikoHitObject,
+    mapper: &ScrollPositionMapper,
+    layout: &TaikoPngLayout,
+    cache: &mut RenderCache,
+    overall_difficulty: f64,
+) {
+    let (row_index, local_position) =
+        layout.locate(mapper.position_at(hit_object.start_time as f64));
+    let center_x = pyround(png_row_chart_left(layout, row_index) as f64 + local_position);
+    let runtime = crate::config::current();
+    let config = &runtime.render.taiko.png.sizing;
+    let center_y = png_row_center_y(row_index);
+    let diameter = layout.big_note_diameter;
+    image.alpha_composite(
+        cached_swell_disc(cache, diameter),
+        pyround(center_x as f64 - diameter as f64 / 2.0),
+        pyround(center_y as f64 - diameter as f64 / 2.0),
+    );
+
+    let duration_ms = (hit_object.end_time - hit_object.start_time).max(0);
+    let label = required_swell_hits(duration_ms, overall_difficulty).to_string();
+    let mut font_size = config.SWELL_HIT_COUNT_FONT_SIZE;
+    // 长转盘的多位数字缩小到圆内；字号与圆直径均已应用 PNG 的 SCALE。
+    let available = pyround(diameter as f64 * 0.66).max(1) as u32;
+    let (width, height) = text_size(&label, font_size);
+    if width.max(height) > available {
+        font_size =
+            ((font_size as u64 * available as u64) / width.max(height) as u64).max(1) as u32;
+    }
+    let (width, height) = text_size(&label, font_size);
+    draw_text(
+        image,
+        center_x - width as i64 / 2,
+        center_y - height as i64 / 2,
+        &label,
+        font_size,
+        NOTE_RING_COLOR,
+    );
+
+    let duration = crate::render::text::format_seconds_tenths(duration_ms);
+    let duration_y =
+        pyround(center_y as f64 + diameter as f64 / 2.0) + config.SWELL_DURATION_TOP_GAP;
+    // 圆心保持在轨道中线，只缩小时长文字以避开轨道外的时间轴标签。
+    let duration_font_size = config
+        .SWELL_DURATION_FONT_SIZE
+        .min((png_row_top(row_index) + config.ROW_HEIGHT - duration_y).max(1) as u32);
+    let (duration_width, _) = text_size(&duration, duration_font_size);
+    let duration_x = (center_x - duration_width as i64 / 2)
+        .min(config.PAGE_MARGIN_LEFT + layout.content_width - duration_width as i64)
+        .max(config.PAGE_MARGIN_LEFT);
+    draw_text(
+        image,
+        duration_x,
+        duration_y,
+        &duration,
+        duration_font_size,
+        runtime.render.taiko.png.style.RULER_TEXT_COLOR,
+    );
 }
 
 fn draw_circle_object(
@@ -693,4 +758,104 @@ pub fn render_taiko_png_scene(
     }
 
     image
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn png_swell_centers_the_circle_and_shows_total_hits_and_duration() {
+        let mut runtime = crate::config::CoreConfig::default();
+        runtime.render.taiko.png.sizing.SWELL_HIT_COUNT_FONT_SIZE = 24;
+        crate::config::with_config(std::sync::Arc::new(runtime), || {
+            let mut layout = TaikoPngLayout {
+                row_count: 1,
+                max_row_width: 400,
+                content_width: 466,
+                image_width: 482,
+                image_height: 200,
+                normal_note_diameter: 48,
+                big_note_diameter: 74,
+                row_start_positions: vec![0.0],
+                chart_start_time: 0,
+                overall_difficulty: 5.0,
+            };
+            let mapper = ScrollPositionMapper::new(vec![ScrollSegment {
+                start_time: 0,
+                end_time: 10000,
+                pixels_per_ms: 0.05,
+                start_position: 0.0,
+            }]);
+            let object = TaikoHitObject {
+                start_time: 3000,
+                end_time: 6000,
+                hit_type: SWELL_FLAG,
+                hitsound: 0,
+                samples: Vec::new(),
+            };
+            let x = png_row_chart_left(&layout, 0) + 150;
+            let y = png_row_center_y(0);
+            let config = crate::config::current();
+            for (od, label) in [(5.0, "24"), (7.0, "29")] {
+                layout.overall_difficulty = od;
+                let image = render_taiko_png_scene(
+                    &layout,
+                    &[object.clone()],
+                    &mapper,
+                    &[],
+                    &[],
+                    TimeAxis::new(0),
+                );
+                assert_ne!(
+                    image.get(x as u32, (y - 36) as u32),
+                    image.get((x + 50) as u32, y as u32)
+                );
+                assert_ne!(
+                    image.get(x as u32, (y + 36) as u32),
+                    image.get((x + 50) as u32, y as u32)
+                );
+                assert_eq!(
+                    image.get((x + 100) as u32, y as u32),
+                    image.get((x + 50) as u32, y as u32),
+                    "转盘不得保留长条尾部"
+                );
+                let size = config.render.taiko.png.sizing.SWELL_HIT_COUNT_FONT_SIZE;
+                let (width, height) = text_size(label, size);
+                let label_x = x - width as i64 / 2;
+                let label_y = y - height as i64 / 2;
+                let mut expected = Img::new(
+                    width,
+                    height,
+                    config.render.taiko.png.style.TRACK_BACKGROUND_COLOR,
+                );
+                draw_text(&mut expected, 0, 0, label, size, NOTE_RING_COLOR);
+                assert_eq!(
+                    image
+                        .crop(
+                            label_x as u32,
+                            label_y as u32,
+                            label_x as u32 + width,
+                            label_y as u32 + height
+                        )
+                        .data,
+                    expected.data
+                );
+                let below_ring = y
+                    + layout.big_note_diameter / 2
+                    + config.render.taiko.png.sizing.SWELL_DURATION_TOP_GAP;
+                assert!(
+                    (below_ring..png_row_top(0) + config.render.taiko.png.sizing.ROW_HEIGHT).any(
+                        |row| {
+                            (x - 20..x + 20).any(|col| {
+                                image.get(col as u32, row as u32)
+                                    == config.render.taiko.png.style.RULER_TEXT_COLOR
+                            })
+                        }
+                    ),
+                    "圆下必须显示时长"
+                );
+            }
+        });
+    }
 }

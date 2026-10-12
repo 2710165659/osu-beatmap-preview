@@ -631,6 +631,23 @@ pub fn effective_slider_multiplier(beatmap: &Beatmap, mods: Option<&ModSettings>
     Ok(slider_multiplier)
 }
 
+/// 转盘击打数使用应用 EZ/HR/DA 后的 OD。
+pub fn effective_overall_difficulty(beatmap: &Beatmap, mods: Option<&ModSettings>) -> f64 {
+    let mut difficulty = beatmap.difficulty.get_f64_or("OverallDifficulty", 5.0);
+    if let Some(mods) = mods {
+        if mods.easy {
+            difficulty *= 0.5;
+        }
+        if mods.hard_rock {
+            difficulty = (difficulty * 1.4).min(10.0);
+        }
+        if let Some(value) = mods.da_od {
+            difficulty = value;
+        }
+    }
+    difficulty
+}
+
 pub fn effective_timing_points(beatmap: &Beatmap, mods: Option<&ModSettings>) -> Vec<TimingPoint> {
     if mods.map(|m| m.cs_override).unwrap_or(false) {
         // Constant Speed：仅保留红线，等价于禁用 SV。

@@ -523,12 +523,16 @@ fn bitmap_font_sizes_follow_fractional_output_scales() {
         r#"{
                 "render": {
                     "standard": {"png": {"SCALE": 0.5}},
+                    "taiko": {"png": {"SCALE": 0.5}},
                     "mania": {"gif": {"SCALE": 0.5}, "mp4": {"SCALE": 0.5}}
                 }
             }"#,
     ))
     .unwrap();
     assert_eq!(half.render.standard.png.sizing.TIME_LABEL_FONT_SIZE, 12);
+    assert_eq!(half.render.taiko.png.sizing.SWELL_HIT_COUNT_FONT_SIZE, 16);
+    assert_eq!(half.render.taiko.png.sizing.SWELL_DURATION_FONT_SIZE, 8);
+    assert_eq!(half.render.taiko.png.sizing.SWELL_DURATION_TOP_GAP, 2);
     assert_eq!(half.render.mania.gif.sizing.SV_TEXT_FONT_SIZE, 4);
     assert_eq!(half.render.mania.mp4.sizing.SV_TEXT_FONT_SIZE, 4);
 

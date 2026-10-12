@@ -216,6 +216,8 @@ fn is_bitmap_font_size(name: &str) -> bool {
     matches!(
         name,
         "TIME_LABEL_FONT_SIZE"
+            | "SWELL_HIT_COUNT_FONT_SIZE"
+            | "SWELL_DURATION_FONT_SIZE"
             | "TIME_LABEL_NOTE_FONT_SIZE"
             | "LABEL_FONT_SIZE"
             | "BPM_FONT_SIZE"

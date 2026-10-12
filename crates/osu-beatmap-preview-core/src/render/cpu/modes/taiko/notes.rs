@@ -16,6 +16,7 @@ fn pyround(v: f64) -> i64 {
 /// 渲染缓存：note 圆盘与滚奏尾端按（颜色, 尺寸）缓存，避免重复光栅化。
 #[derive(Default)]
 pub struct RenderCache {
+    swells: HashMap<i64, Img>,
     discs: HashMap<([u8; 3], i64, i64, bool), Img>,
     tails: HashMap<([u8; 3], i64), Img>,
     drum_roll_ticks: HashMap<(i64, u8), Img>,
@@ -83,8 +84,11 @@ pub fn draw_track_background(
 }
 
 /// Classic-2013 风格音符：实心抗锯齿圆盘、浅色圆环边框、1px 深色外缘，
-/// 无中心符号。`swell_marker` 会增加内环（替代 spinner-warning 精灵图）。
+/// 无中心符号。`swell_marker` 使用独立的完整空心转盘。
 pub fn build_note_disc(color: [u8; 3], diameter: i64, edge_width: i64, swell_marker: bool) -> Img {
+    if swell_marker {
+        return build_swell_disc(diameter);
+    }
     let d = diameter.max(1);
     let mut img = Img::new(d as u32, d as u32, [0, 0, 0, 0]);
     let c = d as f64 / 2.0;
@@ -106,17 +110,30 @@ pub fn build_note_disc(color: [u8; 3], diameter: i64, edge_width: i64, swell_mar
         crate::render::cpu::modes::taiko::constants::NOTE_RING_COLOR,
     );
     img.fill_circle_aa(c, c, r - edge_width - ring, fill);
-    if swell_marker {
-        let inner_r = (r - edge_width - ring) * 0.55;
-        img.fill_circle_aa(
-            c,
-            c,
-            inner_r,
-            crate::render::cpu::modes::taiko::constants::NOTE_RING_COLOR,
-        );
-        img.fill_circle_aa(c, c, inner_r - ring.max(1.0), fill);
-    }
     img
+}
+
+/// 转盘圆内透明，缓存键只需要实际直径。
+fn build_swell_disc(diameter: i64) -> Img {
+    use super::constants::{NOTE_RING_COLOR, NOTE_RING_THICKNESS_RATIO};
+    let diameter = diameter.max(1);
+    let mut image = Img::new(diameter as u32, diameter as u32, [0, 0, 0, 0]);
+    let center = diameter as f64 / 2.0;
+    image.stroke_circle_aa(
+        center,
+        center,
+        center,
+        diameter as f64 * NOTE_RING_THICKNESS_RATIO,
+        NOTE_RING_COLOR,
+    );
+    image
+}
+
+pub fn cached_swell_disc(cache: &mut RenderCache, diameter: i64) -> &Img {
+    cache
+        .swells
+        .entry(diameter.max(1))
+        .or_insert_with(|| build_swell_disc(diameter))
 }
 
 pub fn cached_note_disc(
@@ -270,5 +287,39 @@ mod tests {
         assert_eq!(first, repeated);
         let _ = cached_drum_roll_tick(&mut cache, 10, 0.5);
         assert_eq!(cache.drum_roll_ticks.len(), 2);
+    }
+
+    #[test]
+    fn swell_marker_is_hollow_and_has_no_colored_fill() {
+        let sprite = build_note_disc(super::super::constants::SWELL_COLOR, 48, 1, true);
+        assert_eq!(sprite.get(24, 24)[3], 0);
+        assert!(sprite
+            .data
+            .chunks_exact(4)
+            .all(|pixel| pixel[3] == 0
+                || pixel[..3] == super::super::constants::NOTE_RING_COLOR[..3]));
+        assert!(sprite.get(24, 1)[3] > 0);
+        assert_eq!(sprite.get(0, 0)[3], 0);
+    }
+
+    #[test]
+    fn swell_ring_is_complete_at_every_angle() {
+        let sprite = build_note_disc(super::super::constants::SWELL_COLOR, 96, 1, true);
+        for step in 0..360 {
+            let angle = (step as f64).to_radians();
+            let x = (48.0 + 46.0 * angle.cos()).floor() as u32;
+            let y = (48.0 + 46.0 * angle.sin()).floor() as u32;
+            assert!(sprite.get(x, y)[3] > 0, "转盘边框不能有缺口：{step} 度");
+        }
+    }
+
+    #[test]
+    fn swell_cache_reuses_diameters() {
+        let mut cache = RenderCache::default();
+        let first = cached_swell_disc(&mut cache, 48) as *const Img;
+        let repeated = cached_swell_disc(&mut cache, 48) as *const Img;
+        assert_eq!(first, repeated);
+        let _ = cached_swell_disc(&mut cache, 56);
+        assert_eq!(cache.swells.len(), 2);
     }
 }

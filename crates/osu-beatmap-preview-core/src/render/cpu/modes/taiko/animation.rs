@@ -9,6 +9,43 @@ pub const DRUM_ROLL_TICK_FADE_MS: f64 = 200.0;
 /// 小节线越过判定位置后的淡出时长。
 pub const MEASURE_LINE_FADE_MS: f64 = 150.0;
 
+/// 经典转盘的切换、主体淡出与完成提示生命周期，来自 `LegacySwell`。
+pub const SWELL_TRANSITION_MS: f64 = 200.0;
+pub const SWELL_BODY_FADE_MS: f64 = 300.0;
+pub const SWELL_CLEAR_MS: f64 = 660.0;
+
+/// 沿用 `TaikoBeatmapConverter.RequiredSwellHitsPerSecond()` 的 OD 分段线性公式。
+pub fn required_swell_hits(duration_ms: i64, overall_difficulty: f64) -> u32 {
+    let difficulty = if overall_difficulty.is_finite() {
+        overall_difficulty
+    } else {
+        5.0
+    };
+    let rate = if difficulty <= 5.0 {
+        3.0 + difficulty * 0.4
+    } else {
+        5.0 + (difficulty - 5.0) * 0.5
+    };
+    (duration_ms.max(0) as f64 / 1000.0 * rate * 1.65).max(1.0) as u32
+}
+
+/// 预览模拟官方 `TaikoAutoGenerator`：每隔 min(50ms, 时长/所需次数) 连打一次。
+/// 首次连打发生在开始时间，达到所需次数后停止；返回已完成次数与完成时刻。
+pub fn swell_hit_progress(object: &TaikoHitObject, required: u32, snapshot: i64) -> (u32, f64) {
+    let required = required.max(1);
+    let spacing = ((object.end_time - object.start_time).max(1) as f64 / required as f64).min(50.0);
+    let completed_at = object.start_time as f64 + (required - 1) as f64 * spacing;
+    let elapsed = snapshot as f64 - object.start_time as f64;
+    let completed = if elapsed < 0.0 {
+        0
+    } else {
+        ((elapsed / spacing).floor() as u32)
+            .saturating_add(1)
+            .min(required)
+    };
+    (completed, completed_at)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DrumRollTick {
     pub time: f64,
@@ -202,5 +239,26 @@ mod tests {
         assert_eq!(measure_line_alpha(1000.0, 1000), 1.0);
         assert_eq!(measure_line_alpha(1000.0, 1075), 0.5);
         assert_eq!(measure_line_alpha(1000.0, 1150), 0.0);
+    }
+
+    #[test]
+    fn swell_counts_follow_official_difficulty_range_and_truncation() {
+        assert_eq!(required_swell_hits(3000, 0.0), 14);
+        assert_eq!(required_swell_hits(3000, 5.0), 24);
+        assert_eq!(required_swell_hits(3000, 10.0), 37);
+        assert_eq!(required_swell_hits(0, 5.0), 1);
+    }
+
+    #[test]
+    fn swell_auto_counts_down_and_stops_at_zero() {
+        let mut object = drum_roll(1000, 4000);
+        object.hit_type = super::super::constants::SWELL_FLAG;
+        assert_eq!(swell_hit_progress(&object, 24, 999), (0, 2150.0));
+        assert_eq!(swell_hit_progress(&object, 24, 1000).0, 1);
+        assert_eq!(swell_hit_progress(&object, 24, 1100).0, 3);
+        assert_eq!(swell_hit_progress(&object, 24, 2150).0, 24);
+        assert_eq!(swell_hit_progress(&object, 24, 4000).0, 24);
+        object.end_time = 1020;
+        assert_eq!(swell_hit_progress(&object, 4, 1015).0, 4);
     }
 }
