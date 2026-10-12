@@ -214,7 +214,6 @@ fn draw_objects_scene(
 ) {
     let clip_left = judgement_line_x(layout);
     let clip_right = layout.playfield_left + layout.left_panel_width + layout.right_panel_width;
-    let top = gif_row_top(0, layout);
     draw_measure_lines_scene(
         scene,
         measure_lines,
@@ -234,17 +233,6 @@ fn draw_objects_scene(
             continue;
         }
 
-        // CPU 路径的普通 note 不裁剪判定线左侧：圆心到达判定线前始终绘制整颗
-        // note，越线后一次性隐藏。长条/滚奏仍需裁剪，避免尾部穿过判定线。
-        let clipped = hit_object.hit_object.hit_type & DRUMROLL_FLAG != 0;
-        if clipped {
-            scene.push_clip(rect(
-                clip_left,
-                top,
-                clip_right - clip_left,
-                layout.row_height,
-            ));
-        }
         draw_hit_object_scene(
             scene,
             hit_object,
@@ -252,9 +240,6 @@ fn draw_objects_scene(
             snapshot_time,
             hidden_sprites[index].as_ref(),
         );
-        if clipped {
-            scene.pop_clip();
-        }
     }
 }
 
@@ -308,61 +293,34 @@ fn draw_hit_object_scene(
         {
             return;
         }
-        // 转盘和 HD 长条复用物件层，确保 GPU 与 CPU 的计数、淡出及重叠边缘一致。
-        // 转盘仅占轨道内的小区域，避免逐物件分配并上传整张视频画布。
-        // HD 滚奏仍沿用完整画布，避免大音符的边缘被局部图层裁剪。
+        // 转盘与 HD 长条沿用 CPU 绘制，保证计数和整体淡出一致。
+        // 按当前圆心和直径裁出局部图层，视频大圆可以溢出轨道，但不必上传整张画布。
         let is_swell = base.hit_type & SWELL_FLAG != 0;
-        let diameter = (layout.row_height as f64 * 0.88).round().max(1.0) as i64;
-        let padding = crate::render::geometry::scale_stroke_px(2.0, layout.render_scale);
-        let approaching = is_swell && snapshot_time < base.start_time;
-        let warning_x = object_x(
-            base.start_time as f64,
-            snapshot_time as f64,
-            object.start_multiplier,
-            layout,
-        )
-        .max(judgement_line_x(layout));
-        let left = if approaching {
-            warning_x - layout.normal_note_diameter / 2 - padding
-        } else if is_swell {
-            judgement_line_x(layout) - layout.normal_note_diameter / 2 - padding
+        let (left, top, right, bottom) = if is_swell {
+            let (x, y, diameter) =
+                crate::render::cpu::modes::taiko::animation_render::swell_frame_geometry(
+                    object,
+                    layout,
+                    0,
+                    snapshot_time,
+                );
+            let padding = crate::render::geometry::scale_stroke_px(2.0, layout.render_scale);
+            let radius = diameter as f64 / 2.0;
+            let left = ((x - radius).floor() as i64 - padding).clamp(0, layout.image_width);
+            let top = ((y - radius).floor() as i64 - padding).clamp(0, layout.image_height);
+            let right = ((x + radius).ceil() as i64 + padding).clamp(0, layout.image_width);
+            let bottom = ((y + radius).ceil() as i64 + padding).clamp(0, layout.image_height);
+            // round-half-even 在半像素处依赖整数奇偶，局部原点取偶数保持像素一致。
+            (left.div_euclid(2) * 2, top.div_euclid(2) * 2, right, bottom)
         } else {
-            0
-        };
-        // round-half-even 在半像素处依赖整数奇偶，局部原点取偶数以保持像素一致。
-        let left = left.div_euclid(2) * 2;
-        let row_top = gif_row_top(0, layout);
-        let top = if is_swell {
-            row_top.div_euclid(2) * 2
-        } else {
-            0
-        };
-        // 尚未到达判定点时只有预告圆，图层也只包围这颗圆。
-        let right = if approaching {
-            warning_x + (layout.normal_note_diameter + 1) / 2 + padding
-        } else if !is_swell {
-            layout.image_width
-        } else if snapshot_time
-            >= base.start_time
-                + crate::render::cpu::modes::taiko::animation::SWELL_TRANSITION_MS as i64
-        {
-            judgement_line_x(layout) + diameter + padding
-        } else {
-            layout.playfield_left
-                + layout.left_panel_width
-                + layout.right_panel_width
-                + layout.normal_note_diameter / 2
-                + padding
+            // HD 滚奏保留完整画布，避免圆头和长条边缘被局部图层裁剪。
+            (0, 0, layout.image_width, layout.image_height)
         };
         let mut local_layout = layout.clone();
         local_layout.playfield_left -= left;
         local_layout.first_row_top -= top;
         local_layout.image_width = (right - left).max(1);
-        local_layout.image_height = if is_swell {
-            layout.row_height + row_top - top
-        } else {
-            layout.image_height
-        };
+        local_layout.image_height = (bottom - top).max(1);
         let mut layer = Img::new(
             local_layout.image_width as u32,
             local_layout.image_height as u32,
@@ -469,12 +427,16 @@ fn draw_span_scene(
     color: [u8; 3],
     swell_marker: bool,
 ) {
+    if snapshot_time >= object.hit_object.end_time {
+        return;
+    }
     let start_x = object_x(
         object.hit_object.start_time as f64,
         snapshot_time as f64,
         object.start_multiplier,
         layout,
-    );
+    )
+    .max(judgement_line_x(layout));
     let end_x = object_x(
         object.hit_object.end_time as f64,
         snapshot_time as f64,
@@ -493,6 +455,15 @@ fn draw_span_scene(
         SPAN_BODY_HEIGHT_RATIO
     };
     let body_height = (head_diameter as f64 * body_ratio).round().max(1.0) as i64;
+    // 仅主体、圆尾和连打点裁剪于轨道，圆头在裁剪结束后完整绘制。
+    let clip_left = judgement_line_x(layout);
+    let clip_right = layout.playfield_left + layout.left_panel_width + layout.right_panel_width;
+    scene.push_clip(rect(
+        clip_left,
+        gif_row_top(0, layout),
+        clip_right - clip_left,
+        layout.row_height,
+    ));
     if end_x > start_x {
         scene.rectangle(
             rect(
@@ -532,6 +503,7 @@ fn draw_span_scene(
             );
         }
     }
+    scene.pop_clip();
     draw_note_disc_scene(
         scene,
         start_x,
@@ -610,8 +582,8 @@ mod tests {
             .any(|command| matches!(command, DrawCommand::Sprite { .. })));
     }
     #[test]
-    fn compact_swell_layer_matches_full_canvas_with_hidden_and_scales() {
-        for scale in [0.5, 1.0, 2.0] {
+    fn swell_local_layer_matches_full_canvas_with_hidden_and_scales() {
+        for scale in [0.5, 1.0, 1.5, 2.0] {
             let mut config = crate::config::CoreConfig::default();
             config.render.taiko.mp4.SCALE = scale;
             crate::config::with_config(Arc::new(config), || {
@@ -660,7 +632,10 @@ mod tests {
                             } = command
                             {
                                 let sprite = &scene.resources[resource];
-                                assert!(sprite.h <= layout.row_height as u32 + 1);
+                                assert!(
+                                    sprite.h < layout.image_height as u32,
+                                    "转盘图层只应覆盖圆环范围"
+                                );
                                 actual.alpha_composite(
                                     sprite,
                                     destination.x as i64,
@@ -677,6 +652,64 @@ mod tests {
                     }
                 }
             });
+        }
+    }
+    #[test]
+    fn realtime_roll_head_is_outside_tail_clip_and_expires_at_end() {
+        for strong in [false, true] {
+            let layout = build_video_animation_layout(1000.0, OutputFormat::Mp4);
+            let objects = crate::render::cpu::modes::taiko::animation_render::prepare_hit_objects(
+                &[crate::domain::models::TaikoHitObject {
+                    start_time: 1000,
+                    end_time: 3000,
+                    hit_type: DRUMROLL_FLAG,
+                    hitsound: if strong { HIT_SOUNDS_STRONG } else { 0 },
+                    samples: Vec::new(),
+                }],
+                &MultiplierLookup {
+                    points: build_multiplier_points(&[], 1.0),
+                },
+                &[],
+                1.0,
+            );
+            for time in [1000, 2200, 2999] {
+                let mut builder = FrameSceneBuilder::new(
+                    layout.image_width as u32,
+                    layout.image_height as u32,
+                    time,
+                );
+                draw_objects_scene(&mut builder, &objects, &[], &layout, time, &[None]);
+                let scene = builder.finish();
+                let mut depth = 0;
+                let mut found_head = false;
+                let diameter = if strong {
+                    layout.big_note_diameter
+                } else {
+                    layout.normal_note_diameter
+                };
+                for command in scene.commands.iter() {
+                    match command {
+                        DrawCommand::PushClip(_) => depth += 1,
+                        DrawCommand::PopClip => depth -= 1,
+                        DrawCommand::Circle {
+                            center,
+                            radius,
+                            color,
+                        } if *color == NOTE_RING_COLOR => {
+                            assert_eq!(depth, 0, "圆头不能被轨道裁掉左半边");
+                            assert_eq!(center[0], judgement_line_x(&layout) as f32);
+                            assert!(*radius > diameter as f32 * 0.4);
+                            found_head = true;
+                        }
+                        _ => {}
+                    }
+                }
+                assert!(found_head, "活动滚奏必须保留圆头");
+            }
+            let mut builder =
+                FrameSceneBuilder::new(layout.image_width as u32, layout.image_height as u32, 3000);
+            draw_objects_scene(&mut builder, &objects, &[], &layout, 3000, &[None]);
+            assert!(builder.finish().commands.is_empty());
         }
     }
 }

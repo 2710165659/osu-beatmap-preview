@@ -784,6 +784,15 @@ pub fn can_skip(
     right_bound: i64,
 ) -> bool {
     let base = &hit_object.hit_object;
+    // 滚奏的圆头在开始后固定于判定点，不能再按已滚走的起点裁掉。
+    if base.hit_type & DRUMROLL_FLAG != 0 {
+        if snapshot_time >= base.end_time {
+            return true;
+        }
+        if snapshot_time >= base.start_time {
+            return false;
+        }
+    }
     // 活动转盘和完成提示不受轨道裁剪，生命周期沿用经典皮肤的完成动画。
     if base.hit_type & SWELL_FLAG != 0 {
         let (_, completed_at) =
@@ -874,7 +883,56 @@ pub(crate) fn draw_hit_object(
     draw_circle_object(image, hit_object, layout, row_index, snapshot_time, cache);
 }
 
-/// 紧凑转盘的动画范围限制在轨道内，避免多行预览为特效增加行距。
+/// GIF 转盘放在轨道内，视频转盘沿用经典皮肤在判定点右下方展开的大圆布局。
+/// 返回当前帧的圆心与直径，CPU 绘制和 GPU 局部图层必须共用几何边界。
+pub(crate) fn swell_frame_geometry(
+    hit_object: &PreparedTaikoHitObject,
+    layout: &AnimationLayout,
+    row_index: i64,
+    snapshot_time: i64,
+) -> (f64, f64, i64) {
+    let base = &hit_object.hit_object;
+    let judgement_x = judgement_line_x(layout) as f64;
+    let row_center_y = gif_row_center_y(row_index, layout) as f64;
+    let (max_diameter, target_x, target_y) = match layout.output_format {
+        crate::render::geometry::OutputFormat::Gif => {
+            let diameter = (layout.row_height as f64 * 0.88).round().max(1.0);
+            (diameter, judgement_x + diameter / 2.0, row_center_y)
+        }
+        crate::render::geometry::OutputFormat::Mp4 => {
+            // 经典素材以 128px 音符为基准，当前音符尺寸已应用 MP4 的 SCALE。
+            let scale = layout.normal_note_diameter as f64 / 128.0;
+            (
+                666.0 * 0.8 * scale,
+                judgement_x + 250.0 * scale,
+                row_center_y + 100.0 * scale,
+            )
+        }
+        crate::render::geometry::OutputFormat::Png => unreachable!("PNG 不使用动画转盘"),
+    };
+    let warning_x = object_x(
+        base.start_time as f64,
+        snapshot_time as f64,
+        hit_object.start_multiplier,
+        layout,
+    )
+    .max(judgement_line_x(layout)) as f64;
+    let transition =
+        ((snapshot_time - base.start_time) as f64 / SWELL_TRANSITION_MS).clamp(0.0, 1.0);
+    let eased = 1.0 - (1.0 - transition).powi(2);
+    let diameter = pyround(
+        layout.normal_note_diameter as f64
+            + (max_diameter - layout.normal_note_diameter as f64) * eased,
+    )
+    .max(1);
+    (
+        warning_x + (target_x - warning_x) * eased,
+        row_center_y + (target_y - row_center_y) * eased,
+        diameter,
+    )
+}
+
+/// 转盘在当前输出格式对应的位置展开，附加信息随圆心移动。
 fn draw_swell_object(
     image: &mut Img,
     hit_object: &PreparedTaikoHitObject,
@@ -885,36 +943,14 @@ fn draw_swell_object(
 ) {
     let base = &hit_object.hit_object;
     let elapsed = (snapshot_time - base.start_time) as f64;
-    let max_diameter = (layout.row_height as f64 * 0.88).round().max(1.0);
-    let judgement_x = judgement_line_x(layout) as f64;
-    let target_x = judgement_x + max_diameter / 2.0;
-    let center_y = gif_row_center_y(row_index, layout) as f64;
     let (completed, completed_at) =
         swell_hit_progress(base, hit_object.swell_required_hits, snapshot_time);
     let clear_elapsed = snapshot_time as f64 - completed_at;
     if clear_elapsed > SWELL_CLEAR_MS {
         return;
     }
-    let warning_x = object_x(
-        base.start_time as f64,
-        snapshot_time as f64,
-        hit_object.start_multiplier,
-        layout,
-    )
-    .max(judgement_line_x(layout)) as f64;
-    // 外圈平滑展开，所有附加信息保持在轨道内。
-    let transition = (elapsed / SWELL_TRANSITION_MS).clamp(0.0, 1.0);
-    let eased = 1.0 - (1.0 - transition).powi(2);
-    let diameter = pyround(
-        layout.normal_note_diameter as f64
-            + (max_diameter - layout.normal_note_diameter as f64) * eased,
-    )
-    .max(1);
-    let center_x = if transition < 1.0 {
-        warning_x + (target_x - warning_x) * eased
-    } else {
-        target_x
-    };
+    let (center_x, center_y, diameter) =
+        swell_frame_geometry(hit_object, layout, row_index, snapshot_time);
     let runtime = crate::config::current();
     let (
         color,
@@ -974,7 +1010,7 @@ fn draw_swell_object(
     if elapsed < 0.0 {
         return;
     }
-    // 内圈和文字跟随同一个转盘中心，尺寸限制在外圈内，保持紧凑行距。
+    // 内圈和文字跟随同一个转盘中心，尺寸限制在外圈内。
     if show_inner && alpha > 0.0 {
         let progress = (elapsed / (base.end_time - base.start_time).max(1) as f64).clamp(0.0, 1.0);
         let inner = diameter as f64 * (0.78 - 0.68 * progress);
@@ -1103,12 +1139,17 @@ fn draw_span_object(
     draw_swell_marker: bool,
 ) {
     let base = &hit_object.hit_object;
+    // 只有尾巴随时间缩短；到结束时整条物件（包括圆头）一次性消失。
+    if snapshot_time >= base.end_time {
+        return;
+    }
     let start_x = object_x(
         base.start_time as f64,
         snapshot_time as f64,
         hit_object.start_multiplier,
         layout,
-    );
+    )
+    .max(judgement_line_x(layout));
     let end_x = object_x(
         base.end_time as f64,
         snapshot_time as f64,
@@ -1175,7 +1216,8 @@ fn draw_span_object(
         cache,
         crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
         draw_swell_marker,
-        clip_left,
+        // 圆头保持完整，判定点左侧的半圆不参与尾巴裁剪。
+        0,
         clip_right,
     );
 }
@@ -1400,8 +1442,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn video_canvas_has_space_for_the_complete_swell_at_all_scales() {
-        for scale in [0.5, 1.0, 2.0] {
+    fn video_swell_restores_classic_position_and_fits_the_canvas_at_all_scales() {
+        for scale in [0.5, 1.0, 1.5, 2.0] {
             let mut config = crate::config::CoreConfig::default();
             config.render.taiko.mp4.SCALE = scale;
             crate::config::with_config(std::sync::Arc::new(config), || {
@@ -1409,11 +1451,43 @@ mod tests {
                     1000.0,
                     crate::render::geometry::OutputFormat::Mp4,
                 );
-                let radius = layout.row_height as f64 * 0.44;
-                let center = gif_row_center_y(0, &layout) as f64;
-                assert!(center - radius >= 0.0);
-                assert!(center + radius <= layout.image_height as f64);
-                assert_eq!(layout.content.y, layout.first_row_top);
+                let objects = prepare_hit_objects(
+                    &[TaikoHitObject {
+                        start_time: 1000,
+                        end_time: 4000,
+                        hit_type: SWELL_FLAG,
+                        hitsound: 0,
+                        samples: Vec::new(),
+                    }],
+                    &MultiplierLookup {
+                        points: build_multiplier_points(&[], 1.0),
+                    },
+                    &[],
+                    1.0,
+                );
+                let classic_scale = layout.normal_note_diameter as f64 / 128.0;
+                let (x, y, diameter) = swell_frame_geometry(&objects[0], &layout, 0, 1200);
+                assert_eq!(x, judgement_line_x(&layout) as f64 + 250.0 * classic_scale);
+                assert_eq!(
+                    y,
+                    gif_row_center_y(0, &layout) as f64 + 100.0 * classic_scale
+                );
+                let radius = diameter as f64 / 2.0;
+                assert!(x - radius >= 0.0 && x + radius <= layout.image_width as f64);
+                assert!(y - radius >= 0.0 && y + radius <= layout.image_height as f64);
+                assert!(
+                    y + radius > (layout.first_row_top + layout.row_height) as f64,
+                    "视频转盘应展开到轨道外"
+                );
+                let (_, waiting_y, waiting_diameter) =
+                    swell_frame_geometry(&objects[0], &layout, 0, 900);
+                assert_eq!(waiting_y, gif_row_center_y(0, &layout) as f64);
+                assert_eq!(waiting_diameter, layout.normal_note_diameter);
+                let mut gif = layout.clone();
+                gif.output_format = crate::render::geometry::OutputFormat::Gif;
+                let (_, gif_y, gif_diameter) = swell_frame_geometry(&objects[0], &gif, 0, 1200);
+                assert_eq!(gif_y, gif_row_center_y(0, &gif) as f64);
+                assert!(gif_diameter <= gif.row_height, "GIF 继续使用行内转盘");
             });
         }
     }
@@ -2095,5 +2169,74 @@ mod tests {
                 }
             }
         });
+    }
+    #[test]
+    fn drum_roll_keeps_complete_head_until_end_and_only_shortens_tail() {
+        for scale in [0.5, 1.0, 2.0] {
+            let layout = swell_test_layout(scale);
+            let lookup = MultiplierLookup {
+                points: build_multiplier_points(&[], 1.0),
+            };
+            for strong in [false, true] {
+                let objects = prepare_hit_objects(
+                    &[TaikoHitObject {
+                        start_time: 1000,
+                        end_time: 3000,
+                        hit_type: DRUMROLL_FLAG,
+                        hitsound: if strong { HIT_SOUNDS_STRONG } else { 0 },
+                        samples: Vec::new(),
+                    }],
+                    &lookup,
+                    &[],
+                    1.0,
+                );
+                let diameter = if strong {
+                    layout.big_note_diameter
+                } else {
+                    layout.normal_note_diameter
+                };
+                let x = judgement_line_x(&layout);
+                let y = gif_row_center_y(0, &layout);
+                let mut cache = RenderCache::default();
+                let mut last_right = u32::MAX;
+                for time in [1000, 2200, 2500, 2999] {
+                    let mut image = Img::new(
+                        layout.image_width as u32,
+                        layout.image_height as u32,
+                        [0, 0, 0, 0],
+                    );
+                    draw_hit_objects(&mut image, &objects, &[], &layout, 0, time, &mut cache);
+                    let expected = super::super::notes::build_note_disc(
+                        ROLL_COLOR,
+                        diameter,
+                        crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
+                        false,
+                    );
+                    let left = pyround(x as f64 - diameter as f64 / 2.0);
+                    let top = pyround(y as f64 - diameter as f64 / 2.0);
+                    for row in 0..diameter {
+                        for col in 0..diameter / 2 {
+                            assert_eq!(
+                                image.get((left + col) as u32, (top + row) as u32),
+                                expected.get(col as u32, row as u32),
+                                "判定点左半圆必须完整保留"
+                            );
+                        }
+                    }
+                    let right = image.alpha_bbox().unwrap().2;
+                    assert!(right <= last_right, "尾巴只能缩短");
+                    last_right = right;
+                }
+                for time in [3000, 3001] {
+                    let mut image = Img::new(
+                        layout.image_width as u32,
+                        layout.image_height as u32,
+                        [0, 0, 0, 0],
+                    );
+                    draw_hit_objects(&mut image, &objects, &[], &layout, 0, time, &mut cache);
+                    assert!(image.alpha_bbox().is_none(), "完成后整条滚奏必须消失");
+                }
+            }
+        }
     }
 }
