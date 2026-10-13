@@ -4,7 +4,9 @@ use osu_beatmap_preview_core::model::KvSection;
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::SystemTime;
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 /// 如果存在 Windows 扩展长度前缀 `\\?\`，则将其移除。
 pub fn clean_windows_path(path: &str) -> String {
@@ -70,9 +72,8 @@ pub fn output_cache_hit(
         return None;
     }
 
-    // 输出文件必须晚于程序构建时间：改了内嵌默认配置（例如打击音音量、音频码率）重建后，
-    // 旧输出必须重新渲染，否则会一直提供旧声音。core 的 `build_time()` 为可复现构建被钉在
-    // Unix epoch，这里改用「当前可执行文件的修改时间」（≈ 链接时间）。
+    // 使用 CLI 自己的编译时间，让重新构建后的旧产物失效；下载或复制同一产物只会
+    // 改变可执行文件的修改时间，不应影响缓存。core 库的构建时间固定为纪元，不适用。
     let out_mtime = out_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
     if out_mtime < program_build_time() {
         return None;
@@ -96,13 +97,17 @@ pub fn output_cache_hit(
     Some(output_path.to_path_buf())
 }
 
-/// 「程序构建时间」= 当前可执行文件的修改时间（链接时间）。
+/// 读取 CLI 的 build.rs 注入的构建时间，与日志中的 build_time 使用同一个来源。
 ///
-/// 取不到时回退到 Unix epoch（等价于不做这项检查），避免因为平台差异把所有缓存判失效。
+/// 编译时常量只需解析一次；无效时间回退到纪元，避免把所有缓存判失效。
 fn program_build_time() -> SystemTime {
-    std::env::current_exe()
-        .and_then(|path| path.metadata())
-        .and_then(|meta| meta.modified())
+    static BUILD_TIME: OnceLock<SystemTime> = OnceLock::new();
+    *BUILD_TIME.get_or_init(|| parse_build_time(env!("VERGEN_BUILD_TIMESTAMP")))
+}
+
+fn parse_build_time(timestamp: &str) -> SystemTime {
+    OffsetDateTime::parse(timestamp, &Rfc3339)
+        .map(SystemTime::from)
         .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
@@ -363,33 +368,69 @@ mod tests {
     /// 输出缓存只在产物晚于程序构建时间时命中。
     #[test]
     fn output_cache_requires_output_newer_than_build_time() {
-        // 回归：core 的构建时间被钉在 1970（可复现构建），拿它当基准会让
-        // 「改了内嵌默认配置 + 重建」之后仍命中旧 MP4，听到的还是旧声音。
+        // 使用编译时间的前后边界，避免依赖测试运行时间或可执行文件的链接时间。
         let dir = test_dir();
         let beatmap_path = unique_path(&dir, "map.osu");
         std::fs::write(&beatmap_path, b"osu file format v14\n").unwrap();
+        let build_time = program_build_time();
+        let before_build = build_time - Duration::from_secs(2);
+        std::fs::File::options()
+            .write(true)
+            .open(&beatmap_path)
+            .unwrap()
+            .set_modified(before_build - Duration::from_secs(2))
+            .unwrap();
         let output_path = unique_path(&dir, "cached.mp4");
         std::fs::write(&output_path, complete_mp4_bytes()).unwrap();
 
-        // 刚写出的输出晚于本测试程序的链接时间 → 命中缓存。
-        assert!(output_cache_hit(&output_path, &beatmap_path, "mp4", 0, false).is_some());
-
-        // 把输出时间拨回十年前 → 必须重新渲染。
-        let ancient = SystemTime::now() - Duration::from_secs(10 * 365 * 24 * 3600);
-        std::fs::File::options()
+        let output = std::fs::File::options()
             .write(true)
             .open(&output_path)
-            .unwrap()
-            .set_modified(ancient)
             .unwrap();
+        output
+            .set_modified(build_time + Duration::from_secs(2))
+            .unwrap();
+        assert!(output_cache_hit(&output_path, &beatmap_path, "mp4", 0, false).is_some());
+
+        // 谱面仍比产物旧，但产物早于 CLI 构建时间，必须重新渲染。
+        output.set_modified(before_build).unwrap();
         assert!(output_cache_hit(&output_path, &beatmap_path, "mp4", 0, false).is_none());
 
         // `no_cache` 时永远不命中。
-        std::fs::write(&output_path, complete_mp4_bytes()).unwrap();
+        output
+            .set_modified(build_time + Duration::from_secs(2))
+            .unwrap();
         assert!(output_cache_hit(&output_path, &beatmap_path, "mp4", 0, true).is_none());
 
+        drop(output);
         let _ = std::fs::remove_file(&output_path);
         let _ = std::fs::remove_file(&beatmap_path);
+    }
+
+    #[test]
+    fn build_time_parses_timestamp_precision_and_timezone() {
+        let epoch = SystemTime::UNIX_EPOCH;
+        assert_eq!(
+            parse_build_time("1970-01-01T00:00:01Z"),
+            epoch + Duration::from_secs(1)
+        );
+        assert_eq!(
+            parse_build_time("1970-01-01T00:00:01.123456789Z"),
+            epoch + Duration::new(1, 123_456_789)
+        );
+        assert_eq!(
+            parse_build_time("1970-01-01T08:00:01+08:00"),
+            epoch + Duration::from_secs(1)
+        );
+        assert_eq!(parse_build_time("1970-01-01T00:00:00Z"), epoch);
+        assert_eq!(parse_build_time("invalid timestamp"), epoch);
+    }
+
+    #[test]
+    fn cache_build_time_uses_cli_timestamp() {
+        let timestamp = env!("VERGEN_BUILD_TIMESTAMP");
+        let expected = OffsetDateTime::parse(timestamp, &Rfc3339).unwrap();
+        assert_eq!(program_build_time(), SystemTime::from(expected));
     }
 
     #[test]

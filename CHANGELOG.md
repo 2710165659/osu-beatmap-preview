@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## 未发布
+
+### Fixed
+
+- CLI 输出缓存改用编译时注入的构建时间，避免重新下载或复制同一核心后因文件修改时间变化而重复渲染。
+
+---
+
 ## [1.4.2] - 2026.10.13
 
 ### Added
