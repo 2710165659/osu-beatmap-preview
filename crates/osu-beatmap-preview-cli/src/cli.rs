@@ -8,10 +8,11 @@ use lexopt::prelude::*;
 use osu_beatmap_preview_core::gameplay::GameplayOptions;
 use osu_beatmap_preview_core::processing::validation::parse_time_point;
 
-pub const USAGE: &str = "usage: osu-beatmap-preview-cli [--bid=<BID>] [--input-file=<PATH>] [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]\n\
-    \x20 --input-file=<FILE.osu>  local beatmap file: --bid optional (naming only), PNG/GIF output only (no video)\n\
-    \x20 --input-file=<FILE.osz>  local beatmapset archive: --bid required to pick the .osu by BeatmapID, PNG/GIF/MP4 output\n\
-    \x20 without --input-file, --bid is required and the beatmap is downloaded by id";
+pub const USAGE: &str = "usage: osu-beatmap-preview-cli [--bid=<BID>] [--osu-file=<PATH>] [--osz-file=<PATH>] [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]\n\
+    \x20 --osu-file=<FILE.osu>  本地谱面；--bid 可省略，提供时必须与 BeatmapID 相同；单独使用只支持 PNG/GIF\n\
+    \x20 --osz-file=<FILE.osz>  本地谱面包；只有一个顶层 .osu 时可省略 --bid；支持 PNG/GIF/MP4\n\
+    \x20 同时提供两个文件时，以外部 .osu 渲染，.osz 提供媒体资源，包内必须存在相同 BeatmapID\n\
+    \x20 未提供本地文件时必须提供 --bid，并按 ID 下载谱面";
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
@@ -41,7 +42,8 @@ pub fn parse_args(
     let mut request = RenderRequest {
         source: SourceOptions {
             bid: String::new(),
-            input_file: None,
+            osu_file: None,
+            osz_file: None,
         },
         ruleset: RulesetOptions::default(),
         view: ViewOptions::default(),
@@ -53,9 +55,8 @@ pub fn parse_args(
     while let Some(argument) = parser.next().map_err(argument_error)? {
         match argument {
             Long("bid") => bid = Some(value(&mut parser, "--bid")?),
-            Long("input-file") => {
-                request.source.input_file = Some(value(&mut parser, "--input-file")?)
-            }
+            Long("osu-file") => request.source.osu_file = Some(value(&mut parser, "--osu-file")?),
+            Long("osz-file") => request.source.osz_file = Some(value(&mut parser, "--osz-file")?),
             Long("convert") => request.ruleset.convert = Some(value(&mut parser, "--convert")?),
             Long("mod") => request.ruleset.mods.push(value(&mut parser, "--mod")?),
             Long("fmt") => request.output.format = Some(value(&mut parser, "--fmt")?),
@@ -103,9 +104,8 @@ pub fn parse_args(
             }
         }
     }
-    // bid 与 --input-file 的组合规则统一在请求校验里做（本地 .osu 可以没有 bid），
-    // 这里先挡一道让参数错误走 CLI 的退出码 2 路径；渲染请求还会再校验一次，
-    // 库调用方也能拿到同样的规则。
+    // 参数格式错误走退出码 2；文件内容相关的 ID 和难度数量校验在读取阶段执行。
+    // 库调用方会再次执行同一参数校验，避免入口间规则不同。
     request.source.bid = bid.unwrap_or_default();
     crate::application::request::validate_source(&request.source).map_err(argument_error)?;
     Ok(CliAction::Render(Box::new(request)))
@@ -158,31 +158,47 @@ mod tests {
         assert_eq!(error.to_string(), "unknown argument: --wgpu");
     }
 
-    /// `--input-file` 只负责收集参数，bid 与来源的组合规则交给请求校验。
+    /// 参数解析只收集来源路径，不读取文件内容。
     #[test]
-    fn input_file_is_collected_without_requiring_bid() {
-        let CliAction::Render(request) = parse_args(["--input-file=map.osu"]).unwrap() else {
+    fn local_files_are_collected_without_requiring_bid() {
+        let CliAction::Render(request) = parse_args(["--osu-file=map.osu"]).unwrap() else {
             panic!("应解析为渲染请求");
         };
-        assert_eq!(request.source.input_file.as_deref(), Some("map.osu"));
+        assert_eq!(request.source.osu_file.as_deref(), Some("map.osu"));
+        assert!(request.source.osz_file.is_none());
         assert_eq!(request.source.bid, "");
 
-        let CliAction::Render(request) = parse_args(["--input-file=a.osz", "--bid=7"]).unwrap()
+        let CliAction::Render(request) = parse_args(["--osz-file=a.osz"]).unwrap() else {
+            panic!("应解析为渲染请求");
+        };
+        assert_eq!(request.source.osz_file.as_deref(), Some("a.osz"));
+        assert!(request.source.osu_file.is_none());
+        assert_eq!(request.source.bid, "");
+
+        let CliAction::Render(request) =
+            parse_args(["--osu-file=map.osu", "--osz-file=a.osz", "--bid=7"]).unwrap()
         else {
             panic!("应解析为渲染请求");
         };
-        assert_eq!(request.source.input_file.as_deref(), Some("a.osz"));
+        assert_eq!(request.source.osu_file.as_deref(), Some("map.osu"));
+        assert_eq!(request.source.osz_file.as_deref(), Some("a.osz"));
         assert_eq!(request.source.bid, "7");
     }
 
     /// 来源组合错误在参数解析阶段就报出（命令行参数错误的退出码路径）。
     #[test]
     fn source_combination_errors_surface_at_parse_time() {
-        let error = parse_args(["--input-file=a.osz"]).unwrap_err();
-        assert!(error.to_string().contains("--bid is required"), "{error}");
         let error = parse_args([] as [&str; 0]).unwrap_err();
         assert!(error.to_string().contains("--bid is required"), "{error}");
-        let error = parse_args(["--input-file=map.osk", "--bid=7"]).unwrap_err();
-        assert!(error.to_string().contains(".osu or .osz"), "{error}");
+        for argument in [
+            "--osu-file=map.osk",
+            "--osu-file=map.osz",
+            "--osz-file=map.osu",
+            "--osz-file=",
+        ] {
+            assert!(parse_args([argument, "--bid=7"]).is_err(), "{argument}");
+        }
+        let error = parse_args(["--input-file=map.osu"]).unwrap_err();
+        assert_eq!(error.to_string(), "unknown argument: --input-file");
     }
 }

@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ## 未发布
 
+### Changed
+
+- CLI 将 `--input-file` 拆为 `--osu-file` 和 `--osz-file`；校验谱面 ID 一致性，支持单谱面包自动选择难度及外部谱面搭配本地媒体包。
+
 ### Fixed
 
 - CLI 输出缓存改用编译时注入的构建时间，避免重新下载或复制同一核心后因文件修改时间变化而重复渲染。

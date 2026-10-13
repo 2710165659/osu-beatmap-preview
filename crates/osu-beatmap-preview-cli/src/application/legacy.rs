@@ -1,5 +1,5 @@
 use crate::application::artifact::ArtifactName;
-use crate::application::local::{self, LocalInputKind};
+use crate::application::local;
 use crate::application::plan::{OutputFormat, RenderPlan};
 use crate::application::request::ValidatedRequest;
 use crate::cache;
@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 pub(crate) fn generate_preview(request: ValidatedRequest) -> Result<Value> {
     let started = Instant::now();
     let bid = request.source.bid.clone();
-    // bid 可以为空（本地 .osu）：有效 ID 要等谱面解析后才知道，
+    // 本地输入的 bid 可以为空：有效 ID 要等谱面解析后才知道，
     // 之前的事件先按上下文里的值（或 '-'）记录。
     if !bid.is_empty() {
         logging::set_bid(&bid);
@@ -79,7 +79,7 @@ fn generate_preview_inner(
     let cache_root = crate::config::resolve_path(runtime_config.paths.CACHE_DIR.as_str());
     let output_root = crate::config::output_directory(request.output.output_dir.as_deref())
         .map_err(PreviewError::new)?;
-    // ── .osu 获取与解析：本地文件（--input-file）或按 bid 下载 ──
+    // ── .osu 获取与解析：本地文件或按 bid 下载 ──
     let t0 = Instant::now();
     let acquired = acquire_osu(&request, &cache_root, &deadline)?;
     deadline.check()?;
@@ -97,7 +97,7 @@ fn generate_preview_inner(
         })?;
     let parse_ms = t1.elapsed().as_secs_f64() * 1000.0;
     rec.parse_ms = Some(parse_ms);
-    // 产物、缓存与日志统一用有效 ID：本地 .osu 可以没有数字 bid（见 local::effective_id）。
+    // 产物、缓存与日志统一用有效 ID：无有效 BeatmapID 的本地谱面按文件名回退。
     let bid = local::effective_id(&request.source.bid, &beatmap, &beatmap_path);
     logging::set_bid(&bid);
     rec.bid = bid.clone();
@@ -155,8 +155,16 @@ fn generate_preview_inner(
     let output_path = output_root.join(artifact_name.as_str());
 
     // ── 图像缓存检查 ──
-    let cached =
-        cache::output_cache_hit(&output_path, &beatmap_path, fmt, target_mode, plan.no_cache);
+    // 双文件输入时，两份文件都影响产物；媒体包更新后也必须重新渲染。
+    let cached = match acquired.osz_path.as_deref() {
+        Some(path) if path != beatmap_path => cache::output_cache_hit_for_sources(
+            &output_path,
+            &[beatmap_path.as_path(), path],
+            fmt,
+            plan.no_cache,
+        ),
+        _ => cache::output_cache_hit(&output_path, &beatmap_path, fmt, target_mode, plan.no_cache),
+    };
     if let Some(cached_path) = cached {
         deadline.check()?;
         rec.status = "cache-hit".to_string();
@@ -830,7 +838,7 @@ fn initial_deadline(
 
 /// 已获取的 `.osu` 文本及其来源信息。
 struct AcquiredOsu {
-    /// 谱面文件路径：输出缓存按它的修改时间判断新旧（本地 `.osz` 即压缩包本身）。
+    /// 谱面文件路径：缓存依赖之一；仅有本地 `.osz` 时即压缩包本身。
     path: PathBuf,
     /// `.osu` 文本字节。
     bytes: Vec<u8>,
@@ -838,50 +846,36 @@ struct AcquiredOsu {
     osz_path: Option<PathBuf>,
 }
 
-/// 取得待渲染的 `.osu` 字节：本地文件（`--input-file`）直接读取，否则按 bid 下载。
+/// 取得待渲染的 `.osu` 字节：本地来源先校验 ID，否则按 bid 下载。
 fn acquire_osu(
     request: &ValidatedRequest,
     cache_root: &Path,
     deadline: &RequestDeadline,
 ) -> Result<AcquiredOsu> {
-    match request.source.input_file.as_deref() {
-        Some(input_file) => {
-            let path = PathBuf::from(input_file);
-            match local::input_kind(input_file)? {
-                LocalInputKind::Osu => {
-                    let bytes = local::load_local_osu(&path)?;
-                    Ok(AcquiredOsu {
-                        path,
-                        bytes,
-                        osz_path: None,
-                    })
-                }
-                LocalInputKind::Osz => {
-                    // .osz 内含多个难度，按 bid 的 BeatmapID 匹配，匹配不到会报错。
-                    let bytes = local::load_local_osz(&path, &request.source.bid)?;
-                    Ok(AcquiredOsu {
-                        path: path.clone(),
-                        bytes,
-                        osz_path: Some(path),
-                    })
-                }
-            }
-        }
-        None => {
-            let path = crate::download::download_beatmap_file(
-                &request.source.bid,
-                &cache_root.join("osu-download-cache"),
-                request.execution.no_cache,
-                deadline,
-            )?;
-            let bytes = crate::read_bytes(&path)?;
-            Ok(AcquiredOsu {
-                path,
-                bytes,
-                osz_path: None,
-            })
-        }
+    if request.source.osu_file.is_some() || request.source.osz_file.is_some() {
+        let source = local::load_local_source(
+            request.source.osu_file.as_deref(),
+            request.source.osz_file.as_deref(),
+            &request.source.bid,
+        )?;
+        return Ok(AcquiredOsu {
+            path: source.path,
+            bytes: source.bytes,
+            osz_path: source.osz_path,
+        });
     }
+    let path = crate::download::download_beatmap_file(
+        &request.source.bid,
+        &cache_root.join("osu-download-cache"),
+        request.execution.no_cache,
+        deadline,
+    )?;
+    let bytes = crate::read_bytes(&path)?;
+    Ok(AcquiredOsu {
+        path,
+        bytes,
+        osz_path: None,
+    })
 }
 
 fn format_time_point(point: &TimePoint) -> String {

@@ -64,6 +64,16 @@ pub fn output_cache_hit(
     _target_mode: i32,
     no_cache: bool,
 ) -> Option<PathBuf> {
+    output_cache_hit_for_sources(output_path, &[beatmap_path], fmt, no_cache)
+}
+
+/// 多来源产物必须晚于每一份输入；双文件模式不能只检查谱面而忽略媒体包更新。
+pub(crate) fn output_cache_hit_for_sources(
+    output_path: &Path,
+    source_paths: &[&Path],
+    fmt: &str,
+    no_cache: bool,
+) -> Option<PathBuf> {
     if no_cache {
         return None;
     }
@@ -79,11 +89,13 @@ pub fn output_cache_hit(
         return None;
     }
 
-    // 输出文件必须晚于谱面文件。
-    if let Ok(beatmap_meta) = beatmap_path.metadata() {
-        if let Ok(beatmap_mtime) = beatmap_meta.modified() {
-            if out_mtime < beatmap_mtime {
-                return None;
+    // 输出文件必须晚于所有输入；沿用读取不到修改时间时不判失效的行为。
+    for source_path in source_paths {
+        if let Ok(source_meta) = source_path.metadata() {
+            if let Ok(source_mtime) = source_meta.modified() {
+                if out_mtime < source_mtime {
+                    return None;
+                }
             }
         }
     }
@@ -405,6 +417,43 @@ mod tests {
         drop(output);
         let _ = std::fs::remove_file(&output_path);
         let _ = std::fs::remove_file(&beatmap_path);
+    }
+
+    /// 双文件模式中任一输入更新都使输出缓存失效，媒体包不能被遗漏。
+    #[test]
+    fn output_cache_checks_both_beatmap_and_media_archive() {
+        let dir = test_dir();
+        let osu_path = unique_path(&dir, "combined.osu");
+        let osz_path = unique_path(&dir, "combined.osz");
+        let output_path = unique_path(&dir, "combined.mp4");
+        let base = program_build_time() + Duration::from_secs(10);
+        for path in [&osu_path, &osz_path] {
+            std::fs::write(path, b"input").unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(base)
+                .unwrap();
+        }
+        std::fs::write(&output_path, complete_mp4_bytes()).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&output_path)
+            .unwrap()
+            .set_modified(base + Duration::from_secs(2))
+            .unwrap();
+        let sources = [osu_path.as_path(), osz_path.as_path()];
+        assert!(output_cache_hit_for_sources(&output_path, &sources, "mp4", false).is_some());
+        for path in [&osu_path, &osz_path] {
+            let file = std::fs::File::options().write(true).open(path).unwrap();
+            file.set_modified(base + Duration::from_secs(4)).unwrap();
+            assert!(output_cache_hit_for_sources(&output_path, &sources, "mp4", false).is_none());
+            file.set_modified(base).unwrap();
+        }
+        for path in [&osu_path, &osz_path, &output_path] {
+            std::fs::remove_file(path).unwrap();
+        }
     }
 
     #[test]
