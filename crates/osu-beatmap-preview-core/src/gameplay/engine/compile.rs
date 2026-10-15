@@ -120,7 +120,7 @@ fn compile_timeline(
     maximums.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut score = Score::new(
         &maximums.iter().map(|p| p.1).collect::<Vec<_>>(),
-        policy.score_multiplier(),
+        policy.score_multiplier() * prepared.score_multiplier,
     );
     let mut checkpoints = Vec::new();
     let mut events = Vec::new();

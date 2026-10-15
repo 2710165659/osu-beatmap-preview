@@ -111,7 +111,7 @@ fn historic_fractional_frame_deltas_round_individually_like_lazer() {
 
 #[test]
 #[ignore = "需要 OSR_SAMPLE_DIR；只核验容器解析，不声明其它模式/Mod 的回放支持"]
-fn parses_all_official_sample_containers_and_rejects_unregistered_variants() {
+fn parses_all_official_sample_containers() {
     let root = std::path::PathBuf::from(std::env::var("OSR_SAMPLE_DIR").unwrap());
     let inspection: serde_json::Value =
         serde_json::from_slice(&std::fs::read(root.join("inspection.json")).unwrap()).unwrap();
@@ -142,8 +142,6 @@ fn parses_all_official_sample_containers_and_rejects_unregistered_variants() {
                 .parse::<i64>()
                 .unwrap(),
         );
-        let supported = crate::replay::compatibility::select(&replay).is_ok();
-        assert_eq!(supported, file == "xuan_yuan-osu-6086051920.osr");
     }
 }
 

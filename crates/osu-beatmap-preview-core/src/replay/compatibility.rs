@@ -34,6 +34,7 @@ pub fn select(document: &ReplayDocument) -> Result<StandardPolicy> {
             header.ruleset_id
         )));
     }
+    super::mods::decode(document)?;
     // 官方 LegacyScoreDecoder 给 stable 自动附加 CL；历史和未来 lazer 计分版本
     // 都按当前规则重播，原始版本和统计保留作诊断，不据此拒绝播放。
     let legacy = header.version < 30_000_000;
@@ -47,7 +48,7 @@ pub fn select(document: &ReplayDocument) -> Result<StandardPolicy> {
     if let Some(metadata) = &document.metadata {
         for modifier in &metadata.mods {
             if modifier.acronym != "CL" {
-                return Err(unsupported(format!("Mod {}", modifier.acronym)));
+                continue;
             }
             policy.classic_sliders = true;
             policy.classic = true;
@@ -70,13 +71,6 @@ pub fn select(document: &ReplayDocument) -> Result<StandardPolicy> {
             }
         }
     }
-    // ScoreV2 只改变旧成绩的记录方式，重播统一使用当前官方标准化分数。
-    if header.mods_bits & !(1 << 29) != 0 {
-        return Err(unsupported(format!(
-            "unverified legacy Mod declaration 0x{:08x}",
-            header.mods_bits
-        )));
-    }
     // Pauses 是录制时的墙钟统计，帧已经使用谱面时间；不能再次累加暂停时长。
     if document.frames.is_empty() {
         return Err(PreviewError::parse("InvalidReplay: empty input frames"));
@@ -98,7 +92,12 @@ pub fn validate_beatmap(beatmap: &Beatmap) -> Result<()> {
     if beatmap.mode() != 0 {
         return Err(unsupported("converted/non-Standard beatmap"));
     }
-    for key in ["CircleSize", "ApproachRate", "OverallDifficulty"] {
+    for key in [
+        "CircleSize",
+        "ApproachRate",
+        "OverallDifficulty",
+        "HPDrainRate",
+    ] {
         if !beatmap.difficulty.get_f64_or(key, 5.0).is_finite() {
             return Err(PreviewError::parse(format!(
                 "InvalidReplay: non-finite difficulty {key}"
@@ -121,7 +120,7 @@ mod tests {
     fn rejects_unsupported_mods_and_invalid_input_instead_of_client_versions() {
         let original = document();
         assert!(select(&original).is_ok());
-        for acronym in ["AL", "UNKNOWN", "HR"] {
+        for acronym in ["AL", "UNKNOWN"] {
             let mut replay = original.clone();
             replay.metadata.as_mut().unwrap().mods.push(ReplayMod {
                 acronym: acronym.into(),
@@ -137,6 +136,7 @@ mod tests {
         }
         for bits in [1, 1 << 30, 1 << 31] {
             let mut replay = original.clone();
+            replay.metadata = None;
             replay.header.mods_bits = bits;
             assert!(select(&replay).is_err());
         }

@@ -2,6 +2,7 @@
 
 pub mod compatibility;
 pub mod model;
+pub mod mods;
 pub(crate) mod normalize;
 pub mod timeline;
 pub use crate::domain::parser::osr::parse_osr;

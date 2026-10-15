@@ -10,7 +10,7 @@ pub fn object_alpha(
     snapshot_time: i64,
     settings: &RenderSettings,
 ) -> f64 {
-    if settings.hidden && !settings.traceable {
+    if settings.hidden && !settings.traceable && !settings.hidden_only_approach {
         hidden_object_alpha(start_time, end_time, snapshot_time, settings)
     } else {
         normal_object_alpha(start_time, end_time, snapshot_time, settings)
@@ -64,7 +64,7 @@ pub fn slider_body_alpha(
     snapshot_time: i64,
     settings: &RenderSettings,
 ) -> f64 {
-    if settings.hidden && !settings.traceable {
+    if settings.hidden && !settings.traceable && !settings.hidden_only_approach {
         hidden_slider_body_alpha(
             hit_object.start_time,
             hit_object.end_time,
@@ -107,7 +107,7 @@ pub fn spinner_alpha(
     snapshot_time: i64,
     settings: &RenderSettings,
 ) -> f64 {
-    if !settings.hidden || settings.traceable {
+    if !settings.hidden || settings.traceable || settings.hidden_only_approach {
         return normal_object_alpha(
             hit_object.start_time,
             hit_object.end_time,
@@ -146,7 +146,7 @@ pub fn slider_head_alpha(
             settings,
         );
     }
-    if settings.hidden && !settings.traceable {
+    if settings.hidden && !settings.traceable && !settings.hidden_only_approach {
         return 0.0;
     }
     if snapshot_time
@@ -170,7 +170,7 @@ pub fn slider_tick_alpha(
     settings: &RenderSettings,
 ) -> f64 {
     let t = snapshot_time as f64;
-    if settings.hidden && !settings.traceable {
+    if settings.hidden && !settings.traceable && !settings.hidden_only_approach {
         let spawn_time = tick_time - time_preempt;
         if t < spawn_time {
             return 0.0;
@@ -227,6 +227,7 @@ mod tests {
             preempt_ms: 800,
             fade_in_ms: 400.0,
             hidden,
+            hidden_only_approach: false,
             traceable,
         }
     }

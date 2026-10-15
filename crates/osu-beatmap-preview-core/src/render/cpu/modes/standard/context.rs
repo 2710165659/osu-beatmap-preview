@@ -50,6 +50,7 @@ pub struct RenderSettings {
     pub preempt_ms: i64,
     pub fade_in_ms: f64,
     pub hidden: bool,
+    pub hidden_only_approach: bool,
     pub traceable: bool,
 }
 
@@ -196,27 +197,7 @@ pub fn apply_standard_object_mods(
     hit_objects: Vec<StandardHitObject>,
     mods: Option<&ModSettings>,
 ) -> Vec<StandardHitObject> {
-    let hard_rock = mods.map(|m| m.hard_rock).unwrap_or(false);
-    if !hard_rock {
-        return hit_objects;
-    }
-    hit_objects
-        .into_iter()
-        .map(|mut ho| {
-            ho.y = crate::render::cpu::modes::standard::constants::PLAYFIELD_HEIGHT as i32 - ho.y;
-            ho.slider_points = ho
-                .slider_points
-                .iter()
-                .map(|&(x, y)| {
-                    (
-                        x,
-                        crate::render::cpu::modes::standard::constants::PLAYFIELD_HEIGHT as i32 - y,
-                    )
-                })
-                .collect();
-            ho
-        })
-        .collect()
+    crate::preparation::standard::apply_object_mods(hit_objects, mods)
 }
 
 // ——— 难度 ———
@@ -281,6 +262,7 @@ pub fn build_render_settings(beatmap: &Beatmap, mods: Option<&ModSettings>) -> R
         preempt_ms,
         fade_in_ms,
         hidden,
+        hidden_only_approach: false,
         traceable,
     }
 }
@@ -547,7 +529,19 @@ pub fn build_replay_context(
             source
         })
         .collect();
-    let mut context = build_context(beatmap, objects, None, time_axis, output_format, false);
+    let mut context = build_context(
+        beatmap,
+        objects,
+        Some(&prepared.mods.settings),
+        time_axis,
+        output_format,
+        false,
+    );
+    // 几何已翻转和堆叠，渲染只应用难度与可见性，禁止再次变换物件或光标。
+    context.autoplay = None;
+    context.flashlight = None;
+    context.show_cursor = false;
+    context.settings.hidden_only_approach = prepared.mods.hidden_only_approach;
     context.frame_layout = super::osr::replay_layout(output_format);
     context
 }
@@ -933,6 +927,7 @@ mod tests {
             preempt_ms: 1200,
             fade_in_ms: 400.0,
             hidden: false,
+            hidden_only_approach: false,
             traceable: false,
         };
         let (x, y) = stacked_position(&objects[0], &settings);

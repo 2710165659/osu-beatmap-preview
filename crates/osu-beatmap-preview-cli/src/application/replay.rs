@@ -6,7 +6,7 @@ use crate::{
 };
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use osu_beatmap_preview_core::{
-    gameplay::engine::compile_standard, preparation::standard::prepare, PreviewError, Result,
+    gameplay::engine::compile_standard, preparation::standard::prepare_replay, PreviewError, Result,
 };
 use std::{sync::Arc, time::Instant};
 
@@ -26,7 +26,7 @@ pub(super) fn execute(mut request: ValidatedRequest) -> Result<serde_json::Value
     let deadline = RequestDeadline::new(started, &format, timeout);
     let cache_root = crate::config::resolve_path(&config.paths.CACHE_DIR);
     let source = source_osr::load(&request, &cache_root, &deadline)?;
-    let prepared = Arc::new(prepare(&source.beatmap)?);
+    let prepared = Arc::new(prepare_replay(&source.beatmap, &source.document)?);
     let gameplay = Arc::new(compile_standard(&prepared, source.document.clone())?);
     deadline.check()?;
     // 回放身份进入文件名；配置目录 hash 沿用普通请求规则。
@@ -42,7 +42,9 @@ pub(super) fn execute(mut request: ValidatedRequest) -> Result<serde_json::Value
     );
     let directory = crate::config::output_directory(request.output.output_dir.as_deref())
         .map_err(PreviewError::new)?;
-    let plan = RenderPlan::build(request, 0, false)?;
+    let mut plan = RenderPlan::build(request, 0, false)?;
+    // Mod 只能来自回放；内部计划仍复用普通导出的速度与音频参数。
+    plan.mods = Some(prepared.mods.settings.clone());
     let path = directory.join(ArtifactName::from_plan(&plan).as_str());
     let sources = [
         source.osr_path.as_path(),

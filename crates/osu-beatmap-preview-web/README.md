@@ -44,7 +44,7 @@ node backend/server.js
 
 三种来源都可在下方附带 `.osu/.osz`，匹配难度由回放 MD5 自动决定。本地 OSR 搭配完整匹配 OSZ 可离线播放；在线成绩则由服务端下载回放，再由浏览器校验并播放。缺少谱面包时自动下载完整包；无回放、不兼容、MD5 不符或下载失败均明确报错，不换其它成绩。切换来源会清理旧本地回放，其余来源的输入不会一起发送。
 
-支持原生 Standard，不以客户端版本或 OSR 分数版本限制播放；支持 tachyon、历史 lazer 和 stable。stable 自动启用 CL，lazer 显式 CL 使用同一规则。历史帧按官方方式归一化，原记录与重算成绩的差异只作诊断。AL 和其它未实现 Mod 仍明确报错；回放模式不可转谱或修改 Mod。支持范围和样本验收见 [OSR 说明](../../docs/osr-preview.md)。
+支持原生 Standard，不以客户端版本或 OSR 分数版本限制播放；支持 tachyon、历史 lazer 和 stable。回放与普通 Standard 动画预览支持相同的 Mod：EZ/HR/HD/FL/AT/DA/TC/CL/DT/HT/NC/DC，按录制设置应用几何、可见性、速度和当前官方计分倍率。stable 自动启用 CL，lazer 显式 CL 使用同一规则。历史帧按官方方式归一化，原记录与重算成绩的差异只作诊断。AL 和其它未实现 Mod 仍明确报错；回放模式不可转谱或修改 Mod。支持范围和样本验收见 [OSR 说明](../../docs/osr-preview.md)。
 
 在线成绩下载或仅上传 OSR 自动查谱时，服务器必须配置 `OSU_API_TOKEN`，或 `OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET`；OAuth 凭据只在服务端使用。上传 `.osu` 时先核验 MD5，再按谱面 ID 下载 OSZ；没有有效谱面 ID 时也需要官方 API 查谱。查询和下载失败会直接显示错误。在线回放缓存于 `osr-download-cache/<成绩ID>.osr`，`--no-cache` 跳过文件缓存；最高分和近期成绩的定位每次重新查询。凭据由部署者配置一次，页面访问者无需填写。
 

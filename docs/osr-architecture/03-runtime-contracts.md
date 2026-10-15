@@ -51,6 +51,7 @@
 | 原生 Standard，无 Mod，任意客户端/分数版本 | 播放 | 当前规则重播，保留原记录与重算差异 |
 | stable，无额外 Mod | 自动 CL | 与显式 CL 使用相同判定与计分 |
 | lazer 显式 CL | 播放 | 支持 Classic 滑条比例判定、note lock、提前淡出和尾音设置 |
+| Standard EZ/HR/HD/FL/AT/DA/TC/DT/HT/NC/DC，及兼容的 CL 组合 | 播放 | 与普通动画预览共用 Mod 范围，应用难度、几何、可见性、时钟和当前官方计分倍率 |
 | AL、其它未实现 Mod 或未知 settings | Unsupported | 返回实际未实现规则，不过滤后播放 |
 | Taiko/Catch/Mania | 允许格式解析，播放 UnsupportedMode | 后续各模式增加计算和渲染 |
 | 非法长度/压缩/帧 token | InvalidReplay | 加载阶段停止，不当作游玩失败 |

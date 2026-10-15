@@ -43,6 +43,10 @@ fn build_with(
 ) -> Result<TimePlan> {
     let invalid =
         || PreviewError::render("InvalidReplayTimePlan: invalid range or frame limit exceeded");
+    let speed = plan.mods.as_ref().map_or(1.0, |mods| mods.speed_multiplier);
+    if !speed.is_finite() || speed <= 0.0 {
+        return Err(invalid());
+    }
     let fps = plan.fps.unwrap_or(if plan.format == OutputFormat::Gif {
         gif_fps
     } else {
@@ -99,11 +103,11 @@ fn build_with(
         if start < full_start || duration <= 0 || end <= start {
             return Err(invalid());
         }
-        let frames = ((end - start) as u64)
-            .checked_mul(u64::from(fps))
-            .ok_or_else(invalid)?
-            .div_ceil(1000);
-        let frames = usize::try_from(frames).map_err(|_| invalid())?;
+        let frames = ((end - start) as f64 * f64::from(fps) / (1000.0 * speed)).ceil();
+        if !frames.is_finite() || frames > MAX_FRAMES as f64 {
+            return Err(invalid());
+        }
+        let frames = frames as usize;
         count = count
             .checked_add(frames)
             .filter(|count| *count <= MAX_FRAMES)
@@ -114,7 +118,7 @@ fn build_with(
     times.try_reserve_exact(count).map_err(|_| invalid())?;
     for (start, frames) in &ranges {
         for index in 0..*frames {
-            times.push(crate::media::frame_time_ms(*start, index, 1.0, fps));
+            times.push(crate::media::frame_time_ms(*start, index, speed, fps));
         }
     }
     Ok(TimePlan {
@@ -182,5 +186,19 @@ mod tests {
         assert!(build_with(&plan, 1000, 1140, 0, None, 15, 60, 5000, 1000).is_err());
         plan.fps = Some(u32::MAX);
         assert!(build_with(&plan, 1000, 1140, 0, None, 15, 60, 5000, 1000).is_err());
+    }
+
+    #[test]
+    fn replay_rate_changes_output_duration_without_changing_chart_range() {
+        for (code, count, step) in [("DT", 20, 50), ("HT", 40, 25)] {
+            let mut plan = plan(OutputFormat::Mp4, vec![TimePoint::Seconds(0.0)]);
+            plan.mods =
+                Some(osu_beatmap_preview_core::model::mods::parse_mods(&[code.into()]).unwrap());
+            let result = build_with(&plan, 1000, 3000, 0, None, 15, 60, 5000, 1000).unwrap();
+            assert_eq!(result.times.len(), count);
+            assert_eq!(result.times[1] - result.times[0], step);
+            assert_eq!(result.times[0], 1000);
+            assert!(*result.times.last().unwrap() < 2000);
+        }
     }
 }

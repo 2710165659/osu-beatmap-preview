@@ -1,4 +1,4 @@
-//! Lazer 无 Mod 几何和嵌套节点。原始字节 MD5 由宿主在准备前校验。
+//! Lazer 几何和嵌套节点；Mod 在堆叠前应用，回放光标保持原始游戏坐标。
 use crate::domain::shared::slider_path::{build_lazer_slider_path, path_position_at, SliderPath};
 use crate::model::{Beatmap, StandardHitObject};
 use crate::support::error::{PreviewError, Result};
@@ -49,10 +49,60 @@ pub struct PreparedStandard {
     pub radius: f32,
     pub od: f64,
     pub last_end: f64,
+    pub mods: crate::replay::mods::ReplayMods,
+    pub score_multiplier: f64,
 }
 pub fn prepare(beatmap: &Beatmap) -> Result<PreparedStandard> {
+    prepare_with_mods(beatmap, crate::replay::mods::ReplayMods::default())
+}
+
+pub fn prepare_replay(
+    beatmap: &Beatmap,
+    document: &crate::replay::ReplayDocument,
+) -> Result<PreparedStandard> {
+    crate::replay::compatibility::select(document)?;
+    prepare_with_mods(beatmap, crate::replay::mods::decode(document)?)
+}
+
+fn prepare_with_mods(
+    beatmap: &Beatmap,
+    mods: crate::replay::mods::ReplayMods,
+) -> Result<PreparedStandard> {
     crate::replay::compatibility::validate_beatmap(beatmap)?;
-    let objects = beatmap.hit_objects.as_standard().unwrap().to_vec();
+    let score_multiplier = mods.score_multiplier(beatmap);
+    let mut effective = beatmap.clone();
+    let original_od = beatmap.difficulty.get_f64_or("OverallDifficulty", 5.0);
+    for (key, override_value, factor) in [
+        ("CircleSize", mods.settings.da_cs, 1.3),
+        ("ApproachRate", mods.settings.da_ar, 1.4),
+        ("OverallDifficulty", mods.settings.da_od, 1.4),
+        ("HPDrainRate", mods.settings.da_hp, 1.4),
+    ] {
+        let fallback = if key == "ApproachRate" {
+            original_od
+        } else {
+            5.0
+        };
+        let mut value = beatmap.difficulty.get_f64_or(key, fallback);
+        if mods.settings.easy {
+            value = f64::from(value as f32 * 0.5);
+        }
+        if mods.settings.hard_rock {
+            value = f64::from((value as f32 * factor as f32).min(10.0));
+        }
+        // 游戏难度是 float；与普通预览保持相同取整次序，避免命中边界与显示半径分离。
+        effective.difficulty.insert(
+            key,
+            override_value
+                .map_or(value, |v| f64::from(v as f32))
+                .to_string(),
+        );
+    }
+    let beatmap = &effective;
+    let objects = super::apply_object_mods(
+        beatmap.hit_objects.as_standard().unwrap().to_vec(),
+        Some(&mods.settings),
+    );
     if beatmap
         .timing_points
         .iter()
@@ -232,6 +282,8 @@ pub fn prepare(beatmap: &Beatmap) -> Result<PreparedStandard> {
         radius,
         od,
         last_end,
+        mods,
+        score_multiplier,
     })
 }
 

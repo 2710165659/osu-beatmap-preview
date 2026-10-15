@@ -30,7 +30,7 @@ pub fn prepare(
     context.frame_layout.playfield_top += dy;
     context.frame_layout.frame_width = i64::from(dimensions.0);
     context.frame_layout.frame_height = i64::from(dimensions.1);
-    let visuals = ReplayVisuals::new(&context, &gameplay, font);
+    let visuals = ReplayVisuals::new(&context, &gameplay, font, &beatmap.break_periods);
     source_from_context(
         beatmap,
         context,
@@ -110,7 +110,7 @@ pub(super) fn render(
                     Some(alpha),
                     state.tracking_at(time as f64),
                 );
-            } else {
+            } else if !context.settings.traceable {
                 let p = replay.prepared.objects[id].position;
                 draw_circle_piece(
                     &mut scene,

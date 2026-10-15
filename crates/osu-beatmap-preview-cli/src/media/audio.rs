@@ -689,7 +689,16 @@ fn render_hitsound_segment(
     let library = if let Some(replay) = &settings.replay {
         super::hitsound::replay::build_library(
             settings.beatmap_samples.as_deref(),
-            hitsound::replay::referenced_names(beatmap, &replay.prepared, &replay.gameplay),
+            hitsound::replay::referenced_names(beatmap, &replay.prepared, &replay.gameplay)
+                .into_iter()
+                .chain(
+                    settings
+                        .nightcore
+                        .then_some(hitsound::NIGHTCORE_SAMPLE_NAMES)
+                        .into_iter()
+                        .flatten()
+                        .map(str::to_string),
+                ),
         )
     } else {
         super::hitsound::build_library(

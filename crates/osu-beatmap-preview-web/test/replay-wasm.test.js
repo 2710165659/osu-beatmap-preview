@@ -27,20 +27,25 @@ test('真实 WASM 解析 LZMA 回放与 MD5 选谱，拒绝格式损坏', async 
   assert.equal(typeof wasm.WebGpuSession.prototype.replayState, 'function');
 });
 
-test('WASM 格式成功解析后仍拒绝未验证 Mod 声明', async (t) => {
+test('WASM 格式成功解析后仍拒绝未实现的旧 Mod 声明', async (t) => {
   const wasm = await moduleOrSkip(t);
   if (!wasm) return;
-  const replay = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-standard.osr')));
-  // 三个 osu! 字符串之后依次是 12 字节计数、4 字节分数、2 字节连击、1 字节布尔。
-  let cursor = 5;
-  for (let field = 0; field < 3; field++) {
-    assert.equal(replay[cursor++], 0x0b);
-    let size = 0, shift = 0, value;
-    do { value = replay[cursor++]; size += (value & 127) * 2 ** shift; shift += 7; } while (value & 128);
-    cursor += size;
-  }
-  new DataView(replay.buffer).setUint32(cursor + 19, 1, true);
+  const replay = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-classic.osr')));
+  new DataView(replay.buffer).setUint32(modOffset(replay), 1, true);
   assert.throws(() => wasm.replayInfo(replay), /UnsupportedReplayVariant/);
+});
+
+test('真实 WASM 接受旧 HR/HD/NC 组合，并以 lazer 扩展覆盖旧位掩码', async (t) => {
+  const wasm = await moduleOrSkip(t);
+  if (!wasm) return;
+  const legacy = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-classic.osr')));
+  for (const bits of [1 << 4, (1 << 4) | (1 << 3), (1 << 6) | (1 << 9)]) {
+    new DataView(legacy.buffer).setUint32(modOffset(legacy), bits, true);
+    assert.equal(wasm.replayInfo(legacy).version, 20200101);
+  }
+  const lazer = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-standard.osr')));
+  new DataView(lazer.buffer).setUint32(modOffset(lazer), 1, true);
+  assert.ok(wasm.replayInfo(lazer).checksum);
 });
 
 test('真实 WASM 接受 stable 自动 CL 和 tachyon 显式 CL，不限制分数版本', async (t) => {
@@ -59,3 +64,15 @@ test('真实 WASM 接受 stable 自动 CL 和 tachyon 显式 CL，不限制分�
     }
   }
 });
+
+function modOffset(replay) {
+  // 三个 osu! 字符串之后依次是 12 字节计数、4 字节分数、2 字节连击、1 字节布尔。
+  let cursor = 5;
+  for (let field = 0; field < 3; field++) {
+    assert.equal(replay[cursor++], 0x0b);
+    let size = 0, shift = 0, value;
+    do { value = replay[cursor++]; size += (value & 127) * 2 ** shift; shift += 7; } while (value & 128);
+    cursor += size;
+  }
+  return cursor + 19;
+}

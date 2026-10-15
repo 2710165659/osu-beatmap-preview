@@ -216,15 +216,16 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 
 | 模式 | GIF / MP4 | PNG |
 | --- | --- | --- |
-| Standard | `EZ` `HR` `HD` `FL` `AT` `DA` `TC` `DT` `HT` `NC` `DC` | `EZ` `HR` `HD` `FL` `AT` `DA` `TC` |
-| Taiko | `EZ` `HR` `HD` `FL` `SW` `CS` `DT` `HT` `NC` `DC` | `EZ` `HR` `SW` |
-| Catch | `EZ` `HR` `HD` `FL` `AT` `DT` `HT` `NC` `DC` | `EZ` `HR` |
-| Mania | `HD` `FL` `CS` `DT` `HT` `NC` `DC` `1K`-`10K` `DS` `IN` `HO` | `1K`-`10K` `DS` `IN` `HO` |
+| Standard | `EZ` `HR` `HD` `FL` `AT` `DA` `TC` `CL` `DT` `HT` `NC` `DC` | `EZ` `HR` `HD` `FL` `AT` `DA` `TC` `CL` |
+| Taiko | `EZ` `HR` `HD` `FL` `SW` `CS` `CL` `DT` `HT` `NC` `DC` | `EZ` `HR` `SW` `CL` |
+| Catch | `EZ` `HR` `HD` `FL` `AT` `CL` `DT` `HT` `NC` `DC` | `EZ` `HR` `CL` |
+| Mania | `HD` `FL` `CS` `CL` `DT` `HT` `NC` `DC` `1K`-`10K` `DS` `IN` `HO` | `1K`-`10K` `DS` `IN` `HO` `CL` |
 
 主要规则如下：
 
 - `DT`、`HT`、`NC`、`DC` 四者互斥。加速类默认 `1.5x`、可设为 `1.01` 至 `2.00`；减速类默认 `0.75x`、可设为 `0.50` 至 `0.99`，例如 `--mod=dt1.25`、`--mod=nc1.4`。
 - `EZ` 与 `HR`、`TC` 与 `HD`、`IN` 与 `HO` 分别互斥。
+- 普通预览的四模式均接受 `CL`，不改变自动预览画面。Standard 回放支持对应的动画 Mod，按录制设置应用，计分倍率使用当前官方规则；用户不能通过 `--mod` 修改回放规则。
 - Mania 的 `HD` 与 `FL` 互斥，其余三种模式允许 `HD+FL`。
 - 除 Catch HD 外，`HD`、`FL` 与游戏内 Autoplay 效果一致。
 - Catch HD 在 Kiai 区段持续保留淡淡的物件轮廓，与游戏内效果不一致。

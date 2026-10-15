@@ -36,7 +36,8 @@ pub(crate) fn render(
         crate::export::geometry::OutputFormat::Mp4
     };
     let context = build_replay_context(beatmap, prepared, axis, format);
-    let visuals = osr::ReplayVisuals::new(&context, gameplay, font::load()?);
+    let visuals =
+        osr::ReplayVisuals::new(&context, gameplay, font::load()?, &beatmap.break_periods);
     let last = prepared.last_end.max(gameplay.settlement_time).ceil() as i64;
     let schedule = time_plan::build(plan, beatmap, first, last)?;
     let fps = schedule.fps;
@@ -108,9 +109,12 @@ pub(crate) fn render(
             frames,
             start,
             last,
-            1.0,
-            MusicRate::IDENTITY,
-            false,
+            prepared.mods.settings.speed_multiplier,
+            MusicRate::output_domain(
+                prepared.mods.settings.speed_multiplier,
+                prepared.mods.music_pitch(),
+            ),
+            prepared.mods.settings.nightcore,
             |index| Ok((draw(index), times[index])),
             path,
             fps,

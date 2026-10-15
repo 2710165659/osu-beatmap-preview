@@ -321,6 +321,7 @@ mod tests {
             preempt_ms,
             fade_in_ms: 400.0,
             hidden: false,
+            hidden_only_approach: false,
             traceable: false,
         }
     }

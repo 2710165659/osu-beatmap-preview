@@ -23,6 +23,8 @@ pub struct ModSettings {
     /// Autoplay 光标或 catch 接盘。
     pub autoplay: bool,
     pub traceable: bool,
+    /// 普通预览只保留 CL 声明；回放另行选择 Classic 判定策略。
+    pub classic: bool,
 
     pub swap: bool,
     pub cs_override: bool,
@@ -76,6 +78,7 @@ impl ModSettings {
             || self.flashlight
             || self.autoplay
             || self.traceable
+            || self.classic
             || self.swap
             || self.cs_override
             || self.mania_keys.is_some()
@@ -176,6 +179,7 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         "FL" => s.flashlight = true,
         "AT" => s.autoplay = true,
         "TC" => s.traceable = true,
+        "CL" => s.classic = true,
         "SW" => s.swap = true,
         "CS" => s.cs_override = true,
         "DS" => s.dual_stage = true,
@@ -393,14 +397,14 @@ fn da_range(mode: i32, param: &str) -> Option<(f64, f64)> {
 
 fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
     match (fmt, mode) {
-        ("gif", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC"],
-        ("gif", 1) => &["EZ", "HR", "HD", "FL", "SW", "CS"],
-        ("gif", 2) => &["EZ", "HR", "HD", "FL", "AT"],
-        ("gif", 3) => &["K", "DS", "CS", "IN", "HO", "HD", "FL"],
-        ("png", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC"],
-        ("png", 1) => &["EZ", "HR", "SW"],
-        ("png", 2) => &["EZ", "HR"],
-        ("png", 3) => &["K", "DS", "IN", "HO"],
+        ("gif", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC", "CL"],
+        ("gif", 1) => &["EZ", "HR", "HD", "FL", "SW", "CS", "CL"],
+        ("gif", 2) => &["EZ", "HR", "HD", "FL", "AT", "CL"],
+        ("gif", 3) => &["K", "DS", "CS", "IN", "HO", "HD", "FL", "CL"],
+        ("png", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC", "CL"],
+        ("png", 1) => &["EZ", "HR", "SW", "CL"],
+        ("png", 2) => &["EZ", "HR", "CL"],
+        ("png", 3) => &["K", "DS", "IN", "HO", "CL"],
         _ => &[],
     }
 }
@@ -454,6 +458,9 @@ fn active_switch_mods(settings: &ModSettings) -> Vec<(String, String)> {
     if settings.traceable {
         active.push(("TC".into(), "TC".into()));
     }
+    if settings.classic {
+        active.push(("CL".into(), "CL".into()));
+    }
     if settings.has_da() {
         active.push(("DA".into(), "DA".into()));
     }
@@ -503,6 +510,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
         autoplay: settings.autoplay && matches!(mode, 0 | 2),
+        classic: settings.classic && (0..=3).contains(&mode),
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
     };
@@ -563,18 +571,20 @@ fn rate_mod_count(settings: &ModSettings) -> usize {
 pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
     match mode {
         0 => [
-            "EZ", "HR", "HD", "FL", "AT", "DA", "TC", "DT", "HT", "NC", "DC",
+            "EZ", "HR", "HD", "FL", "AT", "DA", "TC", "CL", "DT", "HT", "NC", "DC",
         ]
         .map(str::to_string)
         .to_vec(),
-        1 => ["EZ", "HR", "HD", "FL", "SW", "CS", "DT", "HT", "NC", "DC"]
-            .map(str::to_string)
-            .to_vec(),
-        2 => ["EZ", "HR", "HD", "FL", "AT", "DT", "HT", "NC", "DC"]
+        1 => [
+            "EZ", "HR", "HD", "FL", "SW", "CS", "CL", "DT", "HT", "NC", "DC",
+        ]
+        .map(str::to_string)
+        .to_vec(),
+        2 => ["EZ", "HR", "HD", "FL", "AT", "CL", "DT", "HT", "NC", "DC"]
             .map(str::to_string)
             .to_vec(),
         3 => {
-            let mut tokens = ["HD", "FL", "CS", "DT", "HT", "NC", "DC"]
+            let mut tokens = ["HD", "FL", "CS", "CL", "DT", "HT", "NC", "DC"]
                 .map(str::to_string)
                 .to_vec();
             tokens.extend(MANIA_KEY_MOD_RANGE.map(|keys| format!("{keys}K")));
@@ -587,6 +597,16 @@ pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn classic_is_accepted_and_preserved_for_all_preview_modes_and_formats() {
+        let settings = super::parse_mods(&["CL".into()]).unwrap();
+        for mode in 0..=3 {
+            for format in ["png", "gif", "mp4"] {
+                assert!(super::validate_mods(&settings, Some(mode), Some(format)).is_empty());
+            }
+            assert!(super::mods_for_mode(&settings, mode).classic);
+        }
+    }
     #[test]
     fn autoplay_is_standard_and_catch_and_case_insensitive() {
         let settings = super::parse_mods(&["at".into()]).unwrap();

@@ -32,14 +32,23 @@ impl RealtimeSession {
             .beatmap
             .as_ref()
             .ok_or_else(|| PreviewError::new("回放缺少谱面"))?;
-        let prepared = Arc::new(crate::preparation::standard::prepare(beatmap)?);
+        let prepared = Arc::new(crate::preparation::standard::prepare_replay(
+            beatmap, &document,
+        )?);
         let gameplay = Arc::new(crate::gameplay::engine::compile_standard(
             &prepared, document,
         )?);
         let mut session = Self::from_bundle(bundle, options)?;
         let first = prepared.objects[0].source.start_time;
         let last = prepared.last_end.max(gameplay.settlement_time).ceil() as i64;
-        session.timeline = preview_timeline(first, last, session.beatmap.audio_lead_in_ms(), 1.0);
+        let speed = prepared.mods.settings.speed_multiplier;
+        session.settings = prepared.mods.settings.clone();
+        session.options.mods = session.settings.tokens.clone();
+        session.timeline = preview_timeline(first, last, session.beatmap.audio_lead_in_ms(), speed);
+        session.clock.set_rate(speed, 0.0);
+        session
+            .mixer
+            .set_music_rate(MusicRate::chart_domain(speed, prepared.mods.music_pitch()));
         session.replay = Some(Arc::new(ReplaySessionData {
             prepared,
             gameplay,
@@ -176,7 +185,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn replay_rate_pitch_and_seek_use_recorded_mods() {
+        for (code, speed, pitch) in [
+            ("DT", 1.5, 1.0),
+            ("NC", 1.5, 1.5),
+            ("HT", 0.75, 1.0),
+            ("DC", 0.75, 0.75),
+        ] {
+            let mut session = session_with_mods(false, serde_json::json!([{"acronym":code}]));
+            assert_eq!(session.timeline().beatmap_speed, speed);
+            assert_eq!(session.rate(), speed);
+            assert_eq!(
+                session.mixer.music_rate(),
+                MusicRate::chart_domain(speed, pitch)
+            );
+            session.seek(0.0, 1000.0);
+            session.play(0.0);
+            assert_eq!(session.clock_ms(100.0), 1000.0 + 100.0 * speed);
+            session.set_rate(100.0, 2.0);
+            assert_eq!(session.rate(), speed * 2.0);
+            let state = session.replay_timeline().unwrap().state_at(1500.0).clone();
+            session.seek(200.0, 500.0);
+            assert_eq!(session.replay_timeline().unwrap().state_at(1500.0), &state);
+        }
+    }
+
     fn session(fail: bool) -> RealtimeSession {
+        session_with_mods(fail, serde_json::json!([]))
+    }
+
+    fn session_with_mods(fail: bool, mods: serde_json::Value) -> RealtimeSession {
         let raw = format!("osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:4\nApproachRate:5\nOverallDifficulty:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n100,100,1000,1,0\n{}", if fail { "400,100,2000,1,0" } else { "" });
         let beatmap = crate::parse_beatmap_bytes(raw.as_bytes()).unwrap();
         let replay = ReplayDocument {
@@ -199,7 +238,7 @@ mod tests {
             metadata: Some(ReplayMetadata {
                 client_version: "2026.119.0-lazer-windows".into(),
                 rank: "X".into(),
-                mods: vec![],
+                mods: serde_json::from_value(mods).unwrap(),
                 statistics: std::collections::BTreeMap::from([("great".into(), 1)]),
                 maximum_statistics: std::collections::BTreeMap::from([("great".into(), 1)]),
                 pauses: vec![],

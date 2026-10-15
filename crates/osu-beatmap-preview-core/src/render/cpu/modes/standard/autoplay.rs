@@ -75,7 +75,7 @@ impl AutoplayCursor {
             presses: Vec::new(),
             animations: Vec::new(),
             sprites: cursor_sprites(context.frame_layout.scale),
-            rate: 1.0,
+            rate: context.spinner_rate,
         };
         let mut held = false;
         for index in 0..cursor.frames.len() {
@@ -375,6 +375,11 @@ impl AutoplayCursor {
     /// 游戏每次鼠标更新用 120ms 的 Out 插值。固定按实际时间 60Hz 预计算，
     /// 复现默认跟随延迟，同时避免渲染帧率、乱序查询和 seek 改变光圈位置。
     pub fn flashlight_path(&self, rate: f64) -> AutoplayPath {
+        self.flashlight_path_with_delay(rate, 120.0)
+    }
+
+    /// 回放允许自定义 FL 跟随延迟；固定步长保证 seek 和输出帧率不影响结果。
+    pub fn flashlight_path_with_delay(&self, rate: f64, delay: f64) -> AutoplayPath {
         let Some(first) = self.frames.first() else {
             return AutoplayPath::new(Vec::new(), 0.0);
         };
@@ -382,7 +387,7 @@ impl AutoplayCursor {
         let mut position = first.position;
         let mut points = vec![(first.time, position)];
         let end = self.frames.last().unwrap().time + 1200.0 * rate;
-        let progress = 1.0 - (1.0 - (step / rate / 120.0).min(1.0)).powi(2);
+        let progress = 1.0 - (1.0 - (step / rate / delay).min(1.0)).powi(2);
         let mut time = first.time + step;
         while time < end {
             position = lerp(position, self.position_at_f64(time).unwrap(), progress);

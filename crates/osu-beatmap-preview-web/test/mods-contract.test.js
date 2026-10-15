@@ -36,11 +36,11 @@ async function loadModule() {
 
 /** 与 CLI README「GIF / MP4」列一致的期望表（转谱后的目标模式）。 */
 const EXPECTED = {
-  standard: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DA', 'TC', 'DT', 'HT', 'NC', 'DC'],
-  taiko: ['EZ', 'HR', 'HD', 'FL', 'SW', 'CS', 'DT', 'HT', 'NC', 'DC'],
-  catch: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DT', 'HT', 'NC', 'DC'],
+  standard: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DA', 'TC', 'CL', 'DT', 'HT', 'NC', 'DC'],
+  taiko: ['EZ', 'HR', 'HD', 'FL', 'SW', 'CS', 'CL', 'DT', 'HT', 'NC', 'DC'],
+  catch: ['EZ', 'HR', 'HD', 'FL', 'AT', 'CL', 'DT', 'HT', 'NC', 'DC'],
   mania: [
-    'HD', 'FL', 'CS', 'DT', 'HT', 'NC', 'DC',
+    'HD', 'FL', 'CS', 'CL', 'DT', 'HT', 'NC', 'DC',
     '1K', '2K', '3K', '4K', '5K', '6K', '7K', '8K', '9K', '10K',
     'DS', 'IN', 'HO',
   ],

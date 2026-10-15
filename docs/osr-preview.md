@@ -39,6 +39,14 @@ OSR 拒绝 `--convert`、所有用户 `--mod`（包括 `NM`）和 PNG；`--bid` 
 
 ## 已验证规则
 
+Standard 回放与普通 Standard 动画预览共用 Mod 支持范围：`EZ`、`HR`、`HD`、`FL`、`AT`、`DA`、`TC`、`CL`、`DT`、`HT`、`NC`、`DC`。普通预览中的 `CL` 只接受声明，不改变自动预览行为；回放中的 `CL` 使用实际 Classic 策略。旧位掩码解码支持 EZ/HR/HD/FL/AT/DT/HT/NC 和 ScoreV2；lazer 扩展存在时以扩展 Mod 列表为准，不重复应用旧位掩码。
+
+回放准备先应用 EZ/HR/DA 难度和 HR 物件、滑条翻转，再计算堆叠；录制光标不再翻转。HD/TC 使用共享可见性规则；FL 跟随回放光标，尺寸根据实际连击、休息段和设置变化，滑条实际追踪时额外暗化。DT/HT/NC/DC 只改变输出时钟和音乐处理，不缩放回放输入帧时间；NC 同时加入鼓点。接受速度与音高设置、HD 仅隐藏缩圈、FL 大小/连击/跟随延迟、EZ 额外生命数和 DA 难度设置；未知 settings 仍明确拒绝。
+
+分数倍率对照当前 `OsuScoreMultiplierCalculatorV2`：EZ 默认 ×0.8、HR ×1.09、HD 默认 ×1.04、FL 默认 ×1.2、TC ×1.02、DT/NC 默认 ×1.23、HT/DC 默认 ×0.55、AT ×1；CL 使用 ×0.985 或 ×0.96。自定义速度采用官方分档截断，DA 以原始难度计算各参数差值并应用最低倍率；组合 Mod 的倍率相乘，无 Mod 分数和最终分数分别按游戏规则取整。上述规则有合成测试，真实官方样本的既有验收范围见后文。
+
+本次 Mod 增量验证：core 445 项通过、5 项外部样本测试忽略，CLI 196 项、Web 51 项通过；core/CLI all-target Clippy `-D warnings`、WASM 和前端生产构建通过。合成 stable HR 单圆回放实际导出 GIF，结算 1,073,650 分；HR+DT 实际导出带 AAC 音轨的 MP4，结算 1,320,590 分，两者记录差异均为空。覆盖 HR 光标不重复翻转、难度命中窗、滑条几何、组合倍率、倍速播放和 seek，以及 HD/TC/FL 可见性；未新增真实玩家 Mod 回放与官方 Headless 的逐事件对比。
+
 原生 Standard 不再限制客户端名称、平台或 OSR 分数版本；包括 tachyon、旧 lazer 和 stable。stable 文件（版本小于 `30000000`）按官方 `LegacyScoreDecoder` 自动启用 CL；lazer 显式 CL 使用同一策略，并保留 `no_slider_head_accuracy`、`classic_note_lock`、`always_play_tail_sample`、`fade_hit_circle_early` 设置。`classic_health` 保留但预览不模拟 HP 失败。CL 滑条头使用 LargeTick 判定，尾使用不改变连击的 SmallTick，父滑条按嵌套物件命中比例判为 300/100/50/Miss；支持 Classic note lock、提前淡出及默认漏尾仍播放尾音。AL 和其它未实现 Mod/未知 settings 仍明确报错；其它模式只解析容器。用户不能通过 `--mod` 覆盖录制规则。
 
 OSR 头部、限长 LZMA、负首帧、seed、输入帧、扩展 JSON 与未知扩展字段分别解析。旧版 32/64 位在线成绩 ID、历史小数帧间隔及可选扩展字段均按格式读取；引导占位帧和反向时间按官方解码器归一化，保留同刻帧原始顺序。暂停统计不再次加进已经处于谱面时间域的帧。共享准备层负责逻辑路径、堆叠、精确结束时刻和滑条嵌套节点；玩法编译器按原帧顺序处理按键边沿，同刻多帧保留各自点击位置。连续追踪/旋转使用策略内固定 1ms 网格，分数不依赖输出 FPS、音频预读、倒序查询或 worker 顺序。

@@ -384,6 +384,82 @@ fn official_standard_sample_matches_official_replay_results() {
     }
 }
 
+#[test]
+fn hard_rock_uses_flipped_geometry_and_recorded_cursor_without_double_flip() {
+    let beatmap = map("100,100,1000,1,0");
+    for legacy in [false, true] {
+        let mut replay = document(&[(0, [100.0, 284.0], 0), (1000, [100.0, 284.0], 1)]);
+        if legacy {
+            replay.header.version = 20200101;
+            replay.header.mods_bits = 1 << 4;
+            replay.metadata = None;
+        } else {
+            replay.metadata.as_mut().unwrap().mods =
+                serde_json::from_value(serde_json::json!([{"acronym":"HR"}])).unwrap();
+        }
+        let prepared = crate::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        assert_eq!(prepared.objects[0].position, [100.0, 284.0]);
+        assert_eq!(prepared.od, 7.0);
+        let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
+        assert_eq!(
+            timeline.input_at(1000.0).unwrap().cursor,
+            Some([100.0, 284.0])
+        );
+        let state = timeline.state_at(f64::INFINITY);
+        assert_eq!(state.statistics["great"], 1);
+        assert_eq!(state.score, if legacy { 1_073_650 } else { 1_090_000 });
+    }
+}
+
+#[test]
+fn replay_mod_difficulty_changes_hit_windows_and_slider_geometry_before_stacking() {
+    let beatmap = map("100,100,1000,1,0");
+    for (mods, great) in [
+        (serde_json::json!([]), true),
+        (
+            serde_json::json!([{"acronym":"DA","settings":{"overall_difficulty":10}}]),
+            false,
+        ),
+    ] {
+        let mut replay = document(&[(0, [100.0; 2], 0), (1040, [100.0; 2], 1)]);
+        replay.metadata.as_mut().unwrap().mods = serde_json::from_value(mods).unwrap();
+        let prepared = crate::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
+        assert_eq!(
+            timeline.events[0].result,
+            if great {
+                HitResult::Great
+            } else {
+                HitResult::Ok
+            }
+        );
+    }
+    let beatmap = map("100,100,1000,2,0,L|200:150,1,100");
+    let mut replay = document(&[(0, [0.0; 2], 0)]);
+    replay.metadata.as_mut().unwrap().mods =
+        serde_json::from_value(serde_json::json!([{"acronym":"HR"}])).unwrap();
+    let prepared = crate::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+    assert_eq!(prepared.objects[0].source.slider_points[0], (200, 234));
+    assert!(prepared.objects[0].position_at(prepared.last_end)[1] < 284.0);
+}
+
+#[test]
+fn replay_score_applies_combined_mods_without_rescaling_input_time() {
+    let beatmap = map("100,100,1000,1,0");
+    let mut replay = document(&[(0, [100.0, 284.0], 0), (1000, [100.0, 284.0], 1)]);
+    replay.metadata.as_mut().unwrap().mods = serde_json::from_value(serde_json::json!([
+        {"acronym":"HR"}, {"acronym":"HD"}, {"acronym":"FL"}, {"acronym":"DT"}, {"acronym":"CL"}
+    ]))
+    .unwrap();
+    let prepared = crate::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+    let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
+    assert_eq!(timeline.events[0].time, 1000.0);
+    assert_eq!(
+        timeline.state_at(f64::INFINITY).score,
+        (1_000_000.0_f64 * 1.09 * 1.04 * 1.2 * 1.23 * 0.985).round_ties_even() as u64
+    );
+}
+
 fn map(objects: &str) -> crate::Beatmap {
     crate::parse_beatmap_bytes(format!("osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:5\nOverallDifficulty:5\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n{objects}\n").as_bytes()).unwrap()
 }
