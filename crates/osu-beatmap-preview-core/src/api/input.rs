@@ -103,8 +103,8 @@ pub struct RealtimeOptions {
     pub core_config: Arc<config::CoreConfig>,
     /// 音频输出配置（采样率、开关与初始音量）。
     pub audio: AudioConfig,
-    /// 游玩/回放配置。目前只保留配置位（默认 `GameplayMode::Preview`，不改变任何
-    /// 现有行为），判定引擎与画面叠加后续接入，接口见 `docs/architecture.md`。
+    /// 游玩配置默认 Preview；OSR 经 `RealtimeSession::from_replay_bundle` 显式注入，
+    /// 普通谱面会话不编译回放，避免增加既有路径的运行成本。
     pub gameplay: GameplayOptions,
     /// 是否绘制故事板；默认关闭（素材与合成开销不小，且不是所有谱面都有故事板）。
     pub storyboard_enabled: bool,

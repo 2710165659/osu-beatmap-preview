@@ -19,12 +19,33 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
+/// 音频持有与画面相同的准备结果和不可变回放时间线。
+pub(crate) struct ReplayAudio {
+    pub prepared: std::sync::Arc<osu_beatmap_preview_core::preparation::standard::PreparedStandard>,
+    pub gameplay: std::sync::Arc<osu_beatmap_preview_core::gameplay::timeline::GameplayTimeline>,
+}
+impl std::fmt::Debug for ReplayAudio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReplayAudio")
+            .field("events", &self.gameplay.events.len())
+            .finish()
+    }
+}
+/// GIF 也必须验证必需音频可解码，不能把缺少音频当作可用媒体包。
+pub(crate) fn validate_source_audio(
+    source: &AudioSource,
+    deadline: &RequestDeadline,
+) -> Result<()> {
+    decode_audio(&source.path, deadline).map(|_| ())
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct AudioSource {
     pub path: PathBuf,
     pub lead_in_ms: i64,
     /// 音频所在的 OSZ；谱面自带打击音也从同一个压缩包里取。
     pub osz_path: PathBuf,
+    pub replay: Option<std::sync::Arc<ReplayAudio>>,
 }
 
 /// MP4 音频、背景与打击音所在的谱面包来源。
@@ -99,6 +120,7 @@ pub(crate) struct AudioSourceRequest<'a> {
 
 pub(crate) struct AudioSourceJob {
     handle: Option<std::thread::JoinHandle<Result<AudioSource>>>,
+    replay: Option<std::sync::Arc<ReplayAudio>>,
     deadline: RequestDeadline,
     background: MediaBackground,
     storyboard: Option<super::storyboard::MediaStoryboard>,
@@ -175,6 +197,7 @@ impl AudioSourceJob {
         });
         Ok(Self {
             handle: Some(handle),
+            replay: None,
             deadline,
             background: MediaBackground { image, video },
             storyboard,
@@ -193,12 +216,20 @@ impl AudioSourceJob {
         self.storyboard.take()
     }
 
+    pub(crate) fn with_replay(mut self, replay: std::sync::Arc<ReplayAudio>) -> Self {
+        self.replay = Some(replay);
+        self
+    }
+
     pub(crate) fn wait(mut self) -> Result<AudioSource> {
-        self.handle
+        let mut source = self
+            .handle
             .take()
             .expect("audio source job waited more than once")
             .join()
-            .map_err(|_| PreviewError::render("audio preparation worker panicked"))?
+            .map_err(|_| PreviewError::render("audio preparation worker panicked"))??;
+        source.replay = self.replay.take();
+        Ok(source)
     }
 }
 
@@ -274,6 +305,7 @@ pub(crate) fn prepare_audio_source(
             path: target_path,
             lead_in_ms: beatmap.audio_lead_in_ms(),
             osz_path: osz_path.to_path_buf(),
+            replay: None,
         });
     }
 
@@ -291,6 +323,7 @@ pub(crate) fn prepare_audio_source(
         path: target_path,
         lead_in_ms: beatmap.audio_lead_in_ms(),
         osz_path: osz_path.to_path_buf(),
+        replay: None,
     })
 }
 
@@ -592,7 +625,7 @@ pub(crate) fn encode_audio_segment(
 }
 
 /// MP4 导出使用的打击音开关、音量与样本来源（来自各模式 `mp4.style` 配置）。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct HitsoundSettings {
     pub enabled: bool,
     /// 音量百分比（0～100）。
@@ -603,6 +636,7 @@ pub(crate) struct HitsoundSettings {
     pub nightcore: bool,
     /// 谱面自带打击音所在的 OSZ；`None` 表示只用内嵌皮肤。
     pub beatmap_samples: Option<PathBuf>,
+    pub replay: Option<std::sync::Arc<ReplayAudio>>,
 }
 
 impl HitsoundSettings {
@@ -616,6 +650,7 @@ impl HitsoundSettings {
             beatmap,
             nightcore: false,
             beatmap_samples: None,
+            replay: None,
         }
     }
 
@@ -651,16 +686,27 @@ fn render_hitsound_segment(
     let Some(settings) = settings.filter(|settings| settings.enabled || settings.nightcore) else {
         return Ok(None);
     };
-    let library = super::hitsound::build_library(
-        beatmap,
-        settings.beatmap_samples.as_deref(),
-        settings.nightcore,
-    );
+    let library = if let Some(replay) = &settings.replay {
+        super::hitsound::replay::build_library(
+            settings.beatmap_samples.as_deref(),
+            hitsound::replay::referenced_names(beatmap, &replay.prepared, &replay.gameplay),
+        )
+    } else {
+        super::hitsound::build_library(
+            beatmap,
+            settings.beatmap_samples.as_deref(),
+            settings.nightcore,
+        )
+    };
     if library.is_empty() {
         return Ok(None);
     }
     let mut timeline = if settings.enabled {
-        hitsound::build_timeline(beatmap, &library)
+        if let Some(replay) = &settings.replay {
+            hitsound::replay::build_timeline(beatmap, &replay.prepared, &replay.gameplay, &library)
+        } else {
+            hitsound::build_timeline(beatmap, &library)
+        }
     } else {
         HitsoundTimeline::default()
     };
@@ -685,7 +731,11 @@ fn render_hitsound_segment(
     mixer.set_master_gain(hitsound::volume_gain(settings.volume.clamp(0, 100)));
     // 视频区间起点可能为负（首个物件前 2000ms 的预卷）：混音位置允许为负，
     // 缓冲区第 0 帧必须对应该起点，否则整段打击音会提前 |起点|。
-    mixer.seek(chart_start_ms as f64);
+    if settings.replay.is_some() {
+        mixer.seek_replay(chart_start_ms as f64);
+    } else {
+        mixer.seek(chart_start_ms as f64);
+    }
 
     // 分块渲染：混音器每个窗口只保留本窗口内还在响的声音，一次渲染整段会把所有事件
     // 都压在 voices 里、逐输出帧遍历一遍（O(输出帧 × 事件数)），三分钟的谱面就能让

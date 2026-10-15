@@ -5,6 +5,7 @@
 // 加载期间显示后端与浏览器两段传输的进度：OSZ 动辄几十 MiB，还要经服务端转发一次，
 // 没有阶段与速率会让人以为卡死了。
 import { ref } from 'vue';
+import ReplayInput from './ReplayInput.vue';
 
 import {
   CONVERT_MODES,
@@ -15,6 +16,7 @@ import {
   progressPercent,
   selectLocalFile,
   state,
+  replayRequested,
 } from '../preview.js';
 
 /** 本地文件选择阶段的错误（后缀不对、压缩包里没有 .osu 等），就地显示。 */
@@ -61,7 +63,8 @@ function removeFile() {
       </div>
 
       <form class="grid gap-4" @submit.prevent="loadPreview()">
-        <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
+        <ReplayInput />
+        <label v-if="!replayRequested" class="grid gap-2 text-[13px] font-bold text-neutral-300">
           谱面 BID
           <input
             v-model="state.bid"
@@ -74,7 +77,7 @@ function removeFile() {
 
         <div class="flex items-center gap-3 text-[11px] tracking-wider text-neutral-600 select-none">
           <span class="h-px flex-1 bg-neutral-800"></span>
-          或选择本地文件（.osu / .osz）
+          {{ replayRequested ? '可选谱面资源（.osu / .osz）' : '或选择本地文件（.osu / .osz）' }}
           <span class="h-px flex-1 bg-neutral-800"></span>
         </div>
 
@@ -84,6 +87,7 @@ function removeFile() {
             ref="fileInput"
             type="file"
             accept=".osu,.osz"
+            :disabled="state.loading"
             class="block w-full rounded-md border border-neutral-700 bg-neutral-900 pr-3 pl-3 pt-2.5 pb-2.5 text-[13px] font-normal text-neutral-400 file:mr-3 file:h-7 file:rounded file:border-0 file:bg-neutral-800 file:px-2.5 file:text-[12px] file:font-bold file:text-white"
             @change="onFileChange"
           >
@@ -91,20 +95,21 @@ function removeFile() {
 
         <p v-if="state.localFileName" class="-mt-2 flex items-start gap-2 text-[12px] text-neutral-500">
           <span class="min-w-0 flex-1">
-            已选择：{{ state.localFileName }}（本地文件优先于 BID；填 BID 仅用于在 .osz 内指定难度）
-            <span v-if="state.localKind === 'osu'">本地 .osu 只有谱面与内嵌音效，没有音乐与背景。</span>
+            已选择：{{ state.localFileName }}{{ replayRequested ? '（按回放 MD5 自动绑定）' : '（本地文件优先于 BID；填 BID 仅用于在 .osz 内指定难度）' }}
+            <span v-if="state.localKind === 'osu' && !replayRequested">本地 .osu 只有谱面与内嵌音效，没有音乐与背景。</span>
             <span v-else-if="state.localKind === 'osz'">音乐、背景与自带音效都在 .osz 里，由 WASM 解包后统一播放。</span>
           </span>
           <button
             type="button"
             class="shrink-0 font-bold text-[#ff5f45] hover:underline"
+            :disabled="state.loading"
             @click="removeFile"
           >
             移除
           </button>
         </p>
 
-        <label v-if="state.localKind === 'osz' && state.localDifficulties.length" class="grid gap-2 text-[13px] font-bold text-neutral-300">
+        <label v-if="!replayRequested && state.localKind === 'osz' && state.localDifficulties.length" class="grid gap-2 text-[13px] font-bold text-neutral-300">
           难度（本地 .osz）
           <select
             v-model="state.localDifficulty"
@@ -116,7 +121,7 @@ function removeFile() {
           </select>
         </label>
 
-        <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
+        <label v-if="!replayRequested" class="grid gap-2 text-[13px] font-bold text-neutral-300">
           转谱
           <select
             v-model="state.convert"
@@ -129,7 +134,7 @@ function removeFile() {
 
         <button
           type="submit"
-          :disabled="state.loading"
+          :disabled="state.loading || state.replaySelecting"
           class="h-11 rounded-md bg-[#ff5f45] font-bold text-white transition hover:brightness-105 disabled:opacity-60"
         >
           {{ state.loading ? '加载中...' : '加载预览' }}

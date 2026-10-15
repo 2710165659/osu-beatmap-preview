@@ -2,14 +2,14 @@
 
 [返回项目首页](../../README.md) | [CLI 使用说明](../osu-beatmap-preview-cli/README.md) | [架构说明](../../docs/architecture.md)
 
-输入**一份文件的字节**——`.osu`（谱面与内嵌音效）或 `.osz` 整包（含音乐、背景、自带音效）——即可在浏览器里用 WebGPU 实时渲染并播放谱面。解包、解码、混音、时钟都在 WASM 内完成。WASM 不下载文件、也不返回像素；导出 PNG/GIF/MP4 请用 [CLI](../osu-beatmap-preview-cli/README.md)。
+输入**一份文件的字节**——`.osu`、`.osz`，或在 `replayBytes` 选项中传入 `.osr` 并把谱面包作为主输入——即可在浏览器里用 WebGPU 实时渲染并播放谱面。OSR 模式按回放头部 MD5 绑定原始 `.osu` 字节，缺少谱面时由 Web 后端负责查谱下载。解包、解码、混音、时钟都在 WASM 内完成。WASM 不下载文件、也不返回像素；导出 PNG/GIF/MP4 请用 [CLI](../osu-beatmap-preview-cli/README.md)。
 
 | WASM 负责 | 宿主负责 |
 | --- | --- |
-| `.osz` 解包、难度选择、音乐/背景/打击音解码 | 获取文件字节（本地文件或后端下载） |
+| `.osz` 解包、难度选择、音乐/背景/打击音解码；OSR 解析、Standard 判定与 HUD | 获取文件字节（本地文件或后端下载） |
 | 解析、Mod、转谱、时间轴、逐帧绘制到 Canvas | 提供 `<canvas>`（宽高设为输出尺寸） |
 | 时钟（播放/暂停/seek/倍速）与「音乐 + 打击音」混音 | 音频输出：消费 `pullAudio` 的 PCM 并回报 `onAudioClock` |
-| Mod 热切换、背景视频与故事板合成 | 控制 UI（播放按钮、进度条、难度下拉等） |
+| Mod 热切换、背景视频与故事板合成；回放 `replayState()` 查询 | 控制 UI（播放按钮、进度条、难度下拉等） |
 
 ## 获取与构建
 
@@ -65,6 +65,21 @@ wasm-bindgen target/wasm32-unknown-unknown/release/osu_beatmap_preview_wasm.wasm
   requestAnimationFrame(frame);
 </script>
 ```
+
+## OSR 回放
+
+```js
+const summary = replayInfo(osrBytes); // 解析和兼容性检查；不支持的版本/Mod 立即报错
+const info = beatmapInfo(oszBytes, { checksum: summary.checksum });
+const session = await WebGpuSession.create(oszBytes, canvas, {
+  replayBytes: osrBytes, width: 1280, height: 720, sampleRate: audioContext.sampleRate,
+});
+const state = session.replayState(); // 分数、accuracy、combo、max_combo、statistics、rank、status
+```
+
+`osrBytes` 必须是 `Uint8Array`。OSR 主输入仍然是匹配的 `.osz`（宿主确保缺包时下载），回放按原始 `.osu` 字节 MD5 绑定，忽略普通难度/BID 选择。回放拒绝 `convert` 和用户 `mods`；`set_mods()` 同样报错。`replayState()` 在普通预览返回 `null`，在回放只查询已编译的不可变判定。界面将 `X/XH` 显示为 SS，失败时显示 F。
+
+提前结束后成绩和光标冻结、按键清零、玩家音效停止，背景、谱面和音乐继续预览；seek 回失败前可以恢复当时状态。完整 Torus 字体与回放提示音内嵌 WASM，许可见 [第三方声明](../../docs/THIRD_PARTY_NOTICES.md)。具体支持策略见 [OSR 说明](../../docs/osr-preview.md)。
 
 ## 音频输出与时钟
 

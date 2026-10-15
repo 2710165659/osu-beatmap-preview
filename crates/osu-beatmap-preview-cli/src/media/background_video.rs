@@ -627,6 +627,22 @@ impl FrameBackgrounds {
         });
         Some(Arc::new(blend_background(&base, &frame, alpha)))
     }
+
+    /// GIF 多选段允许回到较早时刻；重新消费已选中的解码段，不改变普通视频快路径。
+    pub(crate) fn background_at_replay(&mut self, chart_ms: i64) -> Option<Arc<Img>> {
+        if let Some(video) = self.video.as_mut() {
+            if video
+                .current
+                .as_ref()
+                .is_some_and(|(time, _)| *time > chart_ms - video.start_ms)
+            {
+                video.next_segment = 0;
+                video.queue.clear();
+                video.current = None;
+            }
+        }
+        self.background_at(chart_ms)
+    }
 }
 
 /// 两张同尺寸不透明 RGBA 按 alpha 线性混合（`base * (1 - alpha) + overlay * alpha`）。
@@ -997,9 +1013,14 @@ mod tests {
             panic!("未知容器必须报错");
         };
         assert!(error.to_string().contains("container"), "{error}");
-        assert!(matches!(container_kind(b"RIFF\x24\0\0\0AVI "), VideoContainer::Avi));
         assert!(matches!(
-            container_kind(&[0, 0, 0, 24, b'f', b't', b'y', b'p', 0, 0, 0, 0, b'i', b's', b'o', b'm']),
+            container_kind(b"RIFF\x24\0\0\0AVI "),
+            VideoContainer::Avi
+        ));
+        assert!(matches!(
+            container_kind(&[
+                0, 0, 0, 24, b'f', b't', b'y', b'p', 0, 0, 0, 0, b'i', b's', b'o', b'm'
+            ]),
             VideoContainer::Mp4
         ));
     }

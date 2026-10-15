@@ -6,13 +6,18 @@
 //! `domain` 保留为旧版本兼容层，内部实现不作为新的调用入口。
 
 pub mod api;
+#[cfg(feature = "replay")]
+pub mod calculate;
 pub mod config;
 pub mod domain;
 pub mod gameplay;
 pub mod hitsound;
 pub mod model;
+pub mod preparation;
 pub mod processing;
 pub mod render;
+#[cfg(feature = "replay")]
+pub mod replay;
 pub mod storyboard;
 pub mod support;
 

@@ -5,23 +5,25 @@ use osu_beatmap_preview_core::gameplay::GameplayOptions;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::processing::validation::{self as validate, TimePoint};
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
+mod replay;
+pub use replay::{ReplaySource, ReplayUser, ScoreSelection};
 
 #[derive(Debug, Clone)]
 pub struct RenderRequest {
+    pub kind: RequestKind,
     pub source: SourceOptions,
     pub ruleset: RulesetOptions,
     pub view: ViewOptions,
     pub output: OutputOptions,
     pub execution: ExecutionOptions,
-    /// 游玩/回放配置。目前只有 `Preview` 一种可用模式，CLI 也还没有对应参数；
-    /// 保留字段是为了让「用回放导出、在画面上叠分数」这类功能接入时不必再改请求模型
-    /// （接口见 core 的 `gameplay` 模块）。
+    /// 预览叠加配置；回放执行由请求类型显式分派。
     pub gameplay: GameplayOptions,
 }
 
 impl RenderRequest {
     pub fn new(bid: impl Into<String>) -> Self {
         Self {
+            kind: RequestKind::Osu,
             source: SourceOptions {
                 bid: bid.into(),
                 osu_file: None,
@@ -36,9 +38,13 @@ impl RenderRequest {
     }
 
     pub(crate) fn validate(self) -> Result<ValidatedRequest> {
-        validate_source(&self.source)?;
+        super::validation_osr::validate(&self)?;
+        if matches!(self.kind, RequestKind::Osu) {
+            validate_source(&self.source)?;
+        }
         // 单独的本地 `.osu` 没有媒体包，只允许 PNG / GIF；搭配 `.osz` 后可以生成 MP4。
-        if self.source.osu_file.is_some()
+        if matches!(self.kind, RequestKind::Osu)
+            && self.source.osu_file.is_some()
             && self.source.osz_file.is_none()
             && self.output.format.as_deref() == Some("mp4")
         {
@@ -77,6 +83,7 @@ impl RenderRequest {
             )?)
         };
         Ok(ValidatedRequest {
+            kind: self.kind,
             source: self.source,
             ruleset: ValidatedRulesetOptions {
                 convert: self.ruleset.convert,
@@ -90,10 +97,21 @@ impl RenderRequest {
     }
 }
 
+/// 一次请求只有一个分支；回放分支再以枚举约束三种互斥来源。
+#[derive(Debug, Clone, Default)]
+pub enum RequestKind {
+    #[default]
+    Osu,
+    Osr {
+        source: ReplaySource,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct SourceOptions {
     /// 谱面 ID。无本地文件时必填，用于下载；有 `.osu` 时必须与其 `BeatmapID` 相同。
     /// 只有 `.osz` 时用于选择难度；包内只有一个顶层 `.osu` 时可以留空。
+    /// 回放模式中仅玩家查询使用此字段，指定该玩家游玩的单张谱面。
     pub bid: String,
     /// 本地 `.osu` 路径；同时提供 `.osz` 时仍以此文件作为实际渲染谱面。
     pub osu_file: Option<String>,
@@ -161,12 +179,13 @@ impl Default for ExecutionOptions {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ValidatedRequest {
+    pub kind: RequestKind,
     pub source: SourceOptions,
     pub ruleset: ValidatedRulesetOptions,
     pub view: ViewOptions,
     pub output: OutputOptions,
     pub execution: ExecutionOptions,
-    /// 游玩/回放配置：目前只有 `Preview`（不改变任何行为），导出侧还没有读取它。
+    /// 预览叠加配置；回放执行由请求类型显式分派。
     #[allow(dead_code)]
     pub gameplay: GameplayOptions,
 }

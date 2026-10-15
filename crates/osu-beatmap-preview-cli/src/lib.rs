@@ -15,7 +15,10 @@ pub(crate) mod export;
 pub(crate) mod logging;
 pub(crate) mod media;
 
-pub use application::request::{parse_fps, parse_positive_finite, RenderRequest};
+pub use application::request::{
+    parse_fps, parse_positive_finite, RenderRequest, ReplaySource, ReplayUser, RequestKind,
+    ScoreSelection,
+};
 pub use application::{
     ExecutionOptions, OutputOptions, RulesetOptions, SourceOptions, ViewOptions,
 };

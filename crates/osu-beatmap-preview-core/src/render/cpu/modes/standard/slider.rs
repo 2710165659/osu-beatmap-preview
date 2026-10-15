@@ -643,6 +643,31 @@ pub fn draw_slider_ball(
     color: [u8; 3],
     alpha: f64,
 ) {
+    draw_slider_ball_tracking(
+        frame,
+        context,
+        cache,
+        slider_data,
+        hit_object,
+        snapshot_time,
+        color,
+        alpha,
+        true,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn draw_slider_ball_tracking(
+    frame: &mut Img,
+    context: &RenderContext,
+    cache: &mut RenderCache,
+    slider_data: &SliderRenderData,
+    hit_object: &StandardHitObject,
+    snapshot_time: i64,
+    color: [u8; 3],
+    alpha: f64,
+    tracking: bool,
+) {
     if !(hit_object.start_time <= snapshot_time && snapshot_time <= hit_object.end_time) {
         return;
     }
@@ -656,7 +681,7 @@ pub fn draw_slider_ball(
         super::alpha::slider_path_progress(hit_object.slider_repeats.max(1) as i64, completion);
     let center = path_position_at(&slider_data.timing_path, progress);
 
-    {
+    if tracking {
         let follow = cache
             .procedural
             .entry((ID_FOLLOW, color))

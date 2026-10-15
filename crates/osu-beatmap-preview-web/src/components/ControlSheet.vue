@@ -159,7 +159,7 @@ const chipClass = (active) => (active
         <p v-if="state.hitsoundStatus" class="m-0 text-[11px] text-neutral-500">{{ state.hitsoundStatus }}</p>
       </section>
 
-      <section class="mb-5">
+      <section v-if="!state.replayActive" class="mb-5">
         <h2 class="mb-2 text-[11px] tracking-[.14em] text-neutral-500 uppercase">Mod</h2>
         <div class="flex flex-wrap gap-1.5">
           <button

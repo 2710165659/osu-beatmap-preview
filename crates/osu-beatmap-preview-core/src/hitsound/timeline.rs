@@ -19,6 +19,8 @@ pub struct PlayFrequency {
     pub start: f64,
     pub per_ms: f64,
     pub max: f64,
+    /// 分段循环音的累积采样相位；单位为毫秒乘频率倍率。
+    pub phase: f64,
 }
 
 impl PlayFrequency {
@@ -27,11 +29,17 @@ impl PlayFrequency {
         start: 1.0,
         per_ms: 0.0,
         max: 1.0,
+        phase: 0.0,
     };
 
     /// 从 `start` 起每毫秒增加 `per_ms`，到 `max` 封顶。
     pub const fn ramp(start: f64, per_ms: f64, max: f64) -> Self {
-        Self { start, per_ms, max }
+        Self {
+            start,
+            per_ms,
+            max,
+            phase: 0.0,
+        }
     }
 
     /// 倍率对经过时间的积分（单位：毫秒 × 倍率）。

@@ -8,7 +8,8 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-osu-beatmap-preview-core = { path = "../osu-beatmap-preview-core" }
+md5 = "0.7"
+osu-beatmap-preview-core = { path = "../osu-beatmap-preview-core", features = ["replay"] }
 osu-beatmap-preview-renderer = { path = "../osu-beatmap-preview-renderer" }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

@@ -11,8 +11,8 @@ use crate::render::canvas::Img;
 use crate::render::cpu::modes::standard::alpha::*;
 use crate::render::cpu::modes::standard::constants::*;
 use crate::render::cpu::modes::standard::context::{
-    apply_standard_object_mods, build_video_render_context, VisibleIndexCache,
-    py_round, stacked_position, standard_objects, to_frame_point, RenderCache, RenderContext,
+    apply_standard_object_mods, build_video_render_context, py_round, stacked_position,
+    standard_objects, to_frame_point, RenderCache, RenderContext, VisibleIndexCache,
 };
 use crate::render::cpu::modes::standard::follow_points::{
     build_sprite, follow_point_height, follow_point_position, follow_point_state,
@@ -25,6 +25,9 @@ use crate::render::geometry::{GameMode, OutputFormat};
 use crate::render::scene::{FrameScene, FrameSceneBuilder, SceneRect};
 use crate::render::text::{render_text_sprite, scaled_bitmap_font_height};
 use crate::render::wgpu::RealtimeFrameSource;
+
+#[cfg(feature = "replay")]
+pub mod replay;
 
 struct PreparedSlider {
     data: Arc<SliderRenderData>,
@@ -57,6 +60,19 @@ pub fn prepare_realtime(
     // 与 MP4 导出用同一套画布布局：物件层就是 16:9 画布本身。
     // 内容框布局下 FL 遮罩只盖住 playfield，合成阶段补出的背景不会被压暗。
     let context = build_video_render_context(beatmap, objects, mods, time_axis, OutputFormat::Mp4);
+    source_from_context(
+        beatmap,
+        context,
+        #[cfg(feature = "replay")]
+        None,
+    )
+}
+
+fn source_from_context(
+    beatmap: &Beatmap,
+    context: RenderContext,
+    #[cfg(feature = "replay")] replay: Option<replay::ReplayScene>,
+) -> Result<RealtimeFrameSource> {
     if let Some(autoplay) = &context.autoplay {
         autoplay.get(&context);
     }
@@ -101,11 +117,37 @@ pub fn prepare_realtime(
         .collect::<Vec<_>>();
     let breaks = prepare_breaks(&beatmap.break_periods, &context);
     let follow_points = prepare_follow_points(&context);
+    #[cfg(feature = "replay")]
+    let visible_cache = replay.as_ref().map_or_else(
+        || VisibleIndexCache::new(&context.hit_objects, context.settings.preempt_ms),
+        |r| {
+            VisibleIndexCache::new_replay(
+                &context.hit_objects,
+                context.settings.preempt_ms,
+                &r.gameplay,
+            )
+        },
+    );
+    #[cfg(not(feature = "replay"))]
     let visible_cache = VisibleIndexCache::new(&context.hit_objects, context.settings.preempt_ms);
     Ok(RealtimeFrameSource::new(
         GameMode::Standard,
         move |absolute_time_ms| {
             let indexes = visible_cache.at(absolute_time_ms);
+            #[cfg(feature = "replay")]
+            if let Some(replay) = &replay {
+                return Ok(replay::render(
+                    &context,
+                    &sliders,
+                    &digit_masks,
+                    &breaks,
+                    &follow_points,
+                    replay,
+                    absolute_time_ms,
+                    &indexes,
+                ));
+            }
+
             Ok(render_scene(
                 &context,
                 &sliders,
@@ -303,6 +345,20 @@ fn draw_slider(
     index: usize,
     time: i64,
 ) {
+    draw_slider_state(scene, context, slider, digits, index, time, None, true);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_slider_state(
+    scene: &mut FrameSceneBuilder,
+    context: &RenderContext,
+    slider: &PreparedSlider,
+    digits: &[Arc<Img>],
+    index: usize,
+    time: i64,
+    replay_head: Option<f64>,
+    tracking: bool,
+) {
     let object = &context.hit_objects[index];
     let color = context.combo_info[index].color;
     let body_alpha = slider_body_alpha(object, time, &context.settings);
@@ -352,8 +408,11 @@ fn draw_slider(
         color,
         overlay_alpha,
         time,
+        tracking,
     );
-    let head_alpha = slider_head_alpha(object, time, &context.settings, snake_start, snake_end);
+    let head_alpha = replay_head.unwrap_or_else(|| {
+        slider_head_alpha(object, time, &context.settings, snake_start, snake_end)
+    });
     if head_alpha > 0.0 && !context.settings.traceable {
         draw_circle_piece(
             scene,
@@ -450,6 +509,7 @@ fn draw_reverse_arrows(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_slider_ball(
     scene: &mut FrameSceneBuilder,
     context: &RenderContext,
@@ -458,6 +518,7 @@ fn draw_slider_ball(
     color: [u8; 3],
     alpha: f64,
     time: i64,
+    tracking: bool,
 ) {
     if !(object.start_time..=object.end_time).contains(&time) || alpha <= 0.0 {
         return;
@@ -470,22 +531,24 @@ fn draw_slider_ball(
     let point = [center.0 as f32, center.1 as f32];
     let follow_radius = context.slider_follow_size as f32 / 2.0;
     let follow_border = (4.0 * context.frame_circle_diameter as f64 / 128.0).max(1.0) as f32;
-    scene.circle(
-        point,
-        (follow_radius - follow_border).max(0.0),
-        [
-            color[0],
-            color[1],
-            color[2],
-            alpha_to_byte(alpha * 0.7 * 77.0 / 255.0),
-        ],
-    );
-    scene.ring(
-        point,
-        follow_radius,
-        follow_border,
-        [color[0], color[1], color[2], alpha_to_byte(alpha * 0.7)],
-    );
+    if tracking {
+        scene.circle(
+            point,
+            (follow_radius - follow_border).max(0.0),
+            [
+                color[0],
+                color[1],
+                color[2],
+                alpha_to_byte(alpha * 0.7 * 77.0 / 255.0),
+            ],
+        );
+        scene.ring(
+            point,
+            follow_radius,
+            follow_border,
+            [color[0], color[1], color[2], alpha_to_byte(alpha * 0.7)],
+        );
+    }
     let radius = context.slider_ball_size as f32 / 2.0;
     scene.circle(
         point,

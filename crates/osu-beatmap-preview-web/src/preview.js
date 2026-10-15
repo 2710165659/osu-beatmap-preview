@@ -3,13 +3,15 @@
 // 组件只负责画界面：谱面会话（WASM）、音频输出、播放时钟、Mod 与分辨率切换都集中
 // 在这里。state 做成模块级单例，组件直接引用，避免为了几个控件层层传递 props。
 //
-// 输入只有**一份文件**（`.osu` 或 `.osz` 整包字节）：`.osz` 的解包、音乐/背景/音效的
+// 谱面输入为 `.osu` 或 `.osz`，回放可附带 `.osr`；`.osz` 的解包、音乐/背景/音效的
 // 解码、统一混音与时钟全部在 WASM 里完成；宿主只做四件事——取字节、给 Canvas、把混音
 // 结果写进音频环形缓冲、把音频线程的消费位置转发回 WASM。因此这里**没有 `<audio>`
 // 元素、没有静音 WAV 假时钟**：画面时间直接来自 `session.clockMs()`，音画共用一条时间轴。
 
 import { computed, nextTick, reactive } from 'vue';
 
+import { onlineReplayQuery, fetchOnlineReplay } from './replay/remote.js';
+import { createReplayInput, resolveReplaySource, lookupReplayBeatmap } from './replay/load.js';
 import { createAudioContext, createAudioOutput } from './hitsound.js';
 
 // ---------------------------------------------------------------------------
@@ -112,6 +114,16 @@ const AUDIO_WORKLET_URL = `${import.meta.env.BASE_URL}hitsound-worklet.js`;
 
 export const state = reactive({
   page: 'load',
+  replayMethod: 'file',
+  replayScoreId: '',
+  replayUserKind: 'name',
+  replayUserValue: '',
+  replayBid: '',
+  replaySelection: 'best',
+  replayFileName: '',
+  replayChecksum: '',
+  replayActive: false,
+  replaySelecting: false,
   bid: '',
   /** 本地上传的文件名；非空表示按本地文件加载。 */
   localFileName: '',
@@ -233,6 +245,7 @@ export const state = reactive({
 
 /** 加载阶段的文案；未知阶段一律显示「正在加载」。 */
 const PROGRESS_LABELS = {
+  replay: '查询成绩并下载回放',
   osu: '服务端定位谱面',
   osz: '服务端下载谱面包',
   transfer: '传输到客户端',
@@ -624,6 +637,11 @@ export function clearLocalFile() {
 }
 
 // ---------------------------------------------------------------------------
+const replayInput = createReplayInput(state, loadWasm);
+export const replayRequested = computed(() => state.replayMethod !== 'file' || Boolean(state.replayFileName));
+export const selectReplayFile = replayInput.select;
+export const clearReplayFile = replayInput.clear;
+
 // 深链 ?bid=<BID>[&convert=<模式>]
 // ---------------------------------------------------------------------------
 
@@ -755,7 +773,9 @@ function applyModOptions(wasm, mode) {
 /** 会话整体释放（换谱面、退回加载页）。 */
 function teardownSession() {
   releaseAudioOutput();
+  session?.free?.();
   session = null;
+  state.replayActive = false;
   state.rendered = false;
   state.renderError = '';
   // 列表随会话一起失效：下一次加载会按新模式的矩阵重新取。
@@ -868,6 +888,10 @@ function render() {
 function syncPositionFromClock() {
   const position = session.clockMs() - absoluteStart;
   state.position = Math.min(state.duration, Math.max(0, position));
+  if (state.replayActive) {
+    const status = session.replayState()?.status;
+    state.status = status === 'Failed' ? '回放失败 · 继续谱面预览' : status === 'Completed' ? '回放完成' : '回放播放中';
+  }
 }
 
 /**
@@ -984,14 +1008,18 @@ function tick(now) {
 /**
  * 加载一份谱面并进入播放页。
  *
- * 输入只有一份文件：本地 `.osu` / `.osz` 直接读字节，BID 由后端下载整包。文件进了
+ * 本地 `.osu/.osz` 直接读字节，BID 由后端下载整包；OSR 附带回放并按 MD5 定位资源。文件进了
  * WASM 之后，解包、解码、会话建立都在里面完成，因此这里没有「先出画面再补音频」的
  * 并行阶段。每个 await 之后都用 loadToken 确认自己还是当前这次加载。
  */
 export async function loadPreview() {
-  if (state.loading) return;
+  if (state.loading || state.replaySelecting) return;
+  let replay = state.replayMethod === 'file' ? replayInput.current() : null;
+  let remoteQuery;
+  try { remoteQuery = onlineReplayQuery(state); }
+  catch (error) { logLoad(error); return; }
   const bid = state.bid.trim();
-  if (!localFile && !/^\d+$/.test(bid)) {
+  if (!replay && !remoteQuery && !localFile && !/^\d+$/.test(bid)) {
     logLoad('请输入数字 BID，或选择本地 .osu / .osz 文件');
     return;
   }
@@ -1003,13 +1031,32 @@ export async function loadPreview() {
   resetProgress(localFile ? 'transfer' : 'osu');
   teardownSession();
   state.hitsoundStatus = '';
+  let pendingAudioContext = null;
   try {
     const wasm = await loadWasm();
     if (token !== loadToken) return;
 
+    if (remoteQuery) {
+      state.status = '查询成绩并下载回放...';
+      reportProgress({ phase: 'replay', message: state.status, source: 'local' });
+      replay = await fetchOnlineReplay(remoteQuery, wasm, loadAbort.signal);
+      if (token !== loadToken) return;
+      logLoad(`已选择成绩 ${replay.scoreId}`);
+    }
     // 1. 取一份文件的字节。
     let bytes;
-    if (localFile) {
+    let replaySource;
+    if (replay) {
+      replaySource = await resolveReplaySource({
+        wasm, replay, localBytes, localKind: state.localKind,
+        signal: loadAbort.signal, lookup: lookupReplayBeatmap,
+        download: (resolvedBid, options) => {
+          startProgressPolling(resolvedBid);
+          return fetchFile(resolvedBid, options);
+        },
+      });
+      bytes = replaySource.bytes;
+    } else if (localFile) {
       bytes = localBytes ?? new Uint8Array(await localFile.arrayBuffer());
       reportProgress({
         phase: 'transfer',
@@ -1025,15 +1072,16 @@ export async function loadPreview() {
     if (token !== loadToken) return;
 
     // 2. 难度选择：本地 `.osz` 用下拉选中的条目，BID 按 `BeatmapID` 匹配。
-    const selector = localFile
+    const selector = replaySource?.selector ?? (localFile
       ? (state.localDifficulty ? { difficulty: state.localDifficulty } : {})
-      : { bid };
-    state.info = readBeatmapInfo(wasm, bytes, selector);
+      : { bid });
+    state.info = replaySource?.info ?? readBeatmapInfo(wasm, bytes, selector);
     // 3. 打击音默认值要在创建会话前就位：它决定 WASM 装载哪些样本。
     applyHitsoundDefaults(wasm, modeKeyOf(state.info?.mode));
 
     // 4. 音频输出先建好：设备采样率要交给 WASM，混音结果才能直接播放。
     const audioContext = await createAudioContext(AUDIO_WORKLET_URL);
+    pendingAudioContext = audioContext;
     if (token !== loadToken) {
       await audioContext?.close().catch(() => {});
       return;
@@ -1042,9 +1090,10 @@ export async function loadPreview() {
     // 5. 文件进 WASM：解包、解码、混音、时钟都在里面。
     state.status = '准备会话...';
     const { width, height } = RESOLUTIONS[state.resolution];
-    session = await wasm.WebGpuSession.create(bytes, canvasEl, {
+    const createdSession = await wasm.WebGpuSession.create(bytes, canvasEl, {
       ...selector,
-      convert: state.convert || undefined,
+      convert: replay ? undefined : state.convert || undefined,
+      replayBytes: replay?.bytes,
       mods: [],
       width,
       height,
@@ -1056,9 +1105,12 @@ export async function loadPreview() {
       storyboard: state.storyboard,
     });
     if (token !== loadToken) {
+      createdSession.free();
       await audioContext?.close().catch(() => {});
       return;
     }
+    session = createdSession;
+    state.replayActive = Boolean(replay);
     appliedMods = [];
     state.mods = [];
     state.renderError = '';
@@ -1071,7 +1123,8 @@ export async function loadPreview() {
     state.modeKey = session.mode();
     state.mode = state.modeKey.toUpperCase();
     // Mod 面板按实际模式（含转谱结果）取一次；HD/FL 是否可选由 core 决定。
-    applyModOptions(wasm, state.modeKey);
+    if (replay) state.modOptions = [];
+    else applyModOptions(wasm, state.modeKey);
     // 背景视频在 WASM 内驱动浏览器硬解；「画面 · 其他」默认全开，用户上次关过
     // 就沿用（与音量等设置一致）。可用性 = WASM 会话里真的打开了视频：容器要么
     // 浏览器直接放得了，要么 WASM 能重封装（.avi）。
@@ -1099,6 +1152,7 @@ export async function loadPreview() {
 
     // 6. 接上音频输出；不可用就退化成只有画面。
     audioOutput = audioContext ? createAudioOutput({ session, context: audioContext }) : null;
+    pendingAudioContext = null;
     if (audioContext && !audioOutput) {
       await audioContext.close().catch(() => {});
       state.hitsoundStatus = '音频输出不可用（AudioWorklet 节点创建失败）';
@@ -1128,12 +1182,14 @@ export async function loadPreview() {
     playState(true);
     addGestureHints();
     // 本地文件没有可分享的深链，地址栏保持不变。
-    if (!localFile) syncUrl();
+    if (!localFile && !replay) syncUrl();
   } catch (error) {
     // 取消或已经被新的一次加载取代：错误属于旧请求，不该报给用户。
     if (token !== loadToken || error?.name === 'AbortError') return;
+    teardownSession();
     logLoad(error);
   } finally {
+    await pendingAudioContext?.close().catch(() => {});
     // 被新加载取代或退回了加载页时不能碰 state：那两个入口自己会收拾。
     if (token === loadToken) {
       stopProgressPolling();
@@ -1144,7 +1200,7 @@ export async function loadPreview() {
 
 /** 当前来源有没有音乐：`.osz` 与 BID 的整包里都有，单独的 `.osu` 没有。 */
 function hasMusic() {
-  return !(localFile && state.localKind === 'osu');
+  return state.replayActive || !(localFile && state.localKind === 'osu');
 }
 
 function startProgressPolling(bid) {
@@ -1528,6 +1584,7 @@ export function commitDa() {
 }
 
 export function toggleMod(token) {
+  if (state.replayActive) return;
   const index = state.mods.indexOf(token);
   if (index >= 0) state.mods.splice(index, 1);
   else state.mods.push(token);

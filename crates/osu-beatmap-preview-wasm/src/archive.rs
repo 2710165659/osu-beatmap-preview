@@ -49,6 +49,8 @@ pub enum DifficultySelector {
     ById(u64),
     /// 按压缩包内的条目名匹配（加载页难度下拉）。
     ByEntry(String),
+    /// 回放按原始字节 checksum 选谱；不能重编码文本后再计算。
+    ByChecksum(String),
 }
 
 /// 压缩包里的一个难度（加载页难度清单的行）。
@@ -95,7 +97,13 @@ pub fn read_input(
     if is_zip(bytes) {
         read_archive(bytes, selector, want_media)
     } else {
-        read_plain_osu(bytes)
+        let content = read_plain_osu(bytes)?;
+        if let DifficultySelector::ByChecksum(checksum) = selector {
+            if !format!("{:x}", md5::compute(bytes)).eq_ignore_ascii_case(checksum) {
+                return Err("BeatmapMismatch: .osu MD5 与回放不符".into());
+            }
+        }
+        Ok(content)
     }
 }
 
@@ -294,7 +302,7 @@ fn read_archive(
             .as_deref(),
     );
     // 故事板 Sample 可引用任意音频名，不能只按物件打击音候选装载。
-    let sample_names: Vec<_> = storyboard
+    let mut sample_names: Vec<_> = storyboard
         .samples
         .iter()
         .map(|sample| sample.path.as_str())
@@ -305,6 +313,10 @@ fn read_archive(
                 .map(|candidate| candidate.name.as_str()),
         )
         .collect();
+    // 回放的断连与失败提示允许谱面自带音效覆盖；普通预览不增加资源扫描。
+    if matches!(selector, DifficultySelector::ByChecksum(_)) {
+        sample_names.extend(["combobreak", "failsound"]);
+    }
     for candidate in sample_names {
         if content.samples.len() >= MAX_SAMPLE_ENTRIES || total >= MAX_SAMPLE_TOTAL_BYTES {
             break;
@@ -344,6 +356,12 @@ fn select_difficulty(
 ) -> Result<usize, String> {
     match selector {
         DifficultySelector::First => Ok(0),
+        DifficultySelector::ByChecksum(wanted) => parsed
+            .iter()
+            .position(|(_, _, raw, _)| {
+                format!("{:x}", md5::compute(raw)).eq_ignore_ascii_case(wanted)
+            })
+            .ok_or_else(|| format!("BeatmapMismatch: 谱面包没有与回放 MD5 {wanted} 相符的难度")),
         DifficultySelector::ById(wanted) => parsed
             .iter()
             .position(|(_, _, _, beatmap)| beatmap_id(beatmap) == Some(*wanted))
@@ -469,6 +487,56 @@ mod tests {
     use std::io::Write;
     use zip::write::SimpleFileOptions;
 
+    #[test]
+    fn checksum_selects_exact_original_bytes_and_rejects_wrong_map() {
+        let map = osu_text(Some(42), "Hard", "audio.mp3", "bg.jpg");
+        let other = osu_text(Some(42), "Easy", "audio.mp3", "bg.jpg");
+        let checksum = format!("{:x}", md5::compute(map.as_bytes()));
+        let bytes = osz_bytes(&[("Easy.osu", other.as_bytes()), ("Hard.osu", map.as_bytes())]);
+        let selector = DifficultySelector::ByChecksum(checksum.to_uppercase());
+        assert_eq!(
+            read_input(&bytes, &selector, false).unwrap().beatmap,
+            map.as_bytes()
+        );
+        assert!(read_input(other.as_bytes(), &selector, false)
+            .unwrap_err()
+            .contains("BeatmapMismatch"));
+        assert!(read_input(
+            &bytes,
+            &DifficultySelector::ByChecksum("0".repeat(32)),
+            false
+        )
+        .unwrap_err()
+        .contains("BeatmapMismatch"));
+    }
+
+    #[test]
+    fn replay_reads_custom_feedback_samples_without_changing_preview_resources() {
+        let map = osu_text(Some(42), "Hard", "audio.mp3", "bg.jpg");
+        let bytes = osz_bytes(&[
+            ("map.osu", map.as_bytes()),
+            ("audio.mp3", b"music"),
+            ("failsound.wav", b"failure"),
+            ("combobreak.wav", b"break"),
+        ]);
+        let selector =
+            DifficultySelector::ByChecksum(format!("{:x}", md5::compute(map.as_bytes())));
+        let replay = read_input(&bytes, &selector, true).unwrap();
+        assert!(replay
+            .samples
+            .iter()
+            .any(|(name, _)| name == "failsound.wav"));
+        assert!(replay
+            .samples
+            .iter()
+            .any(|(name, _)| name == "combobreak.wav"));
+        let preview = read_input(&bytes, &DifficultySelector::First, true).unwrap();
+        assert!(!preview
+            .samples
+            .iter()
+            .any(|(name, _)| name == "failsound.wav"));
+    }
+
     /// 开场音乐只在故事板 Sample 中引用，也必须从包内装载。
     #[test]
     fn storyboard_intro_audio_is_extracted() {
@@ -492,18 +560,29 @@ mod tests {
     fn real_storyboard_intro_decodes_and_mixes() {
         let bytes = std::fs::read(std::env::var("OSU_STORYBOARD_AUDIO_FIXTURE").unwrap()).unwrap();
         let content = read_input(&bytes, &DifficultySelector::ById(2571858), true).unwrap();
-        let storyboard = osu_beatmap_preview_core::storyboard::parse_storyboard(&String::from_utf8_lossy(&content.beatmap), None);
+        let storyboard = osu_beatmap_preview_core::storyboard::parse_storyboard(
+            &String::from_utf8_lossy(&content.beatmap),
+            None,
+        );
         assert_eq!(storyboard.earliest_event_ms(), Some(-500_000.0));
         let mut library = osu_beatmap_preview_core::hitsound::SampleLibrary::new();
         for name in ["HelloThere.wav", "intro.mp3"] {
-            let (_, bytes) = content.samples.iter().find(|(entry, _)| entry == name).unwrap();
+            let (_, bytes) = content
+                .samples
+                .iter()
+                .find(|(entry, _)| entry == name)
+                .unwrap();
             let sample = crate::decode::decode_music(bytes, name.rsplit('.').next()).unwrap();
             assert!(sample.frames() > 0);
             library.insert(name, sample);
         }
         let timeline = storyboard.sample_timeline(&library);
-        assert!(timeline.events.iter().any(|event| event.start_ms == -47_712.0));
-        let mut mixer = osu_beatmap_preview_core::hitsound::HitsoundMixer::new(library, timeline, 1000);
+        assert!(timeline
+            .events
+            .iter()
+            .any(|event| event.start_ms == -47_712.0));
+        let mut mixer =
+            osu_beatmap_preview_core::hitsound::HitsoundMixer::new(library, timeline, 1000);
         mixer.seek(-47_713.0);
         let audio = mixer.render(2000);
         assert!(audio.iter().any(|sample| sample.abs() > 0.001));

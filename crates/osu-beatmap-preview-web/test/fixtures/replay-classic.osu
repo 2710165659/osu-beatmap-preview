@@ -1,0 +1,18 @@
+osu file format v14
+[General]
+Mode:0
+[Metadata]
+Title:Classic replay fixture
+Artist:Test
+Version:Normal
+BeatmapID:43
+[Difficulty]
+CircleSize:5
+OverallDifficulty:5
+SliderMultiplier:1
+SliderTickRate:1
+[TimingPoints]
+0,500,4,1,0,100,1,0
+[HitObjects]
+100,100,1000,1,0
+100,100,2000,2,0,L|200:100,1,100

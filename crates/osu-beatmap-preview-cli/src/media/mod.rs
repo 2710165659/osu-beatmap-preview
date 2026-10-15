@@ -4,6 +4,7 @@
 mod amf;
 pub(crate) mod audio;
 pub(crate) mod background_video;
+pub(crate) mod composition;
 mod cpu;
 pub(crate) mod hitsound;
 pub(crate) mod image;

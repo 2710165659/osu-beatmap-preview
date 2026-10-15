@@ -27,6 +27,8 @@ timeout:
   GIF_TIMEOUT: 300 # GIF 渲染超时，单位秒，必须大于 0
   MP4_TIMEOUT: 300 # MP4 渲染超时，单位秒，必须大于 0
 advance:
+  replay:
+    ARGON_FONT_DIRECTORY: "" # 默认完整内嵌 Torus Bold；可选目录覆盖 Torus-Bold.bin 与 Torus-Bold_0.png
   gif:
     PAR_CHUNK_SIZE: 8 # GIF 每批并行渲染的最大帧数
     MAX_PAR_FRAME_BYTES: 67108864 # GIF 并行帧允许占用的最大原始图像字节数

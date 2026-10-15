@@ -2,6 +2,8 @@
 
 use super::music::{MusicPlayer, MusicRate};
 use super::{HitsoundTimeline, PlayFrequency, SampleData, SampleLibrary};
+#[cfg(feature = "replay")]
+mod replay;
 
 /// 正在播放的一个声音。
 ///
@@ -378,7 +380,9 @@ impl HitsoundMixer {
                 if elapsed < 0.0 {
                     continue;
                 }
-                let mut position = voice.frequency.integral(elapsed) * sample_rate / 1000.0;
+                let mut position = (voice.frequency.phase + voice.frequency.integral(elapsed))
+                    * sample_rate
+                    / 1000.0;
                 if loop_len > 0 {
                     position = position.rem_euclid(playable as f64);
                 } else if position >= playable as f64 {

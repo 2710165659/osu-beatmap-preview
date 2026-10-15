@@ -1,4 +1,8 @@
 //! 实时预览会话。
+mod audio;
+
+#[cfg(feature = "replay")]
+mod replay;
 
 use std::sync::Arc;
 
@@ -25,6 +29,8 @@ use crate::support::error::{PreviewError, Result};
 /// 把混音结果送进音频设备，并把音频线程的消费位置转发回来，音画时间只有一处实现。
 #[derive(Debug, Clone)]
 pub struct RealtimeSession {
+    #[cfg(feature = "replay")]
+    replay: Option<Arc<replay::ReplaySessionData>>,
     source_beatmap: Beatmap,
     beatmap: Beatmap,
     timeline: TimelineInfo,
@@ -134,6 +140,8 @@ impl RealtimeSession {
         clock.seek(timeline.absolute_start_ms as f64, 0.0);
         let storyboard_enabled = options.storyboard_enabled;
         Ok(Self {
+            #[cfg(feature = "replay")]
+            replay: None,
             source_beatmap,
             beatmap,
             timeline,
@@ -184,6 +192,10 @@ impl RealtimeSession {
     /// `wall_ms` 是当前墙钟读数：切换可能改变谱面变速，时钟必须在这一刻换速而不是
     /// 让时刻跳变。事件时间轴也随谱面重建，样本随后由宿主重新装载。
     pub fn set_mods(&mut self, mods: Vec<String>, wall_ms: f64) -> Result<()> {
+        #[cfg(feature = "replay")]
+        if self.replay.is_some() {
+            return Err(PreviewError::new("OSR 回放禁止修改 Mod"));
+        }
         let settings = parse_mods(&mods)?;
         let target_mode = self.mode_as_i32();
         validate_realtime_mods(&settings, target_mode)?;
@@ -319,129 +331,11 @@ impl RealtimeSession {
         }
         self.options.render.width = width;
         self.options.render.height = height;
+        #[cfg(feature = "replay")]
+        if self.replay.is_some() {
+            self.prepare_replay_source()?;
+        }
         Ok(())
-    }
-
-    // ── 音频：音乐与打击音同流混音 ──────────────────────────────────────
-    //
-    // 时间、倍速与 seek 由会话时钟统一驱动；宿主只需把 `pull_audio` 的输出送进
-    // 音频设备，并把音频线程的消费位置用 `on_audio_clock` 转发回来。
-
-    /// 设置背景音乐（`None` 表示清除）；与打击音共用同一时间轴，倍速、seek、暂停
-    /// 只有一处位置计算。没有音乐的谱面（单独的 `.osu`）不必调用它。
-    pub fn set_music(&mut self, music: Option<SampleData>) {
-        self.mixer.set_music(music);
-    }
-
-    /// 更新音乐音量百分比（0..=100）。
-    pub fn set_music_volume(&mut self, volume: i32) {
-        self.mixer.set_music_gain(hitsound::volume_gain(volume));
-    }
-
-    /// 打开/关闭打击音；关闭时事件时间轴为空，音乐照常输出。
-    pub fn set_hitsound_enabled(&mut self, enabled: bool) {
-        if self.hitsound_enabled == enabled {
-            return;
-        }
-        self.hitsound_enabled = enabled;
-        self.rebuild_hitsound_timeline();
-    }
-
-    pub fn hitsound_enabled(&self) -> bool {
-        self.hitsound_enabled
-    }
-
-    /// 更新打击音音量百分比（0..=100）。
-    pub fn set_hitsound_volume(&mut self, volume: i32) {
-        self.mixer.set_master_gain(hitsound::volume_gain(volume));
-    }
-
-    /// 当前谱面需要样本库提供的样本名（按优先级排列，含裸名回退）；缺失的样本在混音
-    /// 时按静音处理，宿主只装载拿得到的名字。NC 生效时额外带上 4 个节拍鼓点样本名。
-    pub fn hitsound_required_names(&self) -> Vec<String> {
-        let mut names = hitsound::referenced_names(&self.beatmap);
-        if let Some((storyboard, _)) = &self.storyboard {
-            names.extend(storyboard.samples.iter().map(|sample| sample.path.clone()));
-        }
-        if self.settings.nightcore {
-            names.extend(hitsound::NIGHTCORE_SAMPLE_NAMES.map(str::to_string));
-        }
-        let mut seen = std::collections::HashSet::new();
-        names.retain(|name| seen.insert(name.clone()));
-        names
-    }
-
-    /// 故事板音效始终取自谱面包，不受皮肤打击音来源开关影响。
-    pub fn storyboard_sample_names(&self) -> Vec<String> {
-        self.storyboard
-            .as_ref()
-            .map_or_else(Vec::new, |(storyboard, _)| {
-                storyboard
-                    .samples
-                    .iter()
-                    .map(|sample| sample.path.clone())
-                    .collect()
-            })
-    }
-
-    /// 放入一段已解码的样本 PCM。只放进样本库、不重建时间轴：宿主应把样本全部放完后
-    /// 调用一次 [`RealtimeSession::rebuild_hitsound_timeline`]，否则每个样本都遍历整张谱面。
-    pub fn set_hitsound_sample(
-        &mut self,
-        name: &str,
-        channels: hitsound::Channels,
-        sample_rate: u32,
-        loop_len: usize,
-    ) {
-        let data = SampleData {
-            channels,
-            sample_rate: sample_rate.max(1),
-            loop_len,
-        };
-        self.mixer.library_mut().insert(name, data);
-    }
-
-    /// 用当前样本库重建打击音事件时间轴（样本全部放完后调用一次）。
-    /// 打击音关闭时只留 NC 节拍鼓点（鼓点属于 Mod，不受该开关影响）；
-    /// 重建会清空正在播放的声音，只在装载阶段调用。
-    pub fn rebuild_hitsound_timeline(&mut self) {
-        let mut timeline = if self.hitsound_enabled {
-            hitsound::build_timeline(&self.beatmap, self.mixer.library())
-        } else {
-            HitsoundTimeline::default()
-        };
-        if self.settings.nightcore {
-            let end_ms = (self.timeline.absolute_start_ms + self.timeline.duration_ms) as f64;
-            timeline.merge(hitsound::nightcore_events(
-                &self.beatmap,
-                self.mixer.library(),
-                end_ms,
-            ));
-        }
-        if self.storyboard_enabled {
-            if let Some((storyboard, _)) = &self.storyboard {
-                let mut samples = storyboard.sample_timeline(self.mixer.library());
-                let start = self.timeline.absolute_start_ms as f64;
-                // 游戏允许故事板音效晚启动不足 100ms；开场前 98ms 的 intro.mp3
-                // 应从样本头开始播放，远早于起点的事件则仍跳过，不能改变预览起点。
-                for event in &mut samples.events {
-                    if event.start_ms < start && start - event.start_ms < 100.0 {
-                        event.start_ms = start;
-                    }
-                }
-                timeline.merge(samples);
-            }
-        }
-        self.mixer.rebuild_timeline_events(timeline);
-    }
-
-    /// 清空已放入的样本并重建时间轴（保留音乐、音量与开关设置）。
-    ///
-    /// 切 Mod 或转谱后需要的样本集合会变，宿主重新装载即可，不必重建会话。
-    pub fn reset_hitsound_samples(&mut self) {
-        *self.mixer.library_mut() = SampleLibrary::new();
-        self.rebuild_hitsound_timeline();
-        self.mixer.stop_all();
     }
 
     // ── 时钟 ───────────────────────────────────────────────────────────
@@ -467,7 +361,7 @@ impl RealtimeSession {
         }
         self.clock.seek(chart_ms, wall_ms);
         self.stream.reset(chart_ms);
-        self.mixer.seek(chart_ms);
+        self.seek_mixer(chart_ms);
     }
 
     /// 设置用户倍速（不含 DT/HT；总倍速由会话乘上谱面变速）。
@@ -510,7 +404,7 @@ impl RealtimeSession {
         let drift = consumer_ms - clock_ms;
         if drift.abs() > RESEEK_TOLERANCE_MS {
             self.stream.reset(clock_ms);
-            self.mixer.seek(clock_ms);
+            self.seek_mixer(clock_ms);
         } else {
             self.clock.anchor_audio(consumer_ms, wall_ms);
         }
@@ -586,7 +480,19 @@ impl RealtimeSession {
                     }
                 }),
             storyboard_layers,
-            self.options.video_style,
+            {
+                let style = self.options.video_style;
+                #[cfg(feature = "replay")]
+                let style = if self.replay.is_some() {
+                    crate::render::wgpu::VideoStyle {
+                        label_font_size: 0,
+                        ..style
+                    }
+                } else {
+                    style
+                };
+                style
+            },
         )
         .map_err(|error| PreviewError::render(error.to_string()))
     }

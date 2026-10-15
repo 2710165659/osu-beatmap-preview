@@ -20,6 +20,12 @@ struct Frame {
 
 pub struct AutoplayCache(OnceLock<AutoplayCursor>);
 
+impl Default for AutoplayCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AutoplayCache {
     pub fn new() -> Self {
         Self(OnceLock::new())
@@ -40,6 +46,57 @@ pub struct AutoplayCursor {
 }
 
 impl AutoplayCursor {
+    /// 回放只替换轨迹与按键来源，精灵、弹性缩放和拖尾仍复用 Autoplay 的绘制实现。
+    #[cfg(feature = "replay")]
+    pub fn from_replay(
+        context: &RenderContext,
+        input: &crate::replay::ReplayTimeline,
+        failure: Option<f64>,
+    ) -> Self {
+        let frames: Vec<_> = input
+            .frames
+            .iter()
+            .map(|frame| {
+                let point = to_frame_point(
+                    frame.cursor[0] as f64,
+                    frame.cursor[1] as f64,
+                    &context.frame_layout,
+                );
+                Frame {
+                    time: frame.time_ms as f64,
+                    position: [point.0, point.1],
+                    held: crate::replay::timeline::standard_actions(frame.keys) != 0,
+                    key_up: false,
+                }
+            })
+            .collect();
+        let mut cursor = Self {
+            frames,
+            presses: Vec::new(),
+            animations: Vec::new(),
+            sprites: cursor_sprites(context.frame_layout.scale),
+            rate: 1.0,
+        };
+        let mut held = false;
+        for index in 0..cursor.frames.len() {
+            let frame = cursor.frames[index];
+            if frame.held != held {
+                let from = if frame.held {
+                    1.0
+                } else {
+                    cursor.expansion_at(frame.time)
+                };
+                cursor.animations.push((frame.time, frame.held, from));
+                held = frame.held;
+            }
+        }
+        if let Some(time) = failure {
+            let from = cursor.expansion_at(time);
+            cursor.animations.push((time, false, from));
+        }
+        cursor
+    }
+
     fn new(context: &RenderContext) -> Self {
         let scale = context.frame_layout.scale;
         let mut cursor = Self {
@@ -48,9 +105,7 @@ impl AutoplayCursor {
             animations: Vec::new(),
             // 外环缩放量化为 0.01，CPU/WGPU 共用精灵，避免逐帧重采样。
             sprites: if context.show_cursor {
-                (0..=50)
-                    .map(|index| Arc::new(argon_sprite(scale, 0.9 + index as f64 * 0.01)))
-                    .collect()
+                cursor_sprites(scale)
             } else {
                 Vec::new()
             },
@@ -337,6 +392,12 @@ impl AutoplayCursor {
         points.push((end, self.frames.last().unwrap().position));
         AutoplayPath::new(points, 0.0)
     }
+}
+
+fn cursor_sprites(scale: f64) -> Vec<Arc<Img>> {
+    (0..=50)
+        .map(|index| Arc::new(argon_sprite(scale, 0.9 + index as f64 * 0.01)))
+        .collect()
 }
 
 /// Argon Pro 继承 ArgonCursor：渐变粗环、白色细边、暗色填充和发光中心。

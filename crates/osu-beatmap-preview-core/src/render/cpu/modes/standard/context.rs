@@ -398,18 +398,31 @@ pub fn load_skin(beatmap: &Beatmap) -> Skin {
 
 pub fn build_render_context(
     beatmap: &Beatmap,
-    mut hit_objects: Vec<StandardHitObject>,
+    hit_objects: Vec<StandardHitObject>,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
     output_format: crate::render::geometry::OutputFormat,
 ) -> RenderContext {
+    build_context(beatmap, hit_objects, mods, time_axis, output_format, true)
+}
+
+fn build_context(
+    beatmap: &Beatmap,
+    mut hit_objects: Vec<StandardHitObject>,
+    mods: Option<&ModSettings>,
+    time_axis: TimeAxis,
+    output_format: crate::render::geometry::OutputFormat,
+    stack: bool,
+) -> RenderContext {
     let skin = load_skin(beatmap);
     let settings = build_render_settings(beatmap, mods);
-    super::stacking::apply_stacking(
-        &mut hit_objects,
-        beatmap.format_version(),
-        settings.preempt_ms as f32 * beatmap.stack_leniency() as f32,
-    );
+    if stack {
+        super::stacking::apply_stacking(
+            &mut hit_objects,
+            beatmap.format_version(),
+            settings.preempt_ms as f32 * beatmap.stack_leniency() as f32,
+        );
+    }
     let frame_layout = build_frame_layout(output_format);
     let combo_info = build_combo_info(
         &hit_objects,
@@ -514,6 +527,28 @@ pub fn build_video_render_context(
 ) -> RenderContext {
     let mut context = build_render_context(beatmap, hit_objects, mods, time_axis, output_format);
     context.frame_layout = build_video_frame_layout(output_format);
+    context
+}
+
+/// 回放使用准备层的稳定对象顺序和堆叠结果；只在这里生成像素缓存。
+#[cfg(feature = "replay")]
+pub fn build_replay_context(
+    beatmap: &Beatmap,
+    prepared: &crate::preparation::standard::PreparedStandard,
+    time_axis: TimeAxis,
+    output_format: crate::render::geometry::OutputFormat,
+) -> RenderContext {
+    let objects = prepared
+        .objects
+        .iter()
+        .map(|object| {
+            let mut source = object.source.clone();
+            source.end_time = object.end.round_ties_even() as i64;
+            source
+        })
+        .collect();
+    let mut context = build_context(beatmap, objects, None, time_axis, output_format, false);
+    context.frame_layout = super::osr::replay_layout(output_format);
     context
 }
 
@@ -702,16 +737,31 @@ impl VisibleIndexCache {
             .map(|(i, o)| (o.start_time - preempt_ms, i))
             .collect();
         starts.sort_unstable();
-        let end_times = hit_objects
-            .iter()
-            .map(visible_end_time)
-            .collect();
+        let end_times = hit_objects.iter().map(visible_end_time).collect();
         Self { starts, end_times }
+    }
+
+    /// 晚按与自动 Miss 必须保留到真实判定淡出，不能沿用 Preview 的名义命中时刻。
+    #[cfg(feature = "replay")]
+    pub fn new_replay(
+        objects: &[StandardHitObject],
+        preempt_ms: i64,
+        gameplay: &crate::gameplay::timeline::GameplayTimeline,
+    ) -> Self {
+        let mut cache = Self::new(objects, preempt_ms);
+        for (id, end) in cache.end_times.iter_mut().enumerate() {
+            if let Some((time, _)) = gameplay.objects[id].head {
+                *end = (*end).max(time.ceil() as i64 + 120);
+            }
+        }
+        cache
     }
 
     pub fn at(&self, snapshot_time: i64) -> Vec<usize> {
         let mut active = Vec::new();
-        let start_count = self.starts.partition_point(|&(time, _)| time <= snapshot_time);
+        let start_count = self
+            .starts
+            .partition_point(|&(time, _)| time <= snapshot_time);
         if start_count == 0 {
             return active;
         }

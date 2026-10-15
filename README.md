@@ -39,6 +39,7 @@ CLI 是主要用法，完整说明在 CLI 文档里；本文件只做项目介�
 | [Web 站点说明](crates/osu-beatmap-preview-web/README.md) | Web 包的启动方式、后端接口、下载与缓存策略 |
 | [WASM 使用说明](crates/osu-beatmap-preview-wasm/README.md) | 构建 WASM、JavaScript API、宿主职责与使用限制 |
 | [架构说明](docs/architecture.md) | crate 划分、API 边界、场景与 WGPU 后端、非目标 |
+| [OSR 回放预览](docs/osr-preview.md) | 第一阶段原生 Standard GIF/MP4、MD5 来源绑定、兼容范围与验证记录 |
 | [批量渲染报告](docs/report.md) | 性能与资源占用数据 |
 | [第三方声明](docs/THIRD_PARTY_NOTICES.md) | 内嵌编解码组件的许可证与源码获取方式 |
 

@@ -1,0 +1,15 @@
+osu file format v14
+[General]
+Mode:0
+[Metadata]
+Title:Replay fixture
+Artist:Test
+Version:Normal
+BeatmapID:42
+[Difficulty]
+CircleSize:4
+OverallDifficulty:5
+[TimingPoints]
+0,500,4,1,0,100,1,0
+[HitObjects]
+100,100,1000,1,0

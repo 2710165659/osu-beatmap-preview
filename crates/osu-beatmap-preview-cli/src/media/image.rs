@@ -86,7 +86,7 @@ pub fn save_png(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<
 /// GIF 不支持半透明，必须编码已与背景合成的颜色；全局采样调色板容易遗漏暗色。
 pub fn save_animated_gif_with_frame_palettes(
     frame_count: usize,
-    render: impl Fn(usize) -> Img + Send + Sync,
+    mut render: impl FnMut(usize) -> Img,
     path: &Path,
     frame_rate: f64,
     deadline: &RequestDeadline,

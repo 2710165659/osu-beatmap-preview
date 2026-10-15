@@ -3,6 +3,7 @@
 
 pub(crate) use osu_beatmap_preview_core::render::cpu::modes::standard::context;
 mod animation;
+pub(crate) mod osr;
 mod png;
 mod video;
 

@@ -26,6 +26,7 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+pub(crate) mod replay;
 
 /// build.rs 生成的内嵌样本表。
 mod embedded {
@@ -138,14 +139,25 @@ pub(crate) fn build_library(
     beatmap_samples: Option<&Path>,
     nightcore: bool,
 ) -> SampleLibrary {
-    let mut archive = beatmap_samples.and_then(SampleArchive::open);
-    let mut library = SampleLibrary::new();
     let drum_names = nightcore
         .then_some(NIGHTCORE_SAMPLE_NAMES)
         .into_iter()
         .flatten()
         .map(str::to_string);
-    for name in referenced_names(beatmap).into_iter().chain(drum_names) {
+    build_library_with_names(
+        beatmap_samples,
+        referenced_names(beatmap).into_iter().chain(drum_names),
+    )
+}
+
+/// 回放仅预解码其真实事件引用的样本，普通预览沿用原来的候选集合。
+pub(crate) fn build_library_with_names(
+    beatmap_samples: Option<&Path>,
+    names: impl IntoIterator<Item = String>,
+) -> SampleLibrary {
+    let mut archive = beatmap_samples.and_then(SampleArchive::open);
+    let mut library = SampleLibrary::new();
+    for name in names {
         if let Some(archive) = archive.as_mut() {
             if let Some(index) = archive.find(&name) {
                 if let Some((bytes, extension)) = archive.extract(index) {

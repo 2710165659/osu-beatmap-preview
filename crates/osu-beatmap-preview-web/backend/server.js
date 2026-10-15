@@ -14,6 +14,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Cache, resolveCacheDir } from './cache.js';
 import { DEFAULT_HOST, DEFAULT_PORT, mimeFor } from './config.js';
+import { createReplayLookup } from './replay-lookup.js';
+import { createOfficialApi } from './official-api.js';
+import { createReplayDownload } from './replay-download.js';
+import { replayQuery } from './replay-scores.js';
 import { ResourceProvider } from './resources.js';
 import { StaticFiles, parseByteRange } from './static.js';
 
@@ -32,6 +36,9 @@ if (options.help) {
 const cache = new Cache(resolveCacheDir({ explicit: options.cacheDir, root: ROOT }));
 await cache.ensure();
 const staticFiles = new StaticFiles(PUBLIC_DIR);
+const officialApi = createOfficialApi();
+const replayLookup = createReplayLookup({ api: officialApi });
+const replayDownload = createReplayDownload({ api: officialApi, cacheDir: cache.root, noCache: options.noCache });
 const resources = new ResourceProvider({ cache, log: options.quiet ? () => {} : log });
 
 await warnIfBuildMissing();
@@ -115,6 +122,26 @@ async function sendStatic(response, route) {
 }
 
 async function sendResource(request, response, route, url) {
+  if (route === '/resource/replay') {
+    let query;
+    try { query = replayQuery(url.searchParams); }
+    catch (error) { sendText(response, 400, error.message); return; }
+    const { score, bytes } = await replayDownload(query);
+    response.writeHead(200, {
+      'Content-Type': 'application/x-osu-replay', 'Content-Length': bytes.length,
+      'Cache-Control': 'no-store', ...isolationHeaders(),
+      'X-Osu-Score-Id': score.scoreId, 'X-Osu-Beatmap-Id': score.bid,
+      'X-Osu-Beatmapset-Id': score.setId, 'X-Osu-Checksum': score.checksum,
+    });
+    response.end(bytes);
+    return;
+  }
+  if (route === '/resource/replay-lookup') {
+    const checksum = url.searchParams.get('checksum');
+    if (!/^[a-f0-9]{32}$/i.test(checksum ?? '')) { sendText(response, 400, '非法回放谱面 MD5'); return; }
+    sendJson(response, await replayLookup(checksum));
+    return;
+  }
   const bid = url.searchParams.get('bid');
   if (!bid || !/^\d+$/.test(bid)) {
     sendText(response, 400, '缺少或非法的 bid');

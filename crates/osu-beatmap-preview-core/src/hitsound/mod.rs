@@ -15,6 +15,8 @@ mod mania;
 mod mixer;
 mod music;
 mod nightcore;
+#[cfg(feature = "replay")]
+pub mod replay;
 mod sample;
 mod standard;
 mod taiko;

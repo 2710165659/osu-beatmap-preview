@@ -1,7 +1,7 @@
-//! WebAssembly 适配层：**单文件输入**（`.osu` / `.osz`）→ 实时预览。
+//! WebAssembly 适配层：谱面包与可选 OSR → 实时预览。
 //!
 //! 数据流只有一条：宿主把一份文件的字节（`.osu` 或 `.osz` 整包）连同 Canvas 交给
-//! [`WebGpuSession::create`]，其余全部在 WASM 内完成——`.osz` 解包（音乐、背景、
+//! [`WebGpuSession::create`]，回放经 `replayBytes` 附带；其余全部在 WASM 内完成——`.osz` 解包（音乐、背景、
 //! 自带音效）、音频解码、音乐与音效统一混音、时钟推进。宿主只做四件事：
 //! 取字节、给 Canvas、把混音结果送进音频设备、把音频线程的消费位置转发回来。
 //!
@@ -15,6 +15,7 @@ use wasm_bindgen::prelude::*;
 pub mod archive;
 pub mod decode;
 mod remux;
+pub mod replay;
 pub mod video;
 
 #[cfg(target_arch = "wasm32")]
@@ -81,7 +82,8 @@ impl WebGpuSession {
     /// （音乐、背景、自带音效全部在 WASM 内解出）。
     ///
     /// `options`：`{ bid?, difficulty?, convert?, mods?, width, height, sampleRate?,
-    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard? }`。
+    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard?, replayBytes? }`。
+    /// 有 `replayBytes` 时按回放 MD5 选谱并拒绝转谱和用户 Mod，输入需为完整谱面包。
     /// 难度选择优先 `difficulty`（压缩包条目名），其次 `bid`（`BeatmapID`），都没有时
     /// 取第一个顶层 `.osu`；`sampleRate` 必须等于宿主音频设备的实际采样率。
     #[wasm_bindgen(js_name = create)]
@@ -91,8 +93,18 @@ impl WebGpuSession {
         options: Option<JsValue>,
     ) -> Result<WebGpuSession, JsValue> {
         let options = options.unwrap_or(JsValue::UNDEFINED);
-        let content = archive::read_input(&bytes, &read_selector(&options), true)
+        let replay = replay::document_option(&options)?;
+        let selector = replay.as_ref().map_or_else(
+            || read_selector(&options),
+            |r| archive::DifficultySelector::ByChecksum(r.header.beatmap_md5.clone()),
+        );
+        let content = archive::read_input(&bytes, &selector, true)
             .map_err(|error| JsValue::from_str(&error))?;
+        if replay.is_some() && content.audio.is_none() {
+            return Err(JsValue::from_str(
+                "OSR 回放需要匹配的完整 .osz 谱面包（含音乐）",
+            ));
+        }
         let beatmap = parse_beatmap_bytes(&content.beatmap).map_err(js_error)?;
 
         let mut realtime = RealtimeOptions::default();
@@ -159,7 +171,17 @@ impl WebGpuSession {
         // 背景暗化系数同步给会话：故事板精灵的亮度（1 − dim）由此而来，
         // 与背景图/背景视频的预暗化同一系数。
         realtime.video_style.background_dim = background_dim;
-        let mut session = RealtimeSession::from_bundle(bundle, realtime).map_err(js_error)?;
+        let mut session = if let Some(document) = replay {
+            RealtimeSession::from_replay_bundle(
+                bundle,
+                realtime,
+                document,
+                Some(replay::font().map_err(js_error)?),
+            )
+        } else {
+            RealtimeSession::from_bundle(bundle, realtime)
+        }
+        .map_err(js_error)?;
 
         // 音乐解码失败是致命错误（没有声音的整包预览没有意义）；
         // 单独的 `.osu` 没有音乐，时钟照常自驱。
@@ -231,9 +253,7 @@ impl WebGpuSession {
         // 静默回退背景图，与 osu! 的降级一致。抓帧分辨率跟随后端画布并封顶 720p。
         let mut video = content
             .video
-            .map(|bytes| {
-                video::BackgroundVideo::open(bytes, video_start_ms, 1.0 - background_dim)
-            })
+            .map(|bytes| video::BackgroundVideo::open(bytes, video_start_ms, 1.0 - background_dim))
             .and_then(Result::ok);
         if let Some(video) = video.as_mut() {
             video.set_capture_limit(width, height);
@@ -667,8 +687,16 @@ fn load_samples(
             }
         }
         if !loaded {
-            if let Some(bytes) = hitsound::asset_bytes(&name) {
-                let data = decode::decode_sample(&name, bytes, Some("ogg"));
+            let replay_sample = session
+                .replay_timeline()
+                .and_then(|_| replay::sample_bytes(&name));
+            if let Some(bytes) = replay_sample.or_else(|| hitsound::asset_bytes(&name)) {
+                let extension = if replay_sample.is_some() {
+                    "wav"
+                } else {
+                    "ogg"
+                };
+                let data = decode::decode_sample(&name, bytes, Some(extension));
                 if data.frames() > 0 {
                     session.set_hitsound_sample(
                         &name,
@@ -716,6 +744,9 @@ fn build_storyboard(
 /// 解析难度选择：`difficulty`（条目名）优先，其次 `bid`（`BeatmapID`），都没有取第一个。
 #[cfg(target_arch = "wasm32")]
 fn read_selector(options: &JsValue) -> archive::DifficultySelector {
+    if let Some(checksum) = option_string(options, "checksum") {
+        return archive::DifficultySelector::ByChecksum(checksum);
+    }
     if let Some(entry) = option_string(options, "difficulty") {
         if !entry.trim().is_empty() {
             return archive::DifficultySelector::ByEntry(entry);

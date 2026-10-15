@@ -3,6 +3,12 @@
 This file accompanies source and binary distributions of osu-beatmap-preview.
 The project itself is licensed under the repository's MIT license.
 
+## OSR 内嵌字体与回放提示音
+
+OSR HUD 与判定使用 osu-resources 的完整 Torus Bold 字体：`assets/fonts/argon/Torus-Bold.bin`、`Torus-Bold_0.png`。原始授权说明随 [LICENCE](../assets/fonts/argon/LICENCE) 保留，声明分发需要商业许可证；项目 MIT 许可不替代该字体的授权条件。
+
+回放的 `combobreak.wav`、`failsound.wav` 来自 ppy osu-resources 的 Argon Gameplay Samples，作者 ppy Pty Ltd，采用 CC BY-NC 4.0，原许可随 [LICENCE.md](../assets/hitsound/replay/LICENCE.md) 保留。两类资源原样内嵌，没有裁剪、重采样或转码；来源与摘要见各资源目录的中文 README。
+
 ## Source availability
 
 The complete corresponding source for the statically linked audio components is

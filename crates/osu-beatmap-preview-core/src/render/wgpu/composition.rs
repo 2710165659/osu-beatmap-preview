@@ -135,6 +135,9 @@ pub fn compose_video_scene(
         None => builder.append_scaled(&playfield, offset, scale),
     }
 
+    if style.label_font_size == 0 {
+        return Ok(builder.finish());
+    }
     let label = format!(
         "{}/{}",
         crate::render::text::format_mmss_floor(current_ms),
