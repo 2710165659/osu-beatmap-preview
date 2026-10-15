@@ -19,6 +19,7 @@ pub(crate) fn replay_layout(format: crate::render::geometry::OutputFormat) -> Fr
 pub struct ReplayVisuals {
     pub cursor: super::autoplay::AutoplayCursor,
     pub font: Option<font::ArgonFont>,
+    feedback: feedback::FeedbackVisuals,
 }
 impl ReplayVisuals {
     pub fn new(
@@ -27,6 +28,7 @@ impl ReplayVisuals {
         font: Option<font::ArgonFont>,
     ) -> Self {
         Self {
+            feedback: feedback::FeedbackVisuals::new(context, font.as_ref()),
             cursor: super::autoplay::AutoplayCursor::from_replay(
                 context,
                 &gameplay.input,
@@ -148,7 +150,7 @@ pub fn draw_overlay(
         context,
         prepared,
         gameplay,
-        visuals.font.as_ref(),
+        &visuals.feedback,
         time as f64,
     );
     hud::draw(
@@ -201,7 +203,7 @@ pub fn draw_scene_overlay(
         context,
         prepared,
         gameplay,
-        visuals.font.as_ref(),
+        &visuals.feedback,
         time as f64,
     );
     hud::draw(

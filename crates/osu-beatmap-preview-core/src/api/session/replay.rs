@@ -129,6 +129,53 @@ mod tests {
         )));
     }
 
+    #[test]
+    fn replay_feedback_keeps_gpu_resources_across_frames_and_seek() {
+        let session = session(false);
+        let reference = session.scene_at_absolute(1050).unwrap();
+        let resources = reference
+            .commands
+            .iter()
+            .filter_map(|command| {
+                if let crate::render::scene::DrawCommand::TransformedSprite {
+                    resource,
+                    additive: true,
+                    ..
+                } = command
+                {
+                    Some(Arc::clone(&reference.resources[resource]))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        // GREAT 的文字与两组各四个环都必须复用已准备图像。
+        assert_eq!(resources.len(), 9);
+        for time in [1100, 1200, 1050] {
+            let frame = session.scene_at_absolute(time).unwrap();
+            let actual = frame
+                .commands
+                .iter()
+                .filter_map(|command| {
+                    if let crate::render::scene::DrawCommand::TransformedSprite {
+                        resource,
+                        additive: true,
+                        ..
+                    } = command
+                    {
+                        Some(&frame.resources[resource])
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(actual.len(), resources.len());
+            for (original, current) in resources.iter().zip(actual) {
+                assert!(Arc::ptr_eq(original, current));
+            }
+        }
+    }
+
     fn session(fail: bool) -> RealtimeSession {
         let raw = format!("osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:4\nApproachRate:5\nOverallDifficulty:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n100,100,1000,1,0\n{}", if fail { "400,100,2000,1,0" } else { "" });
         let beatmap = crate::parse_beatmap_bytes(raw.as_bytes()).unwrap();

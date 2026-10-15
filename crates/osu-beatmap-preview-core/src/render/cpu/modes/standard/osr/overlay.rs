@@ -13,6 +13,41 @@ pub(super) trait OverlayCanvas {
     fn fill_rect_size(&mut self, x: i64, y: i64, w: i64, h: i64, color: [u8; 4]);
     fn draw_line(&mut self, x: f64, y: f64, tx: f64, ty: f64, width: f64, color: [u8; 4]);
     fn additive(&mut self, image: &Img, x: i64, y: i64, alpha: f64);
+    fn additive_transformed(
+        &mut self,
+        image: &Arc<Img>,
+        center: [f64; 2],
+        scale: f64,
+        rotation: f64,
+        alpha: f64,
+    ) {
+        if alpha <= 0.0 {
+            return;
+        }
+        if scale == 1.0 && rotation == 0.0 {
+            self.additive(
+                image,
+                (center[0] - image.w as f64 / 2.0).round() as i64,
+                (center[1] - image.h as f64 / 2.0).round() as i64,
+                alpha,
+            );
+            return;
+        }
+        let mut sprite = image.resize_bilinear(
+            (image.w as f64 * scale).round().max(1.0) as u32,
+            (image.h as f64 * scale).round().max(1.0) as u32,
+        );
+        // CPU 图像旋转方向与游戏坐标相反；GPU 则直接使用顺时针弧度。
+        if rotation != 0.0 {
+            sprite = sprite.rotate_expand(-rotation);
+        }
+        self.additive(
+            &sprite,
+            (center[0] - sprite.w as f64 / 2.0).round() as i64,
+            (center[1] - sprite.h as f64 / 2.0).round() as i64,
+            alpha,
+        );
+    }
 }
 impl OverlayCanvas for Img {
     fn alpha_composite(&mut self, image: &Img, x: i64, y: i64) {
@@ -80,6 +115,34 @@ impl OverlayCanvas for FrameSceneBuilder {
                 origin: [0.0; 2],
                 size: [image.w as f32, image.h as f32],
                 rotation: 0.0,
+                color: [255, 255, 255, (alpha.clamp(0.0, 1.0) * 255.0).round() as u8],
+                additive: true,
+            },
+        );
+    }
+
+    fn additive_transformed(
+        &mut self,
+        image: &Arc<Img>,
+        center: [f64; 2],
+        scale: f64,
+        rotation: f64,
+        alpha: f64,
+    ) {
+        if alpha <= 0.0 {
+            return;
+        }
+        // 图像身份在整个会话中保持稳定；逐帧只提交变换，不生成或上传动画位图。
+        self.transformed_sprite(
+            Arc::clone(image),
+            SpriteSpec {
+                position: [center[0] as f32, center[1] as f32],
+                origin: [0.5; 2],
+                size: [
+                    (image.w as f64 * scale) as f32,
+                    (image.h as f64 * scale) as f32,
+                ],
+                rotation: rotation.to_radians() as f32,
                 color: [255, 255, 255, (alpha.clamp(0.0, 1.0) * 255.0).round() as u8],
                 additive: true,
             },

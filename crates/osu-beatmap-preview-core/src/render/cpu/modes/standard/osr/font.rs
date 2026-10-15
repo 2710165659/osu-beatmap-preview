@@ -1,6 +1,7 @@
 //! BMFont 字形与纹理；资源由调用端提供，core 不读取文件。
 use crate::{render::canvas::Img, PreviewError, Result};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy)]
 struct Glyph {
@@ -17,7 +18,11 @@ pub struct ArgonFont {
     glyphs: HashMap<char, Glyph>,
     kernings: HashMap<(char, char), i16>,
     nominal_size: f64,
+    // HUD 常在相邻帧保持不变；共享精灵同时避免字形重建和 GPU 纹理重传。
+    sprite_cache: Arc<Mutex<HashMap<SpriteKey, Arc<Img>>>>,
 }
+
+type SpriteKey = (String, u64, u64, [u8; 3]);
 
 impl ArgonFont {
     /// Torus 官方资源使用 BMFont v3；显式指定的字体损坏时报错，不悄悄回退。
@@ -116,6 +121,7 @@ impl ArgonFont {
             glyphs,
             kernings,
             nominal_size,
+            sprite_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -126,7 +132,28 @@ impl ArgonFont {
     }
 
     /// 字距 5 与字号 20 来自 ArgonJudgementPiece；缩放单个字形后再拼接。
-    pub(super) fn sprite(&self, text: &str, size: f64, spacing: f64, color: [u8; 3]) -> Img {
+    pub(super) fn sprite_arc(
+        &self,
+        text: &str,
+        size: f64,
+        spacing: f64,
+        color: [u8; 3],
+    ) -> Arc<Img> {
+        let key = (text.to_owned(), size.to_bits(), spacing.to_bits(), color);
+        if let Some(sprite) = self.sprite_cache.lock().unwrap().get(&key) {
+            return Arc::clone(sprite);
+        }
+        let sprite = self.build_sprite(text, size, spacing, color);
+        let sprite = Arc::new(sprite);
+        let mut cache = self.sprite_cache.lock().unwrap();
+        // 分数与时间会持续变化，限制缓存项数，长回放和任意 seek 都不会无限占用内存。
+        if cache.len() >= 128 {
+            cache.clear();
+        }
+        Arc::clone(cache.entry(key).or_insert(sprite))
+    }
+
+    fn build_sprite(&self, text: &str, size: f64, spacing: f64, color: [u8; 3]) -> Img {
         let scale = size / self.nominal_size;
         let mut positions = Vec::with_capacity(text.len());
         let mut pen = 0.0;
@@ -221,14 +248,34 @@ mod tests {
         let font = ArgonFont::from_bmfont(&fixture(), Img::new(3, 2, [255; 4])).unwrap();
         assert!(font.supports("AA"));
         assert!(!font.supports("B"));
-        let sprite = font.sprite("AA", 10.0, 0.0, [102, 204, 255]);
+        let sprite = font.sprite_arc("AA", 10.0, 0.0, [102, 204, 255]);
         assert_eq!((sprite.w, sprite.h), (5, 2));
         assert!(sprite
             .data
             .chunks_exact(4)
             .all(|pixel| pixel == [102, 204, 255, 255]));
-        let sprite = font.sprite("AA", 20.0, 0.0, [255; 3]);
+        let sprite = font.sprite_arc("AA", 20.0, 0.0, [255; 3]);
         assert_eq!((sprite.w, sprite.h), (10, 4));
+    }
+
+    #[test]
+    fn repeated_labels_reuse_resources_and_dynamic_text_cache_is_bounded() {
+        let font = ArgonFont::from_bmfont(&fixture(), Img::new(3, 2, [255; 4])).unwrap();
+        let first = font.sprite_arc("AA", 10.0, 0.0, [255; 3]);
+        assert!(Arc::ptr_eq(
+            &first,
+            &font.sprite_arc("AA", 10.0, 0.0, [255; 3])
+        ));
+        assert!(!Arc::ptr_eq(
+            &first,
+            &font.sprite_arc("AA", 20.0, 0.0, [255; 3])
+        ));
+        for size in 1..=256 {
+            font.sprite_arc("A", f64::from(size), 0.0, [255; 3]);
+        }
+        assert!(font.sprite_cache.lock().unwrap().len() <= 128);
+        // 驱逐后已有场景仍持有原图；重新生成必须保持像素一致。
+        assert_eq!(first.data, font.sprite_arc("AA", 10.0, 0.0, [255; 3]).data);
     }
 
     fn fixture() -> Vec<u8> {

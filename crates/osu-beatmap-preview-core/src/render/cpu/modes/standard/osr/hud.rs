@@ -32,8 +32,14 @@ pub(super) fn draw(
     let px = |value: f64| (value * scale).round() as i64;
     let text = |value: &str, size: f64, color: [u8; 4]| {
         visuals.font.as_ref().map_or_else(
-            || render_text_sprite(value, scaled_bitmap_font_height(size as u32, scale), color),
-            |font| font.sprite(value, size * scale, 0.0, [color[0], color[1], color[2]]),
+            || {
+                std::sync::Arc::new(render_text_sprite(
+                    value,
+                    scaled_bitmap_font_height(size as u32, scale),
+                    color,
+                ))
+            },
+            |font| font.sprite_arc(value, size * scale, 0.0, [color[0], color[1], color[2]]),
         )
     };
     let width = context.frame_layout.frame_width;
@@ -42,7 +48,7 @@ pub(super) fn draw(
     let pink = [252, 97, 143, 255];
     let score = format!("{:07}", state.score);
     let score = text(&score, 36.0, [255; 4]);
-    image.alpha_composite(&score, width - score.w as i64 - px(12.0), px(4.0));
+    image.shared_sprite(&score, width - score.w as i64 - px(12.0), px(4.0));
     let accuracy = state
         .accuracy
         .map_or("--.--%".into(), |a| format!("{:.2}%", a * 100.0));
@@ -52,9 +58,9 @@ pub(super) fn draw(
         accuracy
     );
     let summary = text(&summary, 21.0, [255; 4]);
-    image.alpha_composite(&summary, width - summary.w as i64 - px(12.0), px(30.0));
+    image.shared_sprite(&summary, width - summary.w as i64 - px(12.0), px(30.0));
     let combo = text(&format!("{}x", state.combo), 36.0, [255; 4]);
-    image.alpha_composite(&combo, px(12.0), height - combo.h as i64 - px(8.0));
+    image.shared_sprite(&combo, px(12.0), height - combo.h as i64 - px(8.0));
     let progress = text(
         &format!(
             "{}/{}",
@@ -64,7 +70,7 @@ pub(super) fn draw(
         28.0,
         [232, 232, 232, 255],
     );
-    image.alpha_composite(
+    image.shared_sprite(
         &progress,
         width - progress.w as i64 - px(12.0),
         height - progress.h as i64 - px(8.0),
@@ -79,7 +85,7 @@ pub(super) fn draw(
             px(42.0),
             [71, 18, 40, 235],
         );
-        image.alpha_composite(&label, (width - w as i64) / 2, px(76.0));
+        image.shared_sprite(&label, (width - w as i64) / 2, px(76.0));
     }
     if let Some(input) = gameplay.input_at(time) {
         for (i, (bit, name)) in [(1, "M1"), (2, "M2"), (4, "K1"), (8, "K2")]
@@ -100,7 +106,7 @@ pub(super) fn draw(
                 },
             );
             let label = text(name, 18.0, [255; 4]);
-            image.alpha_composite(
+            image.shared_sprite(
                 &label,
                 x + (px(34.0) - label.w as i64) / 2,
                 y + (px(26.0) - label.h as i64) / 2,
