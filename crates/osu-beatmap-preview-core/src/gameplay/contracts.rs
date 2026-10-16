@@ -1,4 +1,4 @@
-//! 游玩与回放状态的宿主接口。
+//! 游玩判定的公共类型与宿主接口。
 //!
 //! 这里刻意只放**契约与纯数据**，不碰文件、网络、输入设备，也不做判定算法：宿主
 //! 把「某一时刻的输入快照」喂进来，由判定引擎算出分数/ACC/COMBO，再由绘制层把状态
@@ -8,9 +8,12 @@
 //! - `Replay`：输入来自 OSR 解析出的帧；
 //! - `Play`：输入来自宿主的键盘/鼠标/触摸。
 //!
-//! 目前只落地了数据模型与配置位；[`InputSource`]/[`JudgementEngine`] 的具体实现
-//! （OSR 解析、按 ruleset 的判定与计分、HUD 绘制）属于后续阶段，见
-//! `docs/architecture.md` 的「后续功能接口」。
+//! 输入和画面叠加契约分别位于同目录的 `input`、`overlay` 模块；这里保留判定结果和
+//! 请求配置，避免规则实现依赖渲染细节。
+
+#[cfg(test)]
+use super::{GameplayOverlay, InputSource};
+use super::{InputSnapshot, OverlayStyle};
 
 /// 会话/导出请求的驱动方式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -22,27 +25,6 @@ pub enum GameplayMode {
     Replay,
     /// 实况游玩：输入来自宿主设备。
     Play,
-}
-
-/// 某一时刻的输入快照。
-///
-/// `cursor` 使用 osu! 游玩区域坐标（512×384），与谱面物件同坐标系，宿主的屏幕坐标
-/// 需要先映射过来；键盘玩法可以没有光标。
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct InputSnapshot {
-    pub cursor: Option<[f32; 2]>,
-    /// 当前按住的所有键（位掩码；位含义由 ruleset 定义）。
-    pub keys: u32,
-    /// 这一帧相对上一帧新按下的键。
-    pub pressed: u32,
-    /// 这一帧松开的键。
-    pub released: u32,
-}
-
-/// 输入来源：回放时间轴、实况输入，或没有输入。
-pub trait InputSource: Send + Sync {
-    /// 返回 `absolute_ms` 时刻的输入快照；该时刻没有输入时返回 `None`。
-    fn snapshot_at(&self, absolute_ms: i64) -> Option<InputSnapshot>;
 }
 
 /// 判定等级。
@@ -128,71 +110,6 @@ pub trait JudgementEngine: Send {
     fn snapshot(&self) -> ScoreSnapshot;
     /// 回到起点（重开或 seek 之后调用）。
     fn reset(&mut self);
-}
-
-/// HUD 显示开关与缩放。
-///
-/// `scale` 按当前输出格式的 `SCALE` 计算，和场景里其它尺寸一样在绘制前应用，
-/// 不做整体缩放。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct OverlayStyle {
-    pub show_score: bool,
-    pub show_accuracy: bool,
-    pub show_combo: bool,
-    pub show_judgements: bool,
-    pub show_hit_error: bool,
-    pub show_keys: bool,
-    pub show_cursor: bool,
-    pub show_player: bool,
-    pub scale: f64,
-}
-
-impl Default for OverlayStyle {
-    /// 默认全部关闭：现有预览与导出产物不受影响。
-    fn default() -> Self {
-        Self {
-            show_score: false,
-            show_accuracy: false,
-            show_combo: false,
-            show_judgements: false,
-            show_hit_error: false,
-            show_keys: false,
-            show_cursor: false,
-            show_player: false,
-            scale: 1.0,
-        }
-    }
-}
-
-/// 一帧的叠加内容，由 `ScoreSnapshot` 与输入快照组装。
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct GameplayOverlay {
-    pub style: OverlayStyle,
-    pub score: ScoreSnapshot,
-    pub cursor: Option<[f32; 2]>,
-    pub keys: u32,
-    /// 回放时显示玩家名。
-    pub player: Option<String>,
-    /// 最近一段时间的判定弹字（`(谱面绝对时间, 判定)`）。
-    pub judgements: Vec<(i64, Judgement)>,
-}
-
-impl GameplayOverlay {
-    /// 从状态与输入快照组装一帧叠加内容（判定弹字由调用方按时间窗补充）。
-    pub fn from_snapshot(
-        style: OverlayStyle,
-        score: ScoreSnapshot,
-        input: Option<InputSnapshot>,
-    ) -> Self {
-        Self {
-            style,
-            score,
-            cursor: input.and_then(|snapshot| snapshot.cursor),
-            keys: input.map_or(0, |snapshot| snapshot.keys),
-            player: None,
-            judgements: Vec::new(),
-        }
-    }
 }
 
 /// 会话与导出请求共用的游玩配置。

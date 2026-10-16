@@ -7,7 +7,7 @@ pub(super) fn validate(request: &RenderRequest) -> Result<()> {
         return Ok(());
     };
     match source {
-        crate::ReplaySource::File(path) => super::local::validate_local_path(path, "osr")?,
+        crate::ReplaySource::File(path) => super::source_osu::validate_local_path(path, "osr")?,
         crate::ReplaySource::Score(id) => positive_id(id, "--score-id")?,
         crate::ReplaySource::Player { user, .. } => {
             positive_id(&request.source.bid, "--bid")?;
@@ -41,7 +41,7 @@ pub(super) fn validate(request: &RenderRequest) -> Result<()> {
         (&request.source.osz_file, "osz"),
     ] {
         if let Some(file) = file {
-            super::local::validate_local_path(file, extension)?;
+            super::source_osu::validate_local_path(file, extension)?;
         }
     }
     Ok(())

@@ -3,12 +3,12 @@
 pub(crate) mod artifact;
 mod execute;
 pub(crate) mod legacy;
-pub(crate) mod local;
-pub(crate) mod plan;
-pub(crate) mod ports;
-mod replay;
+mod osr;
+pub(crate) mod output_plan;
 pub mod request;
 mod source_osr;
+mod source_osu;
+mod validation_common;
 mod validation_osr;
 
 pub use request::{ExecutionOptions, OutputOptions, RulesetOptions, SourceOptions, ViewOptions};

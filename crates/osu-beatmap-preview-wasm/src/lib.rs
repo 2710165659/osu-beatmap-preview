@@ -15,7 +15,7 @@ use wasm_bindgen::prelude::*;
 pub mod archive;
 pub mod decode;
 mod remux;
-pub mod replay;
+pub mod osr;
 pub mod video;
 
 #[cfg(target_arch = "wasm32")]
@@ -93,7 +93,7 @@ impl WebGpuSession {
         options: Option<JsValue>,
     ) -> Result<WebGpuSession, JsValue> {
         let options = options.unwrap_or(JsValue::UNDEFINED);
-        let replay = replay::document_option(&options)?;
+        let replay = osr::document_option(&options)?;
         let selector = replay.as_ref().map_or_else(
             || read_selector(&options),
             |r| archive::DifficultySelector::ByChecksum(r.header.beatmap_md5.clone()),
@@ -176,7 +176,7 @@ impl WebGpuSession {
                 bundle,
                 realtime,
                 document,
-                Some(replay::font().map_err(js_error)?),
+                Some(osr::font().map_err(js_error)?),
             )
         } else {
             RealtimeSession::from_bundle(bundle, realtime)
@@ -689,7 +689,7 @@ fn load_samples(
         if !loaded {
             let replay_sample = session
                 .replay_timeline()
-                .and_then(|_| replay::sample_bytes(&name));
+                .and_then(|_| osr::sample_bytes(&name));
             if let Some(bytes) = replay_sample.or_else(|| hitsound::asset_bytes(&name)) {
                 let extension = if replay_sample.is_some() {
                     "wav"

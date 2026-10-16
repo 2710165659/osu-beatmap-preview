@@ -2,6 +2,7 @@
 
 pub mod catch;
 pub mod mania;
+pub mod standard;
 pub mod taiko;
 
 pub use catch::catch_convert;

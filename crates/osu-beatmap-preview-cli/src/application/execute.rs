@@ -15,6 +15,6 @@ pub(crate) fn execute(request: RenderRequest) -> Result<serde_json::Value> {
     }
     match validated.kind {
         super::request::RequestKind::Osu => super::legacy::generate_preview(validated),
-        super::request::RequestKind::Osr { .. } => super::replay::execute(validated),
+        super::request::RequestKind::Osr { .. } => super::osr::execute(validated),
     }
 }

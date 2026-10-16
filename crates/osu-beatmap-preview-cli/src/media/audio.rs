@@ -21,7 +21,8 @@ use symphonia::core::probe::Hint;
 
 /// 音频持有与画面相同的准备结果和不可变回放时间线。
 pub(crate) struct ReplayAudio {
-    pub prepared: std::sync::Arc<osu_beatmap_preview_core::preparation::standard::PreparedStandard>,
+    pub prepared:
+        std::sync::Arc<osu_beatmap_preview_core::replay::preparation::standard::PreparedStandard>,
     pub gameplay: std::sync::Arc<osu_beatmap_preview_core::gameplay::timeline::GameplayTimeline>,
 }
 impl std::fmt::Debug for ReplayAudio {
@@ -687,9 +688,9 @@ fn render_hitsound_segment(
         return Ok(None);
     };
     let library = if let Some(replay) = &settings.replay {
-        super::hitsound::replay::build_library(
+        super::hitsound::osr::build_library(
             settings.beatmap_samples.as_deref(),
-            hitsound::replay::referenced_names(beatmap, &replay.prepared, &replay.gameplay)
+            hitsound::osr::referenced_names(beatmap, &replay.prepared, &replay.gameplay)
                 .into_iter()
                 .chain(
                     settings
@@ -712,7 +713,7 @@ fn render_hitsound_segment(
     }
     let mut timeline = if settings.enabled {
         if let Some(replay) = &settings.replay {
-            hitsound::replay::build_timeline(beatmap, &replay.prepared, &replay.gameplay, &library)
+            hitsound::osr::build_timeline(beatmap, &replay.prepared, &replay.gameplay, &library)
         } else {
             hitsound::build_timeline(beatmap, &library)
         }

@@ -1,6 +1,6 @@
 //! 渲染产物文件名；请求差异在文件名中表达，不参与配置目录哈希。
 
-use crate::application::plan::{OutputFormat, RenderPlan};
+use crate::application::output_plan::{OutputFormat, RenderPlan};
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::processing::validation::TimePoint;
 

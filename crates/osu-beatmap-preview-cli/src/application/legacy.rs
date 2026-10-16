@@ -1,6 +1,6 @@
 use crate::application::artifact::ArtifactName;
-use crate::application::local;
-use crate::application::plan::{OutputFormat, RenderPlan};
+use crate::application::source_osu;
+use crate::application::output_plan::{OutputFormat, RenderPlan};
 use crate::application::request::ValidatedRequest;
 use crate::cache;
 use crate::export::segment::PngSegment;
@@ -98,7 +98,7 @@ fn generate_preview_inner(
     let parse_ms = t1.elapsed().as_secs_f64() * 1000.0;
     rec.parse_ms = Some(parse_ms);
     // 产物、缓存与日志统一用有效 ID：无有效 BeatmapID 的本地谱面按文件名回退。
-    let bid = local::effective_id(&request.source.bid, &beatmap, &beatmap_path);
+    let bid = source_osu::effective_id(&request.source.bid, &beatmap, &beatmap_path);
     logging::set_bid(&bid);
     rec.bid = bid.clone();
     request.source.bid = bid.clone();
@@ -853,7 +853,7 @@ fn acquire_osu(
     deadline: &RequestDeadline,
 ) -> Result<AcquiredOsu> {
     if request.source.osu_file.is_some() || request.source.osz_file.is_some() {
-        let source = local::load_local_source(
+        let source = source_osu::load_local_source(
             request.source.osu_file.as_deref(),
             request.source.osz_file.as_deref(),
             &request.source.bid,

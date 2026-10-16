@@ -314,7 +314,7 @@ impl Compiler<'_> {
                     .filter(|n| n.1.is_hit())
                     .count();
             let result = if self.policy.classic_sliders {
-                crate::calculate::standard::classic::slider_result(hits, object.nodes.len() + 1)
+                crate::replay::calculate::standard::classic::slider_result(hits, object.nodes.len() + 1)
             } else if hits > 0 {
                 HitResult::IgnoreHit
             } else {

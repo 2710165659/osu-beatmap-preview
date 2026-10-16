@@ -198,7 +198,7 @@ pub fn apply_standard_object_mods(
     hit_objects: Vec<StandardHitObject>,
     mods: Option<&ModSettings>,
 ) -> Vec<StandardHitObject> {
-    crate::preparation::standard::apply_object_mods(hit_objects, mods)
+    crate::domain::rulesets::standard::apply_object_mods(hit_objects, mods)
 }
 
 // ——— 难度 ———
@@ -518,7 +518,7 @@ pub fn build_video_render_context(
 #[cfg(feature = "replay")]
 pub fn build_replay_context(
     beatmap: &Beatmap,
-    prepared: &crate::preparation::standard::PreparedStandard,
+    prepared: &crate::replay::preparation::standard::PreparedStandard,
     time_axis: TimeAxis,
     output_format: crate::render::geometry::OutputFormat,
 ) -> RenderContext {

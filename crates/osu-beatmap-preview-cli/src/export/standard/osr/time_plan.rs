@@ -1,5 +1,5 @@
 //! 回放选段计划独立于规则时间线；计算后检查总帧数，再分配显示采样点。
-use crate::application::plan::{OutputFormat, RenderPlan};
+use crate::application::output_plan::{OutputFormat, RenderPlan};
 use osu_beatmap_preview_core::{processing::validation::TimePoint, Beatmap, PreviewError, Result};
 
 const MAX_FRAMES: usize = 1_000_000;

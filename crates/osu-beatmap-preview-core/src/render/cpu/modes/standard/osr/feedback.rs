@@ -76,7 +76,7 @@ impl FeedbackVisuals {
 
 /// 官方 DrawableOsuJudgement 使用物件中心和 CS 缩放，主滑条判定固定在尾端。
 fn judgement_position(
-    object: &crate::preparation::standard::PreparedObject,
+    object: &crate::replay::preparation::standard::PreparedObject,
     sample_time: f64,
     nested: bool,
 ) -> [f32; 2] {
@@ -282,7 +282,7 @@ mod tests {
     fn fixture(cs: u8) -> (RenderContext, PreparedStandard) {
         let raw = format!("osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:{cs}\nSliderMultiplier:1.4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n100,100,1000,2,0,L|300:100,1,200\n");
         let beatmap = crate::parse_beatmap_bytes(raw.as_bytes()).unwrap();
-        let prepared = crate::preparation::standard::prepare(&beatmap).unwrap();
+        let prepared = crate::replay::preparation::standard::prepare(&beatmap).unwrap();
         let context =
             build_replay_context(&beatmap, &prepared, TimeAxis::new(1000), OutputFormat::Mp4);
         (context, prepared)

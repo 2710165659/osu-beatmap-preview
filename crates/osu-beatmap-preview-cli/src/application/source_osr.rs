@@ -1,5 +1,6 @@
 //! OSR 资源来源：原始字节 MD5 优先，显式不匹配立即停止，不替换成网络谱面。
 use super::request::{RequestKind, ValidatedRequest};
+use crate::download::osr::Lookup;
 use osu_beatmap_preview_core::replay::{compatibility, parse_osr, ReplayDocument};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use osu_beatmap_preview_core::{parse_beatmap_bytes, Beatmap, PreviewError, Result};
@@ -7,7 +8,6 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-mod download;
 
 pub(super) struct Source {
     pub document: Arc<ReplayDocument>,
@@ -29,7 +29,7 @@ pub(super) fn load(
     let online = if matches!(source, crate::ReplaySource::File(_)) {
         None
     } else {
-        Some(crate::download::official::scores::download(
+        Some(crate::download::osr::download(
             source,
             &request.source.bid,
             cache,
@@ -46,7 +46,7 @@ pub(super) fn load(
     compatibility::select(&document)?;
     let checksum = &document.header.beatmap_md5;
     let identity = format!("{:x}", Sha256::digest(&replay_bytes))[..16].to_string();
-    let downloads = download::Official {
+    let downloads = Official {
         cache,
         no_cache: request.execution.no_cache,
         deadline,
@@ -71,7 +71,7 @@ pub(super) fn load(
 fn resolve_resources(
     request: &ValidatedRequest,
     checksum: &str,
-    downloads: &impl download::Downloads,
+    downloads: &impl Downloads,
 ) -> Result<(PathBuf, PathBuf, Vec<u8>)> {
     let external = request
         .source
@@ -211,5 +211,54 @@ fn find_md5(path: &Path, checksum: &str) -> Result<Vec<u8>> {
     )))
 }
 
+/// 官方成绩来源所需的资源端口；测试通过端口替换真实网络实现。
+trait Downloads {
+    fn lookup(&self, checksum: &str) -> Result<Lookup>;
+    fn beatmap(&self, lookup: &Lookup) -> Result<PathBuf>;
+    fn archive(&self, lookup: &Lookup) -> Result<PathBuf>;
+}
+
+struct Official<'a> {
+    cache: &'a Path,
+    no_cache: bool,
+    deadline: &'a RequestDeadline,
+    known: Option<&'a Lookup>,
+}
+
+impl Downloads for Official<'_> {
+    fn lookup(&self, checksum: &str) -> Result<Lookup> {
+        if let Some(known) = self.known {
+            if !known.checksum.eq_ignore_ascii_case(checksum) {
+                return Err(PreviewError::download(
+                    "BeatmapMismatch: 成绩与回放 MD5 不符",
+                ));
+            }
+            return Ok(known.clone());
+        }
+        crate::download::osr::lookup(checksum, self.deadline)
+    }
+
+    fn beatmap(&self, lookup: &Lookup) -> Result<PathBuf> {
+        crate::download::download_beatmap_file(
+            &lookup.id.to_string(),
+            &self.cache.join("osu-download-cache"),
+            self.no_cache,
+            self.deadline,
+        )
+    }
+
+    fn archive(&self, lookup: &Lookup) -> Result<PathBuf> {
+        crate::download::download_beatmapset_archive(
+            &lookup.id.to_string(),
+            lookup.beatmapset_id,
+            &self.cache.join("osz-download-cache"),
+            self.no_cache,
+            self.deadline,
+            true,
+        )
+    }
+}
+
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;
