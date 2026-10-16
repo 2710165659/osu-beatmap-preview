@@ -8,6 +8,7 @@ use crate::replay::{compatibility, timeline::standard_actions, ReplayDocument, R
 use crate::support::error::{PreviewError, Result};
 use std::sync::Arc;
 mod classic;
+mod input_mods;
 mod objects;
 mod schedule;
 
@@ -31,7 +32,7 @@ fn compile_timeline(
     document: Arc<ReplayDocument>,
 ) -> Result<GameplayTimeline> {
     let policy = compatibility::select(&document)?;
-    let input = ReplayTimeline::new(document.frames.clone());
+    let input = input_mods::apply(prepared, &document);
     let last = input.last_time() as f64;
     let failure = (last < prepared.last_end).then_some(last);
     let deadline = if failure.is_some() {
@@ -73,6 +74,11 @@ fn compile_timeline(
         last_action_times: vec![None; prepared.objects.len()],
         displayed_angles: vec![0.0; prepared.objects.len()],
         rotation_times: vec![None; prepared.objects.len()],
+        legacy_relax: prepared.mods.settings.relax && document.header.version < 30_000_000,
+        relax_actions: 0,
+        relax_next: 2,
+        relax_changed: f64::NEG_INFINITY,
+        relaxed_frames: Vec::new(),
     };
     // 1ms 网格仅用于连续追踪；点击仍逐个消费原始帧（含同刻按键）。
     // 输出 FPS 和音频窗口完全不参与此积分；节点的分数时刻保留 f64。
@@ -83,8 +89,9 @@ fn compile_timeline(
         }
         match phase {
             0 => engine.input_frame(id, time),
-            1 => engine.continuous(id, time),
-            2 => engine.timeout(id, time),
+            1 => engine.relax_update(time),
+            2 => engine.continuous(id, time),
+            3 => engine.timeout(id, time),
             _ => engine.finish(id, time),
         }
     }
@@ -161,11 +168,16 @@ fn compile_timeline(
         score.state.status = ReplayStatus::Completed;
     }
     checkpoints.push((deadline, score.state));
+    let effective_input = if engine.legacy_relax {
+        ReplayTimeline::new(std::mem::take(&mut engine.relaxed_frames))
+    } else {
+        input.clone()
+    };
     let objects = engine.objects;
     Ok(GameplayTimeline {
         document,
         policy,
-        input,
+        input: effective_input,
         events,
         objects,
         checkpoints,
@@ -195,6 +207,11 @@ struct Compiler<'a> {
     last_action_times: Vec<Option<f64>>,
     displayed_angles: Vec<f32>,
     rotation_times: Vec<Option<f64>>,
+    legacy_relax: bool,
+    relax_actions: u32,
+    relax_next: u32,
+    relax_changed: f64,
+    relaxed_frames: Vec<crate::replay::ReplayFrame>,
 }
 
 fn maximum_statistics(

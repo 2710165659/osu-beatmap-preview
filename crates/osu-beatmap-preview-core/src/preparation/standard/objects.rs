@@ -51,6 +51,7 @@ pub struct PreparedStandard {
     pub last_end: f64,
     pub mods: crate::replay::mods::ReplayMods,
     pub score_multiplier: f64,
+    pub input_reset_periods: Vec<(f64, f64)>,
 }
 pub fn prepare(beatmap: &Beatmap) -> Result<PreparedStandard> {
     prepare_with_mods(beatmap, crate::replay::mods::ReplayMods::default())
@@ -277,7 +278,25 @@ fn prepare_with_mods(
         .iter()
         .map(|o| o.end)
         .fold(f64::NEG_INFINITY, f64::max);
+    // AL/SG 在首物件命中窗前、休息段到下个物件命中窗前重置动作限制。
+    let window = crate::calculate::standard::circle::windows(od)[2];
+    let mut input_reset_periods = vec![(
+        f64::NEG_INFINITY,
+        prepared[0].source.start_time as f64 - window - 1.0,
+    )];
+    for period in &beatmap.break_periods {
+        if let Some(next) = prepared
+            .iter()
+            .find(|o| o.source.start_time >= period.end_time)
+        {
+            input_reset_periods.push((
+                period.start_time as f64,
+                next.source.start_time as f64 - window - 1.0,
+            ));
+        }
+    }
     Ok(PreparedStandard {
+        input_reset_periods,
         objects: prepared,
         radius,
         od,

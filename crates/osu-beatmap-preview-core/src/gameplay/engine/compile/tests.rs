@@ -460,6 +460,117 @@ fn replay_score_applies_combined_mods_without_rescaling_input_time() {
     );
 }
 
+#[test]
+fn mirror_reflects_geometry_without_changing_recorded_cursor() {
+    let beatmap = map("100,100,1000,2,0,L|200:150,1,100");
+    for (reflection, expected, control) in [
+        (serde_json::json!("Horizontal"), [412.0, 100.0], (312, 150)),
+        (serde_json::json!("Vertical"), [100.0, 284.0], (200, 234)),
+        (serde_json::json!("Both"), [412.0, 284.0], (312, 234)),
+        (serde_json::json!(2), [412.0, 284.0], (312, 234)),
+    ] {
+        let mut replay = document(&[(0, expected, 0), (1000, expected, 1), (1700, expected, 0)]);
+        replay.metadata.as_mut().unwrap().mods = serde_json::from_value(serde_json::json!([
+            {"acronym":"MR", "settings":{"reflection":reflection}}
+        ]))
+        .unwrap();
+        let prepared = crate::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        assert_eq!(prepared.objects[0].position, expected);
+        assert_eq!(prepared.objects[0].source.slider_points[0], control);
+        let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
+        assert_eq!(timeline.input_at(1000.0).unwrap().cursor, Some(expected));
+        assert!(timeline.objects[0].head.unwrap().1.is_hit());
+    }
+}
+
+#[test]
+fn alternate_and_single_tap_filter_press_edges_and_preserve_releases() {
+    let beatmap = map("100,100,1000,1,0\n100,100,1200,1,0\n100,100,1400,1,0");
+    for (code, hit) in [("AL", [true, false, true]), ("SG", [true, true, false])] {
+        let mut replay = document(&[
+            (0, [100.0; 2], 0),
+            (1000, [100.0; 2], 5),
+            (1050, [100.0; 2], 0),
+            (1200, [100.0; 2], 1),
+            (1250, [100.0; 2], 0),
+            (1400, [100.0; 2], 10),
+            (1500, [100.0; 2], 0),
+        ]);
+        replay.metadata.as_mut().unwrap().mods =
+            serde_json::from_value(serde_json::json!([{"acronym":code}])).unwrap();
+        let prepared = crate::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
+        for (object, hit) in timeline.objects.iter().zip(hit) {
+            assert_eq!(object.head.unwrap().1.is_hit(), hit, "{code}");
+        }
+        assert_eq!(timeline.input_at(1250.0).unwrap().keys, 0);
+    }
+    let beatmap = crate::parse_beatmap_bytes(map_bytes_with_break().as_bytes()).unwrap();
+    let mut replay = document(&[
+        (0, [100.0; 2], 0),
+        (1000, [100.0; 2], 1),
+        (1050, [100.0; 2], 0),
+        (3000, [100.0; 2], 1),
+        (3100, [100.0; 2], 0),
+    ]);
+    replay.metadata.as_mut().unwrap().mods =
+        serde_json::from_value(serde_json::json!([{"acronym":"AL"}])).unwrap();
+    let prepared = crate::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+    let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
+    assert!(timeline.objects.iter().all(|o| o.head.unwrap().1.is_hit()));
+}
+
+#[test]
+fn relax_rebuilds_legacy_inputs_but_keeps_modern_recorded_presses() {
+    let beatmap = map("100,100,1000,2,0,L|200:100,1,100");
+    let frames = [
+        (0, [100.0; 2], 0),
+        (1000, [100.0; 2], 0),
+        (1500, [200.0, 100.0], 0),
+        (1600, [200.0, 100.0], 0),
+    ];
+    for legacy in [true, false] {
+        let mut replay = document(&frames);
+        if legacy {
+            replay.metadata = None;
+            replay.header.version = 20200101;
+            replay.header.mods_bits = 1 << 7;
+        } else {
+            replay.metadata.as_mut().unwrap().mods =
+                serde_json::from_value(serde_json::json!([{"acronym":"RX"}])).unwrap();
+        }
+        let prepared = crate::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
+        assert_eq!(timeline.objects[0].head.unwrap().1.is_hit(), legacy);
+        if legacy {
+            assert!(timeline.objects[0]
+                .nodes
+                .iter()
+                .all(|n| n.unwrap().1.is_hit()));
+            assert_eq!(timeline.state_at(f64::INFINITY).score, 98_500);
+            assert_ne!(timeline.input_at(1000.0).unwrap().keys, 0);
+        }
+    }
+}
+
+#[test]
+fn spun_out_rotates_without_recorded_keys_or_cursor_motion() {
+    let beatmap = map("256,192,1000,8,0,3000");
+    let mut replay = document(&[(0, [0.0; 2], 0), (3100, [0.0; 2], 0)]);
+    replay.metadata.as_mut().unwrap().mods =
+        serde_json::from_value(serde_json::json!([{"acronym":"SO"}])).unwrap();
+    let prepared = crate::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+    let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
+    assert_eq!(timeline.objects[0].end.unwrap().1, HitResult::Great);
+    let angle = timeline.objects[0].rotation.last().unwrap().2;
+    assert!((angle - 5.05 * 360.0).abs() < 0.1, "{angle}");
+    assert_eq!(timeline.input_at(2000.0).unwrap().cursor, Some([0.0; 2]));
+}
+
+fn map_bytes_with_break() -> String {
+    "osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:5\nOverallDifficulty:5\n[TimingPoints]\n0,500\n[Events]\n2,1500,2500\n[HitObjects]\n100,100,1000,1,0\n100,100,3000,1,0\n".into()
+}
+
 fn map(objects: &str) -> crate::Beatmap {
     crate::parse_beatmap_bytes(format!("osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:5\nOverallDifficulty:5\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n{objects}\n").as_bytes()).unwrap()
 }

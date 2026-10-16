@@ -11,10 +11,10 @@ use super::input::{ImageData, RealtimeOptions, ResourceBundle};
 use super::output::{RealtimeMode, TimelineInfo};
 use super::stream::{AudioStream, RESEEK_TOLERANCE_MS};
 use crate::config;
+use crate::domain::mods::{parse_mods, validate_mods_for_level, ModSettings, ModSupportLevel};
 use crate::hitsound::{
     self, HitsoundMixer, HitsoundTimeline, MusicRate, SampleData, SampleLibrary,
 };
-use crate::model::mods::{parse_mods, validate_mods, ModSettings};
 use crate::model::{Beatmap, HitObjects};
 use crate::processing::conversion::{catch_convert, mania_convert, taiko_convert};
 use crate::processing::timeline::{preview_start_ms, TimeAxis, PREVIEW_END_PADDING_MS};
@@ -551,7 +551,7 @@ fn converted_beatmap(
 }
 
 fn validate_realtime_mods(settings: &ModSettings, target_mode: i32) -> Result<()> {
-    let mode_errors = validate_mods(settings, Some(target_mode), Some("mp4"));
+    let mode_errors = validate_mods_for_level(settings, target_mode, ModSupportLevel::Realtime);
     if mode_errors.is_empty() {
         Ok(())
     } else {
@@ -697,6 +697,30 @@ mod tests {
         };
         RealtimeSession::from_bundle(ResourceBundle::new(beatmap), test_options())
             .expect("测试会话必须可以创建")
+    }
+
+    #[test]
+    fn standard_session_accepts_realtime_mod_names_and_enforces_input_conflicts() {
+        let mut session = session();
+        for name in [
+            "classic",
+            "relax",
+            "spun-out",
+            "autopilot",
+            "alternate",
+            "single-tap",
+            "mirror",
+        ] {
+            session.set_mods(vec![name.into()], 0.0).unwrap();
+            assert_eq!(session.mods(), [name]);
+        }
+        assert!(session
+            .set_mods(vec!["mirror".into(), "hard-rock".into()], 0.0)
+            .is_err());
+        assert!(session
+            .set_mods(vec!["alternate".into(), "single-tap".into()], 0.0)
+            .is_err());
+        session.set_mods(Vec::new(), 0.0).unwrap();
     }
 
     /// 构造一个首个物件在 `first_ms`、带 `AudioLeadIn` 的会话。

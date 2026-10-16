@@ -26,12 +26,18 @@ impl Compiler<'_> {
         });
     }
     pub(super) fn input_frame(&mut self, frame_index: usize, time: f64) {
+        let mut frame = self.input.frames[frame_index];
+        if self.legacy_relax {
+            frame = self.record_relax_frame(time, frame.cursor);
+        }
+        self.process_frame(frame, time);
+    }
+    pub(super) fn process_frame(&mut self, frame: crate::replay::ReplayFrame, time: f64) {
         while self.first_unjudged < self.objects.len()
             && self.objects[self.first_unjudged].end.is_some()
         {
             self.first_unjudged += 1;
         }
-        let frame = self.input.frames[frame_index];
         let actions = standard_actions(frame.keys);
         let pressed = actions & !self.previous_actions;
         self.previous_actions = actions;
@@ -109,6 +115,12 @@ impl Compiler<'_> {
             }
         }
         // 原帧按键边沿必须先影响跟随状态，不能只在 1ms 网格读取最后一个同刻帧。
+        self.update_active(time);
+        for index in 0..self.active.len() {
+            self.continuous_input(self.active[index], time, actions, frame.cursor);
+        }
+    }
+    pub(super) fn update_active(&mut self, time: f64) {
         while self.next_active < self.prepared.objects.len()
             && self.prepared.objects[self.next_active].source.start_time as f64 <= time
         {
@@ -119,9 +131,6 @@ impl Compiler<'_> {
         }
         self.active
             .retain(|&id| self.prepared.objects[id].end >= time);
-        for index in 0..self.active.len() {
-            self.continuous_input(self.active[index], time, actions, frame.cursor);
-        }
     }
     pub(super) fn timeout(&mut self, id: usize, time: f64) {
         let object = &self.prepared.objects[id];
@@ -201,7 +210,11 @@ impl Compiler<'_> {
         self.continuous_input(
             id,
             time,
-            standard_actions(input.keys),
+            if self.legacy_relax {
+                self.relax_actions
+            } else {
+                standard_actions(input.keys)
+            },
             input.cursor.unwrap(),
         );
     }
@@ -235,24 +248,34 @@ impl Compiler<'_> {
             }
         } else if object.source.hit_type & 8 != 0 {
             let angle = -(cursor[0] - 256.0).atan2(cursor[1] - 192.0).to_degrees();
-            if let Some(last) = self.last_angles[id] {
-                let delta = (angle - last + 180.0).rem_euclid(360.0) - 180.0;
-                if actions != 0 && time < object.end {
-                    let before = (self.rotations[id].total() / 360.0) as u32;
-                    self.rotations[id].add(delta);
-                    let after = (self.rotations[id].total() / 360.0) as u32;
-                    let (required, total) = spinner::required(
-                        object.end - object.source.start_time as f64,
-                        self.prepared.od,
-                    );
-                    if after > before && before < total {
-                        let result = if before < required + 2 {
-                            HitResult::SmallBonus
-                        } else {
-                            HitResult::LargeBonus
-                        };
-                        self.emit(id, Some(before as usize), time, time, result, result, None);
-                    }
+            let auto_spin = self.prepared.mods.settings.spun_out;
+            let delta = if auto_spin {
+                let elapsed = self.rotation_times[id].map_or(0.0, |last| time - last);
+                let duration = object.end - object.source.start_time as f64;
+                let required = spinner::required(duration, self.prepared.od).0;
+                // SO 以真实时间驱动，不读取录制光标和按键；重复同刻调用的增量为零。
+                (elapsed / self.prepared.mods.settings.speed_multiplier * 1.01 * required as f64
+                    / duration.max(1.0)
+                    * 360.0) as f32
+            } else {
+                self.last_angles[id]
+                    .map_or(0.0, |last| (angle - last + 180.0).rem_euclid(360.0) - 180.0)
+            };
+            if auto_spin || (actions != 0 && time < object.end) {
+                let before = (self.rotations[id].total() / 360.0) as u32;
+                self.rotations[id].add(delta);
+                let after = (self.rotations[id].total() / 360.0) as u32;
+                let (required, total) = spinner::required(
+                    object.end - object.source.start_time as f64,
+                    self.prepared.od,
+                );
+                if after > before && before < total {
+                    let result = if before < required + 2 {
+                        HitResult::SmallBonus
+                    } else {
+                        HitResult::LargeBonus
+                    };
+                    self.emit(id, Some(before as usize), time, time, result, result, None);
                 }
             }
             self.last_angles[id] = Some(angle);

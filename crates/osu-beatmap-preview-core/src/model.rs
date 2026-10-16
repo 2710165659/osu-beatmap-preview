@@ -12,7 +12,8 @@ pub mod beatmap {
 
 pub mod mods {
     pub use crate::domain::mods::{
-        mods_for_mode, parse_mods, supported_mod_tokens, validate_mods, ModSettings,
+        mods_for_mode, parse_mods, supported_mod_tokens, supported_mod_tokens_for_level,
+        validate_mods, validate_mods_for_level, ModSettings, ModSupportLevel,
     };
 }
 

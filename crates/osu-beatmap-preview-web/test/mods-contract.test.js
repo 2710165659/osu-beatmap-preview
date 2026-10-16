@@ -34,15 +34,15 @@ async function loadModule() {
   return module;
 }
 
-/** 与 CLI README「GIF / MP4」列一致的期望表（转谱后的目标模式）。 */
+/** 累计 PNG、GIF/MP4 和实时预览三列能力；CL 只在 Standard 实时列新增。 */
 const EXPECTED = {
-  standard: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DA', 'TC', 'CL', 'DT', 'HT', 'NC', 'DC'],
-  taiko: ['EZ', 'HR', 'HD', 'FL', 'SW', 'CS', 'CL', 'DT', 'HT', 'NC', 'DC'],
-  catch: ['EZ', 'HR', 'HD', 'FL', 'AT', 'CL', 'DT', 'HT', 'NC', 'DC'],
+  standard: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DA', 'TC', 'DT', 'HT', 'NC', 'DC', 'CL', 'RX', 'SO', 'AP', 'AL', 'SG', 'MR'],
+  taiko: ['EZ', 'HR', 'SW', 'HD', 'FL', 'CS', 'DT', 'HT', 'NC', 'DC'],
+  catch: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DT', 'HT', 'NC', 'DC'],
   mania: [
-    'HD', 'FL', 'CS', 'CL', 'DT', 'HT', 'NC', 'DC',
     '1K', '2K', '3K', '4K', '5K', '6K', '7K', '8K', '9K', '10K',
     'DS', 'IN', 'HO',
+    'HD', 'FL', 'CS', 'DT', 'HT', 'NC', 'DC',
   ],
 };
 

@@ -82,6 +82,16 @@ impl RenderRequest {
                 &self.ruleset.mods,
             )?)
         };
+        if let Some(mods) = &mods {
+            let errors = osu_beatmap_preview_core::model::mods::validate_mods(
+                mods,
+                None,
+                Some(self.output.format.as_deref().unwrap_or("gif")),
+            );
+            if !errors.is_empty() {
+                return Err(PreviewError::new(errors.join("; ")));
+            }
+        }
         Ok(ValidatedRequest {
             kind: self.kind,
             source: self.source,
@@ -222,6 +232,49 @@ fn validate_fps(fps: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn realtime_only_mods_are_rejected_before_reading_or_downloading_maps() {
+        for code in [
+            "CL",
+            "classic",
+            "RX",
+            "relax",
+            "SO",
+            "spun-out",
+            "AP",
+            "autopilot",
+            "AL",
+            "alternate",
+            "SG",
+            "single-tap",
+            "MR",
+            "mirror",
+        ] {
+            for fmt in [None, Some("png"), Some("gif"), Some("mp4")] {
+                let mut request = RenderRequest::new("123");
+                request.ruleset.mods = vec![code.into()];
+                request.output.format = fmt.map(str::to_owned);
+                assert!(
+                    request
+                        .validate()
+                        .unwrap_err()
+                        .to_string()
+                        .contains("only supported for realtime"),
+                    "{code}/{fmt:?}"
+                );
+            }
+        }
+        let mut request = RenderRequest::new("123");
+        request.output.format = Some("realtime".into());
+        assert!(request.validate().is_err());
+        let mut request = RenderRequest::new("123");
+        request.ruleset.mods = vec!["hard-rock".into(), "double-time1.25".into()];
+        request.output.format = Some("gif".into());
+        let mods = request.validate().unwrap().ruleset.mods.unwrap();
+        assert!(mods.hard_rock);
+        assert_eq!(mods.speed_multiplier, 1.25);
+    }
 
     #[test]
     fn format_validation_rejects_invalid_fps_before_business_planning() {

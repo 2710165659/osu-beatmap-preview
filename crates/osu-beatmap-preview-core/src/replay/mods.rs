@@ -1,6 +1,6 @@
 //! 回放 Mod 解码与当前 osu! Standard 计分倍率；lazer 扩展覆盖旧位掩码。
 use super::{model::ReplayMod, ReplayDocument};
-use crate::domain::mods::{parse_mods, validate_mods, ModSettings};
+use crate::domain::mods::{parse_mods, validate_mods_for_level, ModSettings, ModSupportLevel};
 use crate::model::Beatmap;
 use crate::support::error::{PreviewError, Result};
 
@@ -41,10 +41,13 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             | (1 << 3)
             | (1 << 4)
             | (1 << 6)
+            | (1 << 7)
             | (1 << 8)
             | (1 << 9)
             | (1 << 10)
             | (1 << 11)
+            | (1 << 12)
+            | (1 << 13)
             | (1 << 29);
         if bits & !supported != 0 {
             return Err(unsupported(format!(
@@ -57,10 +60,13 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             (3, "HD"),
             (4, "HR"),
             (6, "DT"),
+            (7, "RX"),
             (8, "HT"),
             (9, "NC"),
             (10, "FL"),
             (11, "AT"),
+            (12, "SO"),
+            (13, "AP"),
         ]
         .into_iter()
         // NC 的旧编码同时包含 DT；它们只代表一个速度 Mod。
@@ -80,7 +86,23 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
         }
         if !matches!(
             code,
-            "EZ" | "HR" | "HD" | "FL" | "AT" | "DA" | "TC" | "CL" | "DT" | "HT" | "NC" | "DC"
+            "EZ" | "HR"
+                | "HD"
+                | "FL"
+                | "AT"
+                | "DA"
+                | "TC"
+                | "CL"
+                | "DT"
+                | "HT"
+                | "NC"
+                | "DC"
+                | "RX"
+                | "SO"
+                | "AP"
+                | "AL"
+                | "SG"
+                | "MR"
         ) {
             return Err(unsupported(format!("Mod {code}")));
         }
@@ -100,6 +122,15 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             let invalid = || unsupported(format!("{code} setting {name}"));
             match (code, name.as_str()) {
                 ("CL", _) => (), // Classic 的布尔设置由 compatibility 统一校验。
+                ("MR", "reflection") => {
+                    // osu! 的枚举通常序列化为名称，历史容器也可能使用数值。
+                    result.settings.mirror_reflection = match value.as_str() {
+                        Some("Horizontal") => 0,
+                        Some("Vertical") => 1,
+                        Some("Both") => 2,
+                        _ => value.as_u64().filter(|v| *v <= 2).ok_or_else(invalid)? as u8,
+                    };
+                }
                 ("DT" | "HT" | "NC" | "DC", "speed_change") => {
                     rate = Some(
                         value
@@ -155,8 +186,10 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             tokens.push(rate.map_or_else(|| code.to_owned(), |rate| format!("{code}{rate}")));
         }
     }
+    let reflection = result.settings.mirror_reflection;
     result.settings = parse_mods(&tokens).map_err(|e| unsupported(e.to_string()))?;
-    let errors = validate_mods(&result.settings, Some(0), Some("mp4"));
+    result.settings.mirror_reflection = reflection;
+    let errors = validate_mods_for_level(&result.settings, 0, ModSupportLevel::Realtime);
     if !errors.is_empty() {
         return Err(unsupported(errors.join("; ")));
     }
@@ -186,6 +219,15 @@ impl ReplayMods {
     pub fn score_multiplier(&self, beatmap: &Beatmap) -> f64 {
         let m = &self.settings;
         let mut multiplier = 1.0;
+        if m.relax {
+            multiplier *= 0.1;
+        }
+        if m.autopilot {
+            multiplier *= 0.1;
+        }
+        if m.spun_out {
+            multiplier *= 0.95;
+        }
         if m.easy {
             multiplier *= (0.8 - (0.1 * (self.easy_retries as f64 - 2.0)).max(0.0)).max(0.4);
         }
@@ -258,7 +300,7 @@ mod tests {
             json!([{"acronym":"HD"},{"acronym":"TC"}]),
             json!([{"acronym":"DT"},{"acronym":"NC"}]),
             json!([{"acronym":"HR"},{"acronym":"HR"}]),
-            json!([{"acronym":"AL"}]),
+            json!([{"acronym":"AL"},{"acronym":"SG"}]),
             json!([{"acronym":"DT","settings":{"speed_change":0.5}}]),
             json!([{"acronym":"HR","settings":{"unknown":true}}]),
             json!([{"acronym":"FL","settings":{"size_multiplier":0}}]),
@@ -286,6 +328,12 @@ mod tests {
             ),
             (json!([{"acronym":"TC"}]), 1.02),
             (json!([{"acronym":"AT"}]), 1.0),
+            (json!([{"acronym":"RX"}]), 0.1),
+            (json!([{"acronym":"AP"}]), 0.1),
+            (json!([{"acronym":"SO"}]), 0.95),
+            (json!([{"acronym":"AL"}]), 1.0),
+            (json!([{"acronym":"SG"}]), 1.0),
+            (json!([{"acronym":"MR"}]), 1.0),
             (json!([{"acronym":"DT"}]), 1.23),
             (
                 json!([{"acronym":"NC","settings":{"speed_change":1.39}}]),

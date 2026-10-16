@@ -23,8 +23,16 @@ pub struct ModSettings {
     /// Autoplay 光标或 catch 接盘。
     pub autoplay: bool,
     pub traceable: bool,
-    /// 普通预览只保留 CL 声明；回放另行选择 Classic 判定策略。
+    /// 仅 Standard 实时预览支持；回放另行选择 Classic 判定策略。
     pub classic: bool,
+    pub relax: bool,
+    pub spun_out: bool,
+    pub autopilot: bool,
+    pub alternate: bool,
+    pub single_tap: bool,
+    pub mirror: bool,
+    /// Mirror 默认水平翻转；回放可指定垂直或双轴翻转。
+    pub mirror_reflection: u8,
 
     pub swap: bool,
     pub cs_override: bool,
@@ -79,6 +87,12 @@ impl ModSettings {
             || self.autoplay
             || self.traceable
             || self.classic
+            || self.relax
+            || self.spun_out
+            || self.autopilot
+            || self.alternate
+            || self.single_tap
+            || self.mirror
             || self.swap
             || self.cs_override
             || self.mania_keys.is_some()
@@ -98,7 +112,7 @@ pub fn parse_mods(mod_tokens: &[String]) -> Result<ModSettings> {
             "mods must be supplied as repeated --mod values; '+' is not allowed",
         ));
     }
-    let tokens: Vec<String> = mod_tokens.iter().map(|t| t.trim().to_uppercase()).collect();
+    let tokens: Vec<String> = mod_tokens.iter().map(|t| canonical_mod_token(t)).collect();
     if tokens.iter().any(|token| token.is_empty()) {
         return Err(PreviewError::new("mod tokens must not be empty"));
     }
@@ -113,6 +127,56 @@ pub fn parse_mods(mod_tokens: &[String]) -> Result<ModSettings> {
         parse_one_token(token, &mut settings)?;
     }
     Ok(settings)
+}
+
+/// 全名和缩写先统一，再检测重复；全名中的空格使用短横杠，参数后缀沿用缩写语法。
+fn canonical_mod_token(raw: &str) -> String {
+    let token = raw.trim().to_ascii_uppercase();
+    const NAMES: &[(&str, &str)] = &[
+        ("EASY", "EZ"),
+        ("HARD-ROCK", "HR"),
+        ("HIDDEN", "HD"),
+        ("FLASHLIGHT", "FL"),
+        ("AUTOPLAY", "AT"),
+        ("TRACEABLE", "TC"),
+        ("CLASSIC", "CL"),
+        ("RELAX", "RX"),
+        ("SPUN-OUT", "SO"),
+        ("AUTOPILOT", "AP"),
+        ("ALTERNATE", "AL"),
+        ("SINGLE-TAP", "SG"),
+        ("MIRROR", "MR"),
+        ("SWAP", "SW"),
+        ("CONSTANT-SPEED", "CS"),
+        ("DUAL-STAGES", "DS"),
+        ("INVERT", "IN"),
+        ("HOLD-OFF", "HO"),
+        ("ONE-KEY", "1K"),
+        ("TWO-KEYS", "2K"),
+        ("THREE-KEYS", "3K"),
+        ("FOUR-KEYS", "4K"),
+        ("FIVE-KEYS", "5K"),
+        ("SIX-KEYS", "6K"),
+        ("SEVEN-KEYS", "7K"),
+        ("EIGHT-KEYS", "8K"),
+        ("NINE-KEYS", "9K"),
+        ("TEN-KEYS", "10K"),
+    ];
+    if let Some((_, code)) = NAMES.iter().find(|(name, _)| *name == token) {
+        return (*code).to_owned();
+    }
+    for (name, code) in [
+        ("DIFFICULTY-ADJUST", "DA"),
+        ("DOUBLE-TIME", "DT"),
+        ("HALF-TIME", "HT"),
+        ("NIGHTCORE", "NC"),
+        ("DAYCORE", "DC"),
+    ] {
+        if let Some(tail) = token.strip_prefix(name) {
+            return format!("{code}{tail}");
+        }
+    }
+    token
 }
 
 fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
@@ -180,6 +244,12 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         "AT" => s.autoplay = true,
         "TC" => s.traceable = true,
         "CL" => s.classic = true,
+        "RX" => s.relax = true,
+        "SO" => s.spun_out = true,
+        "AP" => s.autopilot = true,
+        "AL" => s.alternate = true,
+        "SG" => s.single_tap = true,
+        "MR" => s.mirror = true,
         "SW" => s.swap = true,
         "CS" => s.cs_override = true,
         "DS" => s.dual_stage = true,
@@ -316,6 +386,24 @@ pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str
     if settings.hidden && settings.traceable {
         errors.push("HD and TC cannot be used together".to_string());
     }
+    // 与 Standard 的自动输入和输入限制 Mod 的官方互斥关系一致。
+    for (left, right, label) in [
+        (settings.relax, settings.autopilot, "RX and AP"),
+        (settings.relax, settings.autoplay, "RX and AT"),
+        (settings.relax, settings.alternate, "RX and AL"),
+        (settings.relax, settings.single_tap, "RX and SG"),
+        (settings.spun_out, settings.autoplay, "SO and AT"),
+        (settings.spun_out, settings.autopilot, "SO and AP"),
+        (settings.autopilot, settings.autoplay, "AP and AT"),
+        (settings.alternate, settings.autoplay, "AL and AT"),
+        (settings.single_tap, settings.autoplay, "SG and AT"),
+        (settings.alternate, settings.single_tap, "AL and SG"),
+        (settings.mirror, settings.hard_rock, "MR and HR"),
+    ] {
+        if left && right {
+            errors.push(format!("{label} cannot be used together"));
+        }
+    }
     if settings.mania_key_mods.len() > 1 {
         let keys: Vec<String> = settings
             .mania_key_mods
@@ -345,7 +433,31 @@ pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str
 
     if let (Some(mode), Some(fmt)) = (mode, fmt) {
         if (0..=3).contains(&mode) {
-            errors.extend(validate_supported_mods(settings, mode, fmt));
+            match fmt.trim().to_ascii_lowercase().as_str() {
+                "png" => errors.extend(validate_supported_mods(
+                    settings,
+                    mode,
+                    ModSupportLevel::Png,
+                )),
+                "gif" | "mp4" => errors.extend(validate_supported_mods(
+                    settings,
+                    mode,
+                    ModSupportLevel::Animation,
+                )),
+                _ => errors.push(format!("unknown output format: {fmt}")),
+            }
+        }
+    }
+    if mode.is_none() && fmt.is_some() {
+        // CLI 在下载和确定模式前先拒绝实时专属声明；完整模式矩阵仍由第二阶段校验。
+        for (code, label) in active_switch_mods(settings) {
+            if !(0..=3).any(|mode| {
+                supported_mod_codes(mode, ModSupportLevel::Animation).contains(&code.as_str())
+            }) {
+                errors.push(format!(
+                    "{label} is only supported for realtime preview, not CLI PNG/GIF/MP4 output"
+                ));
+            }
         }
     }
     errors
@@ -395,43 +507,86 @@ fn da_range(mode: i32, param: &str) -> Option<(f64, f64)> {
     }
 }
 
-fn supported_switch_mods(fmt: &str, mode: i32) -> &'static [&'static str] {
-    match (fmt, mode) {
-        ("gif", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC", "CL"],
-        ("gif", 1) => &["EZ", "HR", "HD", "FL", "SW", "CS", "CL"],
-        ("gif", 2) => &["EZ", "HR", "HD", "FL", "AT", "CL"],
-        ("gif", 3) => &["K", "DS", "CS", "IN", "HO", "HD", "FL", "CL"],
-        ("png", 0) => &["EZ", "HR", "HD", "FL", "AT", "DA", "TC", "CL"],
-        ("png", 1) => &["EZ", "HR", "SW", "CL"],
-        ("png", 2) => &["EZ", "HR", "CL"],
-        ("png", 3) => &["K", "DS", "IN", "HO", "CL"],
-        _ => &[],
+/// 支持能力按输出阶段累积；实时预览是独立端口，不是 CLI 的输出格式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModSupportLevel {
+    Png,
+    Animation,
+    Realtime,
+}
+
+/// 每列只声明新增 Mod，后面的阶段继承前面全部能力，避免三份支持表相互漂移。
+fn mod_support_steps(mode: i32) -> [&'static [&'static str]; 3] {
+    match mode {
+        0 => [
+            &["EZ", "HR", "HD", "FL", "AT", "DA", "TC"],
+            &["DT", "HT", "NC", "DC"],
+            &["CL", "RX", "SO", "AP", "AL", "SG", "MR"],
+        ],
+        1 => [
+            &["EZ", "HR", "SW"],
+            &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
+            &[],
+        ],
+        2 => [
+            &["EZ", "HR"],
+            &["HD", "FL", "AT", "DT", "HT", "NC", "DC"],
+            &[],
+        ],
+        3 => [
+            &["K", "DS", "IN", "HO"],
+            &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
+            &[],
+        ],
+        _ => [&[], &[], &[]],
     }
 }
 
-fn validate_supported_mods(settings: &ModSettings, mode: i32, fmt: &str) -> Vec<String> {
-    let fmt_key = fmt.trim().to_lowercase();
-    // MP4 与 GIF 使用相同模组规则（动画输出，允许 DT/HT）。
-    let fmt_key = if fmt_key == "mp4" {
-        "gif".to_owned()
-    } else {
-        fmt_key
+fn supported_mod_codes(mode: i32, level: ModSupportLevel) -> Vec<&'static str> {
+    let count = match level {
+        ModSupportLevel::Png => 1,
+        ModSupportLevel::Animation => 2,
+        ModSupportLevel::Realtime => 3,
     };
-    if fmt_key != "gif" && fmt_key != "png" {
-        return vec![format!("unknown output format: {fmt}")];
-    }
+    mod_support_steps(mode)[..count]
+        .iter()
+        .flat_map(|codes| codes.iter().copied())
+        .collect()
+}
+
+/// 实时会话和回放使用能力级别校验，不能借用 MP4 格式放行实时专属 Mod。
+pub fn validate_mods_for_level(
+    settings: &ModSettings,
+    mode: i32,
+    level: ModSupportLevel,
+) -> Vec<String> {
+    let mut errors = validate_mods(settings, Some(mode), None);
+    errors.extend(validate_supported_mods(settings, mode, level));
+    errors
+}
+
+fn validate_supported_mods(
+    settings: &ModSettings,
+    mode: i32,
+    level: ModSupportLevel,
+) -> Vec<String> {
     let mut errors = Vec::new();
-    if fmt_key == "png" && settings.has_rate_mod() {
-        errors.push("DT/HT/NC/DC are only supported for GIF output, not PNG".to_string());
+    if level == ModSupportLevel::Png && settings.has_rate_mod() {
+        errors.push("DT/HT/NC/DC are not supported for PNG output".to_string());
     }
-    let supported = supported_switch_mods(&fmt_key, mode);
+    let supported = supported_mod_codes(mode, level);
+    let output = match level {
+        ModSupportLevel::Png => "PNG output",
+        ModSupportLevel::Animation => "GIF/MP4 output",
+        ModSupportLevel::Realtime => "realtime preview",
+    };
     for (code, label) in active_switch_mods(settings) {
         if !supported.contains(&code.as_str()) {
             errors.push(format!(
-                "{} is not supported for {} {} output",
+                "{} is not supported for {} {}",
                 label,
                 mode_label(mode),
-                fmt_key.to_uppercase()
+                output
             ));
         }
     }
@@ -460,6 +615,18 @@ fn active_switch_mods(settings: &ModSettings) -> Vec<(String, String)> {
     }
     if settings.classic {
         active.push(("CL".into(), "CL".into()));
+    }
+    for (enabled, code) in [
+        (settings.relax, "RX"),
+        (settings.spun_out, "SO"),
+        (settings.autopilot, "AP"),
+        (settings.alternate, "AL"),
+        (settings.single_tap, "SG"),
+        (settings.mirror, "MR"),
+    ] {
+        if enabled {
+            active.push((code.into(), code.into()));
+        }
     }
     if settings.has_da() {
         active.push(("DA".into(), "DA".into()));
@@ -510,12 +677,19 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
         autoplay: settings.autoplay && matches!(mode, 0 | 2),
-        classic: settings.classic && (0..=3).contains(&mode),
+        classic: settings.classic && mode == 0,
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
     };
     match mode {
         0 => {
+            filtered.relax = settings.relax;
+            filtered.spun_out = settings.spun_out;
+            filtered.autopilot = settings.autopilot;
+            filtered.alternate = settings.alternate;
+            filtered.single_tap = settings.single_tap;
+            filtered.mirror = settings.mirror;
+            filtered.mirror_reflection = settings.mirror_reflection;
             filtered.easy = settings.easy;
             filtered.hard_rock = settings.hard_rock;
             filtered.traceable = settings.traceable;
@@ -563,48 +737,150 @@ fn rate_mod_count(settings: &ModSettings) -> usize {
     .count()
 }
 
-/// 实时预览 / 动画导出下某模式应当展示的可切换 Mod token 列表。
-///
-/// 顺序与 CLI README 的「GIF / MP4」列一致；键数 Mod 展开成 `1K`…`10K` 方便逐个渲染
-/// 成按钮。每项都能被 `validate_mods(..., Some("mp4"))` 接受（`DA` 由调用方替换成带
-/// 参数的 token）；网页端不再自带一份列表，避免两侧走偏。
+/// 实时面板展示累计支持列表；与 CLI 导出清单的区别由同一渐进式矩阵决定。
 pub fn supported_mod_tokens(mode: i32) -> Vec<String> {
-    match mode {
-        0 => [
-            "EZ", "HR", "HD", "FL", "AT", "DA", "TC", "CL", "DT", "HT", "NC", "DC",
-        ]
-        .map(str::to_string)
-        .to_vec(),
-        1 => [
-            "EZ", "HR", "HD", "FL", "SW", "CS", "CL", "DT", "HT", "NC", "DC",
-        ]
-        .map(str::to_string)
-        .to_vec(),
-        2 => ["EZ", "HR", "HD", "FL", "AT", "CL", "DT", "HT", "NC", "DC"]
-            .map(str::to_string)
-            .to_vec(),
-        3 => {
-            let mut tokens = ["HD", "FL", "CS", "CL", "DT", "HT", "NC", "DC"]
-                .map(str::to_string)
-                .to_vec();
-            tokens.extend(MANIA_KEY_MOD_RANGE.map(|keys| format!("{keys}K")));
-            tokens.extend(["DS", "IN", "HO"].map(str::to_string));
-            tokens
-        }
-        _ => Vec::new(),
-    }
+    supported_mod_tokens_for_level(mode, ModSupportLevel::Realtime)
+}
+
+/// 指定阶段的累计 token；键数类展开为面板可选择的 1K–10K。
+pub fn supported_mod_tokens_for_level(mode: i32, level: ModSupportLevel) -> Vec<String> {
+    supported_mod_codes(mode, level)
+        .into_iter()
+        .flat_map(|code| {
+            if code == "K" {
+                MANIA_KEY_MOD_RANGE.map(|keys| format!("{keys}K")).collect()
+            } else {
+                vec![code.to_owned()]
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn classic_is_accepted_and_preserved_for_all_preview_modes_and_formats() {
+    fn full_names_normalize_parameters_and_duplicates() {
+        for (name, code) in [
+            ("easy", "EZ"),
+            ("hard-rock", "HR"),
+            ("hidden", "HD"),
+            ("flashlight", "FL"),
+            ("autoplay", "AT"),
+            ("traceable", "TC"),
+            ("classic", "CL"),
+            ("relax", "RX"),
+            ("spun-out", "SO"),
+            ("autopilot", "AP"),
+            ("alternate", "AL"),
+            ("single-tap", "SG"),
+            ("mirror", "MR"),
+            ("swap", "SW"),
+            ("constant-speed", "CS"),
+            ("dual-stages", "DS"),
+            ("invert", "IN"),
+            ("hold-off", "HO"),
+            ("one-key", "1K"),
+            ("two-keys", "2K"),
+            ("three-keys", "3K"),
+            ("four-keys", "4K"),
+            ("five-keys", "5K"),
+            ("six-keys", "6K"),
+            ("seven-keys", "7K"),
+            ("eight-keys", "8K"),
+            ("nine-keys", "9K"),
+            ("ten-keys", "10K"),
+            ("double-time1.25", "DT1.25"),
+            ("half-time0.8", "HT0.8"),
+            ("nightcore1.4", "NC1.4"),
+            ("daycore0.6", "DC0.6"),
+            ("difficulty-adjustCS4AR9", "DACS4AR9"),
+        ] {
+            let parsed = parse_mods(&[name.into()]).unwrap();
+            assert_eq!(parsed.tokens, [code], "{name}");
+            assert!(parse_mods(&[name.into(), code.into()]).is_err(), "{name}");
+        }
+        assert!(parse_mods(&["single tap".into()]).is_err());
+        assert!(parse_mods(&["ST".into()]).is_err());
+    }
+
+    #[test]
+    fn support_levels_inherit_without_duplicate_or_unaccepted_tokens() {
+        for mode in 0..=3 {
+            let mut previous = Vec::new();
+            for level in [
+                ModSupportLevel::Png,
+                ModSupportLevel::Animation,
+                ModSupportLevel::Realtime,
+            ] {
+                let tokens = supported_mod_tokens_for_level(mode, level);
+                assert!(tokens.starts_with(&previous));
+                assert_eq!(tokens.iter().collect::<HashSet<_>>().len(), tokens.len());
+                for token in &tokens {
+                    let raw = if token == "DA" {
+                        "DAAR9"
+                    } else {
+                        token.as_str()
+                    };
+                    let settings = parse_mods(&[raw.into()]).unwrap();
+                    assert!(
+                        validate_mods_for_level(&settings, mode, level).is_empty(),
+                        "{mode}/{level:?}/{raw}"
+                    );
+                }
+                previous = tokens;
+            }
+        }
+    }
+
+    #[test]
+    fn standard_realtime_mods_are_rejected_by_all_cli_formats_and_other_modes() {
+        for code in ["CL", "RX", "SO", "AP", "AL", "SG", "MR"] {
+            let settings = parse_mods(&[code.into()]).unwrap();
+            assert!(settings.has_any_mod());
+            for mode in 0..=3 {
+                assert_eq!(
+                    validate_mods_for_level(&settings, mode, ModSupportLevel::Realtime).is_empty(),
+                    mode == 0
+                );
+                for fmt in ["png", "gif", "mp4"] {
+                    assert!(!validate_mods(&settings, Some(mode), Some(fmt)).is_empty());
+                    assert!(!validate_mods(&settings, None, Some(fmt)).is_empty());
+                }
+            }
+        }
+        for pair in [
+            ["RX", "AP"],
+            ["RX", "AL"],
+            ["RX", "SG"],
+            ["AP", "SO"],
+            ["MR", "HR"],
+            ["AL", "SG"],
+            ["AT", "RX"],
+            ["AT", "SO"],
+            ["AT", "AP"],
+            ["AT", "AL"],
+            ["AT", "SG"],
+        ] {
+            let settings = parse_mods(&pair.map(str::to_owned)).unwrap();
+            assert!(
+                !validate_mods_for_level(&settings, 0, ModSupportLevel::Realtime).is_empty(),
+                "{pair:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn classic_is_only_available_to_standard_realtime_preview() {
         let settings = super::parse_mods(&["CL".into()]).unwrap();
         for mode in 0..=3 {
             for format in ["png", "gif", "mp4"] {
-                assert!(super::validate_mods(&settings, Some(mode), Some(format)).is_empty());
+                assert!(!super::validate_mods(&settings, Some(mode), Some(format)).is_empty());
             }
-            assert!(super::mods_for_mode(&settings, mode).classic);
+            assert_eq!(super::mods_for_mode(&settings, mode).classic, mode == 0);
+            assert_eq!(
+                validate_mods_for_level(&settings, mode, ModSupportLevel::Realtime).is_empty(),
+                mode == 0
+            );
         }
     }
     #[test]
@@ -650,12 +926,12 @@ mod tests {
                 let settings =
                     parse_mods(std::slice::from_ref(&raw)).expect("面板 token 必须可解析");
                 assert!(
-                    validate_mods(&settings, Some(mode), Some("mp4")).is_empty(),
+                    validate_mods_for_level(&settings, mode, ModSupportLevel::Realtime).is_empty(),
                     "mode={mode}, token={raw} 不被实时会话接受"
                 );
             }
             // 反向：支持矩阵里的每一类可切换 Mod 都要出现在面板里（K 展开成 1K）。
-            for &supported in supported_switch_mods("gif", mode) {
+            for supported in supported_mod_codes(mode, ModSupportLevel::Realtime) {
                 let expected = if supported == "K" { "1K" } else { supported };
                 assert!(
                     tokens.iter().any(|token| token == expected),
@@ -810,7 +1086,7 @@ mod tests {
             assert!(
                 validate_mods(&settings, Some(0), Some("png"))
                     .iter()
-                    .any(|error| error.contains("only supported for GIF output")),
+                    .any(|error| error.contains("not supported for PNG output")),
                 "{token} 在 PNG 下应被拒绝"
             );
         }
@@ -892,6 +1168,6 @@ mod tests {
         let errors = validate_mods(&settings, Some(3), Some("gif"));
         assert!(errors
             .iter()
-            .any(|error| error.contains("DA is not supported for mania GIF output")));
+            .any(|error| error.contains("DA is not supported for mania GIF/MP4 output")));
     }
 }

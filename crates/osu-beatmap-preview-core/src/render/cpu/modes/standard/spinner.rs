@@ -62,13 +62,21 @@ fn pieces(
     if radius <= 0.0 {
         return Vec::new();
     }
+    let required =
+        (difficulty(context.spinner_od, 90.0, 150.0, 225.0) / 60000.0 * duration + 0.0001).floor();
     let rotation = replay.map_or_else(
-        || autoplay_rotation(elapsed.clamp(0.0, duration), context.spinner_rate),
+        || {
+            if context.spun_out {
+                // SO 以完成所需圈数为目标，并像官方一样去掉音乐倍速。
+                elapsed.clamp(0.0, duration) / context.spinner_rate * 1.01 * required / duration
+                    * TAU
+            } else {
+                autoplay_rotation(elapsed.clamp(0.0, duration), context.spinner_rate)
+            }
+        },
         |r| r.0,
     );
     let spins = replay.map_or(rotation / TAU, |r| r.1);
-    let required =
-        (difficulty(context.spinner_od, 90.0, 150.0, 225.0) / 60000.0 * duration + 0.0001).floor();
     let progress = if required <= 0.0 {
         1.0
     } else {

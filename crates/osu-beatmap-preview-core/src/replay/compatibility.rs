@@ -120,7 +120,7 @@ mod tests {
     fn rejects_unsupported_mods_and_invalid_input_instead_of_client_versions() {
         let original = document();
         assert!(select(&original).is_ok());
-        for acronym in ["AL", "UNKNOWN"] {
+        for acronym in ["NF", "UNKNOWN"] {
             let mut replay = original.clone();
             replay.metadata.as_mut().unwrap().mods.push(ReplayMod {
                 acronym: acronym.into(),

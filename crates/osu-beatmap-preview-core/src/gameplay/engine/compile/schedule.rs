@@ -11,6 +11,14 @@ pub(super) fn build(
 ) -> Result<Vec<Step>> {
     let limit = || PreviewError::new("ReplayCompilationLimit: too many rule steps");
     let mut count = document.frames.len();
+    let relax_start = prepared.objects[0].source.start_time - 12;
+    let legacy_relax = prepared.mods.settings.relax && document.header.version < 30_000_000;
+    if legacy_relax {
+        count = count
+            .checked_add((deadline.ceil() as i64 - relax_start).max(0) as usize + 1)
+            .filter(|n| *n <= MAX_STEPS)
+            .ok_or_else(limit)?;
+    }
     for object in &prepared.objects {
         let continuous = object.source.hit_type & (2 | 8) != 0;
         let end = object.end.min(deadline).ceil() as i64;
@@ -36,26 +44,32 @@ pub(super) fn build(
             points.push((frame.time_ms as f64, 0, i));
         }
     }
+    if legacy_relax {
+        // Legacy RX 没有录制自动按键，固定规则网格重建，避免输出 FPS 改变成绩。
+        for time in relax_start..=deadline.ceil() as i64 {
+            points.push((time as f64, 1, 0));
+        }
+    }
     for (id, object) in prepared.objects.iter().enumerate() {
         points.push((
             object.source.start_time as f64 + circle::windows(prepared.od)[2] + 1.0,
-            2,
+            3,
             id,
         ));
         if object.source.hit_type & (2 | 8) != 0 {
             for time in object.source.start_time..=object.end.min(deadline).ceil() as i64 {
-                points.push((time as f64, 1, id));
+                points.push((time as f64, 2, id));
             }
-            points.push((object.end, 3, id));
+            points.push((object.end, 4, id));
             points.push((
                 object
                     .end
                     .max(object.source.start_time as f64 + circle::windows(prepared.od)[2] + 1.0),
-                3,
+                4,
                 id,
             ));
             for node in &object.nodes {
-                points.push((node.time, 1, id));
+                points.push((node.time, 2, id));
             }
         }
     }

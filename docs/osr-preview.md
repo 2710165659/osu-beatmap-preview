@@ -39,7 +39,7 @@ OSR 拒绝 `--convert`、所有用户 `--mod`（包括 `NM`）和 PNG；`--bid` 
 
 ## 已验证规则
 
-Standard 回放与普通 Standard 动画预览共用 Mod 支持范围：`EZ`、`HR`、`HD`、`FL`、`AT`、`DA`、`TC`、`CL`、`DT`、`HT`、`NC`、`DC`。普通预览中的 `CL` 只接受声明，不改变自动预览行为；回放中的 `CL` 使用实际 Classic 策略。旧位掩码解码支持 EZ/HR/HD/FL/AT/DT/HT/NC 和 ScoreV2；lazer 扩展存在时以扩展 Mod 列表为准，不重复应用旧位掩码。
+Standard 回放按录制 Mod 解码；普通预览按渐进式矩阵限制输入：PNG 支持 Easy、Hard-Rock、Hidden、Flashlight、Autoplay、Difficulty-Adjust、Traceable；GIF/MP4 在此基础上增加 Double-Time、Half-Time、Nightcore、Daycore；实时 Standard 在此基础上增加 Classic、Relax、Spun-Out、Autopilot、Alternate、Single-Tap、Mirror。CLI 只允许 PNG/GIF/MP4，因此实时列新增 Mod（包括 Classic）不能通过 `--mod` 传入；Classic 也只支持 Standard 实时预览。全名和缩写均可传入，全名空格写成短横杠，例如 `hard-rock` / `hr`、`single-tap` / `sg`。旧位掩码解码支持 EZ/HR/HD/FL/AT/RX/SO/AP/DT/HT/NC 和 ScoreV2；lazer 扩展存在时以扩展 Mod 列表为准，不重复应用旧位掩码。
 
 回放准备先应用 EZ/HR/DA 难度和 HR 物件、滑条翻转，再计算堆叠；录制光标不再翻转。HD/TC 使用共享可见性规则；FL 跟随回放光标，尺寸根据实际连击、休息段和设置变化，滑条实际追踪时额外暗化。DT/HT/NC/DC 只改变输出时钟和音乐处理，不缩放回放输入帧时间；NC 同时加入鼓点。接受速度与音高设置、HD 仅隐藏缩圈、FL 大小/连击/跟随延迟、EZ 额外生命数和 DA 难度设置；未知 settings 仍明确拒绝。
 

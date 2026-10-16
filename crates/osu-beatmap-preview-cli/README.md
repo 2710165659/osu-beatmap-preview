@@ -118,7 +118,7 @@ osu-beatmap-preview-cli [--type=osu|osr] [--osr-file=<PATH> | --score-id=<ID> | 
 | `--osz-file` | 本地 `.osz` 谱面包路径；可独立使用，也可为外部 `.osu` 提供媒体资源。 |
 | `--convert` | 目标模式：`mania`、`ctb`、`taiko`、`standard` 或 `std`。只有 Standard 谱面能转换到其他模式；目标与原模式相同时按不转谱处理。 |
 | `--fmt` | 输出格式：`png`、`gif` 或 `mp4`。省略时，Standard 使用 GIF，其他模式使用 PNG。 |
-| `--mod` | 单个 Mod。组合时重复传入；参数不区分大小写。 |
+| `--mod` | 单个 Mod，接受缩写或全名，全名中的空格写成短横杠，如 `hr` / `hard-rock`。组合时重复传入；参数不区分大小写，仅允许当前模式 PNG 或 GIF/MP4 支持的 Mod。 |
 | `--time-points` | 游戏时间点，单位为秒，也可传 `preview`。GIF 和 Standard PNG 可重复传入，MP4 与 Taiko/Catch/Mania PNG 最多传入一次。 |
 | `--duration-time` | GIF 每个时间点、MP4 的输出时长，或 Taiko/Catch/Mania PNG 的区间段时长，单位为秒；MP4 默认 `600`；区间段 PNG 必须与 `--time-points` 成对给出。 |
 | `--fps` | GIF 或 MP4 输出帧率，必须为 `1` 至 `60` 的整数。省略时使用对应模式和格式配置中的帧率。 |
@@ -144,7 +144,7 @@ OSR 默认输出 MP4，只允许 GIF/MP4，拒绝 `--convert`、用户 `--mod`�
 
 `best` 是官方按分数选出的个人最高成绩，并非最高 PP；`recent` 最多扫描近期 1000 条成绩，按结束时间选取指定谱面的最新一次。选中成绩无回放、规则不兼容、谱面版本不匹配或下载失败时明确报错，不换成其它成绩。回放文件缓存于 `osr-download-cache/<成绩ID>.osr`，`--no-cache` 可强制重下；成绩查询不使用该文件缓存。
 
-原生 Standard 不限制客户端或分数版本，支持 tachyon、历史 lazer 与 stable；stable 自动启用 CL，lazer 显式 CL 使用同一策略，保留 CL 设置。历史成绩按当前官方标准化规则重播，原记录差异仅作诊断。AL、其它未实现 Mod 和未知 settings 仍明确拒绝。回放提前结束显示失败并冻结成绩，谱面背景与音乐继续。完整用法、成绩差异处理、内嵌字体和验收记录见 [OSR 回放预览](../../docs/osr-preview.md)。
+原生 Standard 不限制客户端或分数版本，支持 tachyon、历史 lazer 与 stable；stable 自动启用 Classic，lazer 显式 Classic 使用同一策略，保留录制设置。历史成绩按当前官方标准化规则重播，原记录差异仅作诊断。回放读取录制的 Mod，支持下表 Standard 实时预览列的累计集合；未实现 Mod 和未知 settings 仍明确拒绝。回放提前结束显示失败并冻结成绩，谱面背景与音乐继续。完整用法、成绩差异处理、内嵌字体和验收记录见 [OSR 回放预览](../../docs/osr-preview.md)。
 
 ### 普通预览的本地谱面文件（`--osu-file` / `--osz-file`）
 
@@ -214,18 +214,64 @@ Windows 会自动选择可用的 NVENC 或 AMF 硬件编码器，失败时回退
 
 ## Mod 支持
 
-| 模式 | GIF / MP4 | PNG |
-| --- | --- | --- |
-| Standard | `EZ` `HR` `HD` `FL` `AT` `DA` `TC` `CL` `DT` `HT` `NC` `DC` | `EZ` `HR` `HD` `FL` `AT` `DA` `TC` `CL` |
-| Taiko | `EZ` `HR` `HD` `FL` `SW` `CS` `CL` `DT` `HT` `NC` `DC` | `EZ` `HR` `SW` `CL` |
-| Catch | `EZ` `HR` `HD` `FL` `AT` `CL` `DT` `HT` `NC` `DC` | `EZ` `HR` `CL` |
-| Mania | `HD` `FL` `CS` `CL` `DT` `HT` `NC` `DC` `1K`-`10K` `DS` `IN` `HO` | `1K`-`10K` `DS` `IN` `HO` `CL` |
+支持按同一行从左到右累积：**PNG → GIF/MP4 → 实时预览**。后两列只列新增 Mod，包含前面所有列的能力；「无新增」仍继承前面的支持。
+
+| 模式 | PNG | GIF / MP4（新增） | 实时预览（新增） |
+| --- | --- | --- | --- |
+| Standard | Easy、Hard-Rock、Hidden、Flashlight、Autoplay、Difficulty-Adjust、Traceable | Double-Time、Half-Time、Nightcore、Daycore | Classic、Relax、Spun-Out、Autopilot、Alternate、Single-Tap、Mirror |
+| Taiko | Easy、Hard-Rock、Swap | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
+| Catch | Easy、Hard-Rock | Hidden、Flashlight、Autoplay、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
+| Mania | One-Key 至 Ten-Keys、Dual-Stages、Invert、Hold-Off | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
+
+CLI 只有 PNG、GIF 和 MP4 导出，不能用 `--mod` 传入实时列新增的 Mod（含 Classic），也没有 realtime 输出格式。Classic 只支持 Standard 实时预览，其他模式拒绝。OSR 内录制的 Mod 由回放解码器读取，因此带 Classic 等 Mod 的回放仍可导出 GIF/MP4；用户不能通过 `--mod` 修改回放。
+
+### 全名与缩写对照
+
+全名和缩写不区分大小写，使用相同参数语法。全名中的空格用短横杠：`--mod=hard-rock` 等同于 `--mod=hr`；`--mod=double-time1.25` 等同于 `--mod=dt1.25`；`--mod=difficulty-adjustCS5AR9.5` 等同于 `--mod=dacs5ar9.5`。缩写和全名混用仍按同一个 Mod 检测重复。
+
+| 全名（传入形式） | 缩写 |
+| --- | --- |
+| Easy | EZ |
+| Hard-Rock | HR |
+| Hidden | HD |
+| Flashlight | FL |
+| Autoplay | AT |
+| Difficulty-Adjust | DA（需附加难度参数） |
+| Traceable | TC |
+| Double-Time | DT |
+| Half-Time | HT |
+| Nightcore | NC |
+| Daycore | DC |
+| Classic | CL |
+| Relax | RX |
+| Spun-Out | SO |
+| Autopilot | AP |
+| Alternate | AL |
+| Single-Tap | SG |
+| Mirror | MR |
+| Swap | SW |
+| Constant-Speed | CS |
+| Dual-Stages | DS |
+| Invert | IN |
+| Hold-Off | HO |
+| One-Key | 1K |
+| Two-Keys | 2K |
+| Three-Keys | 3K |
+| Four-Keys | 4K |
+| Five-Keys | 5K |
+| Six-Keys | 6K |
+| Seven-Keys | 7K |
+| Eight-Keys | 8K |
+| Nine-Keys | 9K |
+| Ten-Keys | 10K |
 
 主要规则如下：
 
 - `DT`、`HT`、`NC`、`DC` 四者互斥。加速类默认 `1.5x`、可设为 `1.01` 至 `2.00`；减速类默认 `0.75x`、可设为 `0.50` 至 `0.99`，例如 `--mod=dt1.25`、`--mod=nc1.4`。
 - `EZ` 与 `HR`、`TC` 与 `HD`、`IN` 与 `HO` 分别互斥。
-- 普通预览的四模式均接受 `CL`，不改变自动预览画面。Standard 回放支持对应的动画 Mod，按录制设置应用，计分倍率使用当前官方规则；用户不能通过 `--mod` 修改回放规则。
+- Standard 实时预览接受 Classic、Relax、Spun-Out、Autopilot、Alternate、Single-Tap、Mirror。普通预览自动演示物件，没有玩家输入，因此 Relax、Alternate、Single-Tap 和 Classic 不额外改变自动命中画面；Autopilot 显示自动光标，Spun-Out 自动旋转转盘，Mirror 默认水平翻转物件与滑条。
+- 输入类 Mod 沿用官方互斥关系：Relax 与 Autopilot、Alternate、Single-Tap、Autoplay 互斥；Spun-Out 与 Autopilot、Autoplay 互斥；Alternate 与 Single-Tap、Autoplay 互斥；Single-Tap 与 Autoplay 互斥；Autopilot 与 Autoplay 互斥；Mirror 与 Hard-Rock 互斥。
+- Standard 回放按录制设置应用 Mod，保留游玩光标坐标。旧版 Relax 回放重建自动按键，现代 Relax 使用录制输入；Alternate / Single-Tap 限制输入动作，休息段重置限制；Mirror 支持录制的水平、垂直及双轴设置。分数按当前官方 `OsuScoreMultiplierCalculatorV2` 重算，其中 Relax / Autopilot 为 `0.1`，Spun-Out 为 `0.95`，Alternate / Single-Tap / Mirror 为 `1.0`，再与其他 Mod 倍率相乘。
 - Mania 的 `HD` 与 `FL` 互斥，其余三种模式允许 `HD+FL`。
 - 除 Catch HD 外，`HD`、`FL` 与游戏内 Autoplay 效果一致。
 - Catch HD 在 Kiai 区段持续保留淡淡的物件轮廓，与游戏内效果不一致。

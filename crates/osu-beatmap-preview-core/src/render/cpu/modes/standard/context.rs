@@ -158,6 +158,7 @@ pub struct RenderContext {
     pub spinner_size: i64,
     pub spinner_od: f64,
     pub spinner_rate: f64,
+    pub spun_out: bool,
     pub slider_follow_size: i64,
     pub slider_ball_size: i64,
     pub slider_tick_rate: f64,
@@ -489,10 +490,11 @@ fn build_context(
         flashlight: mods
             .is_some_and(|mods| mods.flashlight)
             .then(|| super::visibility::StandardFlashlightCache::new(&beatmap.break_periods)),
+        spun_out: mods.is_some_and(|mods| mods.spun_out),
         autoplay: mods
-            .is_some_and(|mods| mods.autoplay || mods.flashlight)
+            .is_some_and(|mods| mods.autoplay || mods.autopilot || mods.flashlight)
             .then(super::autoplay::AutoplayCache::new),
-        show_cursor: mods.is_some_and(|mods| mods.autoplay),
+        show_cursor: mods.is_some_and(|mods| mods.autoplay || mods.autopilot),
     }
 }
 
