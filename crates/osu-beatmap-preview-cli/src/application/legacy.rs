@@ -1,7 +1,7 @@
 use crate::application::artifact::ArtifactName;
-use crate::application::source_osu;
 use crate::application::output_plan::{OutputFormat, RenderPlan};
 use crate::application::request::ValidatedRequest;
+use crate::application::source_osu;
 use crate::cache;
 use crate::export::segment::PngSegment;
 use crate::logging::{self, CacheKind, SummaryRecord};

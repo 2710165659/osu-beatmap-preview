@@ -83,6 +83,21 @@ impl Score {
         if event.error.is_some() {
             self.state.hit_error_ms = event.error;
         }
+        // 与 osu!standard 的判定回血量级对齐；无难度信息的 HUD 近似省略 DrainRate 调整。
+        self.state.health = (self.state.health
+            + match result {
+                HitResult::Great => 0.03,
+                HitResult::Ok => 0.011,
+                HitResult::Meh => 0.002,
+                HitResult::Miss => -0.125,
+                HitResult::LargeTickMiss | HitResult::SmallTickMiss => -0.075,
+                HitResult::LargeTickHit | HitResult::SliderTailHit => 0.02,
+                HitResult::SmallTickHit => 0.02,
+                HitResult::SmallBonus => 0.0085,
+                HitResult::LargeBonus => 0.01,
+                _ => 0.0,
+            })
+        .clamp(0.0, 1.0);
         if self.maximum_base > 0.0 {
             let acc = self.base / self.maximum_base;
             self.state.accuracy = Some(acc);

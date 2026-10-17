@@ -5,11 +5,11 @@ use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::processing::validation as validate;
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 mod common;
-mod osu;
 mod osr;
+mod osu;
 pub use common::{ExecutionOptions, OutputOptions, SourceOptions, ViewOptions};
-pub use osu::RulesetOptions;
 pub use osr::{ReplaySource, ReplayUser, ScoreSelection};
+pub use osu::RulesetOptions;
 
 #[derive(Debug, Clone)]
 pub struct RenderRequest {

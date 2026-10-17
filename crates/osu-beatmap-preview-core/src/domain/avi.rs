@@ -83,7 +83,10 @@ pub fn parse_avi(bytes: &[u8]) -> Result<AviVideo> {
             break;
         }
         let size = read_u32_le(bytes, pos + 4)? as usize;
-        let Some(form_end) = (pos + 8).checked_add(size).filter(|end| *end <= bytes.len()) else {
+        let Some(form_end) = (pos + 8)
+            .checked_add(size)
+            .filter(|end| *end <= bytes.len())
+        else {
             break;
         };
         let form = &bytes[pos + 8..pos + 12];
@@ -135,7 +138,8 @@ pub fn parse_avi(bytes: &[u8]) -> Result<AviVideo> {
             is_sync: false,
         };
         // 解析失败的样本按「无画面」处理：它不产生解码输出，跳过即可。
-        for nal in split_sample_nals(bytes.get(start..end).unwrap_or_default()).unwrap_or_default() {
+        for nal in split_sample_nals(bytes.get(start..end).unwrap_or_default()).unwrap_or_default()
+        {
             match nal_type(nal) {
                 1..=5 => {
                     sample.has_frame = true;
@@ -255,7 +259,9 @@ fn scan_hdrl(bytes: &[u8], start: usize, end: usize, headers: &mut Headers) -> R
                 headers.width = read_u32_le(bytes, content + 32)?;
                 headers.height = read_u32_le(bytes, content + 36)?;
             }
-        } else if id == b"LIST" && content + 4 <= content_end && &bytes[content..content + 4] == b"strl"
+        } else if id == b"LIST"
+            && content + 4 <= content_end
+            && &bytes[content..content + 4] == b"strl"
         {
             scan_strl(bytes, content + 4, content_end, headers)?;
         }

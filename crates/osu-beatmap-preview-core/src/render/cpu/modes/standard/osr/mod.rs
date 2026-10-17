@@ -9,8 +9,9 @@ mod visibility;
 use super::{context::*, driver, frame, spinner};
 use crate::gameplay::timeline::GameplayTimeline;
 use crate::model::BreakPeriod;
-use crate::replay::preparation::standard::PreparedStandard;
 use crate::render::canvas::Img;
+use crate::replay::preparation::standard::PreparedStandard;
+use std::sync::Arc;
 
 pub(crate) fn replay_layout(format: crate::render::geometry::OutputFormat) -> FrameLayout {
     layout::build(format)
@@ -20,6 +21,9 @@ pub(crate) fn replay_layout(format: crate::render::geometry::OutputFormat) -> Fr
 pub struct ReplayVisuals {
     pub cursor: super::autoplay::AutoplayCursor,
     pub font: Option<font::ArgonFont>,
+    /// 判定条颜色轴只与 OD 和当前格式 SCALE 有关，准备阶段生成一次。
+    hit_error_axis: Arc<Img>,
+    health: hud::HealthAnimation,
     feedback: feedback::FeedbackVisuals,
     flashlight: Option<visibility::ReplayFlashlight>,
 }
@@ -29,6 +33,7 @@ impl ReplayVisuals {
         gameplay: &GameplayTimeline,
         font: Option<font::ArgonFont>,
         breaks: &[BreakPeriod],
+        od: f64,
     ) -> Self {
         let cursor = super::autoplay::AutoplayCursor::from_replay(
             context,
@@ -40,9 +45,15 @@ impl ReplayVisuals {
             .settings
             .flashlight
             .then(|| visibility::ReplayFlashlight::new(gameplay, &cursor, &mods, breaks));
+        let scale = crate::render::geometry::output_scale(
+            crate::render::geometry::GameMode::Standard,
+            context.output_format,
+        );
         Self {
             flashlight,
             feedback: feedback::FeedbackVisuals::new(context, font.as_ref()),
+            hit_error_axis: hud::build_hit_error_axis(scale, od),
+            health: hud::HealthAnimation::new(gameplay),
             cursor,
             font,
         }
@@ -181,6 +192,7 @@ pub fn draw_overlay(
         visuals,
         time as f64,
         prepared.last_end.max(gameplay.settlement_time).ceil() as i64,
+        prepared.od,
     );
 }
 
@@ -258,6 +270,7 @@ pub fn draw_scene_overlay(
         visuals,
         time as f64,
         prepared.last_end.max(gameplay.settlement_time).ceil() as i64,
+        prepared.od,
     );
 }
 
@@ -310,7 +323,7 @@ mod tests {
             start_time: 2000,
             end_time: 3000,
         }];
-        let visuals = ReplayVisuals::new(&context, &gameplay, None, &breaks);
+        let visuals = ReplayVisuals::new(&context, &gameplay, None, &breaks, 9.0);
         let flashlight = visuals.flashlight.as_ref().unwrap();
         let initial = flashlight.at(&context, 1000);
         let expected = to_frame_point(400.0, 300.0, &context.frame_layout);
@@ -350,7 +363,13 @@ mod tests {
             crate::render::geometry::OutputFormat::Mp4,
         );
         let times = [31300, 31000, 31300];
-        let visuals = ReplayVisuals::new(&context, &gameplay, None, &beatmap.break_periods);
+        let visuals = ReplayVisuals::new(
+            &context,
+            &gameplay,
+            None,
+            &beatmap.break_periods,
+            prepared.od,
+        );
         let indexes = build_visible_indexes_by_snapshot(
             &context.hit_objects,
             &times,
@@ -416,7 +435,8 @@ mod tests {
                 keys: 0,
             })
             .collect();
-        let prepared = crate::replay::preparation::standard::prepare_replay(&beatmap, &document).unwrap();
+        let prepared =
+            crate::replay::preparation::standard::prepare_replay(&beatmap, &document).unwrap();
         let gameplay =
             crate::gameplay::engine::compile_standard(&prepared, Arc::new(document)).unwrap();
         let context = build_replay_context(

@@ -7,9 +7,7 @@ use crate::{
     media::{self, audio::AudioSourceJob, MediaBackground, MediaStoryboard},
 };
 use osu_beatmap_preview_core::{
-    gameplay::timeline::GameplayTimeline,
-    replay::preparation::standard::PreparedStandard,
-    Beatmap,
+    gameplay::timeline::GameplayTimeline, replay::preparation::standard::PreparedStandard, Beatmap,
     Result,
 };
 use osu_beatmap_preview_core::{hitsound::MusicRate, processing::timeline::TimeAxis};
@@ -39,8 +37,13 @@ pub(crate) fn render(
         crate::export::geometry::OutputFormat::Mp4
     };
     let context = build_replay_context(beatmap, prepared, axis, format);
-    let visuals =
-        osr::ReplayVisuals::new(&context, gameplay, font::load()?, &beatmap.break_periods);
+    let visuals = osr::ReplayVisuals::new(
+        &context,
+        gameplay,
+        font::load()?,
+        &beatmap.break_periods,
+        prepared.od,
+    );
     let last = prepared.last_end.max(gameplay.settlement_time).ceil() as i64;
     let schedule = time_plan::build(plan, beatmap, first, last)?;
     let fps = schedule.fps;

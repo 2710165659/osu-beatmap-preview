@@ -18,6 +18,7 @@ pub struct GameplayState {
     pub statistics: BTreeMap<String, u32>,
     pub rank: Option<String>,
     pub hit_error_ms: Option<f64>,
+    pub health: f64,
     pub status: ReplayStatus,
 }
 impl Default for GameplayState {
@@ -30,6 +31,7 @@ impl Default for GameplayState {
             statistics: BTreeMap::new(),
             rank: None,
             hit_error_ms: None,
+            health: 1.0,
             status: ReplayStatus::Playing,
         }
     }

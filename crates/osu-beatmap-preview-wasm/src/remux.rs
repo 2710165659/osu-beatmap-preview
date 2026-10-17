@@ -136,7 +136,7 @@ fn parse_sps(nal: &[u8]) -> Option<SpsParams> {
     reader.read_bits(8)?; // constraint_set flags
     reader.read_bits(8)?; // level_idc
     reader.read_ue()?; // seq_parameter_set_id
-    // High 系 profile 多一组色度/位深/缩放矩阵字段。
+                       // High 系 profile 多一组色度/位深/缩放矩阵字段。
     if matches!(
         profile_idc,
         100 | 110 | 122 | 244 | 44 | 83 | 86 | 118 | 128 | 138 | 139 | 134 | 135
@@ -369,12 +369,7 @@ fn build_mp4(track: &Track) -> Result<Vec<u8>, String> {
     }
     let ftyp = box_of(
         b"ftyp",
-        &[
-            b"isom".as_slice(),
-            &512_u32.to_be_bytes(),
-            b"isomavc1mp41",
-        ]
-        .concat(),
+        &[b"isom".as_slice(), &512_u32.to_be_bytes(), b"isomavc1mp41"].concat(),
     );
     // stco 依赖 mdat 起点，mdat 起点又依赖 moov 大小；moov 的长度与偏移**值**
     // 无关，先用占位 0 量出长度，再按真实起点生成一次。
@@ -525,7 +520,11 @@ fn stbl_box(track: &Track, chunk_base: u32) -> Result<Vec<u8>, String> {
     stco.extend_from_slice(&(track.samples.len() as u32).to_be_bytes());
     let mut offset = u64::from(chunk_base);
     for sample in &track.samples {
-        stco.extend_from_slice(&u32::try_from(offset).map_err(|_| "chunk 偏移溢出")?.to_be_bytes());
+        stco.extend_from_slice(
+            &u32::try_from(offset)
+                .map_err(|_| "chunk 偏移溢出")?
+                .to_be_bytes(),
+        );
         offset += sample.len() as u64;
     }
     payload.extend_from_slice(&box_of(b"stco", &stco));
@@ -846,7 +845,11 @@ mod tests {
             durations: vec![1000, 1000, 3000],
             pts_offsets: vec![0, -1000, 2000],
             sync: vec![1, 3],
-            samples: vec![vec![0, 0, 0, 1, 0x65], vec![0, 0, 0, 1, 0x41], vec![0, 0, 0, 2, 0x41, 1]],
+            samples: vec![
+                vec![0, 0, 0, 1, 0x65],
+                vec![0, 0, 0, 1, 0x41],
+                vec![0, 0, 0, 2, 0x41, 1],
+            ],
             sps: test_sps(),
             pps: test_pps(),
         };
@@ -856,7 +859,8 @@ mod tests {
         assert_eq!(&mp4[4..8], b"ftyp");
         let ftyp_size = u32::from_be_bytes(mp4[0..4].try_into().unwrap()) as usize;
         assert_eq!(&mp4[ftyp_size + 4..ftyp_size + 8], b"moov");
-        let moov_size = u32::from_be_bytes(mp4[ftyp_size..ftyp_size + 4].try_into().unwrap()) as usize;
+        let moov_size =
+            u32::from_be_bytes(mp4[ftyp_size..ftyp_size + 4].try_into().unwrap()) as usize;
         let mdat_start = ftyp_size + moov_size;
         assert_eq!(&mp4[mdat_start + 4..mdat_start + 8], b"mdat");
 
@@ -938,7 +942,11 @@ mod tests {
         let offsets: Vec<i32> = (0..4)
             .map(|index| {
                 // ctts 条目是 (count u32, offset i32) 游程对，offset 在 +4。
-                i32::from_be_bytes(ctts[8 + index * 8 + 4..8 + index * 8 + 8].try_into().unwrap())
+                i32::from_be_bytes(
+                    ctts[8 + index * 8 + 4..8 + index * 8 + 8]
+                        .try_into()
+                        .unwrap(),
+                )
             })
             .collect();
         assert_eq!(offsets, vec![0, 5005, 0, 1001]);
@@ -950,8 +958,7 @@ mod tests {
 
         // mdat 里的样本只保留 VCL（长度前缀），参数集不进样本。
         let mdat_start = {
-            let ftyp_size =
-                u32::from_be_bytes(mp4[0..4].try_into().unwrap()) as usize;
+            let ftyp_size = u32::from_be_bytes(mp4[0..4].try_into().unwrap()) as usize;
             let moov_size =
                 u32::from_be_bytes(mp4[ftyp_size..ftyp_size + 4].try_into().unwrap()) as usize;
             ftyp_size + moov_size + 8
@@ -1026,8 +1033,7 @@ mod tests {
         let bytes = std::fs::read(&path).expect("fixture 必须可读");
         assert!(is_avi(&bytes));
         let mp4 = remux_avi_to_mp4(&bytes).expect("真实 AVI 必须可重封装");
-        let out = std::env::var("OSU_BMP_AVI_OUT")
-            .unwrap_or_else(|_| format!("{path}.remux.mp4"));
+        let out = std::env::var("OSU_BMP_AVI_OUT").unwrap_or_else(|_| format!("{path}.remux.mp4"));
         std::fs::write(&out, &mp4).expect("重封装结果必须可写");
     }
 }

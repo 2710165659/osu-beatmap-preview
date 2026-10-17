@@ -5,8 +5,7 @@ use crate::render::cpu::modes::standard::{
     osr::{self, font::ArgonFont, ReplayVisuals},
 };
 use crate::{
-    gameplay::timeline::GameplayTimeline,
-    replay::preparation::standard::PreparedStandard,
+    gameplay::timeline::GameplayTimeline, replay::preparation::standard::PreparedStandard,
 };
 
 pub(super) struct ReplayScene {
@@ -33,7 +32,13 @@ pub fn prepare(
     context.frame_layout.playfield_top += dy;
     context.frame_layout.frame_width = i64::from(dimensions.0);
     context.frame_layout.frame_height = i64::from(dimensions.1);
-    let visuals = ReplayVisuals::new(&context, &gameplay, font, &beatmap.break_periods);
+    let visuals = ReplayVisuals::new(
+        &context,
+        &gameplay,
+        font,
+        &beatmap.break_periods,
+        prepared.od,
+    );
     source_from_context(
         beatmap,
         context,

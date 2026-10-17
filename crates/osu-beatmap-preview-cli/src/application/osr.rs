@@ -1,9 +1,6 @@
 //! OSR 应用服务：严格来源绑定、一次规则编译和只读媒体导出。
 use super::{
-    artifact::ArtifactName,
-    output_plan::RenderPlan,
-    request::ValidatedRequest,
-    source_osr,
+    artifact::ArtifactName, output_plan::RenderPlan, request::ValidatedRequest, source_osr,
 };
 use crate::{
     cache,
@@ -11,10 +8,8 @@ use crate::{
 };
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use osu_beatmap_preview_core::{
-    gameplay::engine::compile_standard,
-    replay::preparation::standard::prepare_replay,
-    PreviewError,
-    Result,
+    gameplay::engine::compile_standard, replay::preparation::standard::prepare_replay,
+    PreviewError, Result,
 };
 use std::{sync::Arc, time::Instant};
 

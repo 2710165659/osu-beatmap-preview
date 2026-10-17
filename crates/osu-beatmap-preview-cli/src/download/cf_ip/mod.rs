@@ -12,7 +12,9 @@ pub fn read_preferred_ip(temp_dir: &Path) -> Option<Ipv4Addr> {
     let ip = value.get("ip")?.as_str()?.parse::<Ipv4Addr>().ok()?;
     let tested_at = value.get("tested_at")?.as_u64()?;
     let now = unix_seconds();
-    if now < tested_at || now - tested_at > crate::download::downloader::constants::CACHE_TTL.as_secs() {
+    if now < tested_at
+        || now - tested_at > crate::download::downloader::constants::CACHE_TTL.as_secs()
+    {
         return None;
     }
     Some(ip)

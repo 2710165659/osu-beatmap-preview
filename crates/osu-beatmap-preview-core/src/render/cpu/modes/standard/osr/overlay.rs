@@ -10,8 +10,12 @@ pub(super) trait OverlayCanvas {
     fn shared_sprite(&mut self, image: &Arc<Img>, x: i64, y: i64) {
         self.alpha_composite(image, x, y);
     }
+    /// 填充矩形；半透明颜色按 src-over 混合。
     fn fill_rect_size(&mut self, x: i64, y: i64, w: i64, h: i64, color: [u8; 4]);
-    fn draw_line(&mut self, x: f64, y: f64, tx: f64, ty: f64, width: f64, color: [u8; 4]);
+    /// 填充圆盘；供偏移条的中心标记和反馈效果共用。
+    fn blend_circle(&mut self, cx: f64, cy: f64, radius: f64, color: [u8; 4]);
+    /// 混合绘制单段直线，用于判定条的刻度与平均偏移标记。
+    fn blend_line(&mut self, x: f64, y: f64, tx: f64, ty: f64, width: f64, color: [u8; 4]);
     fn additive(&mut self, image: &Img, x: i64, y: i64, alpha: f64);
     fn additive_transformed(
         &mut self,
@@ -56,8 +60,11 @@ impl OverlayCanvas for Img {
     fn fill_rect_size(&mut self, x: i64, y: i64, w: i64, h: i64, color: [u8; 4]) {
         Img::fill_rect_size(self, x, y, w, h, color);
     }
-    fn draw_line(&mut self, x: f64, y: f64, tx: f64, ty: f64, width: f64, color: [u8; 4]) {
-        Img::draw_line(self, x, y, tx, ty, width, color);
+    fn blend_circle(&mut self, cx: f64, cy: f64, radius: f64, color: [u8; 4]) {
+        Img::fill_circle_aa(self, cx, cy, radius, color);
+    }
+    fn blend_line(&mut self, x: f64, y: f64, tx: f64, ty: f64, width: f64, color: [u8; 4]) {
+        Img::blend_line(self, x, y, tx, ty, width, color);
     }
     fn additive(&mut self, image: &Img, x: i64, y: i64, alpha: f64) {
         super::blend::composite(self, image, x, y, alpha);
@@ -99,7 +106,10 @@ impl OverlayCanvas for FrameSceneBuilder {
             color,
         );
     }
-    fn draw_line(&mut self, x: f64, y: f64, tx: f64, ty: f64, width: f64, color: [u8; 4]) {
+    fn blend_circle(&mut self, cx: f64, cy: f64, radius: f64, color: [u8; 4]) {
+        self.circle([cx as f32, cy as f32], radius as f32, color);
+    }
+    fn blend_line(&mut self, x: f64, y: f64, tx: f64, ty: f64, width: f64, color: [u8; 4]) {
         self.line(
             [x as f32, y as f32],
             [tx as f32, ty as f32],

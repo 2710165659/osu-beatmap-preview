@@ -1,7 +1,7 @@
 //! 不读取文件内容的通用请求校验。
 
-use super::source_osu;
 use super::request::SourceOptions;
+use super::source_osu;
 use osu_beatmap_preview_core::processing::validation as validate;
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 

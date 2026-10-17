@@ -485,6 +485,49 @@ impl Img {
         self.stroke_polyline(&[(x0, y0), (x1, y1)], width, color, false);
     }
 
+    /// 以 src-over 混合绘制单段抗锯齿粗线。
+    ///
+    /// [`Self::draw_line`] 按 PIL 语义覆盖像素，只适合画在空图层上；HUD 叠加层
+    /// 画在已经合成好的画面上，半透明元素必须混合才不会抹掉底下的物件。
+    pub fn blend_line(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, width: f64, color: Rgba) {
+        if width <= 0.0 || color[3] == 0 {
+            return;
+        }
+        let half = width / 2.0;
+        let xa = (x0.min(x1) - half - 1.0).floor().max(0.0) as i64;
+        let ya = (y0.min(y1) - half - 1.0).floor().max(0.0) as i64;
+        let xb = (x0.max(x1) + half + 1.0).ceil().min(self.w as f64 - 1.0) as i64;
+        let yb = (y0.max(y1) + half + 1.0).ceil().min(self.h as f64 - 1.0) as i64;
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        let length_sq = dx * dx + dy * dy;
+        for y in ya..=yb {
+            for x in xa..=xb {
+                let px = x as f64 + 0.5;
+                let py = y as f64 + 0.5;
+                let t = if length_sq <= 1e-12 {
+                    0.0
+                } else {
+                    (((px - x0) * dx + (py - y0) * dy) / length_sq).clamp(0.0, 1.0)
+                };
+                let distance = ((px - (x0 + t * dx)).powi(2) + (py - (y0 + t * dy)).powi(2)).sqrt();
+                let coverage = (half - distance + 0.5).clamp(0.0, 1.0);
+                if coverage > 0.0 {
+                    self.blend_px(
+                        x,
+                        y,
+                        [
+                            color[0],
+                            color[1],
+                            color[2],
+                            (f64::from(color[3]) * coverage).round() as u8,
+                        ],
+                    );
+                }
+            }
+        }
+    }
+
     /// 绘制带可选圆角连接/端帽的粗折线（PIL joint="curve" + 端部椭圆）。
     /// 像素直接覆盖（不混合），匹配空图层上的 ImageDraw 行为。
     pub fn stroke_polyline(

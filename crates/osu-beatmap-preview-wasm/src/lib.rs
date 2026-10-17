@@ -14,8 +14,8 @@ use wasm_bindgen::prelude::*;
 
 pub mod archive;
 pub mod decode;
-mod remux;
 pub mod osr;
+mod remux;
 pub mod video;
 
 #[cfg(target_arch = "wasm32")]

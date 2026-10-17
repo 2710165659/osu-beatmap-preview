@@ -65,16 +65,25 @@ pub(crate) struct DownloadContext {
     pub(crate) progress: Arc<AttemptProgress>,
 }
 
-pub(crate) fn build_agent(preferred_ip: Option<Ipv4Addr>, deadline: &RequestDeadline) -> ureq::Agent {
+pub(crate) fn build_agent(
+    preferred_ip: Option<Ipv4Addr>,
+    deadline: &RequestDeadline,
+) -> ureq::Agent {
     let min_timeout = |configured| {
         deadline
             .cap(configured)
             .unwrap_or_else(|_| Duration::from_millis(1))
     };
     let builder = ureq::AgentBuilder::new()
-        .timeout_connect(min_timeout(crate::download::downloader::constants::CONNECT_TIMEOUT))
-        .timeout_read(min_timeout(crate::download::downloader::constants::READ_TIMEOUT))
-        .timeout_write(min_timeout(crate::download::downloader::constants::WRITE_TIMEOUT));
+        .timeout_connect(min_timeout(
+            crate::download::downloader::constants::CONNECT_TIMEOUT,
+        ))
+        .timeout_read(min_timeout(
+            crate::download::downloader::constants::READ_TIMEOUT,
+        ))
+        .timeout_write(min_timeout(
+            crate::download::downloader::constants::WRITE_TIMEOUT,
+        ));
     if let Some(ip) = preferred_ip {
         builder
             .resolver(crate::download::cf_ip::resolver_for(ip))
@@ -111,8 +120,9 @@ pub(crate) fn download_with_fallback(
                     )
                 })
         }
-        Ok(RangeProbe::FullResponse(response)) => download_response(*response, part_path, context)
-            .and_then(|_| validate(part_path)),
+        Ok(RangeProbe::FullResponse(response)) => {
+            download_response(*response, part_path, context).and_then(|_| validate(part_path))
+        }
         Err(probe_error) => {
             check_cancelled(context)?;
             remove_if_exists(part_path);

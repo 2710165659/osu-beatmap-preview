@@ -72,7 +72,8 @@ fn all_client_and_score_versions_compile_without_an_allowlist() {
 #[test]
 fn stable_and_explicit_cl_share_slider_judgements_and_current_scoring() {
     let prepared =
-        crate::replay::preparation::standard::prepare(&map("100,100,1000,2,0,L|200:100,1,100")).unwrap();
+        crate::replay::preparation::standard::prepare(&map("100,100,1000,2,0,L|200:100,1,100"))
+            .unwrap();
     for tail_hit in [true, false] {
         let mut legacy = document(&[
             (0, [100.0; 2], 0),
@@ -121,7 +122,8 @@ fn stable_and_explicit_cl_share_slider_judgements_and_current_scoring() {
 #[test]
 fn classic_note_lock_blocks_later_circle_until_previous_object_is_judged() {
     let prepared =
-        crate::replay::preparation::standard::prepare(&map("100,100,1000,1,0\n400,100,1050,1,0")).unwrap();
+        crate::replay::preparation::standard::prepare(&map("100,100,1000,1,0\n400,100,1050,1,0"))
+            .unwrap();
     let replay = document(&[
         (0, [0.0; 2], 0),
         (1000, [400.0, 100.0], 1),
@@ -155,7 +157,8 @@ fn classic_note_lock_blocks_later_circle_until_previous_object_is_judged() {
 #[test]
 fn cl_can_keep_modern_slider_accuracy_through_its_recorded_settings() {
     let prepared =
-        crate::replay::preparation::standard::prepare(&map("100,100,1000,2,0,L|200:100,1,100")).unwrap();
+        crate::replay::preparation::standard::prepare(&map("100,100,1000,2,0,L|200:100,1,100"))
+            .unwrap();
     let mut replay = document(&[
         (0, [100.0; 2], 0),
         (1100, [100.0; 2], 1),
@@ -186,7 +189,8 @@ fn cl_can_keep_modern_slider_accuracy_through_its_recorded_settings() {
 #[test]
 fn failure_freezes_state_clears_keys_and_settles_same_time_input() {
     let prepared =
-        crate::replay::preparation::standard::prepare(&map("100,100,1000,1,0\n400,100,2000,1,0")).unwrap();
+        crate::replay::preparation::standard::prepare(&map("100,100,1000,1,0\n400,100,2000,1,0"))
+            .unwrap();
     let replay = document(&[(0, [0.0; 2], 0), (1000, [100.0; 2], 1)]);
     let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
     let failed = timeline.state_at(1000.0);
@@ -218,7 +222,8 @@ fn full_replay_gets_grace_settlement_without_false_failure() {
 
 #[test]
 fn compilation_limit_is_checked_before_large_step_allocation() {
-    let prepared = crate::replay::preparation::standard::prepare(&map("256,192,0,8,0,3000000")).unwrap();
+    let prepared =
+        crate::replay::preparation::standard::prepare(&map("256,192,0,8,0,3000000")).unwrap();
     let replay = document(&[(0, [0.0; 2], 0), (3000000, [0.0; 2], 0)]);
     assert!(compile_timeline(&prepared, Arc::new(replay))
         .err()
@@ -230,7 +235,8 @@ fn compilation_limit_is_checked_before_large_step_allocation() {
 #[test]
 fn late_head_restores_passed_nodes_and_short_slider_settles_after_head_timeout() {
     let prepared =
-        crate::replay::preparation::standard::prepare(&map("100,100,1000,2,0,L|110:100,2,10")).unwrap();
+        crate::replay::preparation::standard::prepare(&map("100,100,1000,2,0,L|110:100,2,10"))
+            .unwrap();
     assert_eq!(prepared.objects[0].end, 1100.0);
     let replay = document(&[
         (0, [0.0; 2], 0),
@@ -262,7 +268,8 @@ fn late_head_restores_passed_nodes_and_short_slider_settles_after_head_timeout()
 #[test]
 fn slider_only_accepts_other_key_after_its_release_was_observed() {
     let prepared =
-        crate::replay::preparation::standard::prepare(&map("100,100,1000,2,0,L|140:100,1,40")).unwrap();
+        crate::replay::preparation::standard::prepare(&map("100,100,1000,2,0,L|140:100,1,40"))
+            .unwrap();
     let replay = document(&[
         (0, [0.0; 2], 0),
         (1000, [500.0; 2], 2),
@@ -282,7 +289,8 @@ fn slider_only_accepts_other_key_after_its_release_was_observed() {
 
 #[test]
 fn spinner_sound_requires_motion_stops_after_damping_and_clears_at_failure() {
-    let prepared = crate::replay::preparation::standard::prepare(&map("256,192,1000,8,0,3000")).unwrap();
+    let prepared =
+        crate::replay::preparation::standard::prepare(&map("256,192,1000,8,0,3000")).unwrap();
     let mut frames = vec![(0, [356.0, 192.0], 0), (1000, [356.0, 192.0], 1)];
     for step in 1..=60 {
         let angle = (step as f32 * 12.0).to_radians();
@@ -397,7 +405,8 @@ fn hard_rock_uses_flipped_geometry_and_recorded_cursor_without_double_flip() {
             replay.metadata.as_mut().unwrap().mods =
                 serde_json::from_value(serde_json::json!([{"acronym":"HR"}])).unwrap();
         }
-        let prepared = crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        let prepared =
+            crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
         assert_eq!(prepared.objects[0].position, [100.0, 284.0]);
         assert_eq!(prepared.od, 7.0);
         let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
@@ -423,7 +432,8 @@ fn replay_mod_difficulty_changes_hit_windows_and_slider_geometry_before_stacking
     ] {
         let mut replay = document(&[(0, [100.0; 2], 0), (1040, [100.0; 2], 1)]);
         replay.metadata.as_mut().unwrap().mods = serde_json::from_value(mods).unwrap();
-        let prepared = crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        let prepared =
+            crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
         let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
         assert_eq!(
             timeline.events[0].result,
@@ -474,7 +484,8 @@ fn mirror_reflects_geometry_without_changing_recorded_cursor() {
             {"acronym":"MR", "settings":{"reflection":reflection}}
         ]))
         .unwrap();
-        let prepared = crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        let prepared =
+            crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
         assert_eq!(prepared.objects[0].position, expected);
         assert_eq!(prepared.objects[0].source.slider_points[0], control);
         let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
@@ -498,7 +509,8 @@ fn alternate_and_single_tap_filter_press_edges_and_preserve_releases() {
         ]);
         replay.metadata.as_mut().unwrap().mods =
             serde_json::from_value(serde_json::json!([{"acronym":code}])).unwrap();
-        let prepared = crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        let prepared =
+            crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
         let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
         for (object, hit) in timeline.objects.iter().zip(hit) {
             assert_eq!(object.head.unwrap().1.is_hit(), hit, "{code}");
@@ -539,7 +551,8 @@ fn relax_rebuilds_legacy_inputs_but_keeps_modern_recorded_presses() {
             replay.metadata.as_mut().unwrap().mods =
                 serde_json::from_value(serde_json::json!([{"acronym":"RX"}])).unwrap();
         }
-        let prepared = crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
+        let prepared =
+            crate::replay::preparation::standard::prepare_replay(&beatmap, &replay).unwrap();
         let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
         assert_eq!(timeline.objects[0].head.unwrap().1.is_hit(), legacy);
         if legacy {

@@ -1,8 +1,8 @@
 //! 输入边沿、节点和超时按明确次序编译；连续对象使用策略内固定积分网格。
-use crate::replay::calculate::standard::{circle, score::Score, slider, spinner};
 use crate::gameplay::events::{EventKind, GameplayEvent, HitResult};
 use crate::gameplay::state::{ObjectState, ReplayStatus};
 use crate::gameplay::timeline::GameplayTimeline;
+use crate::replay::calculate::standard::{circle, score::Score, slider, spinner};
 use crate::replay::preparation::standard::{NodeKind, PreparedStandard};
 use crate::replay::{compatibility, timeline::standard_actions, ReplayDocument, ReplayTimeline};
 use crate::support::error::{PreviewError, Result};
