@@ -152,3 +152,75 @@ pub(super) fn render(
     );
     scene.finish()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gameplay::events::HitResult;
+    use crate::render::scene::DrawCommand;
+
+    #[test]
+    fn hidden_scene_does_not_reintroduce_judged_circle_or_slider_head() {
+        for object in ["100,100,1000,1,0", "100,100,1000,2,0,L|300:100,1,200"] {
+            for (mods, visible) in [
+                (serde_json::json!([]), true),
+                (serde_json::json!([{"acronym":"HD"}]), false),
+                (
+                    serde_json::json!([{"acronym":"HD","settings":{"only_fade_approach_circles":true}}]),
+                    true,
+                ),
+            ] {
+                let raw = format!("osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:5\nOverallDifficulty:5\nSliderMultiplier:1.4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n{object}\n");
+                let beatmap = crate::parse_beatmap_bytes(raw.as_bytes()).unwrap();
+                let mut document = crate::replay::parse_osr(include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../osu-beatmap-preview-web/test/fixtures/replay-standard.osr"
+                )))
+                .unwrap();
+                document.header.version = 30_000_016;
+                document.metadata =
+                    Some(serde_json::from_value(serde_json::json!({"mods":mods})).unwrap());
+                let prepared = Arc::new(
+                    crate::replay::preparation::standard::prepare_replay(&beatmap, &document)
+                        .unwrap(),
+                );
+                let mut gameplay =
+                    crate::gameplay::engine::compile_standard(&prepared, Arc::new(document))
+                        .unwrap();
+                gameplay.failure_time = None;
+                gameplay.objects[0].head = Some((1000.0, HitResult::Great));
+                let context = build_replay_context(
+                    &beatmap,
+                    &prepared,
+                    TimeAxis::new(1000),
+                    OutputFormat::Mp4,
+                );
+                let center = to_frame_point(100.0, 100.0, &context.frame_layout);
+                let radius = context.frame_circle_diameter as f32 / 2.0;
+                let source = prepare(
+                    &beatmap,
+                    prepared,
+                    Arc::new(gameplay),
+                    None,
+                    (
+                        context.frame_layout.frame_width as u32,
+                        context.frame_layout.frame_height as u32,
+                    ),
+                )
+                .unwrap();
+                // 检查物件的白色外环，HUD、光标和判定粒子不属于 note 主体。
+                for time in [1000, 1001, 1040, 1080, 1119] {
+                    let scene = source.render(time).unwrap();
+                    let has_head = scene.commands.iter().any(|command| matches!(command,
+                        DrawCommand::Ring { center: point, radius: r, color, .. }
+                        if *point == [center.0 as f32, center.1 as f32] && *r == radius && color[3] > 0
+                    ));
+                    assert_eq!(
+                        has_head, visible,
+                        "WebGPU 判定后可见性错误：{object}/{time}"
+                    );
+                }
+            }
+        }
+    }
+}

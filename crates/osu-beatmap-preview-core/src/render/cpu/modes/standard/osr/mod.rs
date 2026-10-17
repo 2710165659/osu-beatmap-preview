@@ -196,7 +196,7 @@ pub fn draw_overlay(
     );
 }
 
-/// 未判定时维持物件，实际命中后才消退；Miss 的掉落和文字由反馈层绘制。
+/// 回放判定控制消退时间，物件主体仍受 Mod 可见性约束；Miss 的掉落和文字由反馈层绘制。
 pub(crate) fn head_alpha(
     context: &RenderContext,
     start: i64,
@@ -209,20 +209,22 @@ pub(crate) fn head_alpha(
         Some((hit, result)) => (1.0
             - (time as f64 - hit) / if result.is_hit() { 120.0 } else { 100.0 })
         .clamp(0.0, 1.0),
-        None => {
-            let normal =
-                super::alpha::normal_object_alpha(start, time.max(start), time, &context.settings);
-            if context.settings.hidden && !context.settings.hidden_only_approach {
-                normal.min(super::alpha::object_alpha(
-                    start,
-                    start,
-                    time,
-                    &context.settings,
-                ))
-            } else {
-                normal
-            }
-        }
+        None => super::alpha::normal_object_alpha(start, time.max(start), time, &context.settings),
+    };
+    // 命中或漏判的消退动画不能重置 HD 透明度；圆圈与滑条头继续使用普通预览的消隐时间轴。
+    // 仅隐藏接近圈的 HD 设置和 TC 不隐藏物件主体，仍保留原有判定淡出。
+    let alpha = if context.settings.hidden
+        && !context.settings.traceable
+        && !context.settings.hidden_only_approach
+    {
+        alpha.min(super::alpha::object_alpha(
+            start,
+            start,
+            time,
+            &context.settings,
+        ))
+    } else {
+        alpha
     };
     if fade_early && judgement.is_none_or(|(hit, result)| hit > time as f64 || !result.is_hit()) {
         // 官方 CL 从 100 窗结束开始淡出，在 50 窗结束时完全透明；命中后的动画独立。
@@ -306,6 +308,107 @@ mod tests {
         );
         let background = driver::background_frame(&context, None);
         assert_eq!(actual.data, background.data);
+    }
+
+    #[test]
+    fn hidden_judgements_do_not_restart_head_visibility() {
+        use crate::gameplay::events::HitResult;
+        for mods in [
+            serde_json::json!([{"acronym":"HD"}]),
+            serde_json::json!([{"acronym":"HD"},{"acronym":"CL"}]),
+        ] {
+            let (_, prepared, _, context) = mod_fixture(mods);
+            for result in [
+                HitResult::Great,
+                HitResult::Ok,
+                HitResult::Meh,
+                HitResult::Miss,
+            ] {
+                for hit in [1000.0, 950.0, 1050.0, 500.0] {
+                    for time in [400, 600, 900, 999, 1000, 1001, 1050, 1119, 1200] {
+                        let expected =
+                            super::super::alpha::object_alpha(1000, 1000, time, &context.settings);
+                        let actual = head_alpha(
+                            &context,
+                            1000,
+                            Some((hit, result)),
+                            time,
+                            false,
+                            prepared.od,
+                        );
+                        assert!(actual <= expected, "HD 判定不能让物件重新出现：{result:?}/{hit}/{time}: {actual} > {expected}");
+                    }
+                }
+            }
+        }
+        // 普通模式及仅隐藏接近圈的 HD 设置仍保留命中后的淡出动画。
+        for mods in [
+            serde_json::json!([]),
+            serde_json::json!([{"acronym":"HD","settings":{"only_fade_approach_circles":true}}]),
+        ] {
+            let (_, prepared, _, context) = mod_fixture(mods);
+            assert_eq!(
+                head_alpha(
+                    &context,
+                    1000,
+                    Some((1000.0, HitResult::Great)),
+                    1000,
+                    false,
+                    prepared.od
+                ),
+                1.0
+            );
+            assert!(
+                (head_alpha(
+                    &context,
+                    1000,
+                    Some((1000.0, HitResult::Great)),
+                    1060,
+                    false,
+                    prepared.od
+                ) - 0.5)
+                    .abs()
+                    < 1e-9
+            );
+        }
+    }
+
+    #[test]
+    fn hidden_cpu_circle_and_slider_head_stay_invisible_after_judgement() {
+        use crate::gameplay::events::HitResult;
+        for object in ["100,100,1000,1,0", "100,100,1000,2,0,L|300:100,1,200"] {
+            let (_, prepared, mut gameplay, context) =
+                object_mod_fixture(serde_json::json!([{"acronym":"HD"}]), object);
+            gameplay.failure_time = None;
+            for time in [999, 1000, 1001, 1040, 1080, 1119, 1120] {
+                gameplay.objects[0].head = None;
+                let expected = render_frame(
+                    &context,
+                    &mut RenderCache::default(),
+                    &prepared,
+                    &gameplay,
+                    time,
+                    &[],
+                    &[0],
+                    None,
+                );
+                gameplay.objects[0].head = Some((1000.0, HitResult::Great));
+                let actual = render_frame(
+                    &context,
+                    &mut RenderCache::default(),
+                    &prepared,
+                    &gameplay,
+                    time,
+                    &[],
+                    &[0],
+                    None,
+                );
+                assert_eq!(
+                    actual.data, expected.data,
+                    "HD 圆圈或滑条头在命中后重新出现：{object}/{time}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -416,7 +519,19 @@ mod tests {
         GameplayTimeline,
         RenderContext,
     ) {
-        let beatmap = crate::parse_beatmap_bytes(b"osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:5\nOverallDifficulty:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n100,100,1000,1,0\n").unwrap();
+        object_mod_fixture(mods, "100,100,1000,1,0")
+    }
+
+    fn object_mod_fixture(
+        mods: serde_json::Value,
+        objects: &str,
+    ) -> (
+        crate::Beatmap,
+        PreparedStandard,
+        GameplayTimeline,
+        RenderContext,
+    ) {
+        let beatmap = crate::parse_beatmap_bytes(format!("osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:5\nOverallDifficulty:5\nSliderMultiplier:1.4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n{objects}\n").as_bytes()).unwrap();
         let mut document = crate::replay::parse_osr(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../osu-beatmap-preview-web/test/fixtures/replay-standard.osr"
