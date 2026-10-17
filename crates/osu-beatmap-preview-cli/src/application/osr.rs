@@ -109,6 +109,9 @@ fn execute_inner(
     let mut plan = RenderPlan::build(request, 0, false)?;
     // Mod 只能来自回放；内部计划仍复用普通导出的速度与音频参数。
     plan.mods = Some(prepared.mods.settings.clone());
+    super::selection::select(&source.beatmap, &mut plan)?;
+    rec.selected_times_ms = plan.selected_times.clone();
+    deadline.check()?;
     let path = directory.join(ArtifactName::from_plan(&plan).as_str());
     let mut sources = vec![source.osr_path.as_path(), source.osu_path.as_path()];
     sources.extend(source.osz_path.as_deref());
@@ -221,7 +224,6 @@ fn execute_inner(
 mod tests {
     use super::*;
     use crate::application::request::{RenderRequest, ReplaySource, RequestKind};
-    use osu_beatmap_preview_core::processing::validation::TimePoint;
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -250,10 +252,10 @@ mod tests {
         let result = execute(bypass.clone()).unwrap();
         assert_eq!(result["replay-info"]["cache-hit"], false);
 
-        // 五个显式时间点超过默认四格容量，验证进入渲染后失败仍有耗时与错误汇总。
-        bypass.view.time_points = (0..5)
-            .map(|value| TimePoint::Seconds(value as f64))
-            .collect();
+        // 用文件阻挡输出目录，验证进入渲染后失败仍有耗时与错误汇总。
+        let blocked = root.join("blocked");
+        std::fs::write(&blocked, b"blocked output directory").unwrap();
+        bypass.output.output_dir = Some(blocked.to_string_lossy().into());
         assert!(execute(bypass).is_err());
         let mut bad_source = request.clone();
         let invalid_replay = root.join("invalid.osr");

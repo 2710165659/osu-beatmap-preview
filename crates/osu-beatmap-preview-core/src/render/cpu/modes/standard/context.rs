@@ -4,7 +4,7 @@ use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::{Beatmap, BreakPeriod, HitObjects, StandardHitObject};
 use crate::domain::mods::ModSettings;
 use crate::domain::parser::round_half_even;
-use crate::domain::shared::time_selection::{PreviewTimeSelector, TimeAxis};
+use crate::domain::shared::time_selection::{PreviewTimeSelection, TimeAxis};
 use crate::render::canvas::Img;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, Weak};
@@ -556,21 +556,14 @@ pub fn choose_row_start_times(
     row_count: usize,
     images_per_row: usize,
     ms_per_row_duration: i64,
-    requested_start_times: Option<Vec<i64>>,
+    selection: PreviewTimeSelection,
 ) -> Result<Vec<RowTiming>> {
     let row_duration = (images_per_row as i64 - 1) * ms_per_row_duration;
     let spans: Vec<(i64, i64)> = hit_objects
         .iter()
         .map(|o| (o.start_time, o.end_time))
         .collect();
-    let chosen = PreviewTimeSelector::new(
-        beatmap,
-        spans,
-        row_count,
-        row_duration,
-        requested_start_times,
-    )?
-    .choose()?;
+    let chosen = selection.choose(beatmap, spans, row_count, row_duration)?;
     Ok(chosen
         .into_iter()
         .map(|t| RowTiming {

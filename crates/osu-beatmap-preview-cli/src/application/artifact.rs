@@ -25,7 +25,17 @@ impl ArtifactName {
                 ));
             }
         } else {
-            if !plan.time_points.is_empty() {
+            if let Some(times) = &plan.selected_times {
+                // 使用实际起点，包含 Preview Time 和随机补点；整数毫秒避免浮点格式歧义。
+                parts.push(format!(
+                    "time-points{}",
+                    times
+                        .iter()
+                        .map(|time| format!("{time}ms"))
+                        .collect::<Vec<_>>()
+                        .join("-")
+                ));
+            } else if !plan.time_points.is_empty() {
                 parts.push(format_time_points_suffix(&plan.time_points));
             }
             // GIF 的分段时长与区间段 PNG 的时长都要进文件名；
@@ -200,6 +210,25 @@ mod tests {
         assert_eq!(
             ArtifactName::from_plan(&plan(None, None, false, true)).as_str(),
             ArtifactName::from_plan(&plan(None, None, true, false)).as_str()
+        );
+    }
+
+    #[test]
+    fn selected_points_determine_cache_name_instead_of_requested_points() {
+        let mut plan = plan(None, None, false, true);
+        plan.time_points = vec![TimePoint::Preview];
+        plan.selected_times = Some(vec![1000, 12_345, 20_000, 30_000]);
+        assert_eq!(
+            ArtifactName::from_plan(&plan).as_str(),
+            "standard_123_time-points1000ms-12345ms-20000ms-30000ms.gif"
+        );
+        let first = ArtifactName::from_plan(&plan).as_str().to_string();
+        plan.selected_times.as_mut().unwrap()[1] += 1;
+        assert_ne!(ArtifactName::from_plan(&plan).as_str(), first);
+        plan.selected_times.as_mut().unwrap().pop();
+        assert_eq!(
+            ArtifactName::from_plan(&plan).as_str(),
+            "standard_123_time-points1000ms-12346ms-20000ms.gif"
         );
     }
 }

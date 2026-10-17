@@ -6,6 +6,7 @@ pub(crate) mod legacy;
 mod osr;
 pub(crate) mod output_plan;
 pub mod request;
+mod selection;
 mod source_osr;
 mod source_osu;
 mod validation_common;

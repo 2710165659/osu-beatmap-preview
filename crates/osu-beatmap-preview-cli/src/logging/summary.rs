@@ -27,6 +27,8 @@ pub struct SummaryRecord {
     pub convert: Option<String>,
     pub mods: Option<String>,
     pub time_points: Option<Vec<String>>,
+    /// 最终实际选中的谱面绝对起点（毫秒）。
+    pub selected_times_ms: Option<Vec<i64>>,
     pub duration_time: Option<f64>,
     pub no_cache: bool,
     // 谱面
@@ -84,6 +86,9 @@ pub fn write_summary(rec: &SummaryRecord) {
     insert_opt(&mut map, "mods", rec.mods.as_deref());
     if let Some(points) = &rec.time_points {
         map.insert("time_points".to_string(), json!(points));
+    }
+    if let Some(points) = &rec.selected_times_ms {
+        map.insert("selected_times_ms".to_string(), json!(points));
     }
     insert_opt(&mut map, "duration_time", rec.duration_time);
     if rec.no_cache {

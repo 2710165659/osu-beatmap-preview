@@ -4,7 +4,7 @@ use crate::export::canvas::Img;
 use crate::export::text::format_mmssmmm;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::Beatmap;
-use osu_beatmap_preview_core::processing::timeline::TimeAxis;
+use osu_beatmap_preview_core::processing::timeline::{PreviewTimeSelection, TimeAxis};
 use osu_beatmap_preview_core::support::error::Result;
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 
@@ -16,7 +16,7 @@ pub(crate) fn render_standard_png(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     time_axis: TimeAxis,
-    times_ms: Option<Vec<i64>>,
+    times_ms: PreviewTimeSelection,
     deadline: &RequestDeadline,
 ) -> Result<Img> {
     deadline.check()?;

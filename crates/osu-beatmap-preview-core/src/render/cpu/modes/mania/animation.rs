@@ -5,7 +5,7 @@ use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::{Beatmap, ManiaHitObject, TimingPoint};
 use crate::domain::mods::ModSettings;
 use crate::domain::parser::round_half_even;
-use crate::domain::shared::time_selection::{GifRenderOptions, PreviewTimeSelector, TimeAxis};
+use crate::domain::shared::time_selection::{GifRenderOptions, TimeAxis};
 use crate::domain::timeout::RequestDeadline;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::cpu::AnimationFrames;
@@ -147,48 +147,40 @@ pub fn prepare_mania_gif_frames(
     let fps = fps
         .map(f64::from)
         .unwrap_or(crate::config::current().render.mania.gif.style.FPS as f64);
-    let (segment_timings, segment_duration, frame_count, show_time_label, time_axis) = match options
-    {
-        GifRenderOptions::Segments {
-            times_ms,
-            duration_seconds,
+    let (times_ms, duration_seconds, time_axis) = options.into_parts();
+    let (segment_timings, segment_duration, frame_count, show_time_label, time_axis) = {
+        let segment_duration_ms = duration_seconds
+            .map(|seconds| seconds * 1000.0)
+            .unwrap_or(crate::config::current().render.mania.gif.style.DURATION_MS as f64);
+        let gameplay_segment_duration = round_half_even(segment_duration_ms * speed_multiplier);
+        let spans: Vec<(i64, i64)> = hit_objects
+            .iter()
+            .map(|ho| (ho.start_time, ho.end_time))
+            .collect();
+        let segment_timings = times_ms.choose(
+            beatmap,
+            spans,
+            crate::config::current()
+                .render
+                .mania
+                .gif
+                .structure
+                .IMAGES_PER_ROW as usize,
+            gameplay_segment_duration,
+        )?;
+        let frame_count = round_half_even(segment_duration_ms * fps / 1000.0).max(1);
+        (
+            segment_timings,
+            gameplay_segment_duration,
+            frame_count,
+            crate::config::current()
+                .render
+                .mania
+                .gif
+                .style
+                .SHOW_TIME_LABEL,
             time_axis,
-        } => {
-            let segment_duration_ms = duration_seconds
-                .map(|seconds| seconds * 1000.0)
-                .unwrap_or(crate::config::current().render.mania.gif.style.DURATION_MS as f64);
-            let gameplay_segment_duration = round_half_even(segment_duration_ms * speed_multiplier);
-            let spans: Vec<(i64, i64)> = hit_objects
-                .iter()
-                .map(|ho| (ho.start_time, ho.end_time))
-                .collect();
-            let segment_timings = PreviewTimeSelector::new(
-                beatmap,
-                spans,
-                crate::config::current()
-                    .render
-                    .mania
-                    .gif
-                    .structure
-                    .IMAGES_PER_ROW as usize,
-                gameplay_segment_duration,
-                times_ms,
-            )?
-            .choose()?;
-            let frame_count = round_half_even(segment_duration_ms * fps / 1000.0).max(1);
-            (
-                segment_timings,
-                gameplay_segment_duration,
-                frame_count,
-                crate::config::current()
-                    .render
-                    .mania
-                    .gif
-                    .style
-                    .SHOW_TIME_LABEL,
-                time_axis,
-            )
-        }
+        )
     };
 
     let skin_config = load_mania_skin_config(key_count, crate::render::geometry::OutputFormat::Gif);

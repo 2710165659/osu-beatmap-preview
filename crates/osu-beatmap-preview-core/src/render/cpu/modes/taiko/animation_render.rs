@@ -4,9 +4,7 @@ use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::{Beatmap, TaikoHitObject, TimingPoint};
 use crate::domain::mods::ModSettings;
 use crate::domain::parser::round_half_even;
-use crate::domain::shared::time_selection::{
-    GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector,
-};
+use crate::domain::shared::time_selection::{GifRenderOptions, PreviewSegmentTiming};
 use crate::domain::timeout::RequestDeadline;
 use crate::render::canvas::Img;
 use crate::render::cpu::AnimationFrames;
@@ -114,27 +112,22 @@ pub fn prepare_taiko_gif_frames(
     deadline: &RequestDeadline,
 ) -> Result<AnimationFrames> {
     deadline.check()?;
-    match options {
-        GifRenderOptions::Segments {
-            times_ms,
-            duration_seconds,
-            time_axis,
-        } => prepare_taiko_segment_gif_frames(
-            beatmap,
-            mods,
-            times_ms,
-            duration_seconds,
-            time_axis,
-            fps,
-            deadline,
-        ),
-    }
+    let (times_ms, duration_seconds, time_axis) = options.into_parts();
+    prepare_taiko_segment_gif_frames(
+        beatmap,
+        mods,
+        times_ms,
+        duration_seconds,
+        time_axis,
+        fps,
+        deadline,
+    )
 }
 
 fn prepare_taiko_segment_gif_frames(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
-    times_ms: Option<Vec<i64>>,
+    times_ms: crate::domain::shared::time_selection::PreviewTimeSelection,
     duration_seconds: Option<f64>,
     time_axis: crate::domain::shared::time_selection::TimeAxis,
     fps: Option<u32>,
@@ -159,7 +152,7 @@ fn prepare_taiko_segment_gif_frames(
         .iter()
         .map(|h| (h.start_time, h.end_time))
         .collect();
-    let segment_timings: Vec<PreviewSegmentTiming> = PreviewTimeSelector::new(
+    let segment_timings: Vec<PreviewSegmentTiming> = times_ms.choose(
         beatmap,
         spans,
         crate::config::current()
@@ -169,9 +162,7 @@ fn prepare_taiko_segment_gif_frames(
             .structure
             .ROW_COUNT as usize,
         gameplay_segment_duration,
-        times_ms,
-    )?
-    .choose()?;
+    )?;
 
     let slider_multiplier = effective_slider_multiplier(beatmap, mods)?;
     let timing_points = effective_timing_points(beatmap, mods);

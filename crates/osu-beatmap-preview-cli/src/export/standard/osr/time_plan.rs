@@ -120,6 +120,7 @@ mod tests {
 
     fn plan(points: Vec<TimePoint>) -> RenderPlan {
         RenderPlan {
+            selected_times: None,
             bid: "1".into(),
             target_mode: 0,
             convert_used: false,

@@ -186,7 +186,7 @@ osu-beatmap-preview-cli --osu-file=C:/maps/edited.osu --osz-file=C:/maps/local-p
 
 数值时间点使用游戏时间轴：转谱后目标模式的首个可玩物件是 `0:00`，并非编辑器左下角显示的绝对音轨时间。
 
-- GIF 和 Standard PNG 会把每个 `--time-points` 作为一个分段起点。指定点未占满布局容量时，程序优先补入谱面的 `PreviewTime`，再以确定性方式补齐其他不重叠片段；相同谱面和配置会得到相同选段。
+- GIF 和 Standard PNG 会把每个 `--time-points` 作为一个分段起点。指定点未占满布局容量时，程序优先补入谱面的 `PreviewTime`，其余片段每次请求都从系统随机源重新抽取，避开显式休息段、物件之间的长空白和已选片段；短谱没有足够空间时只输出能选出的片段。指定点已占满容量时直接使用，不额外加入 Preview Time。
 - 时间点数量不能超过当前布局的分段容量。GIF 默认共 4 段（Standard/Catch 为 2 × 2 网格，Taiko 为 4 行，Mania 为 4 列）；Standard PNG 默认有 5 行，因此最多指定 5 个行起点。
 - MP4 默认从游戏时间 `0` 开始，请求 600 秒。谱面较短时输出完整可播放范围，不填充到 600 秒；请求区间超过谱面尾部时会整体前移以保留时长。
 - `--time-points=preview` 使用 `.osu` 文件中的 `PreviewTime`；缺失或无效时回退到首个物件。
@@ -413,7 +413,8 @@ timeout:
 
 ### 缓存与日志
 
-- 输出文件名包含目标模式、Beatmap ID、转谱标记、Mod 和显式时间参数，例如 `mania_738063_convert_4k_fps30.gif`；显式倍率会以 `@2x` 形式追加在扩展名之前。
+- 输出文件名包含目标模式、Beatmap ID、转谱标记、Mod 和时间参数；显式倍率会以 `@2x` 形式追加在扩展名之前。GIF（包含回放）和 Standard PNG 在缓存检查前确定全部分段起点，以谱面绝对毫秒写入文件名，例如 `standard_738063_time-points1000ms-12345ms-20000ms-30000ms.gif`。只有实际选段相同才会复用对应输出；显式指定全部时间点可以稳定命中，随机补点变化时会生成新文件。Standard PNG 的每个起点对应一行快照，行内间隔由配置确定。
+- `progress.log` 记录最终选段事件，`render.log` 的 `selected_times_ms` 保存同一组绝对毫秒起点，便于对照文件名与缓存状态。
 - 日志默认开启。`progress.log` 记录可实时跟踪的阶段事件，`render.log` 以 NDJSON 记录每次请求的状态、谱面信息、缓存命中和耗时。
 - 日志写入失败只会在 stderr 给出提示，不影响渲染结果。使用 `--no-log` 可以关闭日志。
 - 下载与输出缓存不会自动清理；空间占用过大时可以手动删除对应临时目录。

@@ -68,8 +68,8 @@ mod tests {
                  [HitObjects]\n64,192,1000,1,0,0:0:0:0:\n448,192,2000,1,0,0:0:0:0:\n"
             );
             let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes()).unwrap();
-            let options = GifRenderOptions::Segments {
-                times_ms: Some(vec![0, 1000]),
+            let options = GifRenderOptions::ResolvedSegments {
+                times_ms: vec![0, 1000],
                 duration_seconds: Some(0.2),
                 time_axis: TimeAxis::new(0),
             };

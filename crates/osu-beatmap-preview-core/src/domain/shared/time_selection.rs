@@ -53,26 +53,83 @@ pub enum GifRenderOptions {
         duration_seconds: Option<f64>,
         time_axis: TimeAxis,
     },
+    /// 缓存检查前已确定的选段，渲染时禁止再次补点。
+    ResolvedSegments {
+        times_ms: Vec<i64>,
+        duration_seconds: Option<f64>,
+        time_axis: TimeAxis,
+    },
 }
 
-struct SimpleRng(u64);
-
-impl SimpleRng {
-    fn new(seed: u64) -> Self {
-        SimpleRng(seed | 1)
+impl GifRenderOptions {
+    pub fn into_parts(self) -> (PreviewTimeSelection, Option<f64>, TimeAxis) {
+        match self {
+            Self::Segments {
+                times_ms,
+                duration_seconds,
+                time_axis,
+            } => (
+                PreviewTimeSelection::Requested(times_ms),
+                duration_seconds,
+                time_axis,
+            ),
+            Self::ResolvedSegments {
+                times_ms,
+                duration_seconds,
+                time_axis,
+            } => (
+                PreviewTimeSelection::Resolved(times_ms),
+                duration_seconds,
+                time_axis,
+            ),
+        }
     }
+}
 
-    fn next_u64(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.0 = x;
-        x
+/// 用户输入需要补齐，已选片段则必须原样传到渲染器，即使短谱不足网格容量。
+pub enum PreviewTimeSelection {
+    Requested(Option<Vec<i64>>),
+    Resolved(Vec<i64>),
+}
+
+impl PreviewTimeSelection {
+    pub fn choose(
+        self,
+        beatmap: &Beatmap,
+        spans: Vec<(i64, i64)>,
+        count: usize,
+        duration: i64,
+    ) -> Result<Vec<PreviewSegmentTiming>> {
+        let (times, resolved) = match self {
+            Self::Requested(times) => (times, false),
+            Self::Resolved(times) => (Some(times), true),
+        };
+        let selector = PreviewTimeSelector::new(beatmap, spans, count, duration, times)?;
+        if resolved {
+            selector.resolve()
+        } else {
+            selector.choose()
+        }
     }
+}
 
-    fn randrange(&mut self, n: i64) -> i64 {
-        (self.next_u64() % n.max(1) as u64) as i64
+struct SystemRandom;
+
+impl SystemRandom {
+    fn randrange(&mut self, n: i64) -> Result<i64> {
+        let n = n.max(1) as u64;
+        // 直接使用系统随机源，拒绝采样消除取模偏差，失败时不退回固定种子。
+        let threshold = n.wrapping_neg() % n;
+        loop {
+            let mut bytes = [0; 8];
+            getrandom::getrandom(&mut bytes).map_err(|error| {
+                PreviewError::new(format!("failed to obtain random time points: {error}"))
+            })?;
+            let value = u64::from_le_bytes(bytes);
+            if value >= threshold {
+                return Ok((value % n) as i64);
+            }
+        }
     }
 }
 
@@ -128,28 +185,29 @@ impl<'a> PreviewTimeSelector<'a> {
             chosen.push(preview_time);
         }
 
-        let seed = self.spans.iter().fold(
-            self.segment_count as u64 ^ self.segment_duration as u64,
-            |hash, &(start, end)| {
-                hash.wrapping_mul(1_099_511_628_211)
-                    .wrapping_add(start as u64)
-                    .wrapping_mul(1_099_511_628_211)
-                    .wrapping_add(end as u64)
-            },
-        );
-        let mut rng = SimpleRng::new(seed);
+        let mut rng = SystemRandom;
         let mut attempts = 0;
         while !valid_intervals.is_empty() && chosen.len() < self.segment_count && attempts < 3000 {
             attempts += 1;
-            let candidate = random_start_from_intervals(&valid_intervals, &mut rng);
-            if does_not_overlap_existing(candidate, self.segment_duration, &chosen) {
+            let candidate = random_start_from_intervals(&valid_intervals, &mut rng)?;
+            if !chosen.contains(&candidate)
+                && does_not_overlap_existing(candidate, self.segment_duration, &chosen)
+            {
                 chosen.push(candidate);
             }
         }
 
         if !valid_intervals.is_empty() && chosen.len() < self.segment_count {
-            for candidate in self.fallback_start_candidates(&valid_intervals) {
-                if does_not_overlap_existing(candidate, self.segment_duration, &chosen) {
+            let mut candidates = self.fallback_start_candidates(&valid_intervals);
+            // 非重叠空隙很窄时从物件附近补选，候选顺序也必须随机。
+            for index in (1..candidates.len()).rev() {
+                let other = rng.randrange((index + 1) as i64)? as usize;
+                candidates.swap(index, other);
+            }
+            for candidate in candidates {
+                if !chosen.contains(&candidate)
+                    && does_not_overlap_existing(candidate, self.segment_duration, &chosen)
+                {
                     chosen.push(candidate);
                 }
                 if chosen.len() == self.segment_count {
@@ -159,7 +217,25 @@ impl<'a> PreviewTimeSelector<'a> {
         }
 
         chosen.sort_unstable();
-        Ok(chosen
+        Ok(self.timings(chosen))
+    }
+
+    /// 还原已经选好的片段，不触发随机或补入 Preview Time。
+    pub fn resolve(&self) -> Result<Vec<PreviewSegmentTiming>> {
+        let mut chosen = self.requested_start_times.clone();
+        chosen.sort_unstable();
+        chosen.dedup();
+        if chosen.len() > self.segment_count {
+            return Err(PreviewError::new(
+                "resolved time points exceed configured capacity",
+            ));
+        }
+        Ok(self.timings(chosen))
+    }
+
+    fn timings(&self, chosen: Vec<i64>) -> Vec<PreviewSegmentTiming> {
+        let preview_time = self.preview_time();
+        chosen
             .into_iter()
             .map(|start_time| PreviewSegmentTiming {
                 start_time,
@@ -170,7 +246,7 @@ impl<'a> PreviewTimeSelector<'a> {
                     self.segment_duration,
                 ),
             })
-            .collect())
+            .collect()
     }
 
     fn preview_time(&self) -> i64 {
@@ -282,17 +358,17 @@ fn nearest_valid_start(time: i64, intervals: &[(i64, i64)]) -> i64 {
         .unwrap_or(time)
 }
 
-fn random_start_from_intervals(intervals: &[(i64, i64)], rng: &mut SimpleRng) -> i64 {
+fn random_start_from_intervals(intervals: &[(i64, i64)], rng: &mut SystemRandom) -> Result<i64> {
     let total: i64 = intervals.iter().map(|(s, e)| e - s + 1).sum();
-    let mut pick = rng.randrange(total);
+    let mut pick = rng.randrange(total)?;
     for &(start, end) in intervals {
         let length = end - start + 1;
         if pick < length {
-            return start + pick;
+            return Ok(start + pick);
         }
         pick -= length;
     }
-    intervals.last().unwrap().1
+    Ok(intervals.last().unwrap().1)
 }
 
 fn does_not_overlap_existing(candidate: i64, segment_duration: i64, chosen: &[i64]) -> bool {
@@ -414,6 +490,76 @@ mod tests {
                 .filter(|segment| segment.start_time == 20)
                 .count(),
             1
+        );
+    }
+
+    #[test]
+    fn random_segments_vary_preserve_requested_and_preview_and_avoid_breaks() {
+        let mut beatmap = beatmap_with_preview(Some("10000"));
+        beatmap.break_periods = vec![BreakPeriod {
+            start_time: 30_000,
+            end_time: 60_000,
+        }];
+        let selector =
+            PreviewTimeSelector::new(&beatmap, vec![(0, 120_000)], 4, 5_000, Some(vec![2000]))
+                .unwrap();
+        let mut selections = std::collections::BTreeSet::new();
+        for _ in 0..32 {
+            let chosen = selector.choose().unwrap();
+            assert_eq!(chosen.len(), 4);
+            assert!(chosen.iter().any(|s| s.start_time == 2000));
+            assert_eq!(chosen.iter().filter(|s| s.is_preview).count(), 1);
+            for segment in &chosen {
+                assert!(segment.start_time + 5000 <= 30_000 || segment.start_time >= 60_000);
+            }
+            for pair in chosen.windows(2) {
+                assert!(pair[0].start_time + 5000 <= pair[1].start_time);
+            }
+            selections.insert(chosen.iter().map(|s| s.start_time).collect::<Vec<_>>());
+        }
+        assert!(selections.len() > 1, "重复请求不能固定使用谱面种子");
+
+        // 物件之间没有显式 Break 事件的长空白也应当避开。
+        beatmap.break_periods.clear();
+        let selector = PreviewTimeSelector::new(
+            &beatmap,
+            vec![(0, 30_000), (60_000, 120_000)],
+            4,
+            5000,
+            None,
+        )
+        .unwrap();
+        for _ in 0..16 {
+            for segment in selector.choose().unwrap() {
+                assert!(segment.start_time + 5000 <= 30_000 || segment.start_time >= 60_000);
+            }
+        }
+    }
+
+    #[test]
+    fn full_requests_and_resolved_short_lists_are_not_refilled() {
+        let beatmap = beatmap_with_preview(Some("10000"));
+        let requested = vec![0, 5000, 15_000, 20_000];
+        let selector = PreviewTimeSelector::new(
+            &beatmap,
+            vec![(0, 30_000)],
+            4,
+            1000,
+            Some(requested.clone()),
+        )
+        .unwrap();
+        let chosen = selector.choose().unwrap();
+        assert_eq!(
+            chosen.iter().map(|s| s.start_time).collect::<Vec<_>>(),
+            requested
+        );
+        assert!(!chosen.iter().any(|s| s.is_preview));
+        let resolved = PreviewTimeSelection::Resolved(vec![0, 5000])
+            .choose(&beatmap, vec![(0, 30_000)], 4, 1000)
+            .unwrap();
+        assert_eq!(
+            resolved.iter().map(|s| s.start_time).collect::<Vec<_>>(),
+            vec![0, 5000]
         );
     }
 }

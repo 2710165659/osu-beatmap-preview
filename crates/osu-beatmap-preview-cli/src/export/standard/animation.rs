@@ -24,29 +24,24 @@ pub(crate) fn render_standard_gif(
     deadline: &RequestDeadline,
 ) -> Result<()> {
     deadline.check()?;
-    match options {
-        GifRenderOptions::Segments {
-            times_ms,
-            duration_seconds,
-            time_axis,
-        } => render_standard_segment_gif(
-            beatmap,
-            mods,
-            times_ms,
-            duration_seconds,
-            time_axis,
-            output_path,
-            fps,
-            deadline,
-        ),
-    }
+    let (times_ms, duration_seconds, time_axis) = options.into_parts();
+    render_standard_segment_gif(
+        beatmap,
+        mods,
+        times_ms,
+        duration_seconds,
+        time_axis,
+        output_path,
+        fps,
+        deadline,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
 fn render_standard_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
-    times_ms: Option<Vec<i64>>,
+    times_ms: osu_beatmap_preview_core::processing::timeline::PreviewTimeSelection,
     duration_seconds: Option<f64>,
     time_axis: TimeAxis,
     output_path: &Path,

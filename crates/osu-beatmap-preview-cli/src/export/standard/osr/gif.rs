@@ -7,7 +7,7 @@ use crate::{
 };
 use osu_beatmap_preview_core::{
     gameplay::timeline::GameplayTimeline,
-    processing::timeline::TimeAxis,
+    processing::timeline::{PreviewTimeSelection, TimeAxis},
     render::{
         cpu::modes::standard::{context::*, osr},
         geometry::OutputFormat,
@@ -64,8 +64,13 @@ fn render_with_config(
         .ok_or_else(|| PreviewError::render("回放 GIF 网格行列数必须为正数且不能溢出"))?;
     let frame_count = checked_frame_count(duration_ms, fps, speed, cells)?;
     let duration = py_round(duration_ms * speed);
-    let requested = resolve_time_points(beatmap, axis, &plan.time_points)?;
-    // 与普通 GIF 一致：每个网格单元是一个片段，不足的时间点由公共选择器补齐。
+    let requested = match &plan.selected_times {
+        Some(times) => PreviewTimeSelection::Resolved(times.clone()),
+        None => {
+            PreviewTimeSelection::Requested(resolve_time_points(beatmap, axis, &plan.time_points)?)
+        }
+    };
+    // 应用层已确定的时间点必须原样使用，只有直接调用渲染器时才补齐选段。
     let segments =
         choose_row_start_times(beatmap, &context.hit_objects, cells, 2, duration, requested)?;
     let (width, height) = gif_canvas_size();
@@ -273,6 +278,7 @@ mod tests {
             skin: runtime.skin.clone(),
         });
         let mut plan = RenderPlan {
+            selected_times: None,
             bid: "42".into(),
             target_mode: 0,
             convert_used: false,

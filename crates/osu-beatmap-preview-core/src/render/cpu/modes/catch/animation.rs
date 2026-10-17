@@ -6,7 +6,7 @@
 use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::Beatmap;
 use crate::domain::mods::ModSettings;
-use crate::domain::shared::time_selection::{GifRenderOptions, PreviewTimeSelector, TimeAxis};
+use crate::domain::shared::time_selection::{GifRenderOptions, TimeAxis};
 use crate::domain::timeout::RequestDeadline;
 use crate::render::canvas::Img;
 use crate::render::cpu::AnimationFrames;
@@ -260,27 +260,22 @@ pub fn prepare_catch_gif_frames(
     deadline: &RequestDeadline,
 ) -> Result<AnimationFrames> {
     deadline.check()?;
-    match options {
-        GifRenderOptions::Segments {
-            times_ms,
-            duration_seconds,
-            time_axis,
-        } => prepare_catch_segment_gif_frames(
-            beatmap,
-            mods,
-            times_ms,
-            duration_seconds,
-            time_axis,
-            fps,
-            deadline,
-        ),
-    }
+    let (times_ms, duration_seconds, time_axis) = options.into_parts();
+    prepare_catch_segment_gif_frames(
+        beatmap,
+        mods,
+        times_ms,
+        duration_seconds,
+        time_axis,
+        fps,
+        deadline,
+    )
 }
 
 fn prepare_catch_segment_gif_frames(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
-    times_ms: Option<Vec<i64>>,
+    times_ms: crate::domain::shared::time_selection::PreviewTimeSelection,
     duration_seconds: Option<f64>,
     time_axis: TimeAxis,
     fps: Option<u32>,
@@ -321,7 +316,7 @@ fn prepare_catch_segment_gif_frames(
         .iter()
         .map(|h| (h.start_time, h.end_time))
         .collect();
-    let segment_timings = PreviewTimeSelector::new(
+    let segment_timings = times_ms.choose(
         beatmap,
         spans,
         (crate::config::current()
@@ -337,9 +332,7 @@ fn prepare_catch_segment_gif_frames(
                 .structure
                 .IMAGES_PER_ROW) as usize,
         gameplay_segment_duration,
-        times_ms,
-    )?
-    .choose()?;
+    )?;
 
     let layout = build_animation_layout(
         difficulty.cs,

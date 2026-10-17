@@ -136,7 +136,7 @@ fn generate_preview_inner(
     }
     rec.target_mode = Some(target_mode);
 
-    let plan = RenderPlan::build(request, target_mode, convert_used)?;
+    let mut plan = RenderPlan::build(request, target_mode, convert_used)?;
     let fmt = plan.format.as_str();
     deadline = deadline_for_format(request_started, fmt);
     deadline.check()?;
@@ -150,6 +150,24 @@ fn generate_preview_inner(
         3 => "mania",
         _ => "unknown",
     };
+
+    let renderer: &dyn ModeRenderer = match target_mode {
+        0 => &StandardRenderer,
+        1 => &TaikoRenderer,
+        2 => &CatchRenderer,
+        3 => &ManiaRenderer,
+        _ => {
+            return Err(PreviewError::new(format!(
+                "unsupported beatmap mode: {target_mode}"
+            )))
+        }
+    };
+    beatmap = osu_beatmap_preview_core::config::with_config(crate::config::core_config(), || {
+        prepare_beatmap(renderer, beatmap, &plan, &deadline)
+    })?;
+    super::selection::select(&beatmap, &mut plan)?;
+    rec.selected_times_ms = plan.selected_times.clone();
+    deadline.check()?;
 
     let artifact_name = ArtifactName::from_plan(&plan);
     let output_path = output_root.join(artifact_name.as_str());
@@ -191,18 +209,6 @@ fn generate_preview_inner(
         }));
     }
     logging::record_cache(CacheKind::Output, "miss");
-
-    let renderer: &dyn ModeRenderer = match target_mode {
-        0 => &StandardRenderer,
-        1 => &TaikoRenderer,
-        2 => &CatchRenderer,
-        3 => &ManiaRenderer,
-        _ => {
-            return Err(PreviewError::new(format!(
-                "unsupported beatmap mode: {target_mode}"
-            )))
-        }
-    };
 
     let audio_job = if fmt == "mp4" {
         // 音频、背景与打击音的谱面包来源：本地 .osz 直接读，在线模式按谱面集 ID 取缓存。
@@ -426,7 +432,18 @@ impl ModeRenderer for StandardRenderer {
             input.beatmap,
             input.plan.mods.as_ref(),
             input.time_axis,
-            input.absolute_time_points,
+            match &input.plan.selected_times {
+                Some(times) => {
+                    osu_beatmap_preview_core::processing::timeline::PreviewTimeSelection::Resolved(
+                        times.clone(),
+                    )
+                }
+                None => {
+                    osu_beatmap_preview_core::processing::timeline::PreviewTimeSelection::Requested(
+                        input.absolute_time_points,
+                    )
+                }
+            },
             input.deadline,
         )?;
         crate::media::image::save_png(&image, input.output_path, input.deadline)?;
@@ -722,16 +739,13 @@ fn render_preview_for_mode(
     })
 }
 
-fn render_preview_for_mode_inner(
+/// 转谱必须早于随机选段和缓存检查，避免用原模式的物件时间生成缓存名称。
+fn prepare_beatmap(
     renderer: &dyn ModeRenderer,
     beatmap: Beatmap,
     plan: &RenderPlan,
-    output_path: &Path,
-    audio_job: Option<AudioSourceJob>,
     deadline: &RequestDeadline,
-) -> Result<PathBuf> {
-    deadline.check()?;
-
+) -> Result<Beatmap> {
     renderer.validate(&beatmap)?;
 
     let converting = beatmap.mode() != plan.target_mode;
@@ -757,6 +771,19 @@ fn render_preview_for_mode_inner(
         logging::record_stage("convert_ms", ms);
     }
 
+    Ok(beatmap)
+}
+
+fn render_preview_for_mode_inner(
+    renderer: &dyn ModeRenderer,
+    beatmap: Beatmap,
+    plan: &RenderPlan,
+    output_path: &Path,
+    audio_job: Option<AudioSourceJob>,
+    deadline: &RequestDeadline,
+) -> Result<PathBuf> {
+    deadline.check()?;
+
     let (time_axis, _, _) = object_time_axis(&beatmap.hit_objects)
         .ok_or_else(|| PreviewError::render("beatmap has no hit objects"))?;
     let absolute_time_points = resolve_time_points(&beatmap, time_axis, &plan.time_points)?;
@@ -777,10 +804,18 @@ fn render_preview_for_mode_inner(
         deadline,
     };
     if plan.format == OutputFormat::Gif {
-        let gif_options = GifRenderOptions::Segments {
-            times_ms: absolute_time_points,
-            duration_seconds: plan.duration_seconds,
-            time_axis,
+        let gif_options = if let Some(times) = &plan.selected_times {
+            GifRenderOptions::ResolvedSegments {
+                times_ms: times.clone(),
+                duration_seconds: plan.duration_seconds,
+                time_axis,
+            }
+        } else {
+            GifRenderOptions::Segments {
+                times_ms: absolute_time_points,
+                duration_seconds: plan.duration_seconds,
+                time_axis,
+            }
         };
         renderer.render_gif(input, gif_options)
     } else if plan.format == OutputFormat::Mp4 {
