@@ -56,10 +56,7 @@ pub(super) fn draw(
     total: i64,
     od: f64,
 ) {
-    let scale = crate::render::geometry::output_scale(
-        crate::render::geometry::GameMode::Standard,
-        context.output_format,
-    );
+    let scale = context.frame_layout.output_scale();
     let px = |value: f64| (value * scale).round() as i64;
     let width = context.frame_layout.frame_width;
     let height = context.frame_layout.frame_height;

@@ -45,10 +45,7 @@ impl ReplayVisuals {
             .settings
             .flashlight
             .then(|| visibility::ReplayFlashlight::new(gameplay, &cursor, &mods, breaks));
-        let scale = crate::render::geometry::output_scale(
-            crate::render::geometry::GameMode::Standard,
-            context.output_format,
-        );
+        let scale = context.frame_layout.output_scale();
         Self {
             flashlight,
             feedback: feedback::FeedbackVisuals::new(context, font.as_ref()),
@@ -280,6 +277,65 @@ pub fn draw_scene_overlay(
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    #[test]
+    fn replay_hud_keeps_layout_scale_outside_config_scope() {
+        use crate::render::geometry::OutputFormat;
+        use crate::render::scene::FrameSceneBuilder;
+
+        let (beatmap, prepared, gameplay, _) = mod_fixture(serde_json::json!([]));
+        for scale in [0.75, 1.5] {
+            let mut config = crate::config::CoreConfig::default();
+            config.render.standard.png.SCALE = scale;
+            config.render.standard.gif.SCALE = scale + 0.5;
+            config.render.standard.mp4.SCALE = scale + 1.0;
+            let config = Arc::new(config);
+            for (format, output_scale) in [
+                (OutputFormat::Png, scale),
+                (OutputFormat::Gif, scale + 0.5),
+                (OutputFormat::Mp4, scale + 1.0),
+            ] {
+                let context = crate::config::with_config(Arc::clone(&config), || {
+                    build_replay_context(
+                        &beatmap,
+                        &prepared,
+                        crate::processing::timeline::TimeAxis::new(1000),
+                        format,
+                    )
+                });
+                // 准备和逐帧绘制都可能在原配置作用域外执行，倍率应只取自已有布局。
+                let visuals = ReplayVisuals::new(&context, &gameplay, None, &[], prepared.od);
+                assert_eq!(
+                    visuals.hit_error_axis.w,
+                    (150.0 * output_scale).round() as u32
+                );
+                let draw = || {
+                    let mut scene = FrameSceneBuilder::new(
+                        context.frame_layout.frame_width as u32,
+                        context.frame_layout.frame_height as u32,
+                        500,
+                    );
+                    hud::draw(
+                        &mut scene,
+                        &context,
+                        &gameplay,
+                        &visuals,
+                        500.0,
+                        2000,
+                        prepared.od,
+                    );
+                    scene.finish()
+                };
+                let expected = crate::config::with_config(Arc::clone(&config), draw);
+                let actual = draw();
+                assert_eq!(
+                    format!("{:?}", actual.commands),
+                    format!("{:?}", expected.commands),
+                    "{format:?}, SCALE={output_scale}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn replay_hidden_and_approach_only_settings_control_object_visibility() {

@@ -37,6 +37,13 @@ pub struct FrameLayout {
     pub content: crate::render::geometry::PixelRect,
 }
 
+impl FrameLayout {
+    /// 布局倍率包含 playfield 的 0.8 适配；HUD 使用适配前的输出倍率。
+    pub fn output_scale(&self) -> f64 {
+        self.scale / super::constants::PLAYFIELD_VIEWPORT_RATIO
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct ComboInfo {
     pub color: [u8; 3],
