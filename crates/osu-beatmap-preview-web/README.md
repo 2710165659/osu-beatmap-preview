@@ -1,153 +1,148 @@
-# Web 站点与下载后端（osu-beatmap-preview-web）
+# Web 站点说明
 
-[返回项目首页](../../README.md) | [CLI 使用说明](../osu-beatmap-preview-cli/README.md) | [WASM 使用说明](../osu-beatmap-preview-wasm/README.md) | [架构说明](../../docs/architecture.md)
+[项目首页](../../README.md) | [CLI 使用说明](../osu-beatmap-preview-cli/README.md) | [WASM 使用说明](../osu-beatmap-preview-wasm/README.md)
 
-这是 Release 里的 **Web 包**：一个 Vue 静态站点加一个很薄的 Node.js 后端。
+Web 包提供四模式谱面实时预览和回放预览。Vue 页面通过 WASM 完成解包、解码、判定、混音与 WebGPU 绘制；Node.js 后端负责资源下载、官方成绩查询和缓存。
 
-- **静态站点**：Vue 3 单文件组件 + Tailwind CSS v4，浏览器里跑 [osu-beatmap-preview-wasm](../osu-beatmap-preview-wasm/README.md)，谱面解析、Mod、转谱和每一帧绘制都在本地 WebGPU 中完成；也支持原生 Standard `.osr`，回放文件只留在浏览器本地。
-- **Node.js 后端**：浏览器因为跨域限制无法直接下载 osu! 的资源，后端负责下载并缓存 `.osu` 与 `.osz`，再把音频、背景图交给前端；OSR 缺少谱面时，后端用服务端 OAuth/API 凭据按 checksum 查询谱面并下载完整谱面包。OSR 文件本身不上传。
+## 启动
 
-## 运行
-
-运行只需要 Node.js 18 或更高版本，以及支持 WebGPU 的浏览器（Chrome / Edge 113+ 等）。发布包里已经带好 `dist/`，解压后直接启动：
+运行发布包需要 Node.js 18+ 和支持 WebGPU 的浏览器。包内包含构建好的前端与 WASM，解压后运行：
 
 ```bash
 node backend/server.js
-# 然后访问 http://127.0.0.1:8787
+# 或 npm start
 ```
 
-也可以 `npm start`（等价于上面这条命令）。从源码构建前端需要 Node.js 20.19+，见「开发」。
+访问 [http://127.0.0.1:8787](http://127.0.0.1:8787)。WebGPU 需要安全上下文：本机可用 localhost 或回环地址，其他设备访问时需要 HTTPS 和浏览器可用的 WebGPU。
 
-可选参数（`--flag=value` 与 `--flag value` 两种写法都支持）：
-
-| 参数 | 说明 |
+| 启动参数 | 说明 |
 | --- | --- |
-| `--host=<ADDR>` | 监听地址，默认 `127.0.0.1`（只允许本机访问）；手机同网测试用 `--host=0.0.0.0` |
-| `--port=<PORT>` | 监听端口，默认 `8787` |
-| `--cache-dir=<DIR>` | 缓存目录，默认 `<安装目录>/.cache`，也可用环境变量 `OSU_PREVIEW_CACHE_DIR` |
-| `--https` | 用自签证书启用 HTTPS；证书在首次启动时生成到 `<缓存目录>/.tls/` |
-| `--tls-cert`、`--tls-key` | 指定已有证书与私钥（PEM），同时提供时不再自动生成 |
-| `--tls-host=<HOST>` | 自签证书要覆盖的域名或 IP，可重复；也可用 `OSU_PREVIEW_TLS_HOSTS`（逗号分隔）。容器里探测到的是容器自己的地址，必须用它补上浏览器实际访问的地址 |
-| `--no-cache` | 忽略已缓存的 `.osu` 与 `.osz`，强制重新下载 |
-| `--quiet` | 不打印下载日志 |
-| `--help` | 打印用法 |
+| `--host=<地址>` | 默认 `127.0.0.1`；局域网或容器内监听全部地址可用 `0.0.0.0` |
+| `--port=<端口>` | 默认 `8787` |
+| `--cache-dir=<目录>` | 默认包目录下的 `.cache`，也可设 `OSU_PREVIEW_CACHE_DIR` |
+| `--https` | 启用 HTTPS，自动生成的自签证书存放在缓存目录的 `.tls/` |
+| `--tls-cert=<路径>`、`--tls-key=<路径>` | 同时指定已有 PEM 证书与私钥 |
+| `--tls-host=<域名或IP>` | 补充自签证书 SAN，可重复；环境变量 `OSU_PREVIEW_TLS_HOSTS` 使用逗号分隔 |
+| `--no-cache` | 跳过已下载资源缓存 |
+| `--quiet` | 关闭下载日志 |
+| `--help` | 查看用法 |
 
-默认只监听本机地址且没有鉴权，请勿直接暴露到公网。
+带值参数支持 `--参数=值` 和 `--参数 值`。自动生成证书需要可用的 OpenSSL。
 
-## 预览链接与本地资源
+## 谱面预览
 
-在线谱面预览地址为 `/bids/<bid>`，在线回放预览地址为 `/scores/<分数ID>`，打开时自动选择相应模式并加载。在线预览成功后地址栏同步为对应链接，玩家查询回放会写入最终选中的成绩 ID。旧 `?bid=` 与单数路径均不支持。普通预览的转谱可附加 `?convert=taiko` 等参数；回放链接同样保留此参数，非 Standard 模式的回放尚未实现时明确报错，不能自动改播其它模式。本地资源无法通过链接还原，加载成功后地址回到 `/`。
+加载页默认选择「谱面预览」，可填写单张难度的谱面 ID，或分别选择本地 `.osu` 与 `.osz`：
 
-`.osu` 和 `.osz` 是两个独立的可选输入，可分别选择和移除。普通预览仅提供 `.osu` 时直接渲染，没有音乐与背景；仅提供 `.osz` 时选择包内难度，填写 BID 时优先按 BID 匹配。两者同时提供时，以外部 `.osu` 渲染，`.osz` 提供媒体，按有效 BeatmapID 校验绑定。回放会额外要求两份谱面原文 MD5 均匹配 OSR；缺少 `.osz` 时自动下载完整包。
+| 本地输入 | 行为 |
+| --- | --- |
+| `.osu` | 使用该谱面，无音乐和背景媒体 |
+| `.osz` | 使用包内难度，可在难度列表中切换；填写谱面 ID 时按 ID 匹配 |
+| `.osu` + `.osz` | 使用外部谱面，媒体取自包内；两者必须通过有效 `BeatmapID` 绑定 |
 
-## OSR 回放来源
+支持四模式原生谱面，以及 Standard 转 Taiko、Catch、Mania。播放页可切换 Mod、跳转进度，调整倍速（0.1–3 倍）、音乐与打击音音量、480P/720P/1080P 分辨率和 30/60/120 FPS。
 
-加载页默认选择「谱面预览」，切换到「回放预览」后显示四个互斥来源；回放模式隐藏转谱：
+音乐音量默认 50%，打击音默认开启、音量 100%，背景默认暗化 70%；背景视频、故事板、谱面打击音和帧率显示在页面中默认开启。Mod 支持范围见 [CLI 文档](../osu-beatmap-preview-cli/README.md#mod-支持)。
 
-- **本地 OSR**：必须选择 `.osr`。本地回放字节不上传服务器。
-- **成绩 ID / 官方成绩链接**：填写 `6086051920` 或 `https://osu.ppy.sh/scores/6086051920`；旧式 `/scores/osu/<ID>` 链接暂不接受。
-- **玩家 + 谱面 ID**：填写玩家用户名和单张难度的谱面 ID；默认取官方个人最高分，可切换「最近一次」。最高分按分数而非 PP；最近一次只扫描官方近期最多 1000 条成绩，按结束时间选择，查不到不回退。省略查询模式时使用谱面原始模式。
-- **玩家最近游玩**：填写玩家用户名，直接取官方最近一条成绩，不需要谱面 ID。查询模式可选 `osu`、`taiko`、`fruits`、`mania`；省略时由官方使用玩家资料的默认模式。
+## 回放预览
 
-玩家查询只接受用户名，数字名称也按用户名查询，不支持玩家 ID。前端玩家查询表单在模式选择框右侧显示「包含失败」开关，默认关闭；它只影响最近成绩查询，查询最高分时不发送该参数。最近成绩与模式省略行为遵循[官方 API 文档](https://osu.ppy.sh/docs/index.html#users-GETapi-v2-users--user--scores--type-)。查询支持四种模式，但当前回放渲染仅支持原生 Standard，选中其它模式时会明确报错。
+切换到「回放预览」后，选择以下一种来源：
 
-四种来源都可在下方分别选择可选的 `.osu` 与 `.osz`，可同时提供，二者均按回放 MD5 校验。本地 OSR 搭配完整匹配 OSZ 可离线播放；在线成绩则由服务端下载回放，再由浏览器校验并播放。缺少谱面包时自动下载完整包；无回放、不兼容、MD5 不符或下载失败均明确报错，不换其它成绩。切换来源会清理旧本地回放，其余来源的输入不会一起发送。
+| 来源 | 输入与选择规则 |
+| --- | --- |
+| 本地 OSR | 选择 `.osr`，本地回放字节只在浏览器处理 |
+| 成绩 ID / 官方成绩链接 | 统一成绩 ID 或 `https://osu.ppy.sh/scores/<ID>` |
+| 玩家 + 谱面 ID | 用户名与谱面 ID；默认官方个人最高分，可选最近一次 |
+| 玩家最近游玩 | 用户名；无需谱面 ID，取官方最近一条成绩 |
 
-后端 `/resource/replay` 玩家查询使用 `user=<用户名>`，可附带 `bid`、`selection=best|recent`、`mode=osu|taiko|fruits|mania`、`includeFails=0|1`。有 `bid` 时默认 `best`，没有时默认 `recent`；`includeFails` 默认 `0`，仅用于最近成绩。旧参数 `userId` 会报错。成绩 ID 来源仍使用 `scoreId=<成绩ID>`，与玩家查询参数互斥。
+玩家查询接受用户名，纯数字也按用户名处理。查询模式可选 `osu`、`taiko`、`fruits`、`mania`；指定谱面时省略模式使用原始谱面模式，未指定谱面时由官方使用玩家默认模式。最高分按分数选择；指定谱面的最近一次最多扫描近期 1000 条成绩，按结束时间选择。最近成绩默认排除失败，可用「包含失败」开启。
 
-支持原生 Standard，不以客户端版本或 OSR 分数版本限制播放；支持 tachyon、历史 lazer 和 stable。回放与普通 Standard 动画预览支持相同的 Mod：EZ/HR/HD/FL/AT/DA/TC/CL/DT/HT/NC/DC，按录制设置应用几何、可见性、速度和当前官方计分倍率。stable 自动启用 CL，lazer 显式 CL 使用同一规则。历史帧按官方方式归一化，原记录与重算成绩的差异只作诊断。AL 和其它未实现 Mod 仍明确报错；回放模式不可转谱或修改 Mod。支持范围和样本验收见 [OSR 说明](../../docs/osr-preview.md)。
+查到不支持的模式、无可用回放或不兼容成绩时直接报错，不替换成绩。
 
-在线成绩下载或仅上传 OSR 自动查谱时，服务器必须配置 `OSU_API_TOKEN`，或 `OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET`；OAuth 凭据只在服务端使用。上传 `.osu` 时先核验 MD5，再按谱面 ID 下载 OSZ；没有有效谱面 ID 时也需要官方 API 查谱。查询和下载失败会直接显示错误。在线回放缓存于 `osr-download-cache/<成绩ID>.osr`，`--no-cache` 跳过文件缓存；最高分和近期成绩的定位每次重新查询。凭据由部署者配置一次，页面访问者无需填写。
+### 谱面匹配与播放
 
-修改 core/WASM 后依次运行 `npm run build:wasm`、`npm run build`，最后重启后端并刷新浏览器。
+各来源均可补充本地 `.osu` 与 `.osz`。回放需要包含音乐的完整谱面包，缺包时自动下载；仅提供本地 OSR 和匹配的完整 OSZ 即可离线播放。外部 `.osu` 和包内选中谱面都必须以原始字节 MD5 匹配回放，不能用修改过的同 ID 谱面替代。
+
+支持 stable、lazer、tachyon 回放，Mod 支持范围见 [CLI 文档](../osu-beatmap-preview-cli/README.md#mod-支持)。
+
+回放显示光标、按键、判定和成绩 HUD，使用当前官方标准化计分规则重算，历史记录的分数差异作为诊断。回放期间不能修改 Mod 或转谱，但可调整播放倍速与画面。输入提前结束时显示失败，成绩与光标冻结、按键清零、玩家音效停止；背景、谱面与音乐继续，跳回失败前可查看当时状态。
+
+### 官方 API 认证
+
+在线成绩下载与按 MD5 自动查谱需要部署者在后端进程环境配置以下任一方式：
+
+- `OSU_API_TOKEN`：可用的官方 API 访问令牌。
+- `OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET`：OAuth 客户端凭据，由后端获取令牌。
+
+凭据只在服务端使用，页面访问者无需填写。本地匹配资源齐全时不需要认证；有匹配 `.osu` 且有效谱面 ID 时可直接据此下载包，否则需要 API 查谱。查询、下载和 MD5 校验失败都会显示错误。
+
+## 分享链接
+
+- 谱面：`/bids/<谱面ID>`；转谱可附 `?convert=taiko`、`ctb` 或 `mania`。
+- 回放：`/scores/<成绩ID>`；玩家查询成功后使用最终选中成绩的 ID。
+
+在线加载成功后地址栏同步为对应链接，刷新可重新加载。本地资源加载后地址回到 `/`，链接不能携带本地文件。回放链接中附带的转谱请求同样受回放兼容性检查约束。
+
+## 后端接口与缓存
+
+| GET 接口 | 用途 |
+| --- | --- |
+| `/resource/file?bid=<ID>` | 返回完整 OSZ 字节，支持 Range |
+| `/resource/progress?bid=<ID>` | 查询下载与传输进度 |
+| `/resource/replay-lookup?checksum=<MD5>` | 官方查谱，返回谱面 ID、谱面集 ID 和 checksum |
+| `/resource/replay?scoreId=<ID>` | 下载指定成绩的 OSR |
+| `/resource/replay?user=<用户名>` | 查询玩家成绩并下载 OSR，可附加下列参数 |
+
+玩家查询可附带 `bid`、`selection=best|recent`、`mode=osu|taiko|fruits|mania`、`includeFails=0|1`。有 `bid` 时默认 `best`，无 `bid` 时默认 `recent`；`best` 必须有 `bid`，`includeFails` 仅用于最近成绩。`scoreId` 与玩家查询参数互斥。
+
+在线资源缓存在配置的缓存目录，OSR 位于 `osr-download-cache/<成绩ID>.osr`；最高分与近期成绩的定位每次重新查询。Web 下载完整带视频谱面包，默认大小上限 256 MiB。缓存不自动清理，可停止服务后按需删除。
 
 ## Docker 部署
 
-`Docker/Dockerfile-web` 会把整个 Web 包从源码构建成镜像（Rust → wasm、Vite → `dist/`、Node 运行时），**构建上下文必须是仓库根目录**（wasm 需要整个 Cargo workspace），所以在根目录执行：
+在仓库根目录构建；镜像包含 WASM、前端、Node.js 和 OpenSSL：
 
 ```bash
 docker build -f Docker/Dockerfile-web -t osu-beatmap-preview-web .
-docker run -d --name osu-preview --restart unless-stopped \
-  -p 8787:8787 -v osu-preview-cache:/data \
-  osu-beatmap-preview-web
-# 打开 http://<服务器地址>:8787
+docker run -d --name osu-preview --restart unless-stopped -p 127.0.0.1:8787:8787 -v osu-preview-cache:/data osu-beatmap-preview-web
 ```
 
-### 服务器上必须用 HTTPS，否则页面提示没有 WebGPU
-
-WebGPU 只在**安全上下文**里可用：
-
-**① 有域名：前面放反向代理拿真证书（推荐）**
+使用宿主机上的反向代理提供 HTTPS，例如 Caddy：
 
 ```caddyfile
-# Caddyfile
 preview.example.com {
     reverse_proxy 127.0.0.1:8787
 }
 ```
 
-```bash
-docker run -d --name osu-preview --restart unless-stopped \
-  -p 127.0.0.1:8787:8787 -v osu-preview-cache:/data osu-beatmap-preview-web
-docker run -d --name caddy --restart unless-stopped \
-  -p 80:80 -p 443:443 -v $PWD/Caddyfile:/etc/caddy/Caddyfile \
-  caddy:2
-```
-
-Nginx 同理：`proxy_pass http://127.0.0.1:8787;` 再配 `certbot` 签证书。手机浏览器要信任该证书，所以不要用自签。
-
-**② 只有 IP：用容器自带的 `--https` + `--tls-host`**
-
-自签证书会被浏览器标记为不受信任，点“高级 → 继续访问”后仍然是 https，WebGPU 就能用：
+也可由容器直接提供自签 HTTPS；浏览器需信任证书，且证书 SAN 应覆盖实际访问地址：
 
 ```bash
-docker run -d --name osu-preview --restart unless-stopped \
-  -p 443:8443 -v osu-preview-cache:/data \
-  osu-beatmap-preview-web \
-  node backend/server.js --host=0.0.0.0 --port=8443 --https \
-    --tls-host=你的服务器IP
+docker run -d --name osu-preview --restart unless-stopped -p 443:8443 -v osu-preview-cache:/data osu-beatmap-preview-web node backend/server.js --host=0.0.0.0 --port=8443 --https --tls-host=服务器IP
 ```
 
-## 目录结构
-
-```text
-crates/osu-beatmap-preview-web/
-├─ backend/           # 后端：HTTP 入口、下载、缓存、镜像、ZIP 读取、资源准备
-│  └─ server.js       # 服务入口：路由、Range、静态文件、加载进度
-├─ src/               # Vue 前端源码（单文件组件 + Tailwind）
-├─ dist/              # Vue 构建结果（构建生成，发布包里已包含）
-├─ public/            # 构建时原样拷进 dist/ 的静态资源
-│  ├─ pkg/            # wasm 产物（构建生成，发布包里已包含）
-│  └─ gpu-check.html  # 不加载 wasm 的 WebGPU 自检页
-├─ scripts/           # npm run build:wasm 使用的构建脚本
-└─ test/              # node --test 回归测试与 OSZ fixture
-```
+需要在线回放时，通过容器环境变量传入官方 API 凭据。服务本身没有用户鉴权，访问控制由部署环境提供。
 
 ## 开发
 
-需要 Node.js 20.19+（Vite 7 的要求）：
+前端构建需要 Node.js 20.19+；先完成 [WASM 构建准备](../osu-beatmap-preview-wasm/README.md#构建)，再在本目录运行：
 
 ```bash
-npm install          # 安装 Vue / Vite / Tailwind，仅开发与构建需要
-npm test             # ZIP 读取、Range、路径归一化、`.osu` 字段解析等回归测试
-npm run build        # 把 src/ 编译到 dist/
-npm run build:wasm   # 构建 wasm 产物到 public/pkg
-npm start            # node backend/server.js
+npm install
+npm run build:wasm
+npm run build
+npm test
+npm start
 ```
 
-Windows 上也可以直接运行 `run_web.ps1`：
+顺序必须是先构建 WASM，再构建前端，保证 `public/pkg/` 被复制进 `dist/`。修改 Rust 后重新执行两步构建，重启服务并刷新页面；仅修改前端时执行 `npm run build`。
+
+Windows 可用 `run_web.ps1` 完成依赖安装、构建与启动：
 
 ```powershell
-.\run_web.ps1                         # 全部构建后启动（http://127.0.0.1:8787）
-.\run_web.ps1 --port=8443 --https     # 其余参数原样转发给后端
-.\run_web.ps1 -NoWasm                 # 只改了前端时跳过 wasm 构建（快很多）
-.\run_web.ps1 -NoBuild                # 只改了 wasm 时跳过前端构建
-.\run_web.ps1 -NoServe                # 只构建，不启动
-.\run_web.ps1 -Help                   # 选项说明
+.\run_web.ps1
+.\run_web.ps1 --port=8443 --https
+.\run_web.ps1 -NoWasm
+.\run_web.ps1 -NoServe
+.\run_web.ps1 -Help
 ```
 
-## 相关文档
-
-- [WASM 使用说明](../osu-beatmap-preview-wasm/README.md)：浏览器侧的 `WebGpuSession` 与 `beatmapInfo` API 与职责边界。
-- [CLI 使用说明](../osu-beatmap-preview-cli/README.md)：导出 PNG/GIF/MP4 的完整参数说明。
-- [架构说明](../../docs/architecture.md)：各 crate 的划分与 API 边界。
+`backend/` 为后端，`src/` 为 Vue 页面，`public/` 为静态资源，`dist/` 为发布页面，`test/` 为 Node.js 测试。播放与音频集成 API 见 [WASM 使用说明](../osu-beatmap-preview-wasm/README.md)。

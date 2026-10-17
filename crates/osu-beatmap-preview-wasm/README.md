@@ -1,46 +1,33 @@
-# WASM 使用说明（osu-beatmap-preview-wasm）
+# WASM 使用说明
 
-[返回项目首页](../../README.md) | [CLI 使用说明](../osu-beatmap-preview-cli/README.md) | [架构说明](../../docs/architecture.md)
+[项目首页](../../README.md) | [Web 站点说明](../osu-beatmap-preview-web/README.md) | [CLI 使用说明](../osu-beatmap-preview-cli/README.md)
 
-输入 `.osu` 或 `.osz` 字节，或在 `replayBytes` 选项中传入 `.osr` 并把谱面包作为主输入，即可在浏览器里用 WebGPU 实时渲染并播放谱面。也可通过 `osuBytes` 同时提供外部谱面文本，由主输入 `.osz` 提供媒体。OSR 模式按回放头部 MD5 绑定原始 `.osu` 字节，缺少谱面时由 Web 后端负责查谱下载。解包、解码、混音、时钟都在 WASM 内完成。WASM 不下载文件、也不返回像素；导出 PNG/GIF/MP4 请用 [CLI](../osu-beatmap-preview-cli/README.md)。
+`osu-beatmap-preview-wasm` 将谱面与回放接入浏览器 WebGPU Canvas，负责解包、媒体解码、判定、绘制、混音与播放时钟。宿主负责获取文件、提供 Canvas、输出 PCM 和实现界面；PNG/GIF/MP4 导出使用 CLI。
 
-| WASM 负责 | 宿主负责 |
-| --- | --- |
-| `.osz` 解包、难度选择、音乐/背景/打击音解码；OSR 解析、Standard 判定与 HUD | 获取文件字节（本地文件或后端下载） |
-| 解析、Mod、转谱、时间轴、逐帧绘制到 Canvas | 提供 `<canvas>`（宽高设为输出尺寸） |
-| 时钟（播放/暂停/seek/倍速）与「音乐 + 打击音」混音 | 音频输出：消费 `pullAudio` 的 PCM 并回报 `onAudioClock` |
-| Mod 热切换、背景视频与故事板合成；回放 `replayState()` 查询 | 控制 UI（播放按钮、进度条、难度下拉等） |
+## 构建
 
-## 获取与构建
-
-产物没有独立发布包，位于 [Web 包](../osu-beatmap-preview-web/README.md) 的 `public/pkg/`：
-
-| 文件 | 说明 |
-| --- | --- |
-| `osu_beatmap_preview_wasm.js` | ES 模块胶水代码（`wasm-bindgen --target web`） |
-| `osu_beatmap_preview_wasm_bg.wasm` | WebAssembly 二进制 |
-| `*.d.ts` | TypeScript 类型声明 |
-
-自己构建需要稳定版 Rust、`wasm32-unknown-unknown` 目标，以及与 `Cargo.lock` 版本一致的 `wasm-bindgen-cli`：
-
-```bash
-cd crates/osu-beatmap-preview-web
-npm run build:wasm   # 构建 wasm 并生成 public/pkg
-```
-
-等价的手工步骤：
+发布的 [Web 包](../osu-beatmap-preview-web/README.md) 在 `dist/pkg/` 中包含 JS、WASM 与类型声明；源码构建先生成到 `public/pkg/`，再由前端构建复制到 `dist/pkg/`。自行构建需要稳定版 Rust、`wasm32-unknown-unknown` 目标，以及与 `Cargo.lock` 一致的 `wasm-bindgen-cli`：
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.128 --locked   # 版本与 Cargo.lock 一致
-cargo build --release -p osu-beatmap-preview-wasm --target wasm32-unknown-unknown
-wasm-bindgen target/wasm32-unknown-unknown/release/osu_beatmap_preview_wasm.wasm \
-  --target web --out-dir pkg
+cargo install wasm-bindgen-cli --version 0.2.128 --locked
+cd crates/osu-beatmap-preview-web
+npm run build:wasm
 ```
 
-## 最小示例
+安装前应核对当前 `Cargo.lock` 的版本。脚本在仓库根目录执行 Rust 构建，再以 `wasm-bindgen --target web` 生成以下产物：
 
-用静态服务器托管 `pkg/` 与页面，浏览器需要 WebGPU（Chrome / Edge 113+）。文件字节由宿主自行获取；想直接跑通就用 [Web 包](../osu-beatmap-preview-web/README.md)，站点和下载后端都是现成的。
+| 文件 | 用途 |
+| --- | --- |
+| `osu_beatmap_preview_wasm.js` | ES 模块入口 |
+| `osu_beatmap_preview_wasm_bg.wasm` | WebAssembly 二进制 |
+| `*.d.ts` | TypeScript 类型声明 |
+
+Web 页面构建必须在 WASM 生成后执行，才能将 `public/pkg/` 复制到 `dist/`。
+
+## 最小画面示例
+
+通过静态服务器托管页面、`pkg/` 和谱面包。浏览器需要支持 WebGPU，并处于 HTTPS 或 localhost 安全上下文。以下示例仅播放画面；音频输出见下一节。
 
 ```html
 <canvas id="stage"></canvas>
@@ -48,171 +35,178 @@ wasm-bindgen target/wasm32-unknown-unknown/release/osu_beatmap_preview_wasm.wasm
   import init, { WebGpuSession } from "./pkg/osu_beatmap_preview_wasm.js";
 
   await init();
-  const bytes = new Uint8Array(await (await fetch("./738063.osz")).arrayBuffer());
+  const response = await fetch("./map.osz");
+  if (!response.ok) throw new Error("谱面包加载失败");
+  const bytes = new Uint8Array(await response.arrayBuffer());
   const session = await WebGpuSession.create(bytes, document.getElementById("stage"), {
     width: 1280,
     height: 720,
-    sampleRate: audioContext.sampleRate,   // 必须是音频设备的实际采样率
   });
 
   session.play();
   function frame() {
-    session.renderFrame();                  // 按 WASM 内部时钟绘制当前帧
-    const pcm = session.pullAudio(4096);    // 音乐 + 打击音混音（交错立体声）
-    writeRingBuffer(pcm);                   // 写进音频环形缓冲，见下节
+    session.renderFrame();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 </script>
 ```
 
-## OSR 回放
+会话使用 WASM 内部时钟推进；`renderFrame()` 返回 `false` 时继续调度即可。销毁页面或替换会话时应停止动画循环并调用 wasm-bindgen 生成的 `session.free()`。
+
+## 输入与创建选项
+
+`await WebGpuSession.create(bytes, canvas, options?)` 创建会话。输入必须为 `Uint8Array`，支持 `.osu` 或 `.osz`；单独 `.osu` 没有音乐与背景。回放使用匹配的完整 OSZ 作为主输入，并在 `replayBytes` 中附带 OSR。
+
+| 选项 | 说明 |
+| --- | --- |
+| `checksum` | 按原始 OSU 字节 MD5 选择难度，优先于下列选择项 |
+| `difficulty` | 包内顶层 OSU 条目名 |
+| `bid` | 按 `BeatmapID` 选择，优先级低于 `difficulty`；无选择项时取首个顶层 OSU |
+| `osuBytes` | 外部 OSU 字节，主输入须为 OSZ；普通预览按有效 BeatmapID 绑定包内难度 |
+| `replayBytes` | OSR 字节，按回放 MD5 选谱，覆盖普通难度选择；拒绝转谱与用户 Mod |
+| `convert` | `standard`、`taiko`、`ctb`、`mania` 等目标模式 |
+| `mods` | Mod token 数组，语法与 [CLI Mod](../osu-beatmap-preview-cli/README.md#mod-支持) 相同，支持实时预览列 |
+| `width`、`height` | 输出像素尺寸 |
+| `sampleRate` | 音频输出采样率，应传 `AudioContext.sampleRate` |
+| `musicVolume` | 音乐音量百分比，默认 50 |
+| `hitsoundEnabled`、`hitsoundVolume` | 打击音开关与音量，默认 true、100 |
+| `beatmapHitsound` | 优先使用谱面自带音效，默认 true，影响创建时的样本装载 |
+| `storyboard` | 初始故事板开关，默认 false |
+
+WASM 会话的背景视频和故事板默认关闭，Web 页面自行启用。音乐、背景和样本在创建阶段解码，背景视频按需解码；大包会增加初始化时间和内存占用。
+
+## 音频接入
+
+WASM 输出音乐与打击音的混音 PCM，宿主只负责搬运到音频设备，不能再用独立播放器推进第二条音轨。完整实现可参考 [AudioOutput](../osu-beatmap-preview-web/src/hitsound.js) 和 [AudioWorklet](../osu-beatmap-preview-web/public/hitsound-worklet.js)。
+
+1. 用户交互后创建或恢复 `AudioContext`，以实际设备采样率创建会话。
+2. 建立 AudioWorklet 与交错立体声环形缓冲，定期调用 `pullAudio(maxFrames)` 填充。
+3. 将音频线程消费的相对采样帧号传给 `onAudioClock(consumedFrames)`，作为画面时钟锚点。
+4. 检查 `audioEpoch()`；发生变化时清空旧缓冲，同时重置读写指针和相对帧号。
+5. 暂停、跳转和倍速统一通过会话控制，设备输出跟随会话状态。
+
+音频示例中的帧号是自上次输出流重置后的采样帧数，不是环形缓冲下标，也不是标量样本数；立体声 PCM 的帧数为 `pcm.length / 2`。seek 或重对齐会重置输出流，消费位置必须与新纪元一致。
+
+所有时间以音频文件起点为 0，单位为毫秒。`absoluteStartMs()` 可为负值，它已包含预览起点与 `AudioLeadIn` 的处理，宿主无需额外叠加；进度条时间为 `clockMs() - absoluteStartMs()`。
+
+有设备输出时画面跟随消费时钟，无音频输出时按墙钟推进。
+
+使用现有音频实现需要 `SharedArrayBuffer`、AudioWorklet 与跨源隔离。静态服务器和反向代理应保留：
+
+```http
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+这些音频条件不满足时，宿主可只播放画面。
+
+## 回放
 
 ```js
-const summary = replayInfo(osrBytes); // 解析和兼容性检查；不支持的版本/Mod 立即报错
+import init, {
+  WebGpuSession, replayInfo, beatmapInfo,
+} from "./pkg/osu_beatmap_preview_wasm.js";
+
+await init();
+// osrBytes、oszBytes 和 canvas 由宿主提供，均须对应同一次回放。
+const summary = replayInfo(osrBytes);
 const info = beatmapInfo(oszBytes, { checksum: summary.checksum });
 const session = await WebGpuSession.create(oszBytes, canvas, {
-  replayBytes: osrBytes, width: 1280, height: 720, sampleRate: audioContext.sampleRate,
+  replayBytes: osrBytes,
+  width: 1280,
+  height: 720,
+  sampleRate: audioContext.sampleRate,
 });
-const state = session.replayState(); // 分数、accuracy、combo、max_combo、statistics、rank、status
-```
-
-`osrBytes` 必须是 `Uint8Array`。OSR 主输入仍然是匹配的 `.osz`（宿主确保缺包时下载），回放按原始 `.osu` 字节 MD5 绑定，忽略普通难度/BID 选择。回放拒绝 `convert` 和用户 `mods`；`set_mods()` 同样报错。`replayState()` 在普通预览返回 `null`，在回放只查询已编译的不可变判定。界面将 `X/XH` 显示为 SS，失败时显示 F。
-
-提前结束后成绩和光标冻结、按键清零、玩家音效停止，背景、谱面和音乐继续预览；seek 回失败前可以恢复当时状态。完整 Torus 字体与回放提示音内嵌 WASM，许可见 [第三方声明](../../docs/THIRD_PARTY_NOTICES.md)。具体支持策略见 [OSR 说明](../../docs/osr-preview.md)。
-
-## 音频输出与时钟
-
-时钟在 WASM 里维护，宿主只搬运 PCM 并把消费位置回报回来：
-
-```js
-let written = 0;                      // 环形写入位置（相对帧号）
-let epoch = session.audioEpoch();
 session.play();
-
-function pump() {
-  const pcm = session.pullAudio(4096);
-  if (session.audioEpoch() !== epoch) {  // seek / 重对齐后整条输出流重置
-    epoch = session.audioEpoch();
-    written = 0;
-    workletNode.port.postMessage({ command: 'readFrame', value: 0 });
-  }
-  writeRingBuffer(pcm, written);
-  written += pcm.length / 2;
-}
-// 音频线程的消费位置回报给 WASM，作为画面时钟的锚点：
-workletNode.port.onmessage = (e) => session.onAudioClock(e.data.readPosition);
+const state = session.replayState();
 ```
 
-- 时间轴 0 点 = 音频文件 0 点，**不要再叠加 `AudioLeadIn`**：它只决定预览起点，体现在 `absoluteStartMs()`。
-- 有音频输出时画面贴着「此刻听到的位置」走（约每 11ms 由 `onAudioClock` 锚定）；没有音频时按墙钟推进，画面不冻结，音频恢复后自动重对齐。
-- `audioEpoch()` 变化表示输出流整体重置：环形缓冲的读写指针必须一起归零，让音频线程从头重读。
-- 倍速下音乐与打击音一起变速变调（与 CLI 的 MP4 导出一致）。
-- 音乐、背景、自带音效在 `create` 时解好，不需要宿主参与；自带音效按「同名条目 > 内嵌皮肤」取用，单独的 `.osu` 没有音乐与背景。
+此片段展示回放接入顺序，`osrBytes`、`oszBytes` 为 `Uint8Array`，`audioContext` 为宿主创建的音频上下文。`replayInfo()` 解析并检查回放兼容性，返回 `checksum` 与 `version`，不依赖 WebGPU。资源获取仍由宿主完成；WASM 不自动下载。
 
-## API 参考
+支持 stable、lazer、tachyon 的回放，按内容检查兼容性。Mod 支持范围见 [CLI 回放说明](../osu-beatmap-preview-cli/README.md#输出与兼容性)。回放要求包含音乐的完整 OSZ；若同时提供 `osuBytes`，外部和包内谱面原始 MD5 都必须匹配。用户不能通过 `mods`、`convert` 或 `set_mods()` 改写回放规则。
 
-导出 `WebGpuSession`、`beatmapInfo`、`supportedMods`、`hitsoundDefaults` 与默认初始化函数 `init`。所有时间均为毫秒的谱面绝对时间（0 = 音频文件 0 点）。
+`replayState()` 返回当前时刻的只读判定快照，普通谱面会话返回 `null`：
 
-### `WebGpuSession.create(bytes, canvas, options?)`
-
-异步创建会话，`.osz` 解包与全部解码都在这一步完成。难度选择优先级：`difficulty`（压缩包条目名）> `bid`（`BeatmapID`）> 第一个顶层 `.osu`。`options` 字段全部可选：
-
-| 字段 | 说明 |
+| 字段 | 含义 |
 | --- | --- |
-| `difficulty` / `bid` | 选择 `.osz` 里的难度（见上） |
-| `osuBytes` | 可选 `Uint8Array` 外部谱面；主输入必须为 `.osz`。普通预览按外部 BeatmapID 绑定包内难度，使用外部文本渲染和查找媒体；回放要求外部文本与包内谱面均匹配 OSR 的 MD5。`beatmapInfo` 同样支持此选项 |
-| `convert` | 转谱目标：`mania` / `ctb` / `taiko` / `standard` |
-| `mods` | Mod token 数组，语法同 [CLI 的 Mod 支持](../osu-beatmap-preview-cli/README.md#mod-支持) |
-| `width` / `height` | 输出尺寸 |
-| `sampleRate` | 音频设备采样率（`AudioContext.sampleRate`），必须一致 |
-| `musicVolume` / `hitsoundVolume` / `hitsoundEnabled` | 音乐音量（默认 50）、打击音音量（默认 100）、打击音开关（默认 true） |
-| `beatmapHitsound` | 优先使用谱面自带音效（默认 true）；**创建时生效**，决定装载哪些样本 |
-| `storyboard` | 绘制故事板（默认 false），可随时 `setStoryboard` 切换 |
+| `score`、`accuracy` | 标准化分数与准确率 |
+| `combo`、`max_combo` | 当前与最高连击 |
+| `statistics` | 各判定计数 |
+| `rank`、`hit_error_ms`、`health` | 等级、击打误差与生命值 |
+| `status` | `Playing`、`Completed` 或 `Failed` |
+
+可空字段无值时为 `null`。界面可将 `X/XH` 显示为 SS，失败显示 F。成绩使用当前官方规则重算，历史记录差异仅作诊断；查询不推进判定，seek 可查看任意播放时刻。
+
+输入提前结束后成绩与光标冻结、按键清零、玩家音效停止；背景、谱面和音乐继续，seek 回失败前可恢复当时状态。回放字体与提示音已内嵌，见 [第三方声明](../../docs/THIRD_PARTY_NOTICES.md)。
+
+## 会话 API
 
 ### 播放与画面
 
-| 成员 | 说明 |
+| 方法 | 说明 |
 | --- | --- |
-| `play()` / `pause()` / `playing()` | 推进 / 暂停时钟（幂等）/ 查询是否在推进 |
-| `seek(chartTimeMs)` | 跳到绝对时间：丢弃在播声音并重置输出流（`audioEpoch()` 变化） |
-| `setRate(userRate)` | 用户倍速（不含 DT/HT）；同游戏 `UserPlaybackRate`，音乐与打击音一起变调 |
-| `rate()` | 当前总倍速 = 用户倍速 × 谱面变速 |
-| `clockMs()` | 当前绝对时间；进度条已播放时长 = `clockMs() - absoluteStartMs()` |
-| `renderFrame()` | 把当前帧绘制到 Canvas；返回 `false` 表示本帧没画（画布不可见或 GPU 取不到帧），连续 1 秒拿不到帧才抛错 |
-| `resize(width, height)` | 改输出尺寸（surface 与合成尺寸一起改；只改 Canvas 不生效） |
-| `width()` / `height()` / `mode()` | 输出尺寸 / 目标模式（`standard`、`mania` 等） |
-| `durationMs()` | 预览时长（最后一个物件后 +2s），用于进度条与结束判定 |
-| `absoluteStartMs()` | 预览起点（进度条 `0:00`）的绝对时间：首个物件前 2s，`AudioLeadIn` 更大时提前，可能为负 |
+| `play()`、`pause()`、`playing()` | 播放、暂停、查询播放状态 |
+| `seek(chartTimeMs)` | 跳到绝对谱面时间，丢弃旧声音并重置音频输出流 |
+| `setRate(userRate)` | 设置有限正数的用户播放倍速，不含 Mod 倍速 |
+| `rate()`、`beatmapSpeed()` | 当前总倍速、Mod 倍速 |
+| `clockMs()`、`absoluteStartMs()` | 当前绝对时间、预览起点 |
+| `durationMs()` | 预览时长，保留最后一个物件后的 2 秒 |
+| `renderFrame()` | 按内部时钟绘制；返回 false 表示未取得可用帧，连续约 1 秒不可用才报错 |
+| `resize(width, height)` | 同步调整 surface 和合成尺寸，仅修改 Canvas 不够 |
+| `width()`、`height()`、`mode()` | 输出尺寸与目标模式 |
+| `replayState()` | 回放快照，普通预览为 null |
 
 ### 音频
 
-| 成员 | 说明 |
+| 方法 | 说明 |
 | --- | --- |
-| `pullAudio(maxFrames)` | 补一段「音乐 + 打击音」混音，返回交错立体声 `Float32Array`（帧数 × 2，可能为空） |
-| `onAudioClock(consumedFrames)` | 转发音频线程的消费位置（相对帧号）；有音频输出时它是画面时钟的锚点 |
-| `audioEpoch()` | 输出流纪元；变化表示整条流已重置 |
-| `setMusicVolume(pct)` / `setHitsoundVolume(pct)` | 音量 0–100，即时生效 |
-| `setHitsoundEnabled(bool)` | 开关打击音；关闭时音乐照常 |
-| `audioSampleRate()` | 混音输出采样率（创建时给定的 `sampleRate`） |
+| `pullAudio(maxFrames)` | 返回交错立体声 `Float32Array`，可能为空 |
+| `onAudioClock(consumedFrames)` | 回报设备消费的相对帧号 |
+| `audioEpoch()` | 输出流纪元，变化时同步清空宿主缓冲 |
+| `audioSampleRate()` | 会话输出采样率 |
+| `setMusicVolume(pct)`、`setHitsoundVolume(pct)` | 0–100 音量，即时生效 |
+| `setHitsoundEnabled(bool)` | 开关打击音 |
+| `setBeatmapHitsound(bool)` | 切换谱面自带音效，重新装载样本与时间轴 |
 
-### Mod、背景与故事板
+### Mod 与背景
 
-| 成员 | 说明 |
+| 方法 | 说明 |
 | --- | --- |
-| `set_mods(mods)` | 热切换 Mod（token 数组）；转谱后重新装载样本，`absoluteStartMs()` 可能变化 |
-| `setBackgroundDim(pct)` | 背景暗化 0–100（默认 70），背景图 / 背景视频 / 故事板共用 |
-| `hasBackgroundVideo()` / `setBackgroundVideo(bool)` | 谱面是否有可用背景视频 / 开关（默认关闭） |
-| `hasStoryboard()` / `setStoryboard(bool)` | 是否有可绘制的故事板 / 开关（默认关闭）；层序同 osu!：underlay 在物件之下，Overlay 压在物件之上 |
-| `setBeatmapHitsound(bool)` | 切换「谱面打击音」：是否优先使用谱面自带样本；切换后重新装载样本并重建时间轴 |
+| `set_mods(mods)` | 普通预览热切换 Mod，重建相关资源；回放拒绝调用 |
+| `setBackgroundDim(pct)` | 背景图、视频和故事板共用的暗化，0–100，默认 70 |
+| `hasBackgroundVideo()`、`setBackgroundVideo(bool)` | 查询可用视频与切换播放 |
+| `hasStoryboard()`、`setStoryboard(bool)` | 查询可绘制故事板与切换显示，Overlay 层可覆盖物件 |
+
+## 信息查询 API
+
+所有导出函数使用前均需 `await init()`。
 
 ### `beatmapInfo(bytes, options?)`
 
-返回谱面信息与 `.osz` 难度清单；不依赖 WebGPU，可在 `create` 之前调用。难度选择同 `create`（`difficulty` / `bid`）：
-
-```js
-import init, { beatmapInfo } from "./pkg/osu_beatmap_preview_wasm.js";
-await init();
-const info = beatmapInfo(bytes);
-info.title;        // 'No title'
-info.version;      // "Lust's Insane"（难度名）
-info.bpm;          // 200
-info.difficulties; // .osz 难度清单 [{ entry, label, beatmapId }]；单文件 .osu 为 []
-```
+不依赖 WebGPU，返回谱面元数据与难度清单。选择项支持 `checksum`、`difficulty`、`bid`、`osuBytes`，与创建会话规则相同。
 
 | 分组 | 字段 |
 | --- | --- |
-| 概览 | `title`、`titleUnicode`、`artist`、`artistUnicode`、`creator`、`version`、`source`、`tags`、`beatmapId`、`beatmapSetId` |
-| 格式与 `[General]` | `mode`、`modeName`、`formatVersion`、`audioFilename`、`audioLeadInMs`、`stackLeniency`、`backgroundFilename`、`beatDivisor` |
+| 元数据 | `title`、`titleUnicode`、`artist`、`artistUnicode`、`creator`、`version`、`source`、`tags`、`beatmapId`、`beatmapSetId` |
+| 格式与通用设置 | `mode`、`modeName`、`formatVersion`、`audioFilename`、`audioLeadInMs`、`stackLeniency`、`backgroundFilename`、`beatDivisor` |
 | 统计 | `hitObjectCount`、`firstObjectMs`、`lastObjectEndMs`、`chartDurationMs`、`bpm`、`timingPointCount`、`breakPeriodCount`、`comboColors` |
 | 难度 | `ar`、`cs`、`hp`、`od` |
-| 全量区段 | `general`、`metadata`、`difficulty`（`.osu` 对应区段的每个键值） |
-| 难度清单 | `difficulties`（每个顶层 `.osu` 的 `{ entry, label, beatmapId }`） |
+| 全量区段 | `general`、`metadata`、`difficulty` |
+| 难度清单 | `difficulties`，各项为 `{ entry, label, beatmapId }`；单独 OSU 为 `[]` |
 
-缺失字段为 `null`（不是空字符串）；`chartDurationMs` 等派生值在没有音符时同为 `null`。
+缺失字段与无法计算的派生值为 `null`。
 
 ### `supportedMods(mode)` / `hitsoundDefaults(mode)`
 
-- `supportedMods(mode)`：该模式实时预览可选的 Mod token 数组，顺序即界面展示顺序（与 GIF/MP4 共用 core 的支持矩阵）。`mode` 取 `standard` / `taiko` / `catch` / `mania`（也接受 `std` / `ctb`），未知模式抛错：
+`mode` 使用 `standard`、`taiko`、`catch`、`mania`，也接受 `std`、`ctb`。未知模式报错。
 
-  ```js
-  const mods = supportedMods('mania');
-  // ['HD','FL','CS','DT','HT','NC','DC','1K',…,'10K','DS','IN','HO']
-  session.set_mods(mods.filter((token) => token === 'HD' || token === 'FL'));
-  ```
+- `supportedMods(mode)`：返回该模式实时预览支持的 Mod token 数组，顺序可直接用于界面。
+- `hitsoundDefaults(mode)`：返回 `{ enabled, volume, beatmapEnabled }`，与 CLI 共用默认配置。
 
-- `hitsoundDefaults(mode)`：该模式的打击音默认值 `{ enabled, volume, beatmapEnabled }`（与 CLI 读同一份配置，保证默认值一致）。应在 `create` 之前调用（`beatmapHitsound` 决定装载哪些样本）。
+## 使用边界
 
-## 使用限制
-
-- 只支持 WebGPU 后端：浏览器或设备不支持时 `create` 直接报错，不回退 WebGL 或 CPU 绘制。
-- 不解析回放、不导出视频；文件获取由宿主负责（Web 包里是后端的 `/resource/file?bid=`）。
-- 解码在 `create` 一次性完成，大谱面包会多占内存、多花几百毫秒加载；wasm 本体约 2.2 MiB（gzip 后约 0.9 MiB），内嵌打击音约 280 KiB。
-- 音频输出还需要 `SharedArrayBuffer`（跨源隔离）与 `AudioWorklet`；环境不具备时页面应退化成「只有画面」，而不是报错。
-- 每帧调用一次 `renderFrame` 即可，不要在同一帧重复提交；返回 `false` 不是错误，时钟与音频照常推进。
-
-## 相关文档
-
-- [Web 站点说明](../osu-beatmap-preview-web/README.md)：静态站点与 Node.js 下载后端，本地调试从这里启动。
-- [CLI 使用说明](../osu-beatmap-preview-cli/README.md)：导出 PNG/GIF/MP4 的完整参数说明。
-- [架构说明](../../docs/architecture.md)：core、renderer、wasm 之间的 API 边界与场景合成细节。
+- 仅使用 WebGPU；设备或浏览器不可用时创建会话报错。
+- 文件获取与在线成绩认证由宿主或后端完成，WASM 不持有下载凭据。
+- 解码后的媒体驻留内存，宿主应限制输入大小并释放旧会话。
+- 每个动画帧调用一次 `renderFrame()`，音频填充按缓冲余量调度。

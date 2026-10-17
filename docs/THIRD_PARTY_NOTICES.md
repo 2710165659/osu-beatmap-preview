@@ -1,56 +1,43 @@
-# Third-party notices
+# 第三方声明
 
-This file accompanies source and binary distributions of osu-beatmap-preview.
-The project itself is licensed under the repository's MIT license.
+本文件随 osu-beatmap-preview 的源码与二进制分发。项目代码采用仓库的 [MIT License](../LICENSE)，下列第三方组件与资源保留各自授权条件；依赖版本以锁文件为准。
 
-## OSR 内嵌字体与回放提示音
+## 回放字体与提示音
 
-OSR HUD 与判定使用 osu-resources 的完整 Torus Bold 字体：`assets/fonts/argon/Torus-Bold.bin`、`Torus-Bold_0.png`。原始授权说明随 [LICENCE](../assets/fonts/argon/LICENCE) 保留，声明分发需要商业许可证；项目 MIT 许可不替代该字体的授权条件。
+| 资源 | 用途与来源 | 许可 |
+| --- | --- | --- |
+| Torus Bold BMFont 与图集 | CLI 与 WASM 的回放 HUD、判定文字，来自 ppy osu-resources；见 [字体说明](../assets/fonts/argon/README.md) | 原始 [LICENCE](../assets/fonts/argon/LICENCE) 声明分发需要商业许可证 |
+| `combobreak.wav`、`failsound.wav` | 回放断连与失败提示，来自 ppy Pty Ltd 的 Argon Gameplay Samples；见 [音效说明](../assets/hitsound/replay/README.md) | [CC BY-NC 4.0 原文](../assets/hitsound/replay/LICENCE.md) |
 
-回放的 `combobreak.wav`、`failsound.wav` 来自 ppy osu-resources 的 Argon Gameplay Samples，作者 ppy Pty Ltd，采用 CC BY-NC 4.0，原许可随 [LICENCE.md](../assets/hitsound/replay/LICENCE.md) 保留。两类资源原样内嵌，没有裁剪、重采样或转码；来源与摘要见各资源目录的中文 README。
+资源以原始文件内嵌，项目 MIT 许可不替代字体、音效的授权条件。谱面包中的同名提示音优先于内嵌回退样本。
 
-## Source availability
+## 音频组件与源码获取
 
-The complete corresponding source for the statically linked audio components is
-available free of charge at the following immutable revisions:
+静态链接的音频组件未作本地修改，完整对应源码可从以下固定提交免费获取：
 
-- Symphonia 0.5.4: https://github.com/pdeljanov/Symphonia/tree/d3b7742fa73674b70d9ab80cc5f8384cc653df3a
-- fdk-aac 0.8.0 Rust bindings: https://github.com/haileys/fdk-aac-rs/tree/3787e6e76a50e1477c67eb63396f955783770967
-- fdk-aac-sys 0.5.0 and the bundled Fraunhofer FDK AAC source:
-  https://github.com/haileys/fdk-aac-rs/tree/e3ca3de45aac24d15eb611ce627fee4d5733c1fc/fdk-aac-sys
+- [Symphonia 0.5.4](https://github.com/pdeljanov/Symphonia/tree/d3b7742fa73674b70d9ab80cc5f8384cc653df3a)：音频解码，MPL-2.0。
+- [fdk-aac 0.8.0 Rust 绑定](https://github.com/haileys/fdk-aac-rs/tree/3787e6e76a50e1477c67eb63396f955783770967)：MIT。
+- [fdk-aac-sys 0.5.0 与内含的 Fraunhofer FDK AAC 源码](https://github.com/haileys/fdk-aac-rs/tree/e3ca3de45aac24d15eb611ce627fee4d5733c1fc/fdk-aac-sys)：Rust 绑定采用 MIT，编解码库采用下附 Fraunhofer 许可。
 
-No local modifications are made to these dependencies.
+FDK AAC 许可不授予专利权；原文随本文件保留。
 
-## WGPU renderer and web package dependencies
+## GPU 与 Web 依赖
 
-The renderer and the WASM layer used by the web package use the following
-crates. They are kept out of the CLI crate, which only performs CPU export and
-media encoding.
+| 组件 | 许可 | 来源 |
+| --- | --- | --- |
+| wgpu 29.0.4 | MIT OR Apache-2.0 | [gfx-rs/wgpu](https://github.com/gfx-rs/wgpu) |
+| bytemuck 1.25.0 | Zlib OR Apache-2.0 OR MIT | [Lokathor/bytemuck](https://github.com/Lokathor/bytemuck) |
+| pollster 0.4.0 | MIT OR Apache-2.0 | [zesterer/pollster](https://github.com/zesterer/pollster) |
+| Vue 3.5.x | MIT | [vuejs/core](https://github.com/vuejs/core) |
+| Tailwind CSS 4.3.x | MIT | [tailwindlabs/tailwindcss](https://github.com/tailwindlabs/tailwindcss) |
 
-- wgpu 29.0.4: MIT OR Apache-2.0, https://github.com/gfx-rs/wgpu
-- bytemuck 1.25.0: Zlib OR Apache-2.0 OR MIT, https://github.com/Lokathor/bytemuck
-- pollster 0.4.0: MIT OR Apache-2.0, https://github.com/zesterer/pollster
+WGPU 相关 crate 用于实时渲染，不属于 CLI 的 CPU 导出路径；其许可原文随对应 crate 分发，准确版本见 [Cargo.lock](../Cargo.lock)。
 
-The corresponding license texts are distributed by each crate and are
-available at the immutable versions recorded in `Cargo.lock`.
-
-## Web frontend bundle
-
-`dist/` in the web package is a Vite build of the Vue frontend and embeds the
-Vue runtime, which is not covered by the crate list above:
-
-- Vue 3.5.x: MIT, https://github.com/vuejs/core
-
-Vite, `@vitejs/plugin-vue`, Tailwind CSS, and `@tailwindcss/vite` are installed
-as dev dependencies and are not part of the shipped bundle; Tailwind CSS 4.3.x
-(MIT, https://github.com/tailwindlabs/tailwindcss) generates the stylesheet in
-`dist/assets`. The exact versions are recorded in
-`crates/osu-beatmap-preview-web/package-lock.json`.
+Web 包的 `dist/` 包含 Vue 运行时与 Tailwind 生成的样式。Vite、Vue 插件与 Tailwind 构建工具是开发依赖，不作为工具随发布包运行；准确版本见 [package-lock.json](../crates/osu-beatmap-preview-web/package-lock.json)。
 
 ## Symphonia 0.5.4
 
-Symphonia and the enabled MP3, OGG/Vorbis, WAV, and PCM components are licensed
-under the Mozilla Public License 2.0.
+Symphonia 及启用的 MP3、OGG/Vorbis、WAV、PCM 组件采用 MPL-2.0，许可原文如下：
 
 ```text
 +Mozilla Public License Version 2.0
@@ -428,9 +415,9 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 ```
 
-## fdk-aac 0.8.0 and fdk-aac-sys 0.5.0 Rust bindings
+## fdk-aac 0.8.0 与 fdk-aac-sys 0.5.0 Rust 绑定
 
-The Rust bindings are licensed under the MIT license.
+Rust 绑定采用 MIT，许可原文如下：
 
 ```text
 Copyright 2021 Hailey Somerville
@@ -456,8 +443,7 @@ SOFTWARE.
 
 ## Fraunhofer FDK AAC Codec Library
 
-The statically compiled codec source is distributed under the following
-Fraunhofer license. In particular, this license does not grant patent rights.
+静态编译的编解码库采用下列 Fraunhofer 许可，其中明确不授予专利权：
 
 ```text
 Software License for The Fraunhofer FDK AAC Codec Library for Android
