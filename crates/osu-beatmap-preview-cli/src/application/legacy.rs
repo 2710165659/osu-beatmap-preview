@@ -284,7 +284,7 @@ fn generate_preview_inner(
 }
 
 /// 把解析出的谱面信息填充进汇总记录。
-fn fill_beatmap_info(beatmap: &Beatmap, rec: &mut SummaryRecord) {
+pub(super) fn fill_beatmap_info(beatmap: &Beatmap, rec: &mut SummaryRecord) {
     rec.mode = Some(beatmap.mode());
     rec.format_version = Some(beatmap.format_version());
     rec.set_id = beatmap.beatmap_set_id();
@@ -878,7 +878,7 @@ fn acquire_osu(
     })
 }
 
-fn format_time_point(point: &TimePoint) -> String {
+pub(super) fn format_time_point(point: &TimePoint) -> String {
     match point {
         TimePoint::Preview => "preview".to_string(),
         TimePoint::Seconds(value) => value.to_string(),

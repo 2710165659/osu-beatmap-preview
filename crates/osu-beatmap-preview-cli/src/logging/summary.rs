@@ -17,6 +17,10 @@ pub struct SummaryRecord {
     pub error: Option<String>,
     pub error_kind: Option<String>,
     // 输入
+    /// 请求类型；回放为 osr。
+    pub request_type: Option<String>,
+    /// 回放内容的身份标识，同一谱面的不同回放可据此区分。
+    pub replay_identity: Option<String>,
     pub fmt: Option<String>,
     pub mode: Option<i32>,
     pub target_mode: Option<i32>,
@@ -71,6 +75,8 @@ pub fn write_summary(rec: &SummaryRecord) {
         map.insert("cores".to_string(), json!(cores.get()));
     }
 
+    insert_opt(&mut map, "request_type", rec.request_type.as_deref());
+    insert_opt(&mut map, "replay_identity", rec.replay_identity.as_deref());
     insert_opt(&mut map, "fmt", rec.fmt.as_deref());
     insert_opt(&mut map, "mode", rec.mode);
     insert_opt(&mut map, "target_mode", rec.target_mode);
