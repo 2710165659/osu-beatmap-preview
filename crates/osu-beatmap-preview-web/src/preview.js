@@ -13,6 +13,8 @@ import { computed, nextTick, reactive } from 'vue';
 import { onlineReplayQuery, fetchOnlineReplay } from './replay/remote.js';
 import { createReplayInput, resolveReplaySource, lookupReplayBeatmap } from './replay/load.js';
 import { createAudioContext, createAudioOutput } from './hitsound.js';
+import { createLocalInputs, resolveBeatmapSource } from './beatmap/load.js';
+import { readPreviewLink, previewPath } from './navigation.js';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -114,22 +116,24 @@ const AUDIO_WORKLET_URL = `${import.meta.env.BASE_URL}hitsound-worklet.js`;
 
 export const state = reactive({
   page: 'load',
+  previewType: 'osu',
   replayMethod: 'file',
   replayScoreId: '',
   replayUserValue: '',
   replayBid: '',
   replaySelection: 'best',
   replayMode: '',
+  replayConvert: '',
   replayIncludeFails: false,
   replayFileName: '',
   replayChecksum: '',
   replayActive: false,
   replaySelecting: false,
   bid: '',
-  /** 本地上传的文件名；非空表示按本地文件加载。 */
-  localFileName: '',
-  /** 本地文件类型：`osu` / `osz` / 空。 */
-  localKind: '',
+  localOsuName: '',
+  localOszName: '',
+  localOsuSelecting: false,
+  localOszSelecting: false,
   /** `.osz` 里的难度清单（`[{ entry, label, beatmapId }]`），加载页选择用。 */
   localDifficulties: [],
   /** 选中的难度条目名（`.osz` 专用）。 */
@@ -317,14 +321,8 @@ let skippedFrames = 0;
 let loadToken = 0;
 /** 当前加载的取消句柄：切谱面或退回加载页时中止还在飞的请求。 */
 let loadAbort = null;
-/**
- * 本地上传的文件（`File` 对象）与它的字节；`null` 表示按 BID 从后端加载。
- *
- * 不放进 reactive：`File` 参与响应式没有意义，界面只需要 state 里的展示字段。
- * 字节在选文件时读一次（出难度清单），加载时复用，避免同一大文件读两遍。
- */
-let localFile = null;
-let localBytes = null;
+/** 当前会话是否来自完整媒体包，避免播放设置依赖加载页后来修改的输入。 */
+let sourceHasMusic = false;
 /** 最近一次进度是前端自己推进的还是服务端轮询来的；用于避免旧阶段盖掉新阶段。 */
 let lastProgressSource = 'local';
 /** 当前阶段的开始时刻与各阶段累计耗时，结束后写进播放日志。 */
@@ -569,99 +567,26 @@ async function fetchFile(value, { signal } = {}) {
   });
 }
 
-/**
- * 读取谱面内部信息与难度清单。
- *
- * WASM 只按传入的文件字节解析（`.osu` 或 `.osz` 都行），`selector` 决定 `.osz` 里
- * 选哪个难度。失败只记日志，不影响预览本身。
- */
-function readBeatmapInfo(wasm, bytes, selector) {
-  try {
-    return wasm.beatmapInfo(bytes, selector);
-  } catch (error) {
-    logPlay(`谱面信息解析失败：${errorText(error)}`);
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 本地文件（.osu / .osz）
-// ---------------------------------------------------------------------------
-
-/** 本地输入文件类型（按扩展名，不区分大小写）；WASM 再按内容复核。 */
-function localFileKind(name) {
-  const text = String(name ?? '');
-  const dot = text.lastIndexOf('.');
-  const extension = dot >= 0 ? text.slice(dot + 1).toLowerCase() : '';
-  if (extension === 'osu') return 'osu';
-  if (extension === 'osz') return 'osz';
-  return null;
-}
-
-/**
- * 选择本地文件，回到加载页时调用（文件输入框的 change 处理）。
- *
- * `.osz` 会顺手把难度清单解析出来供界面选择（清单来自 WASM 的 `beatmapInfo`，
- * 解包规则与 CLI 同一套）；填了 BID 时默认选中对应 `BeatmapID` 的难度。
- * 文件不合法直接抛错，由加载页显示。
- *
- * @param {File} file 用户选中的文件
- */
-export async function selectLocalFile(file) {
-  const kind = localFileKind(file?.name ?? '');
-  if (!kind) throw new Error('只支持 .osu 或 .osz 文件');
-  localFile = file;
-  localBytes = new Uint8Array(await file.arrayBuffer());
-  state.localFileName = file.name;
-  state.localKind = kind;
-  state.localDifficulties = [];
-  state.localDifficulty = '';
-  if (kind !== 'osz') return;
-  const wasm = await loadWasm();
-  const info = readBeatmapInfo(wasm, localBytes, {});
-  const difficulties = Array.isArray(info?.difficulties) ? info.difficulties : [];
-  if (!difficulties.length) throw new Error(`${file.name} 里找不到 .osu 谱面文件`);
-  state.localDifficulties = difficulties;
-  const bid = state.bid.trim();
-  const matched = bid ? difficulties.find((item) => String(item.beatmapId) === bid) : null;
-  state.localDifficulty = (matched ?? difficulties[0]).entry;
-}
-
-/** 清除本地文件选择，回到按 BID 加载。 */
-export function clearLocalFile() {
-  localFile = null;
-  localBytes = null;
-  state.localFileName = '';
-  state.localKind = '';
-  state.localDifficulties = [];
-  state.localDifficulty = '';
-}
-
-// ---------------------------------------------------------------------------
+// 本地谱面与媒体包独立读取，回放模式由入口显式选择。
+const localInputs = createLocalInputs(state, loadWasm);
+export const selectLocalFile = localInputs.select;
+export const clearLocalFile = localInputs.clear;
 const replayInput = createReplayInput(state, loadWasm);
-export const replayRequested = computed(() => state.replayMethod !== 'file' || Boolean(state.replayFileName));
+export const replayRequested = computed(() => state.previewType === 'osr');
 export const selectReplayFile = replayInput.select;
 export const clearReplayFile = replayInput.clear;
 
-// 深链 ?bid=<BID>[&convert=<模式>]
-// ---------------------------------------------------------------------------
-
-/** 解析 URL 参数；bid 不是纯数字时返回 null，表示没有可用的深链。 */
-export function readDeepLink(search = window.location.search) {
-  const params = new URLSearchParams(search);
-  const bid = (params.get('bid') ?? '').trim();
-  if (!/^\d+$/.test(bid)) return null;
-  const convert = (params.get('convert') ?? '').trim().toLowerCase();
-  return { bid, convert: CONVERT_MODES.includes(convert) ? convert : '' };
+export function setPreviewType(type) {
+  if (state.loading || state.previewType === type) return;
+  state.previewType = type;
+  state.replayConvert = '';
+  state.loadLogs = [];
+  window.history.replaceState(null, '', '/');
 }
 
-/** 把当前 bid 写回地址栏，刷新或分享都能直接回到同一个预览。 */
-function syncUrl() {
-  const params = new URLSearchParams();
-  if (state.bid) params.set('bid', state.bid);
-  if (state.convert) params.set('convert', state.convert);
-  const query = params.toString();
-  window.history.replaceState(null, '', query ? `${window.location.pathname}?${query}` : window.location.pathname);
+/** 只解析 REST 路径，旧的 ?bid= 参数不再触发加载。 */
+export function readDeepLink(pathname = window.location.pathname, search = window.location.search) {
+  return readPreviewLink(pathname, search);
 }
 
 /**
@@ -1014,13 +939,24 @@ function tick(now) {
  * 并行阶段。每个 await 之后都用 loadToken 确认自己还是当前这次加载。
  */
 export async function loadPreview() {
-  if (state.loading || state.replaySelecting) return;
-  let replay = state.replayMethod === 'file' ? replayInput.current() : null;
+  if (state.loading || state.replaySelecting || state.localOsuSelecting || state.localOszSelecting) return;
+  // 回放转谱链接先保留目标模式；判定实现前必须明确拒绝，不能默默播放成 Standard。
+  if (replayRequested.value && state.replayConvert && state.replayConvert !== 'standard') {
+    logLoad(`尚未支持 ${state.replayConvert} 模式的回放预览`);
+    return;
+  }
+  let replay = replayRequested.value && state.replayMethod === 'file' ? replayInput.current() : null;
   let remoteQuery;
-  try { remoteQuery = onlineReplayQuery(state); }
+  try { remoteQuery = replayRequested.value ? onlineReplayQuery(state) : null; }
   catch (error) { logLoad(error); return; }
-  const bid = state.bid.trim();
-  if (!replay && !remoteQuery && !localFile && !/^\d+$/.test(bid)) {
+  const { osuBytes, oszBytes } = localInputs.current();
+  const hasLocal = Boolean(osuBytes || oszBytes);
+  const bid = replayRequested.value ? '' : state.bid.trim();
+  if (replayRequested.value && !replay && !remoteQuery) {
+    logLoad('请选择 .osr 回放文件');
+    return;
+  }
+  if (!replay && !remoteQuery && !hasLocal && !/^[1-9]\d*$/.test(bid)) {
     logLoad('请输入数字 BID，或选择本地 .osu / .osz 文件');
     return;
   }
@@ -1029,7 +965,7 @@ export async function loadPreview() {
   loadAbort?.abort();
   loadAbort = new AbortController();
   const token = ++loadToken;
-  resetProgress(localFile ? 'transfer' : 'osu');
+  resetProgress(hasLocal ? 'transfer' : 'osu');
   teardownSession();
   state.hitsoundStatus = '';
   let pendingAudioContext = null;
@@ -1044,39 +980,18 @@ export async function loadPreview() {
       if (token !== loadToken) return;
       logLoad(`已选择成绩 ${replay.scoreId}`);
     }
-    // 1. 取一份文件的字节。
-    let bytes;
-    let replaySource;
-    if (replay) {
-      replaySource = await resolveReplaySource({
-        wasm, replay, localBytes, localKind: state.localKind,
-        signal: loadAbort.signal, lookup: lookupReplayBeatmap,
-        download: (resolvedBid, options) => {
-          startProgressPolling(resolvedBid);
-          return fetchFile(resolvedBid, options);
-        },
-      });
-      bytes = replaySource.bytes;
-    } else if (localFile) {
-      bytes = localBytes ?? new Uint8Array(await localFile.arrayBuffer());
-      reportProgress({
-        phase: 'transfer',
-        received: bytes.byteLength,
-        total: bytes.byteLength,
-        message: '读取本地文件',
-        source: 'local',
-      });
-    } else {
-      startProgressPolling(bid);
-      bytes = await fetchFile(bid, { signal: loadAbort.signal });
-    }
+    // 普通预览按 BID/难度绑定，回放始终以原始 MD5 绑定两份可选资源。
+    const download = (resolvedBid, options) => {
+      startProgressPolling(resolvedBid);
+      return fetchFile(resolvedBid, options);
+    };
+    const source = replay
+      ? await resolveReplaySource({ wasm, replay, osuBytes, oszBytes, download, lookup: lookupReplayBeatmap, signal: loadAbort.signal })
+      : await resolveBeatmapSource({ wasm, osuBytes, oszBytes, bid, difficulty: state.localDifficulty, download, signal: loadAbort.signal });
     if (token !== loadToken) return;
-
-    // 2. 难度选择：本地 `.osz` 用下拉选中的条目，BID 按 `BeatmapID` 匹配。
-    const selector = replaySource?.selector ?? (localFile
-      ? (state.localDifficulty ? { difficulty: state.localDifficulty } : {})
-      : { bid });
-    state.info = replaySource?.info ?? readBeatmapInfo(wasm, bytes, selector);
+    const { bytes, selector } = source;
+    sourceHasMusic = source.hasMusic;
+    state.info = source.info;
     // 3. 打击音默认值要在创建会话前就位：它决定 WASM 装载哪些样本。
     applyHitsoundDefaults(wasm, modeKeyOf(state.info?.mode));
 
@@ -1182,8 +1097,11 @@ export async function loadPreview() {
     // 等待用户激活（首次点击 / 触摸 / 按键）后恢复声音。
     playState(true);
     addGestureHints();
-    // 本地文件没有可分享的深链，地址栏保持不变。
-    if (!localFile && !replay) syncUrl();
+    // 本地资源无法通过链接还原；在线成绩统一分享最终选中的成绩 ID。
+    const path = hasLocal ? '/' : replay
+      ? previewPath({ type: 'osr', scoreId: replay.scoreId, convert: state.replayConvert })
+      : previewPath({ type: 'osu', bid, convert: state.convert });
+    window.history.replaceState(null, '', path);
   } catch (error) {
     // 取消或已经被新的一次加载取代：错误属于旧请求，不该报给用户。
     if (token !== loadToken || error?.name === 'AbortError') return;
@@ -1201,7 +1119,7 @@ export async function loadPreview() {
 
 /** 当前来源有没有音乐：`.osz` 与 BID 的整包里都有，单独的 `.osu` 没有。 */
 function hasMusic() {
-  return state.replayActive || !(localFile && state.localKind === 'osu');
+  return sourceHasMusic;
 }
 
 function startProgressPolling(bid) {
@@ -1619,7 +1537,7 @@ export function setSheetOpen(open) {
   state.sheetOpen = open;
 }
 
-export function backToLoad() {
+export function backToLoad(clearUrl = true) {
   playState(false);
   cancelArrowHold();
   cancelAnimationFrame(animation);
@@ -1645,7 +1563,7 @@ export function backToLoad() {
   state.info = null;
   state.page = 'load';
   // 回到加载页就清掉深链参数，避免刷新时又自动进入上一个预览。
-  window.history.replaceState(null, '', window.location.pathname);
+  if (clearUrl) window.history.replaceState(null, '', '/');
 }
 
 /**

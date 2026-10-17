@@ -15,9 +15,10 @@ test('最高分按指定玩家和谱面查询，数字用户名不被当作 ID',
   const calls = [];
   const result = await selectReplayScore({ get: async (path) => {
     calls.push(path);
+    if (path === 'beatmaps/2') return { id: 2, mode: 'osu' };
     return path.startsWith('users/') ? { id: 7 } : { score: score() };
   } }, replayQuery(new URLSearchParams('user=123&bid=2')));
-  assert.deepEqual(calls, ['users/@123/osu', 'beatmaps/2/scores/users/7?mode=osu&legacy_only=0']);
+  assert.deepEqual(calls, ['beatmaps/2', 'users/@123/osu', 'beatmaps/2/scores/users/7?mode=osu&legacy_only=0']);
   assert.deepEqual(result, { scoreId: '10', bid: '2', setId: '3', checksum: 'a'.repeat(32) });
 });
 
@@ -31,7 +32,7 @@ test('近期查询分页并按绝对时间选择，不跳过没有回放的最�
       score(12, { ended_at: '2026-01-01T01:00:00+01:00', has_replay: false }),
     ];
   } };
-  await assert.rejects(selectReplayScore(api, replayQuery(new URLSearchParams('user=x&bid=2&selection=recent&includeFails=1'))), /没有可下载回放/);
+  await assert.rejects(selectReplayScore(api, replayQuery(new URLSearchParams('user=x&bid=2&selection=recent&includeFails=1&mode=osu'))), /没有可下载回放/);
   assert.equal(calls.length, 3);
   assert.ok(calls[2].endsWith('offset=100'));
   assert.ok(calls.slice(1).every((p) => p.includes('include_fails=1')));
@@ -44,7 +45,7 @@ test('近期扫描有上限，缺失不回退到最高分', async () => {
     assert.ok(path.includes('/scores/recent?')); calls++;
     return Array.from({ length: 100 }, () => score(1, { beatmap_id: 999 }));
   } };
-  await assert.rejects(selectReplayScore(api, replayQuery(new URLSearchParams('user=x&bid=2&selection=recent'))), /不会回退/);
+  await assert.rejects(selectReplayScore(api, replayQuery(new URLSearchParams('user=x&bid=2&selection=recent&mode=osu'))), /不会回退/);
   assert.equal(calls, 10);
 });
 
@@ -55,7 +56,7 @@ test('拒绝错误成绩身份、其它模式和无回放，不替换成其它�
     [score(10, { has_replay: false }), /没有可下载回放/],
     [score(10, { beatmap_id: 9 }), /谱面信息/],
   ]) await assert.rejects(selectReplayScore({ get: async () => value }, { scoreId: '10' }), pattern);
-  await assert.rejects(selectReplayScore({ get: async (path) => path.startsWith('users/') ? { id: 7 } : { score: score(10, { user_id: 9 }) } }, replayQuery(new URLSearchParams('user=x&bid=2'))), /玩家或谱面/);
+  await assert.rejects(selectReplayScore({ get: async (path) => path.startsWith('users/') ? { id: 7 } : { score: score(10, { user_id: 9 }) } }, replayQuery(new URLSearchParams('user=x&bid=2&mode=osu'))), /玩家或谱面/);
 });
 
 test('最近游玩省略模式和谱面，默认排除失败，只查询最近一条', async () => {
@@ -87,5 +88,19 @@ test('最近游玩传递官方模式和失败开关，不改选不兼容或无�
 test('最近游玩没有记录或返回错误玩家时明确报错', async () => {
   for (const [entries, pattern] of [[[], /没有符合条件/], [[score(10, { user_id: 9 })], /玩家或谱面/]]) {
     await assert.rejects(selectReplayScore({ get: async (path) => path === 'users/@x' ? { id: 7 } : entries }, replayQuery(new URLSearchParams('user=x'))), pattern);
+  }
+});
+
+
+test('玩家加谱面未指定模式时按原谱查询，显式模式可定位转谱成绩', async () => {
+  for (const [mode, params] of [['taiko', ''], ['mania', '&mode=mania']]) {
+    const calls = [];
+    await assert.rejects(selectReplayScore({ get: async (path) => {
+      calls.push(path);
+      if (path === 'beatmaps/2') return { id: 2, mode: 'taiko' };
+      if (path === `users/@x/${mode}`) return { id: 7 };
+      return { score: score(10, { ruleset_id: mode === 'taiko' ? 1 : 3 }) };
+    } }, replayQuery(new URLSearchParams(`user=x&bid=2${params}`))), /Standard/);
+    assert.deepEqual(calls, [...(params ? [] : ['beatmaps/2']), `users/@x/${mode}`, `beatmaps/2/scores/users/7?mode=${mode}&legacy_only=0`]);
   }
 });

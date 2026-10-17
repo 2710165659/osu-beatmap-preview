@@ -23,7 +23,7 @@
 - **背景视频与故事板**：MP4 导出与网页预览都支持故事板，**默认关闭**，可通过配置项打开。
 - **转谱**：Standard 谱面可转到 Taiko、Catch 或 Mania，并在此基础上可以应用 mod。
 - **四种模式**：osu!standard、osu!taiko、osu!catch、osu!mania 各有独立的布局、皮肤和配色，都能输出 PNG 概览、GIF 分段预览和带原曲音频的 H.264 MP4。
-- **浏览器实时预览**：Web 包解压后 `node backend/server.js`（或 `npm start`）就能在浏览器里播放谱面，支持 Mod 热切换、转谱、seek、倍速、音量（默认 50%）、分辨率（480P/720P/1080P）与 30/60/120 FPS 切换。
+- **浏览器实时预览**：Web 包解压后 `node backend/server.js`（或 `npm start`）就能在浏览器里播放谱面，支持 Mod 热切换、转谱、seek、倍速、音量（默认 50%）、分辨率（480P/720P/1080P）与 30/60/120 FPS 切换。加载页区分谱面与回放预览，分享地址分别为 `/bids/<bid>` 和 `/scores/<分数ID>`。
 - **高性能、低占用**：帧渲染按配置分块并行，并按单帧字节数动态限制批次，降低大画布的临时内存峰值；GIF 复用帧编码缓冲区，Standard MP4 预计算每帧可见物件索引，滑条 tick、鼓滚 tick 等使用程序化精灵缓存。实测数据见[批量渲染报告](docs/report.md)。
 - **独立、无外部依赖的 CLI**：单个可执行文件内嵌皮肤、字体、H.264 和 AAC 编码器，运行时不需要 FFmpeg、额外动态库或资源文件；Windows 会自动尝试 NVENC / AMF，缺失时回退内置 CPU 编码器（`OSU_PREVIEW_NO_GPU=1` 可强制 CPU）。下载缓存、输出缓存和日志都在本机复用，不同配置使用独立输出目录。
 

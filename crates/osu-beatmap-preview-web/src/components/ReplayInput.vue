@@ -11,7 +11,13 @@ async function select(event) {
   try { await selectReplayFile(file); }
   catch (reason) { clearReplayFile(); error.value = String(reason?.message ?? reason); event.target.value = ''; }
 }
-function remove() { clearReplayFile(); error.value = ''; if (input.value) input.value.value = ''; }
+function remove() {
+  clearReplayFile();
+  state.replayConvert = '';
+  state.loadLogs = [];
+  error.value = '';
+  if (input.value) input.value.value = '';
+}
 </script>
 
 <template>
@@ -19,19 +25,19 @@ function remove() { clearReplayFile(); error.value = ''; if (input.value) input.
     <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
       回放来源
       <select v-model="state.replayMethod" aria-label="回放来源" class="h-11 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]" @change="remove">
-        <option value="file">本地 OSR（可选，不选则普通谱面预览）</option>
+        <option value="file">本地 OSR 文件</option>
         <option value="score">成绩 ID / 官方成绩链接</option>
         <option value="player">玩家 + 谱面 ID</option>
-        <option value="latest">玩家最近游玩（模式可选）</option>
+        <option value="latest">玩家最近游玩</option>
       </select>
     </label>
     <label v-if="state.replayMethod === 'file'" class="grid gap-2 text-[13px] font-bold text-neutral-300">
-      回放文件（可选 .osr）
+      回放文件（.osr）
       <input ref="input" type="file" accept=".osr" :disabled="state.loading" class="block w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2.5 text-[13px] font-normal text-neutral-400 file:mr-3 file:h-7 file:rounded file:border-0 file:bg-neutral-800 file:px-2.5 file:text-[12px] file:font-bold file:text-white" @change="select">
     </label>
     <label v-else-if="state.replayMethod === 'score'" class="grid gap-2 text-[13px] font-bold text-neutral-300">
       成绩 ID 或链接
-      <input v-model="state.replayScoreId" type="text" autocomplete="off" placeholder="6086051920 或 https://osu.ppy.sh/scores/6086051920" class="h-11 min-w-0 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]">
+      <input v-model="state.replayScoreId" type="text" autocomplete="off" placeholder="6086051920 或 https://osu.ppy.sh/scores/6086051920" class="h-11 min-w-0 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]" @input="state.replayConvert = ''">
     </label>
     <template v-else-if="state.replayMethod === 'player' || state.replayMethod === 'latest'">
       <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
@@ -50,23 +56,23 @@ function remove() { clearReplayFile(); error.value = ''; if (input.value) input.
           </select>
         </label>
       </div>
-      <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
-        查询模式
-        <select v-model="state.replayMode" aria-label="查询模式" class="h-11 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]">
-          <option value="">{{ state.replayMethod === 'latest' ? '使用玩家默认模式' : '默认 osu!standard' }}</option>
-          <option value="osu">osu!standard</option>
-          <option value="taiko">osu!taiko</option>
-          <option value="fruits">osu!catch</option>
-          <option value="mania">osu!mania</option>
-        </select>
-      </label>
-      <label class="flex items-center gap-2 text-[13px] text-neutral-300">
-        <input v-model="state.replayIncludeFails" type="checkbox" class="h-4 w-4 accent-[#ff5f45]">
-        包含失败成绩（仅影响最近成绩）
-      </label>
-      <p class="m-0 text-xs leading-relaxed text-neutral-400">目前回放仅支持 osu!standard。最近成绩默认排除失败；选中其它模式或没有回放的成绩时会报错。</p>
+      <div class="grid min-w-0 gap-2">
+        <label for="replay-query-mode" class="text-[13px] font-bold text-neutral-300">查询模式</label>
+        <div class="flex min-w-0 items-center gap-3">
+          <select id="replay-query-mode" v-model="state.replayMode" aria-label="查询模式" class="h-11 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]">
+            <option value="">{{ state.replayMethod === 'latest' ? '使用玩家默认模式' : '使用谱面模式' }}</option>
+            <option value="osu">osu!standard</option>
+            <option value="taiko">osu!taiko</option>
+            <option value="fruits">osu!catch</option>
+            <option value="mania">osu!mania</option>
+          </select>
+          <label class="flex shrink-0 items-center gap-1.5 text-xs text-neutral-300">
+            <input v-model="state.replayIncludeFails" type="checkbox" class="h-3.5 w-3.5 accent-[#ff5f45]">
+            包含失败
+          </label>
+        </div>
+      </div>
     </template>
-    <p v-if="state.replayMethod !== 'file'" class="m-0 text-xs leading-relaxed text-neutral-400">自动下载回放与谱面包。最近一次仅查询官方近期记录，查不到不会换成最高分；无回放或规则不兼容会明确报错。</p>
     <p v-if="state.replaySelecting" class="text-xs text-neutral-400">正在解析回放...</p>
     <p v-else-if="state.replayFileName" class="flex items-start gap-2 text-xs text-neutral-400">
       <span class="min-w-0 flex-1">{{ state.replayFileName }}<br>可在下方提供匹配的 .osu / .osz；没有谱面包时自动下载。回放保留在浏览器本地。</span>

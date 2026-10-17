@@ -1,8 +1,7 @@
-//! 单文件输入（`.osu` / `.osz`）的解包与难度选择。
+//! 可选 `.osu` 与 `.osz` 输入的解包、难度选择和资源绑定。
 //!
-//! WASM 的输入只有**一份文件**：`.osu` 字节或 `.osz`（ZIP）整包字节。`.osz` 里的
-//! 音乐、背景、自带音效全部在这里解开，宿主不再看压缩包内部。判定规则与 CLI 的
-//! `application/local.rs` 是同一张用例表（`test/local-file.test.js` 迁移而来）：
+//! `.osu` 可独立使用，也可覆盖 `.osz` 中相同 BeatmapID 的谱面；回放额外校验两份原文 MD5。
+//! 音乐、背景、自带音效按实际渲染的谱面引用从 `.osz` 解开，宿主不读取压缩包内部。
 //!
 //! - 只认压缩包**顶层**的 `.osu`：stable 会忽略子目录里的谱面，osu!lazer 同样按
 //!   `!f.Filename.Contains('/')` 过滤；
@@ -85,25 +84,53 @@ pub struct ArchiveContent {
     pub samples: Vec<(String, Vec<u8>)>,
 }
 
-/// 解析一份输入文件（`.osu` 字节或 `.osz` 整包字节）。
-///
-/// `want_media = false` 时只解析难度结构（宿主取难度清单/谱面信息用），
-/// 不解压音乐、背景与音效；`true` 时全部解出。
-pub fn read_input(
+/// 解析谱面及可选外部文本，`want_media = false` 时不解压媒体。
+/// 外部谱面优先于包内谱面；普通预览以 BeatmapID 绑定，回放必须同时满足原始 MD5。
+pub fn read_input_with_osu(
     bytes: &[u8],
+    osu: Option<&[u8]>,
     selector: &DifficultySelector,
     want_media: bool,
 ) -> Result<ArchiveContent, String> {
+    if let Some(osu) = osu {
+        if !is_zip(bytes) {
+            return Err("同时提供 .osu 时，媒体资源必须是 .osz 谱面包".into());
+        }
+        read_plain_osu(osu)?;
+        let beatmap = parse_beatmap(osu)?;
+        validate_plain_selection(osu, &beatmap, selector)?;
+        let archive_selector = match selector {
+            DifficultySelector::ByChecksum(_) => selector.clone(),
+            _ => DifficultySelector::ById(
+                beatmap_id(&beatmap).ok_or("外部 .osu 需要有效 BeatmapID 才能绑定 .osz")?,
+            ),
+        };
+        return read_archive(bytes, &archive_selector, want_media, Some((osu, &beatmap)));
+    }
     if is_zip(bytes) {
-        read_archive(bytes, selector, want_media)
+        read_archive(bytes, selector, want_media, None)
     } else {
         let content = read_plain_osu(bytes)?;
-        if let DifficultySelector::ByChecksum(checksum) = selector {
-            if !format!("{:x}", md5::compute(bytes)).eq_ignore_ascii_case(checksum) {
-                return Err("BeatmapMismatch: .osu MD5 与回放不符".into());
-            }
-        }
+        validate_plain_selection(bytes, &parse_beatmap(bytes)?, selector)?;
         Ok(content)
+    }
+}
+
+fn validate_plain_selection(
+    bytes: &[u8],
+    beatmap: &Beatmap,
+    selector: &DifficultySelector,
+) -> Result<(), String> {
+    match selector {
+        DifficultySelector::ByChecksum(checksum)
+            if !format!("{:x}", md5::compute(bytes)).eq_ignore_ascii_case(checksum) =>
+        {
+            Err("BeatmapMismatch: .osu MD5 与回放不符".into())
+        }
+        DifficultySelector::ById(id) if beatmap_id(beatmap) != Some(*id) => {
+            Err("提供的 bid 与外部 .osu 的 BeatmapID 不符".into())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -181,6 +208,7 @@ fn read_archive(
     bytes: &[u8],
     selector: &DifficultySelector,
     want_media: bool,
+    external: Option<(&[u8], &Beatmap)>,
 ) -> Result<ArchiveContent, String> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|error| format!(".osz 打开失败：{error}"))?;
@@ -233,11 +261,11 @@ fn read_archive(
     }
 
     let selected = select_difficulty(&parsed, selector)?;
-    let selected_beatmap = &parsed[selected].3;
+    let selected_beatmap = external.map_or(&parsed[selected].3, |(_, beatmap)| beatmap);
     let media = BeatmapMedia::from_beatmap(selected_beatmap);
 
     let mut content = ArchiveContent {
-        beatmap: parsed[selected].2.clone(),
+        beatmap: external.map_or_else(|| parsed[selected].2.clone(), |(raw, _)| raw.to_vec()),
         difficulties,
         ..ArchiveContent::default()
     };
@@ -486,6 +514,76 @@ mod tests {
     use super::*;
     use std::io::Write;
     use zip::write::SimpleFileOptions;
+
+    #[test]
+    fn external_osu_controls_map_and_media_but_must_match_archive_id() {
+        let packaged = osu_text(Some(42), "Packaged", "old.mp3", "old.jpg");
+        let external = osu_text(Some(42), "External", "new.mp3", "new.jpg");
+        let archive = osz_bytes(&[
+            ("map.osu", packaged.as_bytes()),
+            ("new.mp3", b"new music"),
+            ("new.jpg", b"new background"),
+        ]);
+        let content = read_input_with_osu(
+            &archive,
+            Some(external.as_bytes()),
+            &DifficultySelector::First,
+            true,
+        )
+        .unwrap();
+        assert_eq!(content.beatmap, external.as_bytes());
+        assert_eq!(content.audio.unwrap(), b"new music");
+        assert_eq!(content.background.unwrap(), b"new background");
+        assert!(read_input_with_osu(
+            &archive,
+            Some(external.as_bytes()),
+            &DifficultySelector::ById(43),
+            false
+        )
+        .is_err());
+        let unrelated = osu_text(Some(43), "Other", "new.mp3", "new.jpg");
+        assert!(read_input_with_osu(
+            &archive,
+            Some(unrelated.as_bytes()),
+            &DifficultySelector::First,
+            false
+        )
+        .is_err());
+        let no_id = osu_text(None, "Local", "new.mp3", "new.jpg");
+        assert!(read_input_with_osu(
+            &archive,
+            Some(no_id.as_bytes()),
+            &DifficultySelector::First,
+            false
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn replay_combined_inputs_validate_both_original_checksums() {
+        let map = osu_text(Some(42), "Hard", "audio.mp3", "bg.jpg");
+        let changed = format!("{map}\n");
+        let archive = osz_bytes(&[("map.osu", map.as_bytes())]);
+        let selector =
+            DifficultySelector::ByChecksum(format!("{:x}", md5::compute(map.as_bytes())));
+        assert_eq!(
+            read_input_with_osu(&archive, Some(map.as_bytes()), &selector, false)
+                .unwrap()
+                .beatmap,
+            map.as_bytes()
+        );
+        assert!(
+            read_input_with_osu(&archive, Some(changed.as_bytes()), &selector, false)
+                .unwrap_err()
+                .contains("BeatmapMismatch")
+        );
+        let changed_archive = osz_bytes(&[("map.osu", changed.as_bytes())]);
+        assert!(
+            read_input_with_osu(&changed_archive, Some(map.as_bytes()), &selector, false)
+                .unwrap_err()
+                .contains("BeatmapMismatch")
+        );
+    }
 
     #[test]
     fn checksum_selects_exact_original_bytes_and_rejects_wrong_map() {
@@ -826,5 +924,14 @@ mod tests {
         assert!(content.audio.is_none());
         assert!(content.samples.is_empty());
         assert_eq!(content.difficulties.len(), 1);
+    }
+
+    /// 单资源测试沿用原入口，组合资源另行显式传入外部谱面。
+    fn read_input(
+        bytes: &[u8],
+        selector: &DifficultySelector,
+        want_media: bool,
+    ) -> Result<ArchiveContent, String> {
+        read_input_with_osu(bytes, None, selector, want_media)
     }
 }

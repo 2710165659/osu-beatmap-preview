@@ -7,20 +7,18 @@ export async function readReplayFile(file, wasm) {
   return { bytes, info, name: file.name };
 }
 
-export async function resolveReplaySource({ wasm, replay, localBytes, localKind, download, lookup, signal }) {
+export async function resolveReplaySource({ wasm, replay, osuBytes, oszBytes, download, lookup, signal }) {
   const selector = { checksum: replay.info.checksum };
-  if (localBytes) {
-    // 用户给出的资源必须先通过 MD5 绑定；不匹配时拒绝，不能悄悄换谱。
-    const info = wasm.beatmapInfo(localBytes, selector);
-    if (localKind === 'osz') return { bytes: localBytes, selector, info };
-    const bid = String(info.beatmapId ?? '');
-    const resolved = /^\d+$/.test(bid) && Number(bid) > 0 ? { bid } : await lookup(replay.info.checksum, signal);
-    const bytes = await download(resolved.bid, { signal });
-    return { bytes, selector, info: wasm.beatmapInfo(bytes, selector) };
+  // 两份本地资源都必须匹配回放原始 MD5；错误输入直接拒绝，不以下载掩盖。
+  const externalInfo = osuBytes ? wasm.beatmapInfo(osuBytes, selector) : null;
+  if (osuBytes) selector.osuBytes = osuBytes;
+  let bytes = oszBytes;
+  if (!bytes) {
+    const bid = String(externalInfo?.beatmapId ?? '');
+    const resolved = /^[1-9]\d*$/.test(bid) ? { bid } : replay.location ?? await lookup(replay.info.checksum, signal);
+    bytes = await download(resolved.bid, { signal });
   }
-  const resolved = replay.location ?? await lookup(replay.info.checksum, signal);
-  const bytes = await download(resolved.bid, { signal });
-  return { bytes, selector, info: wasm.beatmapInfo(bytes, selector) };
+  return { bytes, selector, info: wasm.beatmapInfo(bytes, selector), hasMusic: true };
 }
 
 export async function lookupReplayBeatmap(checksum, signal) {

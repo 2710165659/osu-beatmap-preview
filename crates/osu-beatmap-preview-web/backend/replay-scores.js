@@ -35,8 +35,13 @@ export async function selectReplayScore(api, query) {
     score = await request(`scores/${query.scoreId}`);
     if (String(score.id) !== query.scoreId) throw new Error('官方返回的成绩 ID 不符');
   } else {
-    // 玩家加谱面保持原有 osu 默认值；最近游玩省略 mode 时交给官方使用玩家默认模式。
-    const mode = query.mode ?? (query.bid ? 'osu' : null);
+    // 玩家加谱面省略模式时跟随原谱；最近游玩仍由官方采用玩家默认模式。
+    let mode = query.mode;
+    if (!mode && query.bid) {
+      const beatmap = await request(`beatmaps/${query.bid}`);
+      if (String(beatmap.id) !== query.bid || !['osu', 'taiko', 'fruits', 'mania'].includes(beatmap.mode)) throw new Error('官方谱面响应缺少有效模式');
+      mode = beatmap.mode;
+    }
     const user = await request(`users/@${encodeURIComponent(query.user)}${mode ? `/${mode}` : ''}`);
     if (!Number.isSafeInteger(user.id) || user.id <= 0) throw new Error('官方玩家响应无效');
     userId = String(user.id);

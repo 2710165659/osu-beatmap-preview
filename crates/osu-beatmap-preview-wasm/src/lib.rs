@@ -82,7 +82,8 @@ impl WebGpuSession {
     /// （音乐、背景、自带音效全部在 WASM 内解出）。
     ///
     /// `options`：`{ bid?, difficulty?, convert?, mods?, width, height, sampleRate?,
-    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard?, replayBytes? }`。
+    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard?, replayBytes?, osuBytes? }`。
+    /// `osuBytes` 为可选外部谱面，提供时 `bytes` 必须为包含对应难度的 `.osz`。
     /// 有 `replayBytes` 时按回放 MD5 选谱并拒绝转谱和用户 Mod，输入需为完整谱面包。
     /// 难度选择优先 `difficulty`（压缩包条目名），其次 `bid`（`BeatmapID`），都没有时
     /// 取第一个顶层 `.osu`；`sampleRate` 必须等于宿主音频设备的实际采样率。
@@ -98,8 +99,10 @@ impl WebGpuSession {
             || read_selector(&options),
             |r| archive::DifficultySelector::ByChecksum(r.header.beatmap_md5.clone()),
         );
-        let content = archive::read_input(&bytes, &selector, true)
-            .map_err(|error| JsValue::from_str(&error))?;
+        let external_osu = option_bytes(&options, "osuBytes")?;
+        let content =
+            archive::read_input_with_osu(&bytes, external_osu.as_deref(), &selector, true)
+                .map_err(|error| JsValue::from_str(&error))?;
         if replay.is_some() && content.audio.is_none() {
             return Err(JsValue::from_str(
                 "OSR 回放需要匹配的完整 .osz 谱面包（含音乐）",
@@ -781,6 +784,23 @@ fn option_bool(options: &JsValue, key: &str) -> Option<bool> {
         .and_then(|value| value.as_bool())
 }
 
+/// 字节参数显式检查类型，避免把无效外部谱面静默当成未提供。
+#[cfg(target_arch = "wasm32")]
+fn option_bytes(options: &JsValue, key: &str) -> Result<Option<Vec<u8>>, JsValue> {
+    use wasm_bindgen::JsCast;
+    if options.is_undefined() || options.is_null() {
+        return Ok(None);
+    }
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(key))?;
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+    if !value.is_instance_of::<js_sys::Uint8Array>() {
+        return Err(JsValue::from_str(&format!("{key} 必须是 Uint8Array")));
+    }
+    Ok(Some(js_sys::Uint8Array::new(&value).to_vec()))
+}
+
 /// 条目扩展名（小写、不含点），用作 symphonia 的格式提示。
 #[cfg(target_arch = "wasm32")]
 fn extension_of(name: &str) -> Option<&str> {
@@ -796,8 +816,14 @@ fn extension_of(name: &str) -> Option<&str> {
 #[wasm_bindgen(js_name = beatmapInfo)]
 pub fn beatmap_info(bytes: Vec<u8>, options: Option<JsValue>) -> Result<JsValue, JsValue> {
     let options = options.unwrap_or(JsValue::UNDEFINED);
-    let content = archive::read_input(&bytes, &read_selector(&options), false)
-        .map_err(|error| JsValue::from_str(&error))?;
+    let external_osu = option_bytes(&options, "osuBytes")?;
+    let content = archive::read_input_with_osu(
+        &bytes,
+        external_osu.as_deref(),
+        &read_selector(&options),
+        false,
+    )
+    .map_err(|error| JsValue::from_str(&error))?;
     let beatmap = parse_beatmap_bytes(&content.beatmap).map_err(js_error)?;
     let info = BeatmapInfo::from_beatmap(&beatmap);
     // 默认序列化会把 map 变成 JS Map、把 None 变成 undefined；这里统一成

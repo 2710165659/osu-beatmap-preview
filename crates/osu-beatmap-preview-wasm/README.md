@@ -2,7 +2,7 @@
 
 [返回项目首页](../../README.md) | [CLI 使用说明](../osu-beatmap-preview-cli/README.md) | [架构说明](../../docs/architecture.md)
 
-输入**一份文件的字节**——`.osu`、`.osz`，或在 `replayBytes` 选项中传入 `.osr` 并把谱面包作为主输入——即可在浏览器里用 WebGPU 实时渲染并播放谱面。OSR 模式按回放头部 MD5 绑定原始 `.osu` 字节，缺少谱面时由 Web 后端负责查谱下载。解包、解码、混音、时钟都在 WASM 内完成。WASM 不下载文件、也不返回像素；导出 PNG/GIF/MP4 请用 [CLI](../osu-beatmap-preview-cli/README.md)。
+输入 `.osu` 或 `.osz` 字节，或在 `replayBytes` 选项中传入 `.osr` 并把谱面包作为主输入，即可在浏览器里用 WebGPU 实时渲染并播放谱面。也可通过 `osuBytes` 同时提供外部谱面文本，由主输入 `.osz` 提供媒体。OSR 模式按回放头部 MD5 绑定原始 `.osu` 字节，缺少谱面时由 Web 后端负责查谱下载。解包、解码、混音、时钟都在 WASM 内完成。WASM 不下载文件、也不返回像素；导出 PNG/GIF/MP4 请用 [CLI](../osu-beatmap-preview-cli/README.md)。
 
 | WASM 负责 | 宿主负责 |
 | --- | --- |
@@ -121,6 +121,7 @@ workletNode.port.onmessage = (e) => session.onAudioClock(e.data.readPosition);
 | 字段 | 说明 |
 | --- | --- |
 | `difficulty` / `bid` | 选择 `.osz` 里的难度（见上） |
+| `osuBytes` | 可选 `Uint8Array` 外部谱面；主输入必须为 `.osz`。普通预览按外部 BeatmapID 绑定包内难度，使用外部文本渲染和查找媒体；回放要求外部文本与包内谱面均匹配 OSR 的 MD5。`beatmapInfo` 同样支持此选项 |
 | `convert` | 转谱目标：`mania` / `ctb` / `taiko` / `standard` |
 | `mods` | Mod token 数组，语法同 [CLI 的 Mod 支持](../osu-beatmap-preview-cli/README.md#mod-支持) |
 | `width` / `height` | 输出尺寸 |

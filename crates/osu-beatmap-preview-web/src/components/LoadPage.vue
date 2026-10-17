@@ -1,51 +1,38 @@
 <script setup>
-// 加载页：输入 BID 或选择本地 .osu / .osz 文件，可选转谱模式，然后交给 preview.js 加载会话。
-// 本地 .osz 通常包含多个难度：文件选好后立刻解析出难度清单让用户选择（填了 BID 时
-// 默认选中对应 BeatmapID 的难度，加载时按 BID 匹配、找不到会报错）。
-// 加载期间显示后端与浏览器两段传输的进度：OSZ 动辄几十 MiB，还要经服务端转发一次，
-// 没有阶段与速率会让人以为卡死了。
-import { ref } from 'vue';
+// 加载页显式区分普通预览与回放，谱面文本和媒体包始终是独立的可选输入。
+import { reactive, watch } from 'vue';
 import ReplayInput from './ReplayInput.vue';
-
 import {
-  CONVERT_MODES,
-  clearLocalFile,
-  loadPreview,
-  progressDetail,
-  progressLabel,
-  progressPercent,
-  selectLocalFile,
-  state,
-  replayRequested,
+  CONVERT_MODES, clearLocalFile, loadPreview, progressDetail, progressLabel,
+  progressPercent, selectLocalFile, setPreviewType, state, replayRequested,
 } from '../preview.js';
 
-/** 本地文件选择阶段的错误（后缀不对、压缩包里没有 .osu 等），就地显示。 */
-const localError = ref('');
-/** 文件输入框：清除选择时要同步清空它的值，否则同一个文件再次选择不会触发 change。 */
-const fileInput = ref(null);
+const errors = reactive({ osu: '', osz: '' });
+const fileInputs = {};
+const fileKinds = ['osu', 'osz'];
+// 深链导航会清理本地资源，同步清空原生输入框，避免文件名与实际字节不一致。
+for (const kind of fileKinds) {
+  watch(() => state[kind === 'osu' ? 'localOsuName' : 'localOszName'], (name) => {
+    if (!name && fileInputs[kind]) fileInputs[kind].value = '';
+  });
+}
 
-async function onFileChange(event) {
-  const file = event.target.files?.[0] ?? null;
-  localError.value = '';
-  if (!file) {
-    clearLocalFile();
-    return;
-  }
-  try {
-    await selectLocalFile(file);
-  } catch (error) {
-    clearLocalFile();
-    localError.value = String(error?.message ?? error);
-    // 清空输入框，否则同一个文件再次选择不会触发 change。
+async function onFileChange(kind, event) {
+  errors[kind] = '';
+  const file = event.target.files?.[0];
+  if (!file) { clearLocalFile(kind); return; }
+  try { await selectLocalFile(kind, file); }
+  catch (error) {
+    clearLocalFile(kind);
+    errors[kind] = String(error?.message ?? error);
     event.target.value = '';
   }
 }
 
-/** 移除已选文件，回到按 BID 加载。 */
-function removeFile() {
-  clearLocalFile();
-  localError.value = '';
-  if (fileInput.value) fileInput.value.value = '';
+function removeFile(kind) {
+  clearLocalFile(kind);
+  errors[kind] = '';
+  if (fileInputs[kind]) fileInputs[kind].value = '';
 }
 </script>
 
@@ -58,12 +45,20 @@ function removeFile() {
         </span>
         <div>
           <small class="text-[10px] tracking-[.16em] text-[#ff5f45]">LOCAL RENDER ENGINE</small>
-          <h1 class="m-0 text-[26px] leading-tight font-bold text-white">谱面预览</h1>
+          <h1 class="m-0 text-[26px] leading-tight font-bold text-white">{{ replayRequested ? '回放预览' : '谱面预览' }}</h1>
         </div>
       </div>
 
+      <div class="mb-6 grid grid-cols-2 gap-1 rounded-lg border border-neutral-800 bg-neutral-950 p-1" role="group" aria-label="预览模式">
+        <button v-for="item in [{ type: 'osu', label: '谱面预览' }, { type: 'osr', label: '回放预览' }]" :key="item.type"
+          type="button" :aria-pressed="state.previewType === item.type" :disabled="state.loading"
+          class="rounded-md px-3 py-2.5 text-sm font-bold transition-colors disabled:opacity-60"
+          :class="state.previewType === item.type ? 'bg-[#ff5f45] text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'"
+          @click="setPreviewType(item.type)">{{ item.label }}</button>
+      </div>
+
       <form class="grid gap-4" @submit.prevent="loadPreview()">
-        <ReplayInput />
+        <ReplayInput v-if="replayRequested" />
         <label v-if="!replayRequested" class="grid gap-2 text-[13px] font-bold text-neutral-300">
           谱面 BID
           <input
@@ -73,52 +68,6 @@ function removeFile() {
             placeholder="例如 738063；选择 .osz 时可指定难度"
             class="h-11 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]"
           >
-        </label>
-
-        <div class="flex items-center gap-3 text-[11px] tracking-wider text-neutral-600 select-none">
-          <span class="h-px flex-1 bg-neutral-800"></span>
-          {{ replayRequested ? '可选谱面资源（.osu / .osz）' : '或选择本地文件（.osu / .osz）' }}
-          <span class="h-px flex-1 bg-neutral-800"></span>
-        </div>
-
-        <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
-          本地文件
-          <input
-            ref="fileInput"
-            type="file"
-            accept=".osu,.osz"
-            :disabled="state.loading"
-            class="block w-full rounded-md border border-neutral-700 bg-neutral-900 pr-3 pl-3 pt-2.5 pb-2.5 text-[13px] font-normal text-neutral-400 file:mr-3 file:h-7 file:rounded file:border-0 file:bg-neutral-800 file:px-2.5 file:text-[12px] file:font-bold file:text-white"
-            @change="onFileChange"
-          >
-        </label>
-
-        <p v-if="state.localFileName" class="-mt-2 flex items-start gap-2 text-[12px] text-neutral-500">
-          <span class="min-w-0 flex-1">
-            已选择：{{ state.localFileName }}{{ replayRequested ? '（按回放 MD5 自动绑定）' : '（本地文件优先于 BID；填 BID 仅用于在 .osz 内指定难度）' }}
-            <span v-if="state.localKind === 'osu' && !replayRequested">本地 .osu 只有谱面与内嵌音效，没有音乐与背景。</span>
-            <span v-else-if="state.localKind === 'osz'">音乐、背景与自带音效都在 .osz 里，由 WASM 解包后统一播放。</span>
-          </span>
-          <button
-            type="button"
-            class="shrink-0 font-bold text-[#ff5f45] hover:underline"
-            :disabled="state.loading"
-            @click="removeFile"
-          >
-            移除
-          </button>
-        </p>
-
-        <label v-if="!replayRequested && state.localKind === 'osz' && state.localDifficulties.length" class="grid gap-2 text-[13px] font-bold text-neutral-300">
-          难度（本地 .osz）
-          <select
-            v-model="state.localDifficulty"
-            class="h-11 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]"
-          >
-            <option v-for="item in state.localDifficulties" :key="item.entry" :value="item.entry">
-              {{ item.label }}
-            </option>
-          </select>
         </label>
 
         <label v-if="!replayRequested" class="grid gap-2 text-[13px] font-bold text-neutral-300">
@@ -132,21 +81,49 @@ function removeFile() {
           </select>
         </label>
 
+        <div class="flex items-center gap-3 text-[11px] tracking-wider text-neutral-600 select-none">
+          <span class="h-px flex-1 bg-neutral-800"></span>
+          可选本地资源
+          <span class="h-px flex-1 bg-neutral-800"></span>
+        </div>
+
+        <div class="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div v-for="kind in fileKinds" :key="kind" class="grid min-w-0 content-start gap-2">
+            <label class="grid min-w-0 gap-2 text-[13px] font-bold text-neutral-300">
+              {{ kind === 'osu' ? '谱面文件 .osu（可选）' : '媒体包 .osz（可选）' }}
+              <input :ref="(element) => { fileInputs[kind] = element; }" type="file" :accept="`.${kind}`"
+                :disabled="state.loading"
+                class="block w-full min-w-0 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2.5 text-[13px] font-normal text-neutral-400 file:mr-2 file:h-7 file:rounded file:border-0 file:bg-neutral-800 file:px-2 file:text-[12px] file:font-bold file:text-white"
+                @change="onFileChange(kind, $event)">
+            </label>
+            <p v-if="state[kind === 'osu' ? 'localOsuName' : 'localOszName']" class="m-0 flex min-w-0 items-start gap-2 text-xs text-neutral-400">
+              <span class="min-w-0 flex-1 break-all">{{ state[kind === 'osu' ? 'localOsuName' : 'localOszName'] }}</span>
+              <button type="button" :disabled="state.loading" class="shrink-0 font-bold text-[#ff5f45] hover:underline" @click="removeFile(kind)">移除 .{{ kind }}</button>
+            </p>
+            <p v-if="errors[kind]" role="alert" class="m-0 text-xs text-red-300">{{ errors[kind] }}</p>
+          </div>
+        </div>
+
+        <label v-if="!replayRequested && state.localOszName && !state.localOsuName && state.localDifficulties.length" class="grid gap-2 text-[13px] font-bold text-neutral-300">
+          难度（本地 .osz）
+          <select
+            v-model="state.localDifficulty"
+            class="h-11 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]"
+          >
+            <option v-for="item in state.localDifficulties" :key="item.entry" :value="item.entry">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+
         <button
           type="submit"
-          :disabled="state.loading || state.replaySelecting"
+          :disabled="state.loading || state.replaySelecting || state.localOsuSelecting || state.localOszSelecting"
           class="h-11 rounded-md bg-[#ff5f45] font-bold text-white transition hover:brightness-105 disabled:opacity-60"
         >
           {{ state.loading ? '加载中...' : '加载预览' }}
         </button>
       </form>
-
-      <p
-        v-if="localError"
-        class="mt-5 rounded-md border border-red-700/60 bg-red-950/40 p-3 text-xs leading-relaxed text-red-300"
-      >
-        {{ localError }}
-      </p>
 
       <div v-if="state.loading" class="mt-5" aria-live="polite">
         <div class="flex items-baseline justify-between gap-3 text-xs text-neutral-400">

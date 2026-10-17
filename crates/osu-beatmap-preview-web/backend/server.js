@@ -85,9 +85,9 @@ async function handle(request, response) {
     await sendResource(request, response, route, url);
     return;
   }
-  // 其余路径都当作静态文件（含 /pkg/ 下的 wasm 产物与 /gpu-check.html），
-  // 路径归一化会拒绝越界访问。
-  await sendStatic(response, route === '/' ? '/index.html' : route);
+  // 只有合法分享路径回到前端入口，刷新时仍能加载；其它路径保持静态文件与 404 规则。
+  // 静态路径归一化会拒绝越界访问。
+  await sendStatic(response, route === '/' || /^\/(bids|scores)\/[1-9]\d*\/?$/.test(route) ? '/index.html' : route);
 }
 
 /**

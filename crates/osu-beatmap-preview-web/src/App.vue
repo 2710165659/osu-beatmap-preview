@@ -7,6 +7,9 @@ import { onBeforeUnmount, onMounted } from 'vue';
 import LoadPage from './components/LoadPage.vue';
 import PlayPage from './components/PlayPage.vue';
 import {
+  backToLoad,
+  clearLocalFile,
+  clearReplayFile,
   cancelArrowHold,
   loadPreview,
   pressArrowKey,
@@ -51,24 +54,39 @@ function onKeyup(event) {
   if (side) releaseArrowKey(side);
 }
 
+/** 子组件先挂载，深链加载时画布已经可用；前进后退同样按路径恢复来源。 */
+function openLocation() {
+  const deepLink = readDeepLink();
+  if (state.page === 'play' || state.loading) backToLoad(false);
+  if (!deepLink) return;
+  clearLocalFile('osu');
+  clearLocalFile('osz');
+  clearReplayFile();
+  state.previewType = deepLink.type;
+  if (deepLink.type === 'osr') {
+    state.replayConvert = deepLink.convert;
+    state.replayMethod = 'score';
+    state.replayScoreId = deepLink.scoreId;
+  } else {
+    state.convert = deepLink.convert;
+    state.bid = deepLink.bid;
+  }
+  loadPreview();
+}
+
 onMounted(() => {
   document.addEventListener('keydown', onKeydown);
   document.addEventListener('keyup', onKeyup);
-  // 切走窗口时可能收不到 keyup，清掉按键状态避免卡在快进/倒带。
   window.addEventListener('blur', cancelArrowHold);
-  // ?bid=xxx 直接进预览（原模式）。子组件的 onMounted 先于父组件执行，
-  // 所以这里 canvas 已经登记好，可以直接加载。
-  const deepLink = readDeepLink();
-  if (!deepLink) return;
-  state.bid = deepLink.bid;
-  state.convert = deepLink.convert;
-  loadPreview();
+  window.addEventListener('popstate', openLocation);
+  openLocation();
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown);
   document.removeEventListener('keyup', onKeyup);
   window.removeEventListener('blur', cancelArrowHold);
+  window.removeEventListener('popstate', openLocation);
 });
 </script>
 

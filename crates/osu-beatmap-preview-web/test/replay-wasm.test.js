@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import fsp from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { readZipIndex, findEntry, extractEntry } from '../backend/zip.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 async function moduleOrSkip(t) {
@@ -76,3 +78,19 @@ function modOffset(replay) {
   }
   return cursor + 19;
 }
+
+test('真实 WASM 双文件覆盖文本并校验包内 BeatmapID 与两份 MD5', async (t) => {
+  const wasm = await moduleOrSkip(t);
+  if (!wasm) return;
+  const archive = await fsp.readFile(path.join(here, 'fixtures/replay-standard.osz'));
+  const original = extractEntry(archive, findEntry(readZipIndex(archive), 'map.osu'));
+  const external = new TextEncoder().encode(original.toString('utf8').replace(/^Title:.*$/m, 'Title:External override'));
+  assert.equal(wasm.beatmapInfo(archive, { osuBytes: external }).title, 'External override');
+  assert.throws(() => wasm.beatmapInfo(archive, { osuBytes: external, bid: '999999' }), /BeatmapID/);
+  const checksum = createHash('md5').update(original).digest('hex');
+  assert.ok(wasm.beatmapInfo(archive, { osuBytes: new Uint8Array(original), checksum }).beatmapId);
+  assert.throws(() => wasm.beatmapInfo(archive, { osuBytes: external, checksum }), /BeatmapMismatch/);
+  const externalChecksum = createHash('md5').update(external).digest('hex');
+  assert.throws(() => wasm.beatmapInfo(archive, { osuBytes: external, checksum: externalChecksum }), /BeatmapMismatch/);
+  assert.throws(() => wasm.beatmapInfo(archive, { osuBytes: [] }), /Uint8Array/);
+});
