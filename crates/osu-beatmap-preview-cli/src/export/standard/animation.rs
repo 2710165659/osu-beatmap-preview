@@ -2,7 +2,7 @@
 
 use crate::export::canvas::Img;
 use crate::export::text::format_mmssmmm;
-use crate::media::image::save_animated_gif_streamed;
+use crate::media::image::save_animated_gif_streamed_with_colors;
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::Beatmap;
 use osu_beatmap_preview_core::processing::timeline::{GifRenderOptions, TimeAxis};
@@ -235,5 +235,22 @@ fn render_standard_segment_gif(
         canvas
     };
 
-    save_animated_gif_streamed(frame_count, render, output_path, fps, deadline)
+    let config = &crate::config::current().render.standard.gif;
+    let label_colors = super::super::gif_time_label_colors(
+        config.style.SHOW_TIME_LABEL,
+        config.style.CANVAS_BACKGROUND_COLOR,
+        [
+            config.style.PREVIEW_TIME_LABEL_COLOR,
+            config.style.TIME_LABEL_COLOR,
+            config.style.TIME_LABEL_NOTE_COLOR,
+        ],
+    );
+    save_animated_gif_streamed_with_colors(
+        frame_count,
+        render,
+        output_path,
+        fps,
+        deadline,
+        &label_colors,
+    )
 }

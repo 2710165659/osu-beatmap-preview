@@ -20,5 +20,15 @@ pub(crate) fn render_mania_gif(
     deadline: &osu_beatmap_preview_core::support::timeout::RequestDeadline,
 ) -> osu_beatmap_preview_core::Result<()> {
     let frames = animation::prepare_mania_gif_frames(beatmap, mods, options, fps, deadline)?;
-    super::save_animation_frames(frames, output_path, deadline)
+    let style = &crate::config::current().render.mania.gif.style;
+    let label_colors = super::gif_time_label_colors(
+        style.SHOW_TIME_LABEL,
+        style.IMAGE_BACKGROUND,
+        [
+            style.PREVIEW_TIME_LABEL_COLOR,
+            style.TIME_LABEL_COLOR,
+            style.TIME_LABEL_NOTE_COLOR,
+        ],
+    );
+    super::save_animation_frames(frames, output_path, deadline, &label_colors)
 }
