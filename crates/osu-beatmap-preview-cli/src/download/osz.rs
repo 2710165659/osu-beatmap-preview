@@ -219,20 +219,25 @@ pub fn download_beatmapset_archive(
     let log = OszLogContext::new(request_bid, set_id);
     std::fs::create_dir_all(temp_dir)
         .map_err(|e| PreviewError::download(format!("failed to create osz cache dir: {e}")))?;
-    // 缓存文件名区分包变体（带视频 / 去视频）：两种包共用 `<set_id>.osz` 会
-    // 互相污染——旧的 novideo 缓存会让背景视频功能永远没有素材。
+    // 下载结果仍按视频变体分开保存；完整包可满足无视频请求，反向复用则会缺素材。
     let variant = if download_video { "video" } else { "novideo" };
     let target_path = temp_dir.join(format!("{set_id}-{variant}.osz"));
-    if !no_cache && valid_osz(&target_path) {
+    if let Some(cached_path) = cached_osz(temp_dir, set_id, download_video, no_cache) {
         deadline.check()?;
-        let size_mib = target_path
+        let size_mib = cached_path
             .metadata()
             .map(|m| m.len() as f64 / crate::download::downloader::constants::MIB_BYTES as f64)
             .unwrap_or(0.0);
-        log.event("done", format!("cache hit ({size_mib:.1} MiB)"));
+        log.event(
+            "done",
+            format!(
+                "cache hit ({size_mib:.1} MiB) path={}",
+                cached_path.display()
+            ),
+        );
         crate::logging::record_cache(crate::logging::CacheKind::Osz, "hit");
         crate::logging::record_stage_status("download_osz_ms", "hit");
-        return Ok(target_path);
+        return Ok(cached_path);
     }
 
     let preferred_ip = crate::download::cf_ip::read_preferred_ip(temp_dir);
@@ -284,6 +289,27 @@ pub fn download_beatmapset_archive(
     crate::logging::record_cache(crate::logging::CacheKind::Osz, "downloaded");
     crate::logging::record_stage("download_osz_ms", ms);
     Ok(target_path)
+}
+
+fn cached_osz(
+    temp_dir: &Path,
+    set_id: u64,
+    download_video: bool,
+    no_cache: bool,
+) -> Option<PathBuf> {
+    if no_cache {
+        return None;
+    }
+    // 优先使用请求的变体；去视频包缺失或损坏时可直接读完整包，无需复制或重新下载。
+    let variants: &[&str] = if download_video {
+        &["video"]
+    } else {
+        &["novideo", "video"]
+    };
+    variants
+        .iter()
+        .map(|variant| temp_dir.join(format!("{set_id}-{variant}.osz")))
+        .find(|path| valid_osz(path))
 }
 
 fn build_candidates(preferred_ip: Option<Ipv4Addr>) -> Vec<MirrorCandidate> {
@@ -906,7 +932,7 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    /// `download.osz.DOWNLOAD_VIDEO` 决定 sayobot / nekoha 用带视频的完整包
+    /// 当前模式的 `ENABLE_BACKGROUND_VIDEO` 决定 sayobot / nekoha 用带视频的完整包
     /// 还是 novideo 去视频包；其余镜像本来就是完整包，不受开关影响。
     #[test]
     fn download_video_flag_selects_package_variant() {
@@ -934,6 +960,41 @@ mod tests {
             MirrorSource::OsuDirectDns.url(123, true),
             "https://osu.direct/api/d/123"
         );
+    }
+
+    #[test]
+    fn cached_archive_reuses_full_package_without_satisfying_video_from_novideo() {
+        let root = std::env::temp_dir().join(format!(
+            "osu-preview-osz-variant-cache-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let video = root.join("123-video.osz");
+        let novideo = root.join("123-novideo.osz");
+        let archive = make_test_osz();
+        std::fs::write(&video, &archive).unwrap();
+        let deadline = RequestDeadline::new(Instant::now(), "mp4", Duration::from_secs(10));
+        // 从公共入口验证完整包会直接命中，且不会生成额外的 novideo 副本。
+        assert_eq!(
+            download_beatmapset_archive("42", 123, &root, false, &deadline, false).unwrap(),
+            video
+        );
+        assert!(!novideo.exists());
+        assert_eq!(cached_osz(&root, 123, true, false), Some(video.clone()));
+        assert!(cached_osz(&root, 123, false, true).is_none());
+        assert!(cached_osz(&root, 123, true, true).is_none());
+
+        std::fs::write(&novideo, &archive).unwrap();
+        assert_eq!(cached_osz(&root, 123, false, false), Some(novideo.clone()));
+        std::fs::write(&novideo, b"broken").unwrap();
+        assert_eq!(cached_osz(&root, 123, false, false), Some(video.clone()));
+        std::fs::write(&novideo, &archive).unwrap();
+        std::fs::write(&video, b"broken").unwrap();
+        assert!(cached_osz(&root, 123, true, false).is_none());
+        assert_eq!(cached_osz(&root, 123, false, false), Some(novideo));
+        std::fs::remove_file(video).unwrap();
+        assert!(cached_osz(&root, 123, true, false).is_none());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn make_test_osz() -> Vec<u8> {

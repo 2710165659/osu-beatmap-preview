@@ -269,13 +269,20 @@ impl Downloads for Official<'_> {
     }
 
     fn archive(&self, lookup: &Lookup) -> Result<PathBuf> {
+        // 与普通 Standard MP4 使用相同开关，避免回放无条件下载另一种谱面包。
+        let download_video = crate::config::current()
+            .render
+            .standard
+            .mp4
+            .style
+            .ENABLE_BACKGROUND_VIDEO;
         crate::download::download_beatmapset_archive(
             &lookup.id.to_string(),
             lookup.beatmapset_id,
             &self.cache.join("osz-download-cache"),
             self.no_cache,
             self.deadline,
-            true,
+            download_video,
         )
     }
 }
