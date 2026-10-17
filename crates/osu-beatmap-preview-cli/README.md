@@ -133,14 +133,19 @@ osu-beatmap-preview-cli [--type=osu|osr] [--osr-file=<PATH> | --score-id=<ID> | 
 ### OSR 回放
 
 ```powershell
-# 三种来源互斥，可附带匹配的 .osu/.osz。
+# 三种来源互斥；GIF 只需匹配的 .osu，MP4 还需 .osz。
+osu-beatmap-preview-cli --type=osr --fmt=gif --osr-file=C:/maps/play.osr --osu-file=C:/maps/map.osu
 osu-beatmap-preview-cli --type=osr --osr-file=C:/maps/play.osr --osz-file=C:/maps/map.osz
 osu-beatmap-preview-cli --type=osr --score-id=6086051920
 osu-beatmap-preview-cli --type=osr --user="玩家名" --bid=4903207
 osu-beatmap-preview-cli --type=osr --user-id=123 --bid=4903207 --score-select=recent
 ```
 
-OSR 默认输出 MP4，只允许 GIF/MP4，拒绝 `--convert`、用户 `--mod`（包括 NM）和 PNG；`--bid` 仅用于玩家查询，不能附带在本地回放或成绩 ID 来源上。可选 `.osu/.osz` 按回放谱面原始 MD5 绑定；缺少资源时查询官方 API 并下载，失败报错。官方查询与在线回放下载优先使用 `OSU_API_TOKEN` 环境变量；没有令牌时，`OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET` 分别优先读取同名非空环境变量，再回退到 `download.auth` 配置。本地 OSR 搭配匹配的完整 OSZ 时无需认证。在线来源直接使用成绩附带的谱面位置下载包，仍以回放 MD5 校验。
+OSR 默认输出 MP4，只允许 GIF/MP4，拒绝 `--convert`、用户 `--mod`（包括 NM）和 PNG；`--bid` 仅用于玩家查询，不能附带在本地回放或成绩 ID 来源上。谱面按回放中记录的原始 MD5 绑定；显式提供的 `.osu` 不匹配时立即报错。
+
+GIF 只使用 `.osu` 和 `.osr`，不读取或下载 `.osz`，不加载谱面背景图、视频、故事板或音频。布局、选段与普通谱面 GIF 一致，默认 2×2 同时播放不同片段，由 `render.standard.gif.structure.ROW_COUNT` 和 `IMAGES_PER_ROW` 控制；间距、时间标签、片段输出时长、FPS 和 `SCALE` 也使用 `render.standard.gif` 的对应配置。`--time-points` 指定格子的起点，不足时按普通预览规则补充，超过网格容量时报错。
+
+MP4 仍使用完整 OSZ 加载歌曲、背景和音效。缺少所需资源时查询官方 API 并下载，失败报错。官方查询与在线回放下载优先使用 `OSU_API_TOKEN` 环境变量；没有令牌时，`OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET` 分别优先读取同名非空环境变量，再回退到 `download.auth` 配置。本地 GIF 提供匹配的 OSU + OSR、本地 MP4 提供匹配的完整 OSZ + OSR 时无需认证；在线 GIF 仅下载 OSU，在线 MP4 下载 OSZ，均以回放 MD5 校验。
 
 可在可执行文件旁的 `config.yml` 或 `--config` 指定的配置中填写：
 
@@ -155,7 +160,7 @@ download:
 
 `best` 是官方按分数选出的个人最高成绩，并非最高 PP；`recent` 最多扫描近期 1000 条成绩，按结束时间选取指定谱面的最新一次。选中成绩无回放、规则不兼容、谱面版本不匹配或下载失败时明确报错，不换成其它成绩。回放文件缓存于 `osr-download-cache/<成绩ID>.osr`，`--no-cache` 可强制重下；成绩查询不使用该文件缓存。
 
-原生 Standard 不限制客户端或分数版本，支持 tachyon、历史 lazer 与 stable；stable 自动启用 Classic，lazer 显式 Classic 使用同一策略，保留录制设置。历史成绩按当前官方标准化规则重播，原记录差异仅作诊断。回放读取录制的 Mod，支持下表 Standard 实时预览列的累计集合；未实现 Mod 和未知 settings 仍明确拒绝。回放提前结束显示失败并冻结成绩，谱面背景与音乐继续。完整用法、成绩差异处理、内嵌字体和验收记录见 [OSR 回放预览](../../docs/osr-preview.md)。
+原生 Standard 不限制客户端或分数版本，支持 tachyon、历史 lazer 与 stable；stable 自动启用 Classic，lazer 显式 Classic 使用同一策略，保留录制设置。历史成绩按当前官方标准化规则重播，原记录差异仅作诊断。回放读取录制的 Mod，支持下表 Standard 实时预览列的累计集合；未实现 Mod 和未知 settings 仍明确拒绝。回放提前结束显示失败并冻结成绩；MP4 的谱面背景与音乐继续。完整用法、成绩差异处理、内嵌字体和验收记录见 [OSR 回放预览](../../docs/osr-preview.md)。
 
 ### 普通预览的本地谱面文件（`--osu-file` / `--osz-file`）
 

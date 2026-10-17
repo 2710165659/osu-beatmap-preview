@@ -1,5 +1,5 @@
-//! 回放选段计划独立于规则时间线；计算后检查总帧数，再分配显示采样点。
-use crate::application::output_plan::{OutputFormat, RenderPlan};
+//! MP4 回放选段计划独立于规则时间线；检查总帧数后再分配显示采样点。
+use crate::application::output_plan::RenderPlan;
 use osu_beatmap_preview_core::{processing::validation::TimePoint, Beatmap, PreviewError, Result};
 
 const MAX_FRAMES: usize = 1_000_000;
@@ -22,9 +22,7 @@ pub(super) fn build(
         last,
         beatmap.audio_lead_in_ms(),
         beatmap.general.get_f64("PreviewTime"),
-        config.render.standard.gif.style.FPS as u32,
         config.render.standard.mp4.style.FPS as u32,
-        config.render.standard.gif.style.DURATION_MS,
         config.advance.video.VIDEO_END_PADDING_MS,
     )
 }
@@ -36,9 +34,7 @@ fn build_with(
     last: i64,
     lead_in: i64,
     preview: Option<f64>,
-    gif_fps: u32,
     mp4_fps: u32,
-    gif_duration: i64,
     padding: i64,
 ) -> Result<TimePlan> {
     let invalid =
@@ -47,11 +43,7 @@ fn build_with(
     if !speed.is_finite() || speed <= 0.0 {
         return Err(invalid());
     }
-    let fps = plan.fps.unwrap_or(if plan.format == OutputFormat::Gif {
-        gif_fps
-    } else {
-        mp4_fps
-    });
+    let fps = plan.fps.unwrap_or(mp4_fps);
     if fps == 0 {
         return Err(invalid());
     }
@@ -65,13 +57,7 @@ fn build_with(
         Ok(value.round_ties_even() as i64)
     };
     let starts = if plan.time_points.is_empty() {
-        vec![if plan.format == OutputFormat::Gif {
-            preview
-                .filter(|t| t.is_finite() && *t >= 0.0)
-                .map_or(first, |t| t.round_ties_even() as i64)
-        } else {
-            full_start
-        }]
+        vec![full_start]
     } else {
         plan.time_points
             .iter()
@@ -85,7 +71,7 @@ fn build_with(
             })
             .collect::<Result<Vec<_>>>()?
     };
-    if plan.format == OutputFormat::Mp4 && starts.len() != 1 {
+    if starts.len() != 1 {
         return Err(invalid());
     }
     let mut ranges = Vec::new();
@@ -93,7 +79,6 @@ fn build_with(
     for start in starts {
         let duration = match plan.duration_seconds {
             Some(seconds) => seconds_ms(seconds)?,
-            None if plan.format == OutputFormat::Gif => gif_duration,
             None => full_end.checked_sub(start).ok_or_else(invalid)?,
         };
         let end = start
@@ -131,7 +116,9 @@ fn build_with(
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn plan(format: OutputFormat, points: Vec<TimePoint>) -> RenderPlan {
+    use crate::application::output_plan::OutputFormat;
+
+    fn plan(points: Vec<TimePoint>) -> RenderPlan {
         RenderPlan {
             bid: "1".into(),
             target_mode: 0,
@@ -139,62 +126,37 @@ mod tests {
             mods: None,
             time_points: points,
             duration_seconds: Some(1.0),
-            format,
+            format: OutputFormat::Mp4,
             fps: Some(30),
             requested_scale: None,
             no_cache: true,
         }
     }
     #[test]
-    fn gif_preserves_all_requested_segments_and_mp4_rejects_multiple() {
+    fn mp4_rejects_multiple_segments() {
         let points = vec![TimePoint::Seconds(3.0), TimePoint::Seconds(1.0)];
-        let result = build_with(
-            &plan(OutputFormat::Gif, points.clone()),
-            1000,
-            6000,
-            0,
-            None,
-            15,
-            60,
-            5000,
-            1000,
-        )
-        .unwrap();
-        assert_eq!(result.times.len(), 60);
-        assert_eq!((result.times[0], result.times[30]), (4000, 2000));
-        assert!(build_with(
-            &plan(OutputFormat::Mp4, points),
-            1000,
-            6000,
-            0,
-            None,
-            15,
-            60,
-            5000,
-            1000
-        )
-        .is_err());
+        assert!(build_with(&plan(points), 1000, 6000, 0, None, 60, 1000).is_err());
     }
     #[test]
     fn checks_limits_and_includes_settlement_in_complete_video() {
-        let mut plan = plan(OutputFormat::Mp4, vec![]);
+        let mut plan = plan(vec![]);
         plan.duration_seconds = None;
-        let result = build_with(&plan, 1000, 1140, 0, None, 15, 60, 5000, 1000).unwrap();
+        let result = build_with(&plan, 1000, 1140, 0, None, 60, 1000).unwrap();
         assert_eq!(result.start, -1000);
         assert!(*result.times.last().unwrap() >= 1140);
         plan.fps = Some(0);
-        assert!(build_with(&plan, 1000, 1140, 0, None, 15, 60, 5000, 1000).is_err());
+        assert!(build_with(&plan, 1000, 1140, 0, None, 60, 1000).is_err());
         plan.fps = Some(u32::MAX);
-        assert!(build_with(&plan, 1000, 1140, 0, None, 15, 60, 5000, 1000).is_err());
+        assert!(build_with(&plan, 1000, 1140, 0, None, 60, 1000).is_err());
     }
 
     #[test]
     fn replay_rate_changes_output_duration_without_changing_chart_range() {
         for (code, count, step) in [("DT", 20, 50), ("HT", 40, 25)] {
-            let mut plan = plan(OutputFormat::Mp4, vec![TimePoint::Seconds(0.0)]);
+            let mut plan = plan(vec![TimePoint::Seconds(0.0)]);
             plan.mods =
                 Some(osu_beatmap_preview_core::model::mods::parse_mods(&[code.into()]).unwrap());
-            let result = build_with(&plan, 1000, 3000, 0, None, 15, 60, 5000, 1000).unwrap();
+            let result = build_with(&plan, 1000, 3000, 0, None, 60, 1000).unwrap();
             assert_eq!(result.times.len(), count);
             assert_eq!(result.times[1] - result.times[0], step);
             assert_eq!(result.times[0], 1000);

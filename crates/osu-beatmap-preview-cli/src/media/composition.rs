@@ -1,4 +1,4 @@
-//! 视频和回放 GIF 共用背景、故事板合成；回放 HUD 自带时间标签。
+//! 视频背景、故事板合成；回放 HUD 自带时间标签。
 use super::{storyboard::MediaStoryboard, video::VideoStyle};
 use crate::export::{
     canvas::Img,

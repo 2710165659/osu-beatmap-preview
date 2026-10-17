@@ -14,7 +14,7 @@ pub(super) struct Source {
     pub identity: String,
     pub beatmap: Beatmap,
     pub bytes: Vec<u8>,
-    pub osz_path: PathBuf,
+    pub osz_path: Option<PathBuf>,
     pub osu_path: PathBuf,
     pub osr_path: PathBuf,
 }
@@ -55,7 +55,9 @@ pub(super) fn load(
     let (osu_path, osz_path, bytes) = resolve_resources(request, checksum, &downloads)?;
     let beatmap = parse_beatmap_bytes(&bytes)?;
     compatibility::validate_beatmap(&beatmap)?;
-    validate_archive_audio(&osz_path, &beatmap)?;
+    if let Some(path) = &osz_path {
+        validate_archive_audio(path, &beatmap)?;
+    }
     deadline.check()?;
     Ok(Source {
         document,
@@ -72,7 +74,7 @@ fn resolve_resources(
     request: &ValidatedRequest,
     checksum: &str,
     downloads: &impl Downloads,
-) -> Result<(PathBuf, PathBuf, Vec<u8>)> {
+) -> Result<(PathBuf, Option<PathBuf>, Vec<u8>)> {
     let external = request
         .source
         .osu_file
@@ -83,6 +85,20 @@ fn resolve_resources(
             Ok::<_, PreviewError>((PathBuf::from(path), bytes))
         })
         .transpose()?;
+    // GIF 只消费谱面与回放；即使传入 OSZ，也不读取包或检查歌曲，避免触发媒体下载。
+    if request.output.format.as_deref() == Some("gif") {
+        let (path, bytes) = match external {
+            Some(local) => local,
+            None => {
+                let lookup = checked_lookup(downloads, checksum)?;
+                let path = downloads.beatmap(&lookup)?;
+                let bytes = read_limited(&path, 32 * 1024 * 1024)?;
+                check_md5(&bytes, checksum)?;
+                (path, bytes)
+            }
+        };
+        return Ok((path, None, bytes));
+    }
     let (osz_path, archive_bytes) = match request.source.osz_file.as_ref() {
         Some(path) => {
             let path = PathBuf::from(path);
@@ -90,15 +106,7 @@ fn resolve_resources(
             (path, bytes)
         }
         None => {
-            let lookup = downloads.lookup(checksum)?;
-            if lookup.id == 0
-                || lookup.beatmapset_id == 0
-                || !lookup.checksum.eq_ignore_ascii_case(checksum)
-            {
-                return Err(PreviewError::download(
-                    "official checksum lookup returned a mismatched beatmap",
-                ));
-            }
+            let lookup = checked_lookup(downloads, checksum)?;
             // 未提供 osu 时先取得官方原文，再验证包内同一个 MD5，不以 BeatmapID 代替。
             if external.is_none() {
                 let path = downloads.beatmap(&lookup)?;
@@ -110,7 +118,20 @@ fn resolve_resources(
         }
     };
     let (osu_path, bytes) = external.unwrap_or_else(|| (osz_path.clone(), archive_bytes));
-    Ok((osu_path, osz_path, bytes))
+    Ok((osu_path, Some(osz_path), bytes))
+}
+
+fn checked_lookup(downloads: &impl Downloads, checksum: &str) -> Result<Lookup> {
+    let lookup = downloads.lookup(checksum)?;
+    if lookup.id == 0
+        || lookup.beatmapset_id == 0
+        || !lookup.checksum.eq_ignore_ascii_case(checksum)
+    {
+        return Err(PreviewError::download(
+            "official checksum lookup returned a mismatched beatmap",
+        ));
+    }
+    Ok(lookup)
 }
 
 /// 每次请求都检查包内歌曲，缓存命中不能掩盖缺失音频；实际解码仍由媒体层完成。

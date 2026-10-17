@@ -32,14 +32,6 @@ impl std::fmt::Debug for ReplayAudio {
             .finish()
     }
 }
-/// GIF 也必须验证必需音频可解码，不能把缺少音频当作可用媒体包。
-pub(crate) fn validate_source_audio(
-    source: &AudioSource,
-    deadline: &RequestDeadline,
-) -> Result<()> {
-    decode_audio(&source.path, deadline).map(|_| ())
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct AudioSource {
     pub path: PathBuf,

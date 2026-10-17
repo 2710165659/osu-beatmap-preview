@@ -21,7 +21,7 @@ fn local_resources_take_priority_and_mismatch_does_not_download() {
     let request = fixture.request(true, true);
     let (osu, osz, bytes) = resolve_resources(&request, &fixture.checksum, &download).unwrap();
     assert_eq!(osu, fixture.osu);
-    assert_eq!(osz, fixture.osz);
+    assert_eq!(osz, Some(fixture.osz.clone()));
     assert_eq!(bytes, fixture.bytes);
     assert!(download.calls.borrow().is_empty());
     assert!(resolve_resources(&request, &"0".repeat(32), &download).is_err());
@@ -86,6 +86,72 @@ fn osz_must_contain_matching_top_level_map_and_nonempty_song() {
     assert!(validate_archive_audio(&fixture.osz, &beatmap).is_err());
     fixture.archive(&[("map.osu", &fixture.bytes), ("song.wav", b"")]);
     assert!(validate_archive_audio(&fixture.osz, &beatmap).is_err());
+}
+
+#[test]
+fn gif_uses_only_local_osu_or_downloads_osu_without_opening_archive() {
+    let fixture = Fixture::new();
+    for local in [true, false] {
+        let mut request = fixture.request(local, true);
+        request.output.format = Some("gif".into());
+        // 非 ZIP 文件可证明 GIF 没有尝试解包或读取音频、背景。
+        std::fs::write(&fixture.osz, b"not a zip archive").unwrap();
+        let downloads = fixture.downloads(Some("archive"));
+        let (osu, archive, bytes) =
+            resolve_resources(&request, &fixture.checksum, &downloads).unwrap();
+        assert_eq!(osu, fixture.osu);
+        assert!(archive.is_none());
+        assert_eq!(bytes, fixture.bytes);
+        assert_eq!(
+            *downloads.calls.borrow(),
+            if local {
+                vec![]
+            } else {
+                vec!["lookup", "beatmap"]
+            }
+        );
+    }
+    let mut request = fixture.request(true, false);
+    request.output.format = Some("gif".into());
+    let downloads = fixture.downloads(None);
+    assert!(resolve_resources(&request, &"0".repeat(32), &downloads).is_err());
+    assert!(downloads.calls.borrow().is_empty());
+    request.source.osu_file = None;
+    let mut downloads = fixture.downloads(None);
+    downloads.checksum = "0".repeat(32);
+    assert!(resolve_resources(&request, &fixture.checksum, &downloads).is_err());
+    let downloads = fixture.downloads(None);
+    std::fs::write(&fixture.osu, b"mismatched osu").unwrap();
+    assert!(resolve_resources(&request, &fixture.checksum, &downloads).is_err());
+}
+
+#[test]
+fn local_gif_load_does_not_require_audio_or_official_credentials() {
+    let fixture = Fixture::new();
+    let mut request = fixture.request(true, false);
+    let root =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../osu-beatmap-preview-web/test/fixtures");
+    request.source.osu_file = Some(
+        root.join("replay-standard.osu")
+            .to_string_lossy()
+            .into_owned(),
+    );
+    request.kind = RequestKind::Osr {
+        source: crate::ReplaySource::File(
+            root.join("replay-standard.osr")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    };
+    request.output.format = Some("gif".into());
+    let deadline = RequestDeadline::new(
+        std::time::Instant::now(),
+        "gif",
+        std::time::Duration::from_secs(5),
+    );
+    let source = load(&request, &fixture.directory, &deadline).unwrap();
+    assert!(source.osz_path.is_none());
+    assert!(source.beatmap.general.get("AudioFilename").is_none());
 }
 
 struct FakeDownloads {

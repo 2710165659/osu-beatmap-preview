@@ -885,7 +885,7 @@ fn format_time_point(point: &TimePoint) -> String {
     }
 }
 
-fn resolve_time_points(
+pub(crate) fn resolve_time_points(
     beatmap: &Beatmap,
     time_axis: TimeAxis,
     points: &[TimePoint],

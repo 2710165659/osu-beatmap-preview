@@ -1,6 +1,9 @@
 //! OSR 应用服务：严格来源绑定、一次规则编译和只读媒体导出。
 use super::{
-    artifact::ArtifactName, output_plan::RenderPlan, request::ValidatedRequest, source_osr,
+    artifact::ArtifactName,
+    output_plan::{OutputFormat, RenderPlan},
+    request::ValidatedRequest,
+    source_osr,
 };
 use crate::{
     cache,
@@ -49,19 +52,28 @@ pub(super) fn execute(mut request: ValidatedRequest) -> Result<serde_json::Value
     // Mod 只能来自回放；内部计划仍复用普通导出的速度与音频参数。
     plan.mods = Some(prepared.mods.settings.clone());
     let path = directory.join(ArtifactName::from_plan(&plan).as_str());
-    let sources = [
-        source.osr_path.as_path(),
-        source.osu_path.as_path(),
-        source.osz_path.as_path(),
-    ];
+    let mut sources = vec![source.osr_path.as_path(), source.osu_path.as_path()];
+    sources.extend(source.osz_path.as_deref());
     let cached =
         cache::output_cache_hit_for_sources(&path, &sources, &format, plan.no_cache).is_some();
-    if !cached {
+    if !cached && plan.format == OutputFormat::Gif {
+        // GIF 在启动音频/背景任务之前分流，整个流程只依赖 OSU 和 OSR。
+        osu_beatmap_preview_core::config::with_config(crate::config::core_config(), || {
+            crate::export::standard::osr::render_gif(
+                &source.beatmap,
+                &prepared,
+                &gameplay,
+                &plan,
+                &path,
+                &deadline,
+            )
+        })?;
+    } else if !cached {
         let mut audio = AudioSourceJob::start(AudioSourceRequest {
             request_bid: &plan.bid,
             beatmap: source.beatmap.clone(),
             osu_text: &String::from_utf8_lossy(&source.bytes),
-            osz: OszLocation::Local(source.osz_path.clone()),
+            osz: OszLocation::Local(source.osz_path.clone().expect("MP4 必须有谱面包")),
             cache_dir: cache_root.join("osz-download-cache"),
             no_cache: plan.no_cache,
             deadline: deadline.clone(),
