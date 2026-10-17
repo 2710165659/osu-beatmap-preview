@@ -8,7 +8,7 @@ mod common;
 mod osr;
 mod osu;
 pub use common::{ExecutionOptions, OutputOptions, SourceOptions, ViewOptions};
-pub use osr::{ReplaySource, ReplayUser, ScoreSelection};
+pub use osr::{ReplayMode, ReplaySource, ScoreSelection};
 pub use osu::RulesetOptions;
 
 #[derive(Debug, Clone)]

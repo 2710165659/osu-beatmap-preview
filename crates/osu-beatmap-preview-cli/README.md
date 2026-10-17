@@ -103,7 +103,7 @@ Windows PowerShell 中，如果程序位于当前目录，需要使用 `.\osu-be
 ## 命令行参数
 
 ```text
-osu-beatmap-preview-cli [--type=osu|osr] [--osr-file=<PATH> | --score-id=<ID> | --user=<NAME>|--user-id=<ID> --bid=<BID> [--score-select=best|recent]] [--bid=<BID>] [--osu-file=<PATH>] [--osz-file=<PATH>] [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]
+osu-beatmap-preview-cli [--type=osu|osr] [--osr-file=<PATH> | --score-id=<ID> | --user=<NAME> [--bid=<BID>] [--mode=osu|taiko|fruits|mania] [--score-select=best|recent] [--include-fails]] [--bid=<BID>] [--osu-file=<PATH>] [--osz-file=<PATH>] [--convert=mania|ctb|taiko|standard] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]
 ```
 
 | 参数 | 说明 |
@@ -111,8 +111,10 @@ osu-beatmap-preview-cli [--type=osu|osr] [--osr-file=<PATH> | --score-id=<ID> | 
 | `--type` | `osu`（默认）预览谱面，`osr` 预览原生 Standard 回放；回放支持范围见下文。 |
 | `--osr-file` | 本地 OSR 来源，与 `--score-id`、玩家查询互斥；需要 `--type=osr`。 |
 | `--score-id` | 下载指定统一成绩 ID 的 OSR；无需额外提供谱面 ID。 |
-| `--user`、`--user-id` | 玩家名或玩家数字 ID（二选一），搭配 `--type=osr --bid=<单张谱面ID>`。数字用户名使用 `--user`。 |
-| `--score-select` | 仅用于玩家查询：`best`（默认，官方个人最高分）或 `recent`（官方近期记录内的最新一次，包含失败记录）；查不到不回退。 |
+| `--user` | 玩家用户名（数字也按用户名查询），需要 `--type=osr`；带 `--bid` 查询指定谱面，不带则查询最近一次成绩。不支持 `--user-id`。 |
+| `--score-select` | 仅用于玩家查询：`best`（官方个人最高分，需要 `--bid`）或 `recent`（近期最新一次）；带 `--bid` 默认 `best`，不带默认 `recent`。查不到不回退。 |
+| `--mode` | 仅用于 OSR 玩家查询，官方模式名称：`osu`、`taiko`、`fruits`、`mania`。不带 `--bid` 且省略模式时使用玩家资料的默认模式；带 `--bid` 时省略模式仍默认 `osu`。 |
+| `--include-fails` | 最近成绩查询包含失败成绩的开关；默认不包含。指定谱面时需搭配 `--score-select=recent`。 |
 | `--bid` | 纯数字的 Beatmap ID。|
 | `--osu-file` | 本地 `.osu` 谱面路径；`--bid` 可省略，提供时必须与谱面的 `BeatmapID` 相同。 |
 | `--osz-file` | 本地 `.osz` 谱面包路径；可独立使用，也可为外部 `.osu` 提供媒体资源。 |
@@ -138,7 +140,10 @@ osu-beatmap-preview-cli --type=osr --fmt=gif --osr-file=C:/maps/play.osr --osu-f
 osu-beatmap-preview-cli --type=osr --osr-file=C:/maps/play.osr --osz-file=C:/maps/map.osz
 osu-beatmap-preview-cli --type=osr --score-id=6086051920
 osu-beatmap-preview-cli --type=osr --user="玩家名" --bid=4903207
-osu-beatmap-preview-cli --type=osr --user-id=123 --bid=4903207 --score-select=recent
+osu-beatmap-preview-cli --type=osr --user="玩家名" --bid=4903207 --score-select=recent --include-fails
+# 最近一次游玩；省略模式时由官方使用玩家资料的默认模式。
+osu-beatmap-preview-cli --type=osr --user="玩家名"
+osu-beatmap-preview-cli --type=osr --user="玩家名" --mode=osu --include-fails
 ```
 
 OSR 默认输出 MP4，只允许 GIF/MP4，拒绝 `--convert`、用户 `--mod`（包括 NM）和 PNG；`--bid` 仅用于玩家查询，不能附带在本地回放或成绩 ID 来源上。谱面按回放中记录的原始 MD5 绑定；显式提供的 `.osu` 不匹配时立即报错。
@@ -158,7 +163,7 @@ download:
 
 认证配置不参与输出目录 hash，也不会写入输出目录的配置差异文件。回放字体始终使用程序内嵌的完整 Torus Bold，无需配置外部字体目录。
 
-`best` 是官方按分数选出的个人最高成绩，并非最高 PP；`recent` 最多扫描近期 1000 条成绩，按结束时间选取指定谱面的最新一次。选中成绩无回放、规则不兼容、谱面版本不匹配或下载失败时明确报错，不换成其它成绩。回放文件缓存于 `osr-download-cache/<成绩ID>.osr`，`--no-cache` 可强制重下；成绩查询不使用该文件缓存。
+`best` 是官方按分数选出的个人最高成绩，并非最高 PP；`recent` 在指定 `--bid` 时最多扫描近期 1000 条成绩，按结束时间选取该谱面的最新一次；不指定谱面时直接取官方返回的最近一条。默认排除失败成绩，`--include-fails` 可开启。不指定谱面的模式省略行为遵循[官方最近成绩接口](https://osu.ppy.sh/docs/index.html#users-GETapi-v2-users--user--scores--type-)。查询支持四种模式，但当前渲染只支持原生 Standard，选中其它模式时明确报错。选中成绩无回放、规则不兼容、谱面版本不匹配或下载失败时明确报错，不换成其它成绩。回放文件缓存于 `osr-download-cache/<成绩ID>.osr`，`--no-cache` 可强制重下；成绩查询不使用该文件缓存。
 
 原生 Standard 不限制客户端或分数版本，支持 tachyon、历史 lazer 与 stable；stable 自动启用 Classic，lazer 显式 Classic 使用同一策略，保留录制设置。历史成绩按当前官方标准化规则重播，原记录差异仅作诊断。回放读取录制的 Mod，支持下表 Standard 实时预览列的累计集合；未实现 Mod 和未知 settings 仍明确拒绝。回放提前结束显示失败并冻结成绩；MP4 的谱面背景与音乐继续。完整用法、成绩差异处理、内嵌字体和验收记录见 [OSR 回放预览](../../docs/osr-preview.md)。
 

@@ -10,9 +10,10 @@ mod osu;
 use osu_beatmap_preview_core::gameplay::GameplayOptions;
 use osu_beatmap_preview_core::processing::validation::parse_time_point;
 
-pub const USAGE: &str = "usage: osu-beatmap-preview-cli [--type=osu|osr] [--osr-file=<PATH> | --score-id=<ID> | --user=<NAME>|--user-id=<ID> --bid=<BID> [--score-select=best|recent]] [--bid=<BID>] [--osu-file=<PATH>] [--osz-file=<PATH>] [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]\n\
+pub const USAGE: &str = "usage: osu-beatmap-preview-cli [--type=osu|osr] [--osr-file=<PATH> | --score-id=<ID> | --user=<NAME> [--bid=<BID>] [--mode=osu|taiko|fruits|mania] [--score-select=best|recent] [--include-fails]] [--bid=<BID>] [--osu-file=<PATH>] [--osz-file=<PATH>] [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]\n\
     \x20 --type=osr --osr-file=<FILE.osr>  原生 Standard 回放；默认 MP4，也支持 GIF；禁止 PNG、--convert 和 --mod\n\
-    \x20 OSR 来源三选一：--osr-file、--score-id、玩家 + --bid；玩家查询默认 best，recent 仅查近期且不回退\n\
+    \x20 OSR 来源三选一：--osr-file、--score-id、--user；带 --bid 默认 best，不带 --bid 默认 recent\n\
+    \x20 玩家最近成绩：--user=<NAME> [--mode=osu|taiko|fruits|mania]；省略模式使用玩家默认模式，--include-fails 开启失败成绩（默认排除）\n\
     \x20 OSR 可选 --osu-file/--osz-file，按原始 MD5 绑定；缺少资源时查询官方 API 并下载，失败报错\n\
     \x20 以下谱面来源规则用于默认 --type=osu：\n\
     \x20 --osu-file=<FILE.osu>  本地谱面；--bid 可省略，提供时必须与 BeatmapID 相同；单独使用只支持 PNG/GIF\n\
@@ -67,8 +68,9 @@ pub fn parse_args(
             Long("osr-file") => osr.file = Some(value(&mut parser, "--osr-file")?),
             Long("score-id") => osr.score = Some(value(&mut parser, "--score-id")?),
             Long("user") => osr.user = Some(value(&mut parser, "--user")?),
-            Long("user-id") => osr.user_id = Some(value(&mut parser, "--user-id")?),
             Long("score-select") => osr.selection = Some(value(&mut parser, "--score-select")?),
+            Long("mode") => osr.mode = Some(value(&mut parser, "--mode")?),
+            Long("include-fails") => osr.include_fails = true,
             Long("bid") => osu.bid = Some(value(&mut parser, "--bid")?),
             Long("osu-file") => osu.osu_file = Some(value(&mut parser, "--osu-file")?),
             Long("osz-file") => osu.osz_file = Some(value(&mut parser, "--osz-file")?),
@@ -122,7 +124,7 @@ pub fn parse_args(
     // 参数格式错误走退出码 2；文件内容相关的 ID 和难度数量校验在读取阶段执行。
     // 库调用方会再次执行同一参数校验，避免入口间规则不同。
     osu.apply(&mut request);
-    request.kind = osr.kind(&input_type)?;
+    request.kind = osr.kind(&input_type, &request.source.bid)?;
     request.clone().validate().map_err(argument_error)?;
     Ok(CliAction::Render(Box::new(request)))
 }

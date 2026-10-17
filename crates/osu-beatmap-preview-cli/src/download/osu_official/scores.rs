@@ -1,6 +1,6 @@
 //! 在线成绩定位和回放下载；选择最高分或最近成绩后不替换为另一条可播放成绩。
 use super::{Client, Lookup};
-use crate::{ReplaySource, ReplayUser, ScoreSelection};
+use crate::{ReplayMode, ReplaySource, ScoreSelection};
 use osu_beatmap_preview_core::{
     replay::parse_osr, support::timeout::RequestDeadline, PreviewError, Result,
 };
@@ -153,33 +153,40 @@ fn select(client: &Client<'_>, source: &ReplaySource, bid: &str) -> Result<Score
             }
             Ok(score)
         }
-        ReplaySource::Player { user, selection } => {
+        ReplaySource::Player {
+            user,
+            selection,
+            mode,
+            include_fails,
+        } => {
             #[derive(Deserialize)]
             struct User {
                 id: u64,
             }
-            let user: User = match user {
-                ReplayUser::Id(id) => User {
-                    id: id
-                        .parse()
-                        .map_err(|_| PreviewError::download("无效玩家 ID"))?,
-                },
-                ReplayUser::Name(name) => {
-                    // 用户名放在 URL 路径时逐字节编码，数字用户名也明确按名称查询。
-                    let encoded = name
-                        .as_bytes()
-                        .iter()
-                        .map(|b| format!("%{b:02X}"))
-                        .collect::<String>();
-                    client.get(&format!("users/@{encoded}/osu"), &[])?
-                }
-            };
+            // 不指定谱面时不补 mode，让官方按玩家资料的默认模式查询。
+            // 指定谱面仍默认 osu，保持原有玩家加谱面来源的行为。
+            let mode = mode.or((!bid.is_empty()).then_some(ReplayMode::Osu));
+            // 用户名放在 URL 路径时逐字节编码，数字用户名也明确按名称查询。
+            let encoded = user
+                .as_bytes()
+                .iter()
+                .map(|b| format!("%{b:02X}"))
+                .collect::<String>();
+            let suffix = mode
+                .map(|mode| format!("/{}", mode.as_str()))
+                .unwrap_or_default();
+            let user: User = client.get(&format!("users/@{encoded}{suffix}"), &[])?;
             if user.id == 0 {
                 return Err(PreviewError::download("官方返回无效玩家 ID"));
             }
-            let map_id = bid
-                .parse::<u64>()
-                .map_err(|_| PreviewError::download("无效谱面 ID"))?;
+            let map_id = if bid.is_empty() {
+                None
+            } else {
+                Some(
+                    bid.parse::<u64>()
+                        .map_err(|_| PreviewError::download("无效谱面 ID"))?,
+                )
+            };
             let score = match selection {
                 ScoreSelection::Best => {
                     #[derive(Deserialize)]
@@ -189,13 +196,16 @@ fn select(client: &Client<'_>, source: &ReplaySource, bid: &str) -> Result<Score
                     client
                         .get::<Best>(
                             &format!("beatmaps/{bid}/scores/users/{}", user.id),
-                            &[("mode", "osu"), ("legacy_only", "0")],
+                            &[
+                                ("mode", mode.unwrap_or(ReplayMode::Osu).as_str()),
+                                ("legacy_only", "0"),
+                            ],
                         )?
                         .score
                 }
-                ScoreSelection::Recent => recent(client, user.id, map_id)?,
+                ScoreSelection::Recent => recent(client, user.id, map_id, mode, *include_fails)?,
             };
-            if score.user_id != user.id || score.beatmap_id != map_id {
+            if score.user_id != user.id || map_id.is_some_and(|id| score.beatmap_id != id) {
                 return Err(PreviewError::download("官方返回的玩家或谱面 ID 不符"));
             }
             Ok(score)
@@ -204,24 +214,35 @@ fn select(client: &Client<'_>, source: &ReplaySource, bid: &str) -> Result<Score
     }
 }
 
-fn recent(client: &Client<'_>, user: u64, bid: u64) -> Result<Score> {
+fn recent(
+    client: &Client<'_>,
+    user: u64,
+    bid: Option<u64>,
+    mode: Option<ReplayMode>,
+    include_fails: bool,
+) -> Result<Score> {
     let mut candidates = Vec::new();
+    // 未指定谱面时直接取官方最近一条，不扫描其它成绩替代无回放或不兼容的结果。
+    let limit = if bid.is_some() { "100" } else { "1" };
     // 近期记录有保留范围；最多扫描 1000 条，查不到时不能回退成最高分或其它谱面。
     for offset in (0..1000).step_by(100) {
-        let scores: Vec<serde_json::Value> = client.get(
-            &format!("users/{user}/scores/recent"),
-            &[
-                ("mode", "osu"),
-                ("include_fails", "1"),
-                ("legacy_only", "0"),
-                ("limit", "100"),
-                ("offset", &offset.to_string()),
-            ],
-        )?;
-        let finished = scores.len() < 100;
+        let offset = offset.to_string();
+        let mut query = Vec::new();
+        if let Some(mode) = mode {
+            query.push(("mode", mode.as_str()));
+        }
+        query.extend([
+            ("include_fails", if include_fails { "1" } else { "0" }),
+            ("legacy_only", "0"),
+            ("limit", limit),
+            ("offset", offset.as_str()),
+        ]);
+        let scores: Vec<serde_json::Value> =
+            client.get(&format!("users/{user}/scores/recent"), &query)?;
+        let finished = bid.is_none() || scores.len() < 100;
         for value in scores
             .into_iter()
-            .filter(|s| s["beatmap_id"].as_u64() == Some(bid))
+            .filter(|s| bid.is_none_or(|id| s["beatmap_id"].as_u64() == Some(id)))
         {
             candidates.push(
                 serde_json::from_value::<Score>(value)
@@ -247,7 +268,11 @@ fn recent(client: &Client<'_>, user: u64, bid: u64) -> Result<Score> {
         .max_by_key(|(time, id, _)| (*time, *id))
         .map(|(_, _, score)| score)
         .ok_or_else(|| {
-            PreviewError::download("近期最多 1000 条记录内没有该谱面的成绩；不会回退到最高分")
+            PreviewError::download(if bid.is_some() {
+                "近期最多 1000 条记录内没有该谱面的成绩；不会回退到最高分"
+            } else {
+                "玩家在所选模式下没有符合条件的近期成绩"
+            })
         })
 }
 

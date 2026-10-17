@@ -9,12 +9,24 @@ pub(super) fn validate(request: &RenderRequest) -> Result<()> {
     match source {
         crate::ReplaySource::File(path) => super::source_osu::validate_local_path(path, "osr")?,
         crate::ReplaySource::Score(id) => positive_id(id, "--score-id")?,
-        crate::ReplaySource::Player { user, .. } => {
-            positive_id(&request.source.bid, "--bid")?;
-            match user {
-                crate::ReplayUser::Name(name) if !name.trim().is_empty() && name.len() <= 256 => {}
-                crate::ReplayUser::Id(id) => positive_id(id, "--user-id")?,
-                _ => return Err(PreviewError::new("--user 需要非空的玩家名")),
+        crate::ReplaySource::Player {
+            user,
+            selection,
+            include_fails,
+            ..
+        } => {
+            if user.trim().is_empty() || user.len() > 256 {
+                return Err(PreviewError::new("--user 需要非空的玩家名"));
+            }
+            if !request.source.bid.is_empty() {
+                positive_id(&request.source.bid, "--bid")?;
+            } else if *selection == crate::ScoreSelection::Best {
+                return Err(PreviewError::new("--score-select=best 需要 --bid"));
+            }
+            if *include_fails && *selection != crate::ScoreSelection::Recent {
+                return Err(PreviewError::new(
+                    "--include-fails 仅用于最近成绩查询（--score-select=recent）",
+                ));
             }
         }
     }
@@ -78,5 +90,27 @@ mod tests {
         request.ruleset.convert = None;
         request.output.format = Some("png".into());
         assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn player_library_requests_share_recent_selection_constraints() {
+        let make_request = |bid: &str, selection, include_fails| {
+            let mut request = RenderRequest::new(bid);
+            request.kind = RequestKind::Osr {
+                source: crate::ReplaySource::Player {
+                    user: "玩家名".into(),
+                    selection,
+                    mode: None,
+                    include_fails,
+                },
+            };
+            request
+        };
+        use crate::ScoreSelection::{Best, Recent};
+        assert!(make_request("", Best, false).validate().is_err());
+        assert!(make_request("2", Best, true).validate().is_err());
+        assert!(make_request("", Recent, false).validate().is_ok());
+        assert!(make_request("", Recent, true).validate().is_ok());
+        assert!(make_request("2", Recent, true).validate().is_ok());
     }
 }

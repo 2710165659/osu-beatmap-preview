@@ -11,11 +11,30 @@ test('成绩输入支持新式官方链接，拒绝旧式或伪造链接', () =>
 });
 
 test('来源切换只发送当前来源参数，不带旧成绩或玩家信息', () => {
-  const state = { replayMethod: 'score', replayScoreId: '10', replayUserValue: 'old user', replayBid: '42', replayUserKind: 'name', replaySelection: 'recent' };
+  const state = { replayMethod: 'score', replayScoreId: '10', replayUserValue: 'old user', replayBid: '42', replaySelection: 'recent', replayMode: '', replayIncludeFails: false };
   assert.equal(onlineReplayQuery(state).toString(), 'scoreId=10');
   state.replayMethod = 'player';
   assert.equal(onlineReplayQuery(state).toString(), 'user=old+user&bid=42&selection=recent');
+  state.replayMethod = 'latest';
+  state.replaySelection = 'best';
+  assert.equal(onlineReplayQuery(state).toString(), 'user=old+user');
+  state.replayMode = 'osu'; state.replayIncludeFails = true;
+  assert.equal(onlineReplayQuery(state).toString(), 'user=old+user&mode=osu&includeFails=1');
+  state.replayMethod = 'player';
+  assert.equal(onlineReplayQuery(state).toString(), 'user=old+user&bid=42&selection=best&mode=osu');
+  state.replaySelection = 'recent';
+  assert.equal(onlineReplayQuery(state).get('includeFails'), '1');
+  state.replayMethod = 'score';
+  assert.equal(onlineReplayQuery(state).toString(), 'scoreId=10');
   state.replayMethod = 'file'; assert.equal(onlineReplayQuery(state), null);
+});
+
+test('玩家来源校验用户名、谱面和官方模式，不指定谱面只允许最近游玩入口', () => {
+  const state = { replayMethod: 'latest', replayUserValue: '123', replayMode: '' };
+  assert.equal(onlineReplayQuery(state).toString(), 'user=123');
+  assert.throws(() => onlineReplayQuery({ ...state, replayUserValue: ' ' }), /用户名/);
+  assert.throws(() => onlineReplayQuery({ ...state, replayMode: 'ctb' }), /模式/);
+  assert.throws(() => onlineReplayQuery({ ...state, replayMethod: 'player', replayBid: '' }), /谱面 ID/);
 });
 
 test('下载回放后核验成绩身份与 MD5，直接使用已知 BID 下载谱面包', async () => {

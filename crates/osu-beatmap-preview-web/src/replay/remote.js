@@ -12,15 +12,23 @@ export function scoreIdFromInput(raw) {
 export function onlineReplayQuery(state) {
   if (state.replayMethod === 'file') return null;
   if (state.replayMethod === 'score') return new URLSearchParams({ scoreId: scoreIdFromInput(state.replayScoreId) });
-  if (state.replayMethod !== 'player') throw new Error('无效回放来源');
+  if (!['player', 'latest'].includes(state.replayMethod)) throw new Error('无效回放来源');
   const user = state.replayUserValue.trim();
-  const bid = state.replayBid.trim();
-  if (!user || user.length > 256) throw new Error('请输入玩家名或玩家 ID');
-  if (!/^[1-9]\d*$/.test(bid)) throw new Error('请输入正整数谱面 ID');
-  if (!['best', 'recent'].includes(state.replaySelection)) throw new Error('成绩选择必须是 best 或 recent');
-  const key = state.replayUserKind === 'name' ? 'user' : state.replayUserKind === 'id' ? 'userId' : null;
-  if (!key || (key === 'userId' && !/^[1-9]\d*$/.test(user))) throw new Error('请输入有效玩家 ID');
-  return new URLSearchParams({ [key]: user, bid, selection: state.replaySelection });
+  if (!user || user.length > 256) throw new Error('请输入玩家用户名');
+  const query = new URLSearchParams({ user });
+  if (state.replayMethod === 'player') {
+    const bid = state.replayBid.trim();
+    if (!/^[1-9]\d*$/.test(bid)) throw new Error('请输入正整数谱面 ID');
+    if (!['best', 'recent'].includes(state.replaySelection)) throw new Error('成绩选择必须是 best 或 recent');
+    query.set('bid', bid);
+    query.set('selection', state.replaySelection);
+  }
+  const mode = state.replayMode ?? '';
+  if (mode && !['osu', 'taiko', 'fruits', 'mania'].includes(mode)) throw new Error('无效查询模式');
+  if (mode) query.set('mode', mode);
+  // 隐藏的谱面、成绩选择与失败开关不参与当前来源，避免切换后混入旧参数。
+  if ((state.replayMethod === 'latest' || state.replaySelection === 'recent') && state.replayIncludeFails) query.set('includeFails', '1');
+  return query;
 }
 
 export async function fetchOnlineReplay(query, wasm, signal, fetchImpl = fetch) {

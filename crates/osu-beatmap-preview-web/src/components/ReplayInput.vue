@@ -1,5 +1,5 @@
 <script setup>
-// 三种回放来源显式互斥；切换时清理本地字节和未完成解析，谱面资源可继续复用。
+// 回放来源显式互斥；切换时清理本地字节和未完成解析，谱面资源可继续复用。
 import { ref } from 'vue';
 import { state, selectReplayFile, clearReplayFile } from '../preview.js';
 const input = ref(null);
@@ -22,6 +22,7 @@ function remove() { clearReplayFile(); error.value = ''; if (input.value) input.
         <option value="file">本地 OSR（可选，不选则普通谱面预览）</option>
         <option value="score">成绩 ID / 官方成绩链接</option>
         <option value="player">玩家 + 谱面 ID</option>
+        <option value="latest">玩家最近游玩（模式可选）</option>
       </select>
     </label>
     <label v-if="state.replayMethod === 'file'" class="grid gap-2 text-[13px] font-bold text-neutral-300">
@@ -32,20 +33,12 @@ function remove() { clearReplayFile(); error.value = ''; if (input.value) input.
       成绩 ID 或链接
       <input v-model="state.replayScoreId" type="text" autocomplete="off" placeholder="6086051920 或 https://osu.ppy.sh/scores/6086051920" class="h-11 min-w-0 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]">
     </label>
-    <template v-else-if="state.replayMethod === 'player'">
-      <div class="grid gap-3 sm:grid-cols-[130px_1fr]">
-        <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
-          玩家标识
-          <select v-model="state.replayUserKind" aria-label="玩家标识" class="h-11 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]">
-            <option value="name">玩家名</option><option value="id">玩家 ID</option>
-          </select>
-        </label>
-        <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
-          {{ state.replayUserKind === 'name' ? '玩家名' : '玩家 ID' }}
-          <input v-model="state.replayUserValue" autocomplete="off" :placeholder="state.replayUserKind === 'name' ? '输入玩家名，数字名称也按名称查询' : '输入数字玩家 ID'" class="h-11 min-w-0 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]">
-        </label>
-      </div>
-      <div class="grid gap-3 sm:grid-cols-2">
+    <template v-else-if="state.replayMethod === 'player' || state.replayMethod === 'latest'">
+      <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
+        玩家用户名
+        <input v-model="state.replayUserValue" autocomplete="off" placeholder="输入用户名，数字名称也按名称查询" class="h-11 min-w-0 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]">
+      </label>
+      <div v-if="state.replayMethod === 'player'" class="grid gap-3 sm:grid-cols-2">
         <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
           回放谱面 ID
           <input v-model="state.replayBid" inputmode="numeric" placeholder="例如 4903207（单张难度 ID）" class="h-11 min-w-0 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]">
@@ -57,6 +50,21 @@ function remove() { clearReplayFile(); error.value = ''; if (input.value) input.
           </select>
         </label>
       </div>
+      <label class="grid gap-2 text-[13px] font-bold text-neutral-300">
+        查询模式
+        <select v-model="state.replayMode" aria-label="查询模式" class="h-11 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-base font-normal text-white outline-none focus:border-[#ff5f45]">
+          <option value="">{{ state.replayMethod === 'latest' ? '使用玩家默认模式' : '默认 osu!standard' }}</option>
+          <option value="osu">osu!standard</option>
+          <option value="taiko">osu!taiko</option>
+          <option value="fruits">osu!catch</option>
+          <option value="mania">osu!mania</option>
+        </select>
+      </label>
+      <label class="flex items-center gap-2 text-[13px] text-neutral-300">
+        <input v-model="state.replayIncludeFails" type="checkbox" class="h-4 w-4 accent-[#ff5f45]">
+        包含失败成绩（仅影响最近成绩）
+      </label>
+      <p class="m-0 text-xs leading-relaxed text-neutral-400">目前回放仅支持 osu!standard。最近成绩默认排除失败；选中其它模式或没有回放的成绩时会报错。</p>
     </template>
     <p v-if="state.replayMethod !== 'file'" class="m-0 text-xs leading-relaxed text-neutral-400">自动下载回放与谱面包。最近一次仅查询官方近期记录，查不到不会换成最高分；无回放或规则不兼容会明确报错。</p>
     <p v-if="state.replaySelecting" class="text-xs text-neutral-400">正在解析回放...</p>

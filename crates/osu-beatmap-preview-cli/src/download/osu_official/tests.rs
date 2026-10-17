@@ -79,8 +79,10 @@ fn best_resolves_numeric_username_as_name_and_checks_identity() {
     let result = select(
         &client,
         &ReplaySource::Player {
-            user: ReplayUser::Name("123".into()),
+            user: "123".into(),
             selection: ScoreSelection::Best,
+            mode: None,
+            include_fails: false,
         },
         "2",
     )
@@ -105,7 +107,7 @@ fn recent_uses_absolute_timestamps_and_does_not_skip_unavailable_replay() {
         deadline: &deadline,
         base,
     };
-    let result = recent(&client, 7, 2).unwrap();
+    let result = recent(&client, 7, Some(2), Some(ReplayMode::Osu), true).unwrap();
     assert_eq!(result.id, 101);
     assert!(validate(&result)
         .unwrap_err()
@@ -117,7 +119,7 @@ fn recent_uses_absolute_timestamps_and_does_not_skip_unavailable_replay() {
 #[test]
 fn recent_missing_map_is_an_error_without_best_fallback() {
     let (base, handle) = mock(vec![(
-        "users/7/scores/recent?mode=osu&include_fails=1&legacy_only=0&limit=100&offset=0",
+        "users/7/scores/recent?mode=osu&include_fails=0&legacy_only=0&limit=100&offset=0",
         serde_json::json!([]),
     )]);
     let deadline = RequestDeadline::new(Instant::now(), "test", Duration::from_secs(5));
@@ -127,10 +129,141 @@ fn recent_missing_map_is_an_error_without_best_fallback() {
         deadline: &deadline,
         base,
     };
-    assert!(recent(&client, 7, 2)
+    assert!(recent(&client, 7, Some(2), Some(ReplayMode::Osu), false)
         .unwrap_err()
         .to_string()
         .contains("不会回退"));
+    handle.join().unwrap();
+}
+
+#[test]
+fn player_map_recent_defaults_to_osu_and_excludes_fails_across_pages() {
+    let mut unrelated = score(1, "2026-01-01T00:00:00Z");
+    unrelated["beatmap_id"] = 4.into();
+    let (base, handle) = mock(vec![
+        ("users/@%61/osu", serde_json::json!({"id":7})),
+        (
+            "users/7/scores/recent?mode=osu&include_fails=0&legacy_only=0&limit=100&offset=0",
+            serde_json::json!(vec![unrelated; 100]),
+        ),
+        (
+            "users/7/scores/recent?mode=osu&include_fails=0&legacy_only=0&limit=100&offset=100",
+            serde_json::json!([score(122, "2026-01-01T00:00:00Z")]),
+        ),
+    ]);
+    let deadline = RequestDeadline::new(Instant::now(), "test", Duration::from_secs(5));
+    let client = Client {
+        agent: ureq::agent(),
+        token: "test".into(),
+        deadline: &deadline,
+        base,
+    };
+    let result = select(
+        &client,
+        &ReplaySource::Player {
+            user: "a".into(),
+            selection: ScoreSelection::Recent,
+            mode: None,
+            include_fails: false,
+        },
+        "2",
+    )
+    .unwrap();
+    assert_eq!(result.id, 122);
+    handle.join().unwrap();
+}
+
+#[test]
+fn latest_omits_mode_and_excludes_fails_by_default_without_skipping_missing_replay() {
+    let mut latest = score(120, "2026-01-01T00:00:00Z");
+    latest["has_replay"] = false.into();
+    let (base, handle) = mock(vec![
+        ("users/@%31%32%33", serde_json::json!({"id":7})),
+        (
+            "users/7/scores/recent?include_fails=0&legacy_only=0&limit=1&offset=0",
+            serde_json::json!([latest]),
+        ),
+    ]);
+    let deadline = RequestDeadline::new(Instant::now(), "test", Duration::from_secs(5));
+    let client = Client {
+        agent: ureq::agent(),
+        token: "test".into(),
+        deadline: &deadline,
+        base,
+    };
+    let result = select(
+        &client,
+        &ReplaySource::Player {
+            user: "123".into(),
+            selection: ScoreSelection::Recent,
+            mode: None,
+            include_fails: false,
+        },
+        "",
+    )
+    .unwrap();
+    assert_eq!(result.id, 120);
+    assert!(validate(&result)
+        .unwrap_err()
+        .to_string()
+        .contains("没有可下载回放"));
+    handle.join().unwrap();
+}
+
+#[test]
+fn latest_forwards_explicit_mode_and_fails_without_changing_ruleset() {
+    let mut latest = score(121, "2026-01-01T00:00:00Z");
+    latest["ruleset_id"] = 2.into();
+    let (base, handle) = mock(vec![
+        ("users/@%61/fruits", serde_json::json!({"id":7})),
+        (
+            "users/7/scores/recent?mode=fruits&include_fails=1&legacy_only=0&limit=1&offset=0",
+            serde_json::json!([latest]),
+        ),
+    ]);
+    let deadline = RequestDeadline::new(Instant::now(), "test", Duration::from_secs(5));
+    let client = Client {
+        agent: ureq::agent(),
+        token: "test".into(),
+        deadline: &deadline,
+        base,
+    };
+    let result = select(
+        &client,
+        &ReplaySource::Player {
+            user: "a".into(),
+            selection: ScoreSelection::Recent,
+            mode: Some(ReplayMode::Fruits),
+            include_fails: true,
+        },
+        "",
+    )
+    .unwrap();
+    assert_eq!(result.ruleset_id, 2);
+    assert!(validate(&result)
+        .unwrap_err()
+        .to_string()
+        .contains("只支持原生 Standard"));
+    handle.join().unwrap();
+}
+
+#[test]
+fn latest_empty_history_is_an_error() {
+    let (base, handle) = mock(vec![(
+        "users/7/scores/recent?include_fails=0&legacy_only=0&limit=1&offset=0",
+        serde_json::json!([]),
+    )]);
+    let deadline = RequestDeadline::new(Instant::now(), "test", Duration::from_secs(5));
+    let client = Client {
+        agent: ureq::agent(),
+        token: "test".into(),
+        deadline: &deadline,
+        base,
+    };
+    assert!(recent(&client, 7, None, None, false)
+        .unwrap_err()
+        .to_string()
+        .contains("没有符合条件"));
     handle.join().unwrap();
 }
 
