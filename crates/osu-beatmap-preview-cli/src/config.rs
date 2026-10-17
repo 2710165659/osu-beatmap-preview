@@ -302,9 +302,20 @@ fn output_directory_for_snapshot(
 }
 
 fn config_variant(defaults: &Value, active: &Value) -> Result<Option<ConfigVariant>, String> {
-    let Some(difference) = difference(defaults, active) else {
+    let Some(mut difference) = difference(defaults, active) else {
         return Ok(None);
     };
+    // 认证只影响下载权限，不影响画面；排除凭据，避免明文写入输出目录的 config.yml。
+    let fields = difference.as_object_mut().expect("配置差异必须为对象");
+    if let Some(download) = fields.get_mut("download").and_then(Value::as_object_mut) {
+        download.remove("auth");
+        if download.is_empty() {
+            fields.remove("download");
+        }
+    }
+    if fields.is_empty() {
+        return Ok(None);
+    }
     let canonical = canonical_json(&difference)?;
     let digest = Sha256::digest(canonical.as_bytes());
     let hex = digest
@@ -1552,5 +1563,24 @@ render:
             variant(r#"{"render":{"taiko":{"gif":{"style":{"SHOW_SWELL_CLEAR":false}}}}}"#)
                 .is_some()
         );
+    }
+
+    #[test]
+    fn download_auth_is_loaded_but_excluded_from_exported_config_and_hash() {
+        let auth = r#"{"download":{"auth":{"OSU_CLIENT_ID":"private-id","OSU_CLIENT_SECRET":"private-secret"}}}"#;
+        let configured = super::load_layers(Some(auth), false, None).unwrap();
+        assert_eq!(configured.runtime.download.auth.OSU_CLIENT_ID, "private-id");
+        assert_eq!(
+            configured.runtime.download.auth.OSU_CLIENT_SECRET,
+            "private-secret"
+        );
+        assert!(configured.variant.is_none());
+
+        let combined = variant(r#"{"download":{"auth":{"OSU_CLIENT_ID":"private-id","OSU_CLIENT_SECRET":"private-secret"},"osz":{"PARALLEL_PARTS":2}}}"#).unwrap();
+        let download = variant(r#"{"download":{"osz":{"PARALLEL_PARTS":2}}}"#).unwrap();
+        assert_eq!(combined, download);
+        assert!(!super::canonical_json(&combined.difference)
+            .unwrap()
+            .contains("private-"));
     }
 }

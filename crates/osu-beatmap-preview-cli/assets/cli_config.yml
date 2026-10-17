@@ -16,6 +16,10 @@ paths:
   PROGRESS_LOG: "progress.log" # 下载和处理进度日志
   RENDER_LOG: "render.log" # 渲染日志
 download:
+  auth:
+    # 官方 OAuth 认证；各字段优先读取同名非空环境变量，未设置时使用这里的值。
+    OSU_CLIENT_ID: "" # osu! OAuth 应用的 Client ID
+    OSU_CLIENT_SECRET: "" # 对应的 Client Secret
   osz:
     MAX_OSZ_BYTES: 268435456 # osz 文件下载的最大字节数（256MB：带视频的完整包常超过 50MB），超过该值将被拒绝下载
     PARALLEL_PARTS: 4 # osz 文件下载的并行分块数
@@ -27,8 +31,6 @@ timeout:
   GIF_TIMEOUT: 300 # GIF 渲染超时，单位秒，必须大于 0
   MP4_TIMEOUT: 300 # MP4 渲染超时，单位秒，必须大于 0
 advance:
-  replay:
-    ARGON_FONT_DIRECTORY: "" # 默认完整内嵌 Torus Bold；可选目录覆盖 Torus-Bold.bin 与 Torus-Bold_0.png
   gif:
     PAR_CHUNK_SIZE: 8 # GIF 每批并行渲染的最大帧数
     MAX_PAR_FRAME_BYTES: 67108864 # GIF 并行帧允许占用的最大原始图像字节数

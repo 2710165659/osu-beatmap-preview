@@ -140,7 +140,18 @@ osu-beatmap-preview-cli --type=osr --user="玩家名" --bid=4903207
 osu-beatmap-preview-cli --type=osr --user-id=123 --bid=4903207 --score-select=recent
 ```
 
-OSR 默认输出 MP4，只允许 GIF/MP4，拒绝 `--convert`、用户 `--mod`（包括 NM）和 PNG；`--bid` 仅用于玩家查询，不能附带在本地回放或成绩 ID 来源上。可选 `.osu/.osz` 按回放谱面原始 MD5 绑定；缺少资源时查询官方 API 并下载，失败报错。官方查询与在线回放下载需要 `OSU_API_TOKEN` 或 `OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET` 环境变量；本地 OSR 搭配匹配的完整 OSZ 时无需认证。在线来源直接使用成绩附带的谱面位置下载包，仍以回放 MD5 校验。
+OSR 默认输出 MP4，只允许 GIF/MP4，拒绝 `--convert`、用户 `--mod`（包括 NM）和 PNG；`--bid` 仅用于玩家查询，不能附带在本地回放或成绩 ID 来源上。可选 `.osu/.osz` 按回放谱面原始 MD5 绑定；缺少资源时查询官方 API 并下载，失败报错。官方查询与在线回放下载优先使用 `OSU_API_TOKEN` 环境变量；没有令牌时，`OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET` 分别优先读取同名非空环境变量，再回退到 `download.auth` 配置。本地 OSR 搭配匹配的完整 OSZ 时无需认证。在线来源直接使用成绩附带的谱面位置下载包，仍以回放 MD5 校验。
+
+可在可执行文件旁的 `config.yml` 或 `--config` 指定的配置中填写：
+
+```yaml
+download:
+  auth:
+    OSU_CLIENT_ID: "你的 Client ID"
+    OSU_CLIENT_SECRET: "你的 Client Secret"
+```
+
+认证配置不参与输出目录 hash，也不会写入输出目录的配置差异文件。回放字体始终使用程序内嵌的完整 Torus Bold，无需配置外部字体目录。
 
 `best` 是官方按分数选出的个人最高成绩，并非最高 PP；`recent` 最多扫描近期 1000 条成绩，按结束时间选取指定谱面的最新一次。选中成绩无回放、规则不兼容、谱面版本不匹配或下载失败时明确报错，不换成其它成绩。回放文件缓存于 `osr-download-cache/<成绩ID>.osr`，`--no-cache` 可强制重下；成绩查询不使用该文件缓存。
 
