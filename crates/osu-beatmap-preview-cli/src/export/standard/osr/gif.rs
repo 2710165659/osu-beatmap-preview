@@ -3,7 +3,7 @@ use super::{font, visible_indexes};
 use crate::{
     application::{legacy::resolve_time_points, output_plan::RenderPlan},
     export::{canvas::Img, standard::draw_time_label, text::format_mmssmmm},
-    media::image::save_animated_gif_with_frame_palettes,
+    media::image::save_animated_gif_streamed_with_colors,
 };
 use osu_beatmap_preview_core::{
     gameplay::timeline::GameplayTimeline,
@@ -16,8 +16,7 @@ use osu_beatmap_preview_core::{
     support::timeout::RequestDeadline,
     Beatmap, PreviewError, Result,
 };
-use rayon::prelude::*;
-use std::{cell::RefCell, collections::VecDeque, path::Path, sync::Arc};
+use std::{cell::RefCell, path::Path, sync::Arc};
 
 pub(crate) fn render_gif(
     beatmap: &Beatmap,
@@ -172,30 +171,25 @@ fn render_with_config(
             canvas
         })
     };
-    let advanced = &runtime.advance.gif;
-    let frame_bytes = (width as usize)
-        .saturating_mul(height as usize)
-        .saturating_mul(4)
-        .max(1);
-    let chunk = (advanced.MAX_PAR_FRAME_BYTES / frame_bytes).clamp(1, advanced.PAR_CHUNK_SIZE);
-    let mut frames = VecDeque::new();
-    // 延续回放的逐帧调色板，保留判定文字与淡出颜色；仅缓存受内存预算限制的一批画面。
-    save_animated_gif_with_frame_palettes(
-        frame_count,
-        |index| {
-            if frames.is_empty() {
-                frames = (index..(index + chunk).min(frame_count))
-                    .into_par_iter()
-                    .map(&draw)
-                    .collect::<Vec<_>>()
-                    .into();
-            }
-            frames.pop_front().expect("每批按帧序消费")
-        },
-        path,
-        fps,
-        deadline,
-    )
+    let mut fixed_colors = super::super::super::gif_time_label_colors(
+        config.style.SHOW_TIME_LABEL,
+        config.style.CANVAS_BACKGROUND_COLOR,
+        [
+            config.style.PREVIEW_TIME_LABEL_COLOR,
+            config.style.TIME_LABEL_COLOR,
+            config.style.TIME_LABEL_NOTE_COLOR,
+        ],
+    );
+    // 回放包含大量接近背景的淡出颜色，量化器可能把纯黑背景偏向暗紫色。
+    // 预留画布与游玩区域实际合成的底色，保证空白区域不被全局调色板染色。
+    let [r, g, b, _] = config.style.CANVAS_BACKGROUND_COLOR;
+    fixed_colors.push([r, g, b]);
+    let mut background = Img::new(1, 1, config.style.CANVAS_BACKGROUND_COLOR);
+    background.blend_px(0, 0, config.style.IMAGE_BACKGROUND_COLOR);
+    fixed_colors.push([background.data[0], background.data[1], background.data[2]]);
+    // 与普通预览共用限权采样、全局调色板和差分帧，避免逐帧全画布量化。
+    // 编码器统一管理并行绘图的内存预算；标签预留精确合成色，防止再次发灰。
+    save_animated_gif_streamed_with_colors(frame_count, draw, path, fps, deadline, &fixed_colors)
 }
 
 fn checked_frame_count(duration_ms: f64, fps: f64, speed: f64, cells: usize) -> Result<usize> {
@@ -263,7 +257,7 @@ mod tests {
         );
         let prepared = prepare_replay(&beatmap, &document).unwrap();
         let gameplay = compile_standard(&prepared, document).unwrap();
-        // 缩小实际光栅和编码尺寸，让集成测试覆盖四格而不承担大画布的调色板开销。
+        // 缩小实际光栅和编码尺寸，让集成测试覆盖四格并保持执行时间可控。
         let mut runtime = crate::config::current().clone();
         let defaults: serde_json::Value =
             serde_yaml::from_str(crate::config::default_config_yaml()).unwrap();
@@ -325,7 +319,19 @@ mod tests {
             (i64::from(decoder.width()), i64::from(decoder.height())),
             (width, height)
         );
-        let first = decoder.read_next_frame().unwrap().unwrap().buffer.to_vec();
+        assert!(decoder.global_palette().is_some());
+        let first = {
+            let frame = decoder.read_next_frame().unwrap().unwrap();
+            assert!(frame.palette.is_none());
+            assert_eq!(frame.delay, 10);
+            frame.buffer.to_vec()
+        };
+        let preview_color = runtime.render.standard.gif.style.PREVIEW_TIME_LABEL_COLOR;
+        assert!(first.chunks_exact(4).any(|pixel| pixel == preview_color));
+        assert_eq!(
+            &first[..4],
+            &runtime.render.standard.gif.style.CANVAS_BACKGROUND_COLOR
+        );
         let context =
             osu_beatmap_preview_core::config::with_config(Arc::clone(&core_config), || {
                 build_replay_context(&beatmap, &prepared, TimeAxis::new(1000), OutputFormat::Gif)
@@ -349,7 +355,12 @@ mod tests {
         }
         // 四格查询不同绝对时刻；这能发现误把同一张回放帧复制到全部格子的实现。
         assert_ne!(crop(0), crop(3));
-        assert!(decoder.read_next_frame().unwrap().is_some());
+        let second = decoder.read_next_frame().unwrap().unwrap();
+        // 调色板须跨帧复用，后续帧以透明差分编码，同时保持播放时长。
+        assert!(second.palette.is_none());
+        assert!(second.transparent.is_some());
+        assert_eq!(second.delay, 10);
+        assert!(u32::from(second.width) * u32::from(second.height) < (width * height) as u32);
         assert!(decoder.read_next_frame().unwrap().is_none());
         plan.time_points.push(TimePoint::Seconds(0.4));
         assert!(
