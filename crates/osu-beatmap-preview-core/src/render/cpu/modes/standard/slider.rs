@@ -26,6 +26,48 @@ pub struct SliderRenderData {
 }
 
 impl SliderRenderData {
+    pub(crate) fn from_paths(
+        frame_path: SliderPath,
+        timing_path: SliderPath,
+        ticks: Vec<SliderTickRenderData>,
+        repeats: i32,
+    ) -> Self {
+        let mut reverse_centers: Vec<(f64, f64)> = Vec::new();
+        let mut reverse_angles: Vec<f64> = Vec::new();
+        if frame_path.points.len() >= 2 {
+            let n = frame_path.points.len();
+            for repeat_index in 1..repeats.max(1) {
+                let (center, dx, dy) = if repeat_index % 2 == 1 {
+                    let center = frame_path.points[n - 1];
+                    (
+                        center,
+                        frame_path.points[n - 2].0 - center.0,
+                        frame_path.points[n - 2].1 - center.1,
+                    )
+                } else {
+                    let center = frame_path.points[0];
+                    (
+                        center,
+                        frame_path.points[1].0 - center.0,
+                        frame_path.points[1].1 - center.1,
+                    )
+                };
+                reverse_centers.push(center);
+                reverse_angles.push(dy.atan2(dx));
+            }
+        }
+
+        let head_center = frame_path.points.first().copied().unwrap_or((0.0, 0.0));
+        SliderRenderData {
+            frame_path,
+            timing_path,
+            head_center,
+            reverse_centers,
+            reverse_angles,
+            ticks,
+        }
+    }
+
     /// 蛇入/蛇出仍使用稀疏主体，但切割端点必须与完整计时曲线的滑条球一致。
     pub fn body_path(&self, start: f64, end: f64) -> Vec<(f64, f64)> {
         let mut points = slice_path(&self.frame_path, start, end);
@@ -48,8 +90,8 @@ pub struct SliderTickRenderData {
 
 pub fn draw_slider_body(
     frame: &mut Img,
+    context: &RenderContext,
     points: &[(f64, f64)],
-    width: i64,
     color: [u8; 3],
     alpha: f64,
     traceable: bool,
@@ -59,12 +101,13 @@ pub fn draw_slider_body(
     }
     let layer = render_slider_body_layer(
         points,
-        width,
+        context.slider_body_width,
         color,
         alpha_to_byte(alpha),
         traceable,
         frame.w as i64,
         frame.h as i64,
+        context.style,
     );
     frame.alpha_composite(&layer.image, layer.offset.0, layer.offset.1);
 }
@@ -101,6 +144,7 @@ pub fn draw_cached_slider_body(
             traceable,
             context.frame_layout.frame_width,
             context.frame_layout.frame_height,
+            context.style,
         )
     });
 
@@ -116,6 +160,7 @@ pub fn draw_cached_slider_body(
         .insert(alpha_cache_key, scaled);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_slider_body_layer(
     points: &[(f64, f64)],
     width: i64,
@@ -124,13 +169,9 @@ pub fn render_slider_body_layer(
     traceable: bool,
     frame_width: i64,
     frame_height: i64,
+    style: crate::render::shared::standard::style::StandardRenderStyle,
 ) -> CachedLayer {
-    let scale = crate::config::current()
-        .render
-        .standard
-        .png
-        .style
-        .SLIDER_BODY_SUPERSAMPLE;
+    let scale = style.slider_supersample;
     let pad = (width + 4) as f64;
     let min_x = points.iter().map(|p| p.0).fold(f64::MAX, f64::min);
     let min_y = points.iter().map(|p| p.1).fold(f64::MAX, f64::min);
@@ -185,12 +226,7 @@ pub fn render_slider_body_layer(
             true,
         );
         // 用背景色擦除中心填充（游戏区域为黑色）。
-        let bg = crate::config::current()
-            .render
-            .standard
-            .png
-            .style
-            .IMAGE_BACKGROUND_COLOR;
+        let bg = style.background_color;
         layer.stroke_polyline(
             &scaled_points,
             (inner_width * scale) as f64,
@@ -235,9 +271,11 @@ pub fn get_slider_render_data(
         return Arc::clone(cached);
     }
 
-    let data = context
-        .body_layers
-        .slider_data(index, || build_slider_render_data(context, index));
+    let data = Arc::clone(
+        context
+            .body_layers
+            .slider_data(index, || build_slider_render_data(context, index)),
+    );
     cache.slider_data.insert(index, Arc::clone(&data));
     data
 }
@@ -303,40 +341,7 @@ fn build_slider_render_data(context: &RenderContext, index: usize) -> SliderRend
         context.settings.preempt_ms as f64,
     );
 
-    let mut reverse_centers: Vec<(f64, f64)> = Vec::new();
-    let mut reverse_angles: Vec<f64> = Vec::new();
-    if frame_path.points.len() >= 2 {
-        let n = frame_path.points.len();
-        for repeat_index in 1..hit_object.slider_repeats.max(1) {
-            let (center, dx, dy) = if repeat_index % 2 == 1 {
-                let center = frame_path.points[n - 1];
-                (
-                    center,
-                    frame_path.points[n - 2].0 - center.0,
-                    frame_path.points[n - 2].1 - center.1,
-                )
-            } else {
-                let center = frame_path.points[0];
-                (
-                    center,
-                    frame_path.points[1].0 - center.0,
-                    frame_path.points[1].1 - center.1,
-                )
-            };
-            reverse_centers.push(center);
-            reverse_angles.push(dy.atan2(dx));
-        }
-    }
-
-    let head_center = frame_path.points.first().copied().unwrap_or((0.0, 0.0));
-    SliderRenderData {
-        frame_path,
-        timing_path,
-        head_center,
-        reverse_centers,
-        reverse_angles,
-        ticks,
-    }
+    SliderRenderData::from_paths(frame_path, timing_path, ticks, hit_object.slider_repeats)
 }
 
 /// 滑条 tick 生成参数：路径长度、时间跨度与速度配置打包成结构体，
@@ -804,42 +809,15 @@ pub fn draw_slider_reverse_arrows(
         return;
     }
 
-    let span_count = hit_object.slider_repeats.max(1) as f64;
-    let duration = (hit_object.end_time - hit_object.start_time) as f64;
-    let fade_out_ratio = (300.0_f64).min(duration / span_count) / duration.max(1.0);
-
     for (i, &center) in slider_data.reverse_centers.iter().enumerate() {
-        let repeat_index = (i + 1) as i64;
-        let position = if repeat_index % 2 == 1 { 1.0 } else { 0.0 };
-
-        if !(snaked_start - 0.001 <= position && position <= snaked_end + 0.001) {
-            continue;
-        }
-
-        let repeat_alpha;
-        if snapshot_time < hit_object.start_time {
-            if repeat_index > 1 {
-                continue;
-            }
-            repeat_alpha = 1.0;
-        } else {
-            let completion = (snapshot_time - hit_object.start_time) as f64
-                / (hit_object.end_time - hit_object.start_time).max(1) as f64;
-            let traversal = completion * span_count;
-            if traversal < (repeat_index - 1) as f64 {
-                continue;
-            }
-            if traversal >= repeat_index as f64 {
-                continue;
-            }
-            if traversal > repeat_index as f64 - fade_out_ratio {
-                repeat_alpha = ((repeat_index as f64 - traversal) / fade_out_ratio).max(0.0);
-            } else {
-                repeat_alpha = 1.0;
-            }
-        }
-
-        let effective_alpha = alpha * repeat_alpha;
+        let effective_alpha = crate::render::shared::standard::animation::reverse_arrow_opacity(
+            hit_object,
+            snapshot_time,
+            (i + 1) as i64,
+            snaked_start,
+            snaked_end,
+            alpha,
+        );
         if effective_alpha <= 0.0 {
             continue;
         }

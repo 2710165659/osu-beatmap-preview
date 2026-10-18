@@ -97,32 +97,7 @@ pub(super) fn background_frame(context: &RenderContext, background: Option<&Img>
     match background {
         Some(background) => background.clone(),
         None => {
-            let color = match context.output_format {
-                crate::render::geometry::OutputFormat::Png => {
-                    crate::config::current()
-                        .render
-                        .standard
-                        .png
-                        .style
-                        .IMAGE_BACKGROUND_COLOR
-                }
-                crate::render::geometry::OutputFormat::Gif => {
-                    crate::config::current()
-                        .render
-                        .standard
-                        .gif
-                        .style
-                        .IMAGE_BACKGROUND_COLOR
-                }
-                crate::render::geometry::OutputFormat::Mp4 => {
-                    crate::config::current()
-                        .render
-                        .standard
-                        .mp4
-                        .style
-                        .IMAGE_BACKGROUND_COLOR
-                }
-            };
+            let color = context.style.background_color;
             // 视频物件层的帧是最终画布，底色只填内容框：内容框之外的补边仍由
             // 合成阶段用画布底色处理，物件则可以溢出到画布边缘而不被切掉。
             let content = context.frame_layout.content;

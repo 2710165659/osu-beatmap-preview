@@ -1,5 +1,5 @@
 //! 回放 GIF 复用普通预览的选段和网格；每格独立查询同一份不可变回放时间线。
-use super::{font, visible_indexes};
+use super::font;
 use crate::{
     application::{legacy::resolve_time_points, output_plan::RenderPlan},
     export::{canvas::Img, standard::draw_time_label, text::format_mmssmmm},
@@ -89,15 +89,7 @@ fn render_with_config(
                 .collect()
         })
         .collect();
-    let indexes: Vec<Vec<Vec<usize>>> = snapshots
-        .iter()
-        .map(|times| {
-            times
-                .iter()
-                .map(|&time| visible_indexes(prepared, gameplay, context.settings.preempt_ms, time))
-                .collect()
-        })
-        .collect();
+    let render_plan = osr::ReplayRenderPlan::new(&context, prepared, gameplay);
     let visuals = osr::ReplayVisuals::new(
         &context,
         gameplay,
@@ -128,7 +120,7 @@ fn render_with_config(
                         gameplay,
                         time,
                         &segment.break_periods,
-                        &indexes[cell][index],
+                        &render_plan,
                         None,
                     )
                 });

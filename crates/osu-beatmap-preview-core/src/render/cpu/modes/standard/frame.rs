@@ -1,5 +1,9 @@
 //! 音符对象渲染：打击圈、滑条、转盘和接近圈。
 
+use crate::render::shared::standard::animation::{
+    break_alpha as break_overlay_alpha, break_remaining_ratio as break_remaining_bar_ratio,
+};
+
 use crate::model::{BreakPeriod, StandardHitObject};
 use crate::render::canvas::Img;
 
@@ -150,8 +154,8 @@ pub(super) fn draw_slider_state(
         let visible_path = slider_data.body_path(snaked_start, snaked_end);
         draw_slider_body(
             frame,
+            context,
             &visible_path,
-            context.slider_body_width,
             combo.color,
             alpha,
             context.settings.traceable,
@@ -235,36 +239,22 @@ pub(super) fn draw_approach_circle(
     color: [u8; 3],
     snapshot_time: i64,
 ) {
-    let hit_object = &context.hit_objects[index];
-    if context.settings.hidden {
+    let Some(approach) =
+        crate::render::shared::standard::animation::approach_circle(context, index, snapshot_time)
+    else {
         return;
-    }
-    if snapshot_time >= hit_object.start_time {
-        return;
-    }
-
-    let elapsed = (snapshot_time - (hit_object.start_time - context.settings.preempt_ms)) as f64;
-    let progress = (elapsed / context.settings.preempt_ms as f64).clamp(0.0, 1.0);
-    let alpha = 0.9 * (elapsed / (context.settings.fade_in_ms * 2.0).max(1.0)).min(1.0);
-    if alpha <= 0.0 {
-        return;
-    }
-    let approach_scale = 4.0 - 3.0 * progress;
-    let d = context.frame_circle_diameter as f64 * approach_scale;
-    let position = stacked_position(hit_object, &context.settings);
-    let center = to_frame_point(position.0, position.1, &context.frame_layout);
-    let thickness = (d * 0.03).max(1.0);
+    };
     draw_ring_aa(
         frame,
-        center.0,
-        center.1,
-        d / 2.0,
-        thickness,
+        approach.center.0,
+        approach.center.1,
+        approach.diameter / 2.0,
+        (approach.diameter * 0.03).max(1.0),
         [
             color[0],
             color[1],
             color[2],
-            super::slider::alpha_to_byte(alpha),
+            super::slider::alpha_to_byte(approach.opacity),
         ],
     );
 }
@@ -410,10 +400,7 @@ pub(super) fn draw_break_overlay(
     let mut layer = Img::new(frame.w, frame.h, [0, 0, 0, 0]);
     let center_x = context.frame_layout.frame_width as f64 / 2.0;
     let center_y = context.frame_layout.frame_height as f64 / 2.0;
-    let render_scale = crate::render::geometry::output_scale(
-        crate::render::geometry::GameMode::Standard,
-        context.output_format,
-    );
+    let render_scale = context.frame_layout.output_scale();
 
     draw_break_arrows(&mut layer, alpha, render_scale);
     draw_break_remaining_bar(
@@ -537,35 +524,6 @@ fn draw_chevron(
     let top = (center_x - direction * half, center_y - half);
     let bottom = (center_x - direction * half, center_y + half);
     layer.stroke_polyline(&[top, point, bottom], width, color, false);
-}
-
-fn break_overlay_alpha(break_period: &BreakPeriod, snapshot_time: i64) -> f64 {
-    if break_period.end_time - break_period.start_time < super::constants::BREAK_MIN_DURATION_MS {
-        return 0.0;
-    }
-    if snapshot_time < break_period.start_time || snapshot_time > break_period.end_time {
-        return 0.0;
-    }
-    if snapshot_time < break_period.start_time + super::constants::BREAK_FADE_DURATION_MS {
-        return (snapshot_time - break_period.start_time) as f64
-            / super::constants::BREAK_FADE_DURATION_MS as f64;
-    }
-    if snapshot_time > break_period.end_time - super::constants::BREAK_FADE_DURATION_MS {
-        return (break_period.end_time - snapshot_time) as f64
-            / super::constants::BREAK_FADE_DURATION_MS as f64;
-    }
-    1.0
-}
-
-fn break_remaining_bar_ratio(break_period: &BreakPeriod, snapshot_time: i64) -> f64 {
-    let effective_duration =
-        break_period.end_time - super::constants::BREAK_FADE_DURATION_MS - break_period.start_time;
-    if effective_duration <= 0 {
-        return 0.0;
-    }
-    let remaining =
-        break_period.end_time - super::constants::BREAK_FADE_DURATION_MS - snapshot_time;
-    (remaining as f64 / effective_duration as f64).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]

@@ -44,7 +44,7 @@ impl FeedbackVisuals {
                 let center = f64::from(side) / 2.0;
                 let mut ring = Img::new(side, side, [0; 4]);
                 let color = COLORS[i];
-                super::super::slider::draw_ring_aa(
+                crate::render::cpu::modes::standard::slider::draw_ring_aa(
                     &mut ring,
                     center,
                     center,
@@ -61,7 +61,7 @@ impl FeedbackVisuals {
             let center = f64::from(side) / 2.0;
             let mut piece = Img::new(side, side, [0; 4]);
             let color = if i == 0 { [128; 3] } else { COLORS[3] };
-            super::super::slider::fill_circle_gradient_aa(
+            crate::render::cpu::modes::standard::slider::fill_circle_gradient_aa(
                 &mut piece, center, center, radius, color, color,
             );
             Arc::new(piece)

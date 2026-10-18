@@ -6,6 +6,11 @@ use crate::render::{
 use std::sync::Arc;
 
 pub(super) trait OverlayCanvas {
+    fn flashlight(
+        &mut self,
+        mask: &crate::render::visibility::Flashlight,
+        rect: crate::render::geometry::PixelRect,
+    );
     fn alpha_composite(&mut self, image: &Img, x: i64, y: i64);
     fn shared_sprite(&mut self, image: &Arc<Img>, x: i64, y: i64) {
         self.alpha_composite(image, x, y);
@@ -54,6 +59,13 @@ pub(super) trait OverlayCanvas {
     }
 }
 impl OverlayCanvas for Img {
+    fn flashlight(
+        &mut self,
+        mask: &crate::render::visibility::Flashlight,
+        rect: crate::render::geometry::PixelRect,
+    ) {
+        mask.apply(self, rect);
+    }
     fn alpha_composite(&mut self, image: &Img, x: i64, y: i64) {
         Img::alpha_composite(self, image, x, y);
     }
@@ -71,6 +83,13 @@ impl OverlayCanvas for Img {
     }
 }
 impl OverlayCanvas for FrameSceneBuilder {
+    fn flashlight(
+        &mut self,
+        mask: &crate::render::visibility::Flashlight,
+        rect: crate::render::geometry::PixelRect,
+    ) {
+        mask.draw_scene(self, rect);
+    }
     fn shared_sprite(&mut self, image: &Arc<Img>, x: i64, y: i64) {
         self.sprite(
             Arc::clone(image),

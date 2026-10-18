@@ -50,10 +50,7 @@ fn pieces(
     if alpha <= 0.0 {
         return Vec::new();
     }
-    let scale = crate::render::geometry::output_scale(
-        crate::render::geometry::GameMode::Standard,
-        context.output_format,
-    );
+    let scale = context.frame_layout.output_scale();
     let entry = out_quint((elapsed + preempt / 2.0) / (preempt / 4.0));
     let grow = out_quint(elapsed / (preempt / 2.0));
     let disc_scale = 0.2 * entry + 0.8 * grow;
@@ -235,10 +232,7 @@ pub(super) fn draw_cpu_state(
     replay: Option<(f64, f64, f64)>,
 ) {
     let (x, y) = to_frame_point(256.0, 192.0, &context.frame_layout);
-    let scale = crate::render::geometry::output_scale(
-        crate::render::geometry::GameMode::Standard,
-        context.output_format,
-    );
+    let scale = context.frame_layout.output_scale();
     for piece in pieces(context, object, time, replay) {
         match piece {
             Piece::Circle(r, c) => frame.fill_circle_aa(x, y, r, c),
@@ -275,10 +269,7 @@ pub fn draw_gpu_state(
     rotation: Option<(f64, f64, f64)>,
 ) {
     let (x, y) = to_frame_point(256.0, 192.0, &context.frame_layout);
-    let scale = crate::render::geometry::output_scale(
-        crate::render::geometry::GameMode::Standard,
-        context.output_format,
-    );
+    let scale = context.frame_layout.output_scale();
     for piece in pieces(context, object, time, rotation) {
         match piece {
             Piece::Circle(r, c) => scene.circle([x as f32, y as f32], r as f32, c),

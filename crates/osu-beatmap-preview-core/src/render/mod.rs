@@ -2,6 +2,7 @@ pub mod canvas;
 pub mod cpu;
 pub mod geometry;
 pub mod scene;
+pub mod shared;
 pub mod text;
 pub mod timing;
 pub mod visibility;

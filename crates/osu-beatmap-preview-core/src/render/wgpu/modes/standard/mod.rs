@@ -1,5 +1,6 @@
 //! Standard WGPU 实时帧源准备与原生场景生成。
 
+use crate::render::shared::standard::animation::{break_alpha, break_remaining_ratio};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -86,6 +87,12 @@ fn source_from_context(
         .enumerate()
         .map(|(index, object)| {
             (object.hit_type & 2 != 0).then(|| {
+                #[cfg(feature = "replay")]
+                let data = replay.as_ref().map_or_else(
+                    || get_slider_render_data(&mut cache, &context, index),
+                    |replay| replay.slider_data(&context, index),
+                );
+                #[cfg(not(feature = "replay"))]
                 let data = get_slider_render_data(&mut cache, &context, index);
                 let reverse_arrows = data
                     .reverse_angles
@@ -118,22 +125,17 @@ fn source_from_context(
     let breaks = prepare_breaks(&beatmap.break_periods, &context);
     let follow_points = prepare_follow_points(&context);
     #[cfg(feature = "replay")]
-    let visible_cache = replay.as_ref().map_or_else(
-        || VisibleIndexCache::new(&context.hit_objects, context.settings.preempt_ms),
-        |r| {
-            VisibleIndexCache::new_replay(
-                &context.hit_objects,
-                context.settings.preempt_ms,
-                &r.gameplay,
-            )
-        },
-    );
+    let visible_cache = replay
+        .is_none()
+        .then(|| VisibleIndexCache::new(&context.hit_objects, context.settings.preempt_ms));
     #[cfg(not(feature = "replay"))]
-    let visible_cache = VisibleIndexCache::new(&context.hit_objects, context.settings.preempt_ms);
+    let visible_cache = Some(VisibleIndexCache::new(
+        &context.hit_objects,
+        context.settings.preempt_ms,
+    ));
     Ok(RealtimeFrameSource::new(
         GameMode::Standard,
         move |absolute_time_ms| {
-            let indexes = visible_cache.at(absolute_time_ms);
             #[cfg(feature = "replay")]
             if let Some(replay) = &replay {
                 return Ok(osr::render(
@@ -144,10 +146,13 @@ fn source_from_context(
                     &follow_points,
                     replay,
                     absolute_time_ms,
-                    &indexes,
                 ));
             }
 
+            let indexes = visible_cache
+                .as_ref()
+                .expect("普通预览必须准备可见索引")
+                .at(absolute_time_ms);
             Ok(render_scene(
                 &context,
                 &sliders,
@@ -373,7 +378,7 @@ fn draw_slider_state(
     if path.len() >= 2 && body_alpha > 0.0 {
         let alpha = alpha_to_byte(body_alpha);
         let body = if context.settings.traceable {
-            image_background_color()
+            context.style.background_color
         } else {
             let value = darken(color, 4.0);
             [
@@ -464,34 +469,15 @@ fn draw_reverse_arrows(
     if object.slider_repeats <= 1 || alpha <= 0.0 {
         return;
     }
-    let spans = object.slider_repeats.max(1) as f64;
-    let duration = (object.end_time - object.start_time) as f64;
-    let fade = 300.0_f64.min(duration / spans) / duration.max(1.0);
     for (index, &center) in slider.data.reverse_centers.iter().enumerate() {
-        let repeat = (index + 1) as i64;
-        let position = if repeat % 2 == 1 { 1.0 } else { 0.0 };
-        if !(snake_start - 0.001 <= position && position <= snake_end + 0.001) {
-            continue;
-        }
-        let repeat_alpha = if time < object.start_time {
-            if repeat == 1 {
-                1.0
-            } else {
-                0.0
-            }
-        } else {
-            let traversal = (time - object.start_time) as f64
-                / (object.end_time - object.start_time).max(1) as f64
-                * spans;
-            if traversal < (repeat - 1) as f64 || traversal >= repeat as f64 {
-                0.0
-            } else if traversal > repeat as f64 - fade {
-                ((repeat as f64 - traversal) / fade).max(0.0)
-            } else {
-                1.0
-            }
-        };
-        let opacity = alpha * repeat_alpha;
+        let opacity = crate::render::shared::standard::animation::reverse_arrow_opacity(
+            object,
+            time,
+            (index + 1) as i64,
+            snake_start,
+            snake_end,
+            alpha,
+        );
         if opacity <= 0.0 {
             continue;
         }
@@ -601,25 +587,22 @@ fn draw_approach_circle(
     index: usize,
     time: i64,
 ) {
-    let object = &context.hit_objects[index];
-    if context.settings.hidden || time >= object.start_time {
+    let Some(approach) =
+        crate::render::shared::standard::animation::approach_circle(context, index, time)
+    else {
         return;
-    }
-    let elapsed = (time - (object.start_time - context.settings.preempt_ms)) as f64;
-    let progress = (elapsed / context.settings.preempt_ms as f64).clamp(0.0, 1.0);
-    let alpha = 0.9 * (elapsed / (context.settings.fade_in_ms * 2.0).max(1.0)).min(1.0);
-    if alpha <= 0.0 {
-        return;
-    }
-    let world = stacked_position(object, &context.settings);
-    let center = to_frame_point(world.0, world.1, &context.frame_layout);
-    let diameter = context.frame_circle_diameter as f64 * (4.0 - 3.0 * progress);
+    };
     let color = context.combo_info[index].color;
     scene.ring(
-        [center.0 as f32, center.1 as f32],
-        (diameter / 2.0) as f32,
-        (diameter * 0.03).max(1.0) as f32,
-        [color[0], color[1], color[2], alpha_to_byte(alpha)],
+        [approach.center.0 as f32, approach.center.1 as f32],
+        (approach.diameter / 2.0) as f32,
+        (approach.diameter * 0.03).max(1.0) as f32,
+        [
+            color[0],
+            color[1],
+            color[2],
+            alpha_to_byte(approach.opacity),
+        ],
     );
 }
 
@@ -708,7 +691,7 @@ fn draw_number(
 }
 
 fn prepare_breaks(periods: &[BreakPeriod], context: &RenderContext) -> Vec<PreparedBreak> {
-    let scale = crate::render::geometry::output_scale(GameMode::Standard, context.output_format);
+    let scale = context.frame_layout.output_scale();
     let counter_size = scaled_bitmap_font_height(BREAK_OVERLAY_COUNTER_FONT_SIZE, scale);
     periods
         .iter()
@@ -742,7 +725,7 @@ fn draw_break(
     let width = context.frame_layout.frame_width as f64;
     let height = context.frame_layout.frame_height as f64;
     let center_y = height / 2.0;
-    let scale = crate::render::geometry::output_scale(GameMode::Standard, context.output_format);
+    let scale = context.frame_layout.output_scale();
     for (offset, direction) in [(-0.22, 1.0), (0.22, -1.0)] {
         let center_x = width * (0.5 + offset);
         for (size, thickness, opacity) in [(32.0, 9.0, 35.0), (20.0, 4.0, 80.0)] {
@@ -799,29 +782,6 @@ fn draw_break(
     }
 }
 
-fn break_alpha(period: &BreakPeriod, time: i64) -> f64 {
-    if period.end_time - period.start_time < BREAK_MIN_DURATION_MS
-        || !(period.start_time..=period.end_time).contains(&time)
-    {
-        return 0.0;
-    }
-    if time < period.start_time + BREAK_FADE_DURATION_MS {
-        return (time - period.start_time) as f64 / BREAK_FADE_DURATION_MS as f64;
-    }
-    if time > period.end_time - BREAK_FADE_DURATION_MS {
-        return (period.end_time - time) as f64 / BREAK_FADE_DURATION_MS as f64;
-    }
-    1.0
-}
-
-fn break_remaining_ratio(period: &BreakPeriod, time: i64) -> f64 {
-    let duration = period.end_time - BREAK_FADE_DURATION_MS - period.start_time;
-    if duration <= 0 {
-        return 0.0;
-    }
-    ((period.end_time - BREAK_FADE_DURATION_MS - time) as f64 / duration as f64).clamp(0.0, 1.0)
-}
-
 fn path_vertices(points: &[(f64, f64)]) -> Arc<[[f32; 2]]> {
     points
         .iter()
@@ -837,15 +797,6 @@ fn rect(x: f64, y: f64, width: f64, height: f64) -> SceneRect {
         width: width.max(0.0) as f32,
         height: height.max(0.0) as f32,
     }
-}
-
-fn image_background_color() -> [u8; 4] {
-    crate::config::current()
-        .render
-        .standard
-        .mp4
-        .style
-        .IMAGE_BACKGROUND_COLOR
 }
 
 #[cfg(test)]

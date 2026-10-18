@@ -13,7 +13,7 @@ pub(super) struct ReplayFlashlight {
 impl ReplayFlashlight {
     pub fn new(
         gameplay: &GameplayTimeline,
-        cursor: &super::super::autoplay::AutoplayCursor,
+        cursor: &crate::render::cpu::modes::standard::autoplay::AutoplayCursor,
         mods: &crate::replay::mods::ReplayMods,
         breaks: &[BreakPeriod],
     ) -> Self {

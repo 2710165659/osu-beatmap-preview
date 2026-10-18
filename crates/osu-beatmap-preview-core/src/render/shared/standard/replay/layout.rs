@@ -1,5 +1,7 @@
 //! 回放沿用同格式普通预览的布局，HUD 叠加在画布内，不额外预留空间。
-use super::super::context::{build_frame_layout, build_video_frame_layout, FrameLayout};
+use crate::render::cpu::modes::standard::context::{
+    build_frame_layout, build_video_frame_layout, FrameLayout,
+};
 use crate::render::geometry::OutputFormat;
 
 pub(super) fn build(format: OutputFormat) -> FrameLayout {

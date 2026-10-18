@@ -195,7 +195,7 @@ pub fn simplify_path(points: &[P], tolerance: f64) -> Vec<P> {
 
 /// 显示折线仍使用原始累计弧长。删除微小回绕只影响画面采样，不能压缩其时间；
 /// 例如同一小区域内的多次往返仍占用原来的进度区间，蛇入/蛇出不会提前跳过。
-fn simplify_timed_path(path: &SliderPath, tolerance: f64) -> SliderPath {
+pub(crate) fn simplify_timed_path(path: &SliderPath, tolerance: f64) -> SliderPath {
     let indices = simplify_indices(&path.points, tolerance);
     SliderPath {
         points: indices.iter().map(|&index| path.points[index]).collect(),

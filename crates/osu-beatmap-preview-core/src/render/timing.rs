@@ -30,6 +30,18 @@ pub fn format_bpm(bpm: f64) -> String {
     }
 }
 
+/// 背景视频在两端各用 500ms 淡入淡出，短视频取两者的较低可见度。
+pub const VIDEO_FADE_MS: i64 = 500;
+
+pub fn video_visibility_alpha(video_ms: i64, duration_ms: i64) -> f64 {
+    if video_ms < 0 || video_ms >= duration_ms.max(1) {
+        return 0.0;
+    }
+    let fade_in = video_ms as f64 / VIDEO_FADE_MS as f64;
+    let fade_out = (duration_ms - video_ms) as f64 / VIDEO_FADE_MS as f64;
+    fade_in.min(fade_out).clamp(0.0, 1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

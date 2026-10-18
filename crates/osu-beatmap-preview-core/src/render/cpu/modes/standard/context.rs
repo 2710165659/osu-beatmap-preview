@@ -106,8 +106,8 @@ impl SharedBodyLayers {
         &self,
         index: usize,
         build: impl FnOnce() -> SliderRenderData,
-    ) -> Arc<SliderRenderData> {
-        Arc::clone(self.slider_data[index].get_or_init(|| Arc::new(build())))
+    ) -> &Arc<SliderRenderData> {
+        self.slider_data[index].get_or_init(|| Arc::new(build()))
     }
 }
 
@@ -159,6 +159,7 @@ pub struct RenderContext {
     pub follow_points: Vec<super::follow_points::FollowPoint>,
     pub skin: Skin,
     pub settings: RenderSettings,
+    pub style: crate::render::shared::standard::style::StandardRenderStyle,
     pub frame_layout: FrameLayout,
     pub frame_circle_diameter: i64,
     pub slider_body_width: i64,
@@ -458,6 +459,7 @@ fn build_context(
         }
     }
     RenderContext {
+        style: crate::render::shared::standard::style::StandardRenderStyle::current(output_format),
         spinner_od,
         spinner_rate: mods.map_or(1.0, |mods| mods.speed_multiplier),
         hit_objects,
@@ -721,53 +723,22 @@ pub fn build_visible_indexes_by_snapshot(
 
 /// 预先排序可见性边界，供实时渲染逐帧复用，避免每帧对整张谱面排序。
 pub struct VisibleIndexCache {
-    starts: Vec<(i64, usize)>,
-    end_times: Vec<i64>,
+    visibility: crate::render::shared::standard::visibility::ObjectVisibility,
 }
 
 impl VisibleIndexCache {
     pub fn new(hit_objects: &[StandardHitObject], preempt_ms: i64) -> Self {
-        let mut starts: Vec<_> = hit_objects
-            .iter()
-            .enumerate()
-            .map(|(i, o)| (o.start_time - preempt_ms, i))
-            .collect();
-        starts.sort_unstable();
-        let end_times = hit_objects.iter().map(visible_end_time).collect();
-        Self { starts, end_times }
-    }
-
-    /// 晚按与自动 Miss 必须保留到真实判定淡出，不能沿用 Preview 的名义命中时刻。
-    #[cfg(feature = "replay")]
-    pub fn new_replay(
-        objects: &[StandardHitObject],
-        preempt_ms: i64,
-        gameplay: &crate::gameplay::timeline::GameplayTimeline,
-    ) -> Self {
-        let mut cache = Self::new(objects, preempt_ms);
-        for (id, end) in cache.end_times.iter_mut().enumerate() {
-            if let Some((time, _)) = gameplay.objects[id].head {
-                *end = (*end).max(time.ceil() as i64 + 120);
-            }
+        Self {
+            visibility: crate::render::shared::standard::visibility::ObjectVisibility::new(
+                hit_objects.iter().enumerate().map(|(id, object)| {
+                    (object.start_time - preempt_ms, visible_end_time(object), id)
+                }),
+            ),
         }
-        cache
     }
 
     pub fn at(&self, snapshot_time: i64) -> Vec<usize> {
-        let mut active = Vec::new();
-        let start_count = self
-            .starts
-            .partition_point(|&(time, _)| time <= snapshot_time);
-        if start_count == 0 {
-            return active;
-        }
-        // 物件通常按时间排序；只需过滤仍未淡出的物件，避免维护逐帧可变集合。
-        for &(_, index) in self.starts[..start_count].iter().rev() {
-            if self.end_times[index] >= snapshot_time {
-                active.push(index);
-            }
-        }
-        active
+        self.visibility.at(snapshot_time).collect()
     }
 }
 

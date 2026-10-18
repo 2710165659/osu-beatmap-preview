@@ -19,20 +19,7 @@ use crate::storyboard::{Storyboard, Textures};
 const LABEL_REFERENCE_WIDTH: f64 = 1280.0;
 const LABEL_REFERENCE_HEIGHT: f64 = 720.0;
 
-/// osu! 的视频淡入淡出时长（`DrawableStoryboardVideo` 的 `FadeIn(500)` / `FadeOut(500)`）。
-pub const VIDEO_FADE_MS: i64 = 500;
-
-/// 视频自身时间轴 `video_ms` 处的可见度：开始处 [`VIDEO_FADE_MS`] 淡入、
-/// 结束前 [`VIDEO_FADE_MS`] 淡出，窗口外为 0（短视频短于两段淡入淡出时取
-/// 两者更低值）。CLI 导出的 `media::background_video::visibility_alpha` 同公式。
-pub fn visibility_alpha(video_ms: i64, duration_ms: i64) -> f64 {
-    if video_ms < 0 || video_ms >= duration_ms.max(1) {
-        return 0.0;
-    }
-    let fade_in = video_ms as f64 / VIDEO_FADE_MS as f64;
-    let fade_out = (duration_ms - video_ms) as f64 / VIDEO_FADE_MS as f64;
-    fade_in.min(fade_out).clamp(0.0, 1.0)
-}
+pub use crate::render::timing::{video_visibility_alpha as visibility_alpha, VIDEO_FADE_MS};
 
 /// 背景视频层的来源。
 ///

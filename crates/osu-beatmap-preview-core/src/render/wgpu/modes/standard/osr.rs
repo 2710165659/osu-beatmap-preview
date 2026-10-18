@@ -10,9 +10,21 @@ use crate::{
 
 pub(super) struct ReplayScene {
     prepared: Arc<PreparedStandard>,
-    pub(super) gameplay: Arc<GameplayTimeline>,
+    gameplay: Arc<GameplayTimeline>,
     visuals: ReplayVisuals,
+    plan: crate::render::shared::standard::replay::ReplayRenderPlan,
+    breaks: Vec<BreakPeriod>,
 }
+impl ReplayScene {
+    pub(super) fn slider_data(&self, context: &RenderContext, id: usize) -> Arc<SliderRenderData> {
+        Arc::clone(crate::render::shared::standard::replay::slider_data(
+            context,
+            &self.prepared,
+            id,
+        ))
+    }
+}
+
 pub fn prepare(
     beatmap: &Beatmap,
     prepared: Arc<PreparedStandard>,
@@ -39,6 +51,9 @@ pub fn prepare(
         &beatmap.break_periods,
         prepared.od,
     );
+    let plan = crate::render::shared::standard::replay::ReplayRenderPlan::new(
+        &context, &prepared, &gameplay,
+    );
     source_from_context(
         beatmap,
         context,
@@ -46,6 +61,8 @@ pub fn prepare(
             prepared,
             gameplay,
             visuals,
+            plan,
+            breaks: beatmap.break_periods.clone(),
         }),
     )
 }
@@ -59,89 +76,25 @@ pub(super) fn render(
     follow: &PreparedFollowPoints,
     replay: &ReplayScene,
     time: i64,
-    visible: &[usize],
 ) -> FrameScene {
     let gameplay = &replay.gameplay;
-    let failed = gameplay.failure_time.is_some_and(|end| time as f64 >= end);
     let mut scene = FrameSceneBuilder::new(
         context.frame_layout.frame_width as u32,
         context.frame_layout.frame_height as u32,
         time,
     );
-    draw_follow_points(&mut scene, context, follow, time);
-    for &id in visible {
-        let object = &context.hit_objects[id];
-        let state = &gameplay.objects[id];
-        if object.hit_type & 8 != 0 {
-            let rotation = (!failed).then(|| {
-                let (angle, total) = state.rotation_at(time as f64);
-                let (_, previous) = state.rotation_at(time as f64 - 100.0);
-                (
-                    f64::from(angle).to_radians(),
-                    f64::from(total) / 360.0,
-                    f64::from(total - previous) / 360.0 * 600.0,
-                )
-            });
-            crate::render::cpu::modes::standard::spinner::draw_gpu_state(
-                &mut scene, context, object, time, rotation,
-            );
-        } else if failed {
-            if object.hit_type & 2 != 0 {
-                draw_slider(
-                    &mut scene,
-                    context,
-                    sliders[id].as_ref().unwrap(),
-                    digits,
-                    id,
-                    time,
-                );
-            } else {
-                draw_hit_circle(&mut scene, context, digits, id, time);
-            }
-        } else {
-            let alpha = osr::head_alpha(
-                context,
-                object.start_time,
-                state.head,
-                time,
-                gameplay.policy.fade_hit_circle_early,
-                replay.prepared.od,
-            );
-            if object.hit_type & 2 != 0 {
-                draw_slider_state(
-                    &mut scene,
-                    context,
-                    sliders[id].as_ref().unwrap(),
-                    digits,
-                    id,
-                    time,
-                    Some(alpha),
-                    state.tracking_at(time as f64),
-                );
-            } else if !context.settings.traceable {
-                let p = replay.prepared.objects[id].position;
-                draw_circle_piece(
-                    &mut scene,
-                    context,
-                    digits,
-                    to_frame_point(f64::from(p[0]), f64::from(p[1]), &context.frame_layout),
-                    context.combo_info[id].color,
-                    alpha,
-                    context.combo_info[id].number,
-                );
-            }
-        }
-    }
-    for &id in visible {
-        if context.hit_objects[id].hit_type & 8 == 0
-            && (failed || gameplay.objects[id].head.is_none_or(|h| h.0 > time as f64))
-        {
-            draw_approach_circle(&mut scene, context, id, time);
-        }
-    }
-    if let Some(current) = breaks.iter().find(|b| break_alpha(&b.period, time) > 0.0) {
-        draw_break(&mut scene, context, current, time);
-    }
+    replay
+        .plan
+        .frame(context, &replay.prepared, gameplay, time, &replay.breaks)
+        .draw(&mut SceneReplayTarget {
+            scene: &mut scene,
+            context,
+            sliders,
+            digits,
+            breaks,
+            follow,
+            time,
+        });
     osr::draw_scene_overlay(
         &mut scene,
         context,
@@ -151,6 +104,60 @@ pub(super) fn render(
         time,
     );
     scene.finish()
+}
+
+struct SceneReplayTarget<'a> {
+    scene: &'a mut FrameSceneBuilder,
+    context: &'a RenderContext,
+    sliders: &'a [Option<PreparedSlider>],
+    digits: &'a [Arc<Img>],
+    breaks: &'a [PreparedBreak],
+    follow: &'a PreparedFollowPoints,
+    time: i64,
+}
+
+impl crate::render::shared::standard::replay::ReplayDrawTarget for SceneReplayTarget<'_> {
+    fn follow_points(&mut self) {
+        draw_follow_points(self.scene, self.context, self.follow, self.time);
+    }
+    fn circle(&mut self, id: usize, position: (f64, f64), opacity: f64) {
+        draw_circle_piece(
+            self.scene,
+            self.context,
+            self.digits,
+            to_frame_point(position.0, position.1, &self.context.frame_layout),
+            self.context.combo_info[id].color,
+            opacity,
+            self.context.combo_info[id].number,
+        );
+    }
+    fn slider(&mut self, id: usize, head_opacity: Option<f64>, tracking: bool) {
+        draw_slider_state(
+            self.scene,
+            self.context,
+            self.sliders[id].as_ref().unwrap(),
+            self.digits,
+            id,
+            self.time,
+            head_opacity,
+            tracking,
+        );
+    }
+    fn spinner(&mut self, id: usize, rotation: Option<(f64, f64, f64)>) {
+        crate::render::cpu::modes::standard::spinner::draw_gpu_state(
+            self.scene,
+            self.context,
+            &self.context.hit_objects[id],
+            self.time,
+            rotation,
+        );
+    }
+    fn approach_circle(&mut self, id: usize) {
+        draw_approach_circle(self.scene, self.context, id, self.time);
+    }
+    fn break_overlay(&mut self, index: usize, _period: &BreakPeriod) {
+        draw_break(self.scene, self.context, &self.breaks[index], self.time);
+    }
 }
 
 #[cfg(test)]

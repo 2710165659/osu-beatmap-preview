@@ -47,11 +47,7 @@ pub(crate) fn render(
     let start = schedule.start;
     let times = schedule.times;
     let frames = times.len();
-    // 回放晚打可延长圆圈寿命，不能沿用只覆盖 Autoplay 消退的可见索引。
-    let indexes: Vec<Vec<_>> = times
-        .iter()
-        .map(|&time| visible_indexes(prepared, gameplay, context.settings.preempt_ms, time))
-        .collect();
+    let render_plan = osr::ReplayRenderPlan::new(&context, prepared, gameplay);
     let blank = (!background.needs_playfield_base(storyboard.as_ref())).then(|| {
         crate::export::canvas::Img::new(
             context.frame_layout.frame_width as u32,
@@ -69,7 +65,7 @@ pub(crate) fn render(
                 gameplay,
                 times[index],
                 &beatmap.break_periods,
-                &indexes[index],
+                &render_plan,
                 blank.as_ref(),
             )
         })
@@ -99,26 +95,4 @@ pub(crate) fn render(
         crate::export::geometry::GameMode::Standard,
         media::FrameComposition::ReplayCanvas(&overlay),
     )
-}
-
-fn visible_indexes(
-    prepared: &PreparedStandard,
-    gameplay: &GameplayTimeline,
-    preempt_ms: i64,
-    time: i64,
-) -> Vec<usize> {
-    // 回放晚打可延长物件寿命，GIF 和 MP4 必须使用同一可见性边界。
-    prepared
-        .objects
-        .iter()
-        .enumerate()
-        .filter(|(id, object)| {
-            let end = gameplay.objects[*id]
-                .end
-                .map_or(object.end + 400.0, |e| e.0.max(object.end))
-                + 800.0;
-            time >= object.source.start_time - preempt_ms && time as f64 <= end
-        })
-        .map(|(id, _)| id)
-        .collect()
 }
