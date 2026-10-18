@@ -881,19 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn hard_rock_flips_objects_before_stacking_and_offsetting() {
-        let mods = ModSettings {
-            hard_rock: true,
-            ..ModSettings::new()
-        };
-        let mut objects = apply_standard_object_mods(
-            vec![circle(100, 100, 1000), circle(100, 100, 1050)],
-            Some(&mods),
-        );
-        super::super::stacking::apply_stacking(&mut objects, 14, 100.0);
-
-        assert_eq!(objects[0].y, 284);
-        assert_eq!(objects[0].stack_height, 1);
+    fn coordinate_mods_flip_objects_before_stacking_and_offsetting() {
         let settings = RenderSettings {
             circle_diameter: 128,
             object_scale: 0.5,
@@ -903,9 +891,20 @@ mod tests {
             hidden_only_approach: false,
             traceable: false,
         };
-        let (x, y) = stacked_position(&objects[0], &settings);
-        assert!((x - 96.8).abs() < 0.0001);
-        assert!((y - 280.8).abs() < 0.0001);
+        for (code, expected) in [("HR", (100, 284)), ("MR", (412, 100))] {
+            let mods = crate::domain::mods::parse_mods(&[code.into()]).unwrap();
+            let mut objects = apply_standard_object_mods(
+                vec![circle(100, 100, 1000), circle(100, 100, 1050)],
+                Some(&mods),
+            );
+            super::super::stacking::apply_stacking(&mut objects, 14, 100.0);
+
+            assert_eq!((objects[0].x, objects[0].y), expected, "{code}");
+            assert_eq!(objects[0].stack_height, 1);
+            let (x, y) = stacked_position(&objects[0], &settings);
+            assert!((x - (expected.0 as f64 - 3.2)).abs() < 0.0001, "{code}");
+            assert!((y - (expected.1 as f64 - 3.2)).abs() < 0.0001, "{code}");
+        }
     }
 
     #[test]

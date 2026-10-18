@@ -212,7 +212,7 @@ export const state = reactive({
   /** 界面上勾选的 Mod token；DA 提交时会展开成 DAAR..CS..。 */
   mods: [],
   /**
-   * 当前模式可选的 Mod token，来自 core 的支持矩阵（`supportedMods`）。
+   * 当前模式可选的 Mod token，来自 core 的动画支持矩阵（`supportedMods`）。
    *
    * 以前这里放着一份手抄的支持表，新增 HD/FL 后没跟上，网页就点不到。
    * 现在由会话建立时按实际模式取一次，前端不再自带列表。
@@ -686,7 +686,7 @@ function releaseAudioOutput() {
  */
 function applyModOptions(wasm, mode) {
   try {
-    state.modOptions = Array.from(wasm.supportedMods?.(mode) ?? []);
+    state.modOptions = Array.from(wasm.supportedMods?.(mode, 'animation') ?? []);
   } catch (error) {
     logPlay(`Mod 列表读取失败：${errorText(error)}`);
     state.modOptions = [];

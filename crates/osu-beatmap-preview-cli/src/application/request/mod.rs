@@ -181,8 +181,6 @@ mod tests {
             "alternate",
             "SG",
             "single-tap",
-            "MR",
-            "mirror",
         ] {
             for fmt in [None, Some("png"), Some("gif"), Some("mp4")] {
                 let mut request = RenderRequest::new("123");
@@ -196,6 +194,14 @@ mod tests {
                         .contains("only supported for realtime"),
                     "{code}/{fmt:?}"
                 );
+            }
+        }
+        for code in ["MR", "mirror"] {
+            for fmt in [None, Some("png"), Some("gif"), Some("mp4")] {
+                let mut request = RenderRequest::new("123");
+                request.ruleset.mods = vec![code.into()];
+                request.output.format = fmt.map(str::to_owned);
+                assert!(request.validate().unwrap().ruleset.mods.unwrap().mirror);
             }
         }
         let mut request = RenderRequest::new("123");

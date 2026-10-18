@@ -201,7 +201,7 @@ const state = session.replayState();
 
 `mode` 使用 `standard`、`taiko`、`catch`、`mania`，也接受 `std`、`ctb`。未知模式报错。
 
-- `supportedMods(mode)`：返回该模式实时预览支持的 Mod token 数组，顺序可直接用于界面。
+- `supportedMods(mode, level?)`：返回指定能力级别的 Mod token 数组，顺序可直接用于界面。`level` 可选 `png`、`animation`、`realtime`，默认 `realtime`；Web 普通谱面预览使用 `animation`，隐藏实时专属选项。
 - `hitsoundDefaults(mode)`：返回 `{ enabled, volume, beatmapEnabled }`，与 CLI 共用默认配置。
 
 ## 使用边界

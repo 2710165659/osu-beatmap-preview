@@ -519,9 +519,9 @@ pub enum ModSupportLevel {
 fn mod_support_steps(mode: i32) -> [&'static [&'static str]; 3] {
     match mode {
         0 => [
-            &["EZ", "HR", "HD", "FL", "AT", "DA", "TC"],
+            &["EZ", "HR", "HD", "FL", "AT", "DA", "TC", "MR"],
             &["DT", "HT", "NC", "DC"],
-            &["CL", "RX", "SO", "AP", "AL", "SG", "MR"],
+            &["CL", "RX", "SO", "AP", "AL", "SG"],
         ],
         1 => [
             &["EZ", "HR", "SW"],
@@ -834,7 +834,7 @@ mod tests {
 
     #[test]
     fn standard_realtime_mods_are_rejected_by_all_cli_formats_and_other_modes() {
-        for code in ["CL", "RX", "SO", "AP", "AL", "SG", "MR"] {
+        for code in ["CL", "RX", "SO", "AP", "AL", "SG"] {
             let settings = parse_mods(&[code.into()]).unwrap();
             assert!(settings.has_any_mod());
             for mode in 0..=3 {
@@ -866,6 +866,21 @@ mod tests {
                 !validate_mods_for_level(&settings, 0, ModSupportLevel::Realtime).is_empty(),
                 "{pair:?}"
             );
+        }
+    }
+
+    #[test]
+    fn mirror_is_supported_for_all_standard_outputs() {
+        let settings = parse_mods(&["mirror".into()]).unwrap();
+        for fmt in ["png", "gif", "mp4"] {
+            assert!(validate_mods(&settings, None, Some(fmt)).is_empty());
+            for mode in 0..=3 {
+                assert_eq!(
+                    validate_mods(&settings, Some(mode), Some(fmt)).is_empty(),
+                    mode == 0,
+                    "{mode}/{fmt}"
+                );
+            }
         }
     }
 

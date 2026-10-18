@@ -34,9 +34,9 @@ async function loadModule() {
   return module;
 }
 
-/** 累计 PNG、GIF/MP4 和实时预览三列能力；CL 只在 Standard 实时列新增。 */
+/** 累计 PNG、GIF/MP4 和实时预览三列能力；MR 从 PNG 起支持。 */
 const EXPECTED = {
-  standard: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DA', 'TC', 'DT', 'HT', 'NC', 'DC', 'CL', 'RX', 'SO', 'AP', 'AL', 'SG', 'MR'],
+  standard: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DA', 'TC', 'MR', 'DT', 'HT', 'NC', 'DC', 'CL', 'RX', 'SO', 'AP', 'AL', 'SG'],
   taiko: ['EZ', 'HR', 'SW', 'HD', 'FL', 'CS', 'DT', 'HT', 'NC', 'DC'],
   catch: ['EZ', 'HR', 'HD', 'FL', 'AT', 'DT', 'HT', 'NC', 'DC'],
   mania: [
@@ -83,4 +83,24 @@ test('supportedMods 接受别名，未知模式报错', async (t) => {
   );
   assert.deepEqual(Array.from(module.supportedMods('CTB')), EXPECTED.catch);
   assert.throws(() => module.supportedMods('不存在的模式'));
+  assert.throws(() => module.supportedMods('standard', 'unknown'));
+});
+
+test('Web 普通预览的动画能力保留 MR，隐藏实时专属 Mod', async (t) => {
+  const module = await loadModule();
+  if (!module) {
+    t.skip('public/pkg 下没有 wasm 产物，先运行 npm run build:wasm');
+    return;
+  }
+  const realtimeOnly = ['CL', 'RX', 'SO', 'AP', 'AL', 'SG'];
+  for (const [mode, expected] of Object.entries(EXPECTED)) {
+    assert.deepEqual(
+      Array.from(module.supportedMods(mode, 'animation')),
+      expected.filter((token) => !realtimeOnly.includes(token)),
+      mode,
+    );
+  }
+  const png = Array.from(module.supportedMods('standard', 'png'));
+  assert.ok(png.includes('MR'));
+  assert.ok(!png.includes('DT'));
 });

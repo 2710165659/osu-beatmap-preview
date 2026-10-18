@@ -930,15 +930,18 @@ pub fn hitsound_defaults(mode: &str) -> Result<JsValue, JsValue> {
     Ok(object.into())
 }
 
-/// 返回某个模式在实时预览里可选的 Mod token 列表（展示顺序即数组顺序）。
+/// 返回某个模式、能力级别下可选的 Mod token 列表（展示顺序即数组顺序）。
 ///
 /// 列表来自 core 的支持矩阵，网页端直接拿它渲染 Mod 面板：两边各写一份很容易
 /// 在新增 Mod（例如 HD/FL）后走偏。列表中 `DA` 需要调用方补参数后提交，
 /// 键数 Mod 已经展开成 `1K`…`10K`。
 /// `mode` 接受 `standard` / `taiko` / `catch` / `mania`（也接受 `std` 与 `ctb`）。
+/// `level` 接受 `png` / `animation` / `realtime`，省略时保持实时预览的完整能力。
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = supportedMods)]
-pub fn supported_mods(mode: &str) -> Result<js_sys::Array, JsValue> {
+pub fn supported_mods(mode: &str, level: Option<String>) -> Result<js_sys::Array, JsValue> {
+    use osu_beatmap_preview_core::model::mods::{supported_mod_tokens_for_level, ModSupportLevel};
+
     let key = mode.trim().to_ascii_lowercase();
     let mode_index = match key.as_str() {
         "standard" | "std" => 0,
@@ -951,8 +954,24 @@ pub fn supported_mods(mode: &str) -> Result<js_sys::Array, JsValue> {
             )))
         }
     };
+    let level = match level
+        .as_deref()
+        .unwrap_or("realtime")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "png" => ModSupportLevel::Png,
+        "animation" => ModSupportLevel::Animation,
+        "realtime" => ModSupportLevel::Realtime,
+        _ => {
+            return Err(JsValue::from_str(
+                "未知 Mod 能力级别，可选 png/animation/realtime",
+            ))
+        }
+    };
     let list = js_sys::Array::new();
-    for token in osu_beatmap_preview_core::model::mods::supported_mod_tokens(mode_index) {
+    for token in supported_mod_tokens_for_level(mode_index, level) {
         list.push(&JsValue::from_str(&token));
     }
     Ok(list)
