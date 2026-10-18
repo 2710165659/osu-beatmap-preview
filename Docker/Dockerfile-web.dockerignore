@@ -11,6 +11,8 @@
 .idea
 .codegraph
 .reasonix
+.local
+osu-beatmap-preview-web.tar
 
 # Rust 与 Node 的构建产物：镜像里全部重新构建。
 **/target

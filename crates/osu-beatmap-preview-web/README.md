@@ -102,7 +102,10 @@ node backend/server.js
 
 ```bash
 docker build -f Docker/Dockerfile-web -t osu-beatmap-preview-web .
-docker run -d --name osu-preview --restart unless-stopped -p 127.0.0.1:8787:8787 -v osu-preview-cache:/data osu-beatmap-preview-web
+docker run -d --name osu-preview --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 -v osu-preview-cache:/data \
+  -e OSU_CLIENT_ID="" -e OSU_CLIENT_SECRET="" \
+  osu-beatmap-preview-web
 ```
 
 使用宿主机上的反向代理提供 HTTPS，例如 Caddy：
@@ -116,10 +119,14 @@ preview.example.com {
 也可由容器直接提供自签 HTTPS；浏览器需信任证书，且证书 SAN 应覆盖实际访问地址：
 
 ```bash
-docker run -d --name osu-preview --restart unless-stopped -p 443:8443 -v osu-preview-cache:/data osu-beatmap-preview-web node backend/server.js --host=0.0.0.0 --port=8443 --https --tls-host=服务器IP
+docker run -d --name osu-preview --restart unless-stopped \
+  -p 443:8443 -v osu-preview-cache:/data \
+  -e OSU_CLIENT_ID="" -e OSU_CLIENT_SECRET="" \
+  osu-beatmap-preview-web \
+  node backend/server.js --host=0.0.0.0 --port=8443 --https --tls-host=服务器IP
 ```
 
-需要在线回放时，通过容器环境变量传入官方 API 凭据。服务本身没有用户鉴权，访问控制由部署环境提供。
+需要在线回放时，在上述空值中填入官方 API 凭据；若宿主机已导出同名环境变量，可改为 `-e OSU_CLIENT_ID -e OSU_CLIENT_SECRET`，由 Docker 直接传入。服务本身没有用户鉴权，访问控制由部署环境提供。
 
 ## 开发
 
