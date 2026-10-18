@@ -4,6 +4,7 @@ use crate::export::{
     canvas::Img,
     text::{draw_text, text_size},
 };
+use osu_beatmap_preview_core::render::canvas::BLACK_OPAQUE;
 
 /// 将谱面背景图按 osu! 的等比适应方式缩放并居中，超出部分保留黑边，
 /// 再应用暗化配置。背景只在最终视频画布上处理一次，避免 playfield 与画布
@@ -24,7 +25,7 @@ fn prepare_video_background_inner(
     style: VideoStyle,
     cover: bool,
 ) -> Img {
-    let mut result = Img::new(width, height, style.black_opaque);
+    let mut result = Img::new(width, height, BLACK_OPAQUE);
     if source.w == 0 || source.h == 0 || width == 0 || height == 0 {
         return result;
     }
@@ -111,7 +112,7 @@ fn compose_frame_with_label(
 ) -> Img {
     let mut canvas = background
         .cloned()
-        .unwrap_or_else(|| Img::new(out_w, out_h, style.black_opaque));
+        .unwrap_or_else(|| Img::new(out_w, out_h, BLACK_OPAQUE));
     // 与背景图同一亮度：背景已按 (1 - BACKGROUND_DIM) 预暗化，故事板同倍率
     // 乘进精灵颜色后，与「整层压暗」的合成结果逐像素一致。
     let brightness = (1.0 - style.background_dim.clamp(0.0, 1.0)) as f32;

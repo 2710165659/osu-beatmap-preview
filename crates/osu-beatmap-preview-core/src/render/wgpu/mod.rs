@@ -18,7 +18,6 @@ pub struct VideoStyle {
     pub label_color: [u8; 4],
     pub label_font_size: u32,
     pub label_pad: i64,
-    pub black_opaque: [u8; 4],
     pub fallback_background: [u8; 4],
 }
 
@@ -30,8 +29,7 @@ impl Default for VideoStyle {
             label_color: [255, 255, 255, 255],
             label_font_size: 18,
             label_pad: 16,
-            black_opaque: [0, 0, 0, 255],
-            fallback_background: [0, 0, 0, 255],
+            fallback_background: crate::render::canvas::BLACK_OPAQUE,
         }
     }
 }

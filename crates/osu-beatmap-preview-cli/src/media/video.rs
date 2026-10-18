@@ -81,9 +81,6 @@ pub(crate) struct VideoStyle {
     pub(crate) label_color: [u8; 4],
     pub(crate) label_font_size: u32,
     pub(crate) label_pad: i64,
-    pub(crate) black_opaque: [u8; 4],
-    #[allow(dead_code)]
-    pub(crate) fallback_background: [u8; 4],
 }
 
 #[allow(dead_code)]
@@ -101,7 +98,7 @@ pub(crate) enum FrameComposition<'a> {
 pub(crate) fn video_style(mode: crate::export::geometry::GameMode) -> VideoStyle {
     let layout = &crate::config::current().render;
     macro_rules! make {
-        ($section:expr, $background:expr) => {{
+        ($section:expr) => {{
             let section = $section;
             VideoStyle {
                 enable_background_image: section.style.ENABLE_BACKGROUND_IMAGE,
@@ -111,26 +108,14 @@ pub(crate) fn video_style(mode: crate::export::geometry::GameMode) -> VideoStyle
                 label_color: section.style.LABEL_COLOR,
                 label_font_size: section.sizing.LABEL_FONT_SIZE,
                 label_pad: section.sizing.LABEL_PAD,
-                black_opaque: section.style.BLACK_OPAQUE,
-                fallback_background: $background,
             }
         }};
     }
     match mode {
-        crate::export::geometry::GameMode::Standard => make!(
-            &layout.standard.mp4,
-            layout.standard.mp4.style.IMAGE_BACKGROUND_COLOR
-        ),
-        crate::export::geometry::GameMode::Taiko => {
-            make!(&layout.taiko.mp4, layout.taiko.mp4.style.IMAGE_BACKGROUND)
-        }
-        crate::export::geometry::GameMode::Catch => make!(
-            &layout.catch.mp4,
-            layout.catch.mp4.style.PLAYFIELD_BACKGROUND
-        ),
-        crate::export::geometry::GameMode::Mania => {
-            make!(&layout.mania.mp4, layout.mania.mp4.style.IMAGE_BACKGROUND)
-        }
+        crate::export::geometry::GameMode::Standard => make!(&layout.standard.mp4),
+        crate::export::geometry::GameMode::Taiko => make!(&layout.taiko.mp4),
+        crate::export::geometry::GameMode::Catch => make!(&layout.catch.mp4),
+        crate::export::geometry::GameMode::Mania => make!(&layout.mania.mp4),
     }
 }
 

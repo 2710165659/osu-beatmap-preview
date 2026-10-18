@@ -259,6 +259,22 @@ fn canvas_sized_layer_composites_at_origin_and_keeps_label_in_corner() {
     // 物件层左上角画一像素：如果合成时又居中一次，它会跑到 (77, 0)。
     layer.put(0, 0, [10, 20, 30, 255]);
 
+    let replay = crate::media::composition::compose_replay_frame(
+        layer.clone(),
+        0,
+        0,
+        60_000,
+        width,
+        height,
+        None,
+        style,
+        None,
+    );
+    assert_eq!(replay.get(0, 0), [10, 20, 30, 255]);
+    assert!(replay.data[4..]
+        .chunks_exact(4)
+        .all(|pixel| pixel == [0, 0, 0, 255]));
+
     let composed = compose_frame(layer, 0, 0, 60_000, width, height, None, style, None);
 
     assert_eq!(composed.get(0, 0), [10, 20, 30, 255]);

@@ -32,6 +32,7 @@ use rayon::prelude::*;
 use crate::export::canvas::Img;
 
 use super::video::{prepare_video_background, VideoStyle};
+use osu_beatmap_preview_core::render::canvas::BLACK_OPAQUE;
 
 /// 并行解码的内存预算：一批里所有段的选中画面之和不超过它。
 const MEMORY_BUDGET_BYTES: usize = 768 * 1024 * 1024;
@@ -569,7 +570,6 @@ pub(crate) struct FrameBackgrounds {
     video: Option<BackgroundVideo>,
     width: u32,
     height: u32,
-    style: VideoStyle,
 }
 
 impl FrameBackgrounds {
@@ -590,7 +590,6 @@ impl FrameBackgrounds {
             video,
             width,
             height,
-            style,
         }
     }
 
@@ -610,9 +609,10 @@ impl FrameBackgrounds {
             return Some(frame);
         }
         // 淡入淡出窗口：与底层背景图（没有则纯色）按 alpha 线性混合。
-        let base = self.static_background.clone().unwrap_or_else(|| {
-            Arc::new(Img::new(self.width, self.height, self.style.black_opaque))
-        });
+        let base = self
+            .static_background
+            .clone()
+            .unwrap_or_else(|| Arc::new(Img::new(self.width, self.height, BLACK_OPAQUE)));
         Some(Arc::new(blend_background(&base, &frame, alpha)))
     }
 }
@@ -708,8 +708,6 @@ mod tests {
             label_color: [255, 255, 255, 255],
             label_font_size: 18,
             label_pad: 16,
-            black_opaque: [0, 0, 0, 255],
-            fallback_background: [0, 0, 0, 255],
         }
     }
 

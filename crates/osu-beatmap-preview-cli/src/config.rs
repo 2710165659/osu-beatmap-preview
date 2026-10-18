@@ -850,7 +850,7 @@ mod tests {
     }
 
     #[test]
-    fn removed_layout_fields_are_rejected() {
+    fn removed_render_fields_are_rejected() {
         for source in [
             r#"{"render":{"standard":{"gif":{"sizing":{"IMAGE_WIDTH":640}}}}}"#,
             r#"{"render":{"taiko":{"mp4":{"sizing":{"ROW_HEIGHT":80}}}}}"#,
@@ -858,6 +858,11 @@ mod tests {
             r#"{"render":{"catch":{"gif":{"sizing":{"PAGE_MARGIN_X":15}}}}}"#,
             r#"{"render":{"mania":{"gif":{"sizing":{"FRAME_HEIGHT":768}}}}}"#,
             r#"{"render":{"standard":{"png":{"style":{"SNAKING_IN_SLIDERS":false}}}}}"#,
+            r#"{"render":{"standard":{"mp4":{"style":{"BLACK_OPAQUE":[0,0,0,255]}}}}}"#,
+            r#"{"render":{"taiko":{"mp4":{"style":{"BLACK_OPAQUE":[0,0,0,255]}}}}}"#,
+            r#"{"render":{"catch":{"mp4":{"style":{"BLACK_OPAQUE":[0,0,0,255]}}}}}"#,
+            r#"{"render":{"mania":{"mp4":{"style":{"BLACK_OPAQUE":[0,0,0,255]}}}}}"#,
+            r#"{"render":{"standard":{"mp4":{"style":{"CANVAS_BACKGROUND_COLOR":[0,0,0,255]}}}}}"#,
         ] {
             let error = load_snapshot(Some(source)).expect_err("removed field must be rejected");
             assert!(error.contains("unknown configuration field"), "{error}");

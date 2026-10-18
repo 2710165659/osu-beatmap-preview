@@ -9,6 +9,8 @@ pub struct Img {
 
 pub type Rgba = [u8; 4];
 
+pub const BLACK_OPAQUE: Rgba = [0, 0, 0, 255];
+
 impl Img {
     pub fn new(w: u32, h: u32, color: Rgba) -> Self {
         let pixel_bytes = (w as usize).saturating_mul(h as usize).saturating_mul(4);

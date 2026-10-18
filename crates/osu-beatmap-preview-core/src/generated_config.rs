@@ -124,8 +124,6 @@ pub struct RenderStandardMp4StyleConfig {
     pub ENABLE_STORYBOARD: bool,
     pub BACKGROUND_DIM: f64,
     pub LABEL_COLOR: [u8; 4],
-    pub BLACK_OPAQUE: [u8; 4],
-    pub CANVAS_BACKGROUND_COLOR: [u8; 4],
     pub IMAGE_BACKGROUND_COLOR: [u8; 4],
 }
 
@@ -303,7 +301,6 @@ pub struct RenderTaikoMp4StyleConfig {
     pub ENABLE_STORYBOARD: bool,
     pub BACKGROUND_DIM: f64,
     pub LABEL_COLOR: [u8; 4],
-    pub BLACK_OPAQUE: [u8; 4],
     pub IMAGE_BACKGROUND: [u8; 4],
     pub TRACK_BACKGROUND_COLOR: [u8; 4],
     pub TRACK_EDGE_COLOR: [u8; 4],
@@ -462,7 +459,6 @@ pub struct RenderCatchMp4StyleConfig {
     pub ENABLE_STORYBOARD: bool,
     pub BACKGROUND_DIM: f64,
     pub LABEL_COLOR: [u8; 4],
-    pub BLACK_OPAQUE: [u8; 4],
     pub PLAYFIELD_BACKGROUND: [u8; 4],
     pub FPS: f64,
     pub ENABLE_HITSOUND: bool,
@@ -631,7 +627,6 @@ pub struct RenderManiaMp4StyleConfig {
     pub ENABLE_STORYBOARD: bool,
     pub BACKGROUND_DIM: f64,
     pub LABEL_COLOR: [u8; 4],
-    pub BLACK_OPAQUE: [u8; 4],
     pub FPS: i64,
     pub ENABLE_HITSOUND: bool,
     pub ENABLE_BEATMAP_HITSOUND: bool,
