@@ -4,7 +4,21 @@
 
 ---
 
-## [1.5.0] - 2026.10.18（预计）
+## [1.5.1] - 2026.10.18
+
+### Changed
+
+- CPU 与 WGPU 共用 Standard 渲染组装逻辑，统一 CLI 导出与 Web 预览的表现。
+- 移除四模式 MP4 中未使用的 `BLACK_OPAQUE` 及 Standard MP4 的 `CANVAS_BACKGROUND_COLOR` 配置项。
+
+### Fixed
+
+- 修复 Standard 回放预览的 HUD 未随输出缩放倍率调整的问题。
+- 修复 Standard 回放预览 Note 叠加错误的问题。
+
+---
+
+## [1.5.0] - 2026.10.18
 
 ### Added
 
