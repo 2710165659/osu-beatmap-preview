@@ -1,6 +1,7 @@
 //! 回放媒体导出：并行帧与音频共享不可变规则结果。
 mod font;
 mod gif;
+mod png;
 mod time_plan;
 use crate::{
     application::output_plan::RenderPlan,
@@ -16,6 +17,7 @@ use osu_beatmap_preview_core::{
     render::cpu::modes::standard::{context::*, osr},
     support::timeout::RequestDeadline,
 };
+pub(crate) use png::render_png;
 use std::{cell::RefCell, path::Path};
 
 #[allow(clippy::too_many_arguments)]

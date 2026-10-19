@@ -17,7 +17,7 @@ A standalone osu! beatmap and replay preview tool. Export beatmaps from all four
 ## Features
 
 - **Four beatmap modes**: osu!standard, osu!taiko, osu!catch, and osu!mania, with static overviews, segmented animations, and videos with music.
-- **Replay preview**: load local OSR files, online scores, or player scores to display cursor movement, input, judgements, and the score HUD. Export GIF/MP4 with the CLI or play interactively on the web.
+- **Replay preview**: load local OSR files, online scores, or player scores to display cursor movement, input, judgements, and the score HUD. Export PNG/GIF/MP4 with the CLI or play interactively on the web.
 - **Mods and conversion**: adjust difficulty, visibility, speed, and mode-specific settings. Convert Standard maps to Taiko, Catch, or Mania; see the [CLI Mod reference](../crates/osu-beatmap-preview-cli/README.md#mod-支持) for supported combinations.
 - **Media**: MP4 and web playback support backgrounds, background video, storyboards, and hitsounds, preferring samples supplied by the beatmap. Video and storyboards are disabled by default in the CLI and enabled by default in the web interface.
 - **Local and online files**: download by beatmap ID, load local OSU/OSZ files, or pair an external beatmap with its media archive. Replays validate the original beatmap bytes against the recorded MD5.
@@ -37,7 +37,7 @@ osu-beatmap-preview-cli --osz-file=map.osz --bid=738063 --fmt=mp4
 osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osz-file=map.osz
 ```
 
-Beatmap defaults are GIF for Standard and PNG for other modes. Replay export defaults to MP4 and requires a matching complete archive; replay GIF needs matching OSU and OSR files. Successful requests return JSON on stdout, with the absolute output path in `preview-img`.
+Beatmap defaults are GIF for Standard and PNG for other modes. Replay export defaults to MP4 and requires a matching complete archive; replay PNG/GIF needs matching OSU and OSR files. Successful requests return JSON on stdout, with the absolute output path in `preview-img`.
 
 See the [CLI guide](../crates/osu-beatmap-preview-cli/README.md) for parameters, segment selection, Mods, and configuration.
 

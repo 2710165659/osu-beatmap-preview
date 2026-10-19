@@ -17,7 +17,7 @@
 ## 功能
 
 - **四模式谱面预览**：支持 osu!standard、osu!taiko、osu!catch、osu!mania，分别提供静态概览、分段动图和带音乐的视频。
-- **回放预览**：读取本地 `.osr`、在线成绩或玩家成绩，还原光标、按键、判定与成绩 HUD；CLI 支持 GIF/MP4，Web 支持实时播放与跳转。
+- **回放预览**：读取本地 `.osr`、在线成绩或玩家成绩，还原光标、按键、判定与成绩 HUD；CLI 支持 PNG/GIF/MP4，Web 支持实时播放与跳转。
 - **Mod 与转谱**：支持难度、可见性、速度及模式专属 Mod；Standard 可转为 Taiko、Catch 或 Mania，具体范围见 [CLI 文档](crates/osu-beatmap-preview-cli/README.md#mod-支持)。
 - **音画合成**：MP4 与 Web 支持背景图、背景视频、故事板和打击音，优先使用谱面自带音效。背景视频与故事板在 CLI 默认关闭，在 Web 页面默认开启。
 - **本地与在线资源**：支持按谱面 ID 下载，或读取本地 `.osu`、`.osz`；外部谱面可搭配媒体包使用，回放按原始谱面的 MD5 校验。

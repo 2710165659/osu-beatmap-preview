@@ -85,8 +85,8 @@ fn resolve_resources(
             Ok::<_, PreviewError>((PathBuf::from(path), bytes))
         })
         .transpose()?;
-    // GIF 只消费谱面与回放；即使传入 OSZ，也不读取包或检查歌曲，避免触发媒体下载。
-    if request.output.format.as_deref() == Some("gif") {
+    // PNG/GIF 只消费谱面与回放；即使传入 OSZ，也不读取包或检查歌曲，避免触发媒体下载。
+    if matches!(request.output.format.as_deref(), Some("png" | "gif")) {
         let (path, bytes) = match external {
             Some(local) => local,
             None => {

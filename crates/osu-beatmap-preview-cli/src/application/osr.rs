@@ -64,10 +64,10 @@ fn execute_inner(
 ) -> Result<serde_json::Value> {
     let format = request.output.format.clone().expect("回放输出格式已补齐");
     let config = crate::config::current();
-    let timeout = if format == "gif" {
-        config.timeout.GIF_TIMEOUT
-    } else {
-        config.timeout.MP4_TIMEOUT
+    let timeout = match format.as_str() {
+        "png" => config.timeout.PNG_TIMEOUT,
+        "gif" => config.timeout.GIF_TIMEOUT,
+        _ => config.timeout.MP4_TIMEOUT,
     };
     let deadline = RequestDeadline::new(started, &format, timeout);
     let cache_root = crate::config::resolve_path(&config.paths.CACHE_DIR);
@@ -142,12 +142,16 @@ fn execute_inner(
         );
         // 失败也记录已经花费的渲染时间；错误事件和汇总统一交由外层写入。
         let rendered = (|| {
-            if plan.format == OutputFormat::Gif {
-                // GIF 在启动音频/背景任务之前分流，整个流程只依赖 OSU 和 OSR。
+            if plan.format != OutputFormat::Mp4 {
+                // PNG/GIF 在启动音频/背景任务之前分流，只依赖 OSU 和 OSR。
                 osu_beatmap_preview_core::config::with_config(
                     crate::config::core_config(),
                     || {
-                        crate::export::standard::osr::render_gif(
+                        let render = match plan.format {
+                            OutputFormat::Png => crate::export::standard::osr::render_png,
+                            _ => crate::export::standard::osr::render_gif,
+                        };
+                        render(
                             &source.beatmap,
                             &prepared,
                             &gameplay,
@@ -225,6 +229,68 @@ mod tests {
     use super::*;
     use crate::application::request::{RenderRequest, ReplaySource, RequestKind};
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn replay_png_exports_snapshots_without_media_and_reuses_cache() {
+        let _guard = logging::test_guard();
+        let root = std::env::temp_dir().join(format!(
+            "osu-preview-replay-png-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut request = replay_request(&root);
+        request.output.format = Some("png".into());
+        request.output.fps = None;
+        request.view.duration_seconds = None;
+        // 填满全部行的选点，避免随机补点改变缓存键。
+        let config = &crate::config::current().render.standard.png;
+        request.view.time_points = (0..config.structure.ROW_COUNT)
+            .map(|row| {
+                osu_beatmap_preview_core::processing::validation::TimePoint::Seconds(
+                    row as f64 * 0.1,
+                )
+            })
+            .collect();
+        let result = execute(request.clone()).unwrap();
+        assert_eq!(result["replay-info"]["cache-hit"], false);
+        let path = PathBuf::from(result["preview-img"].as_str().unwrap());
+        assert_eq!(path.extension().unwrap(), "png");
+        let image = image::open(&path).unwrap().into_rgba8();
+        let (width, height) = crate::export::standard::context::png_canvas_size();
+        assert_eq!(
+            (image.width(), image.height()),
+            (width as u32, height as u32)
+        );
+        let x = config.sizing.PAGE_MARGIN_LEFT + config.sizing.INFO_MARGIN_LEFT;
+        let y = config.sizing.PAGE_MARGIN_TOP + config.sizing.INFO_MARGIN_TOP;
+        let layout = crate::export::standard::context::build_frame_layout(
+            crate::export::geometry::OutputFormat::Png,
+        );
+        let cell_width = layout.frame_width as u32;
+        let cell_height = layout.frame_height as u32;
+        let step = layout.frame_width
+            + config.sizing.INFO_MARGIN_LEFT
+            + config.sizing.INFO_MARGIN_RIGHT
+            + config.sizing.COLUMN_GAP;
+        let first = image::imageops::crop_imm(&image, x as u32, y as u32, cell_width, cell_height)
+            .to_image();
+        let second =
+            image::imageops::crop_imm(&image, (x + step) as u32, y as u32, cell_width, cell_height)
+                .to_image();
+        assert_ne!(first, second);
+        let cached = execute(request).unwrap();
+        assert_eq!(cached["replay-info"]["cache-hit"], true);
+        assert_eq!(cached["preview-img"], result["preview-img"]);
+        let root = root.canonicalize().unwrap();
+        assert_eq!(
+            root.parent().unwrap(),
+            std::env::temp_dir().canonicalize().unwrap()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn replay_logs_render_cache_bypass_and_failures_once_per_request() {

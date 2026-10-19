@@ -38,16 +38,6 @@ pub(super) fn validate(request: &RenderRequest) -> Result<()> {
             "OSR rejects --convert and user --mod (including NM); --bid 仅用于玩家查询",
         ));
     }
-    if request
-        .output
-        .format
-        .as_deref()
-        .is_some_and(|fmt| !matches!(fmt, "gif" | "mp4"))
-    {
-        return Err(PreviewError::new(
-            "OSR output supports only GIF/MP4; PNG is not allowed",
-        ));
-    }
     for (file, extension) in [
         (&request.source.osu_file, "osu"),
         (&request.source.osz_file, "osz"),
@@ -89,6 +79,8 @@ mod tests {
         assert!(request.clone().validate().is_err());
         request.ruleset.convert = None;
         request.output.format = Some("png".into());
+        request.clone().validate().unwrap();
+        request.output.format = Some("invalid".into());
         assert!(request.validate().is_err());
     }
 

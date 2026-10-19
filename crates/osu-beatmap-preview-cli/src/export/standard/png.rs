@@ -29,6 +29,29 @@ pub(crate) fn render_standard_png(
         time_axis,
         crate::export::geometry::OutputFormat::Png,
     );
+    render_grid(
+        beatmap,
+        &context,
+        time_axis,
+        times_ms,
+        deadline,
+        |cache, time, breaks, visible| render_frame(&context, cache, time, breaks, visible, None),
+    )
+}
+
+pub(super) fn render_grid(
+    beatmap: &Beatmap,
+    context: &RenderContext,
+    time_axis: TimeAxis,
+    times_ms: PreviewTimeSelection,
+    deadline: &RequestDeadline,
+    mut draw: impl FnMut(
+        &mut RenderCache,
+        i64,
+        &[osu_beatmap_preview_core::model::BreakPeriod],
+        &[usize],
+    ) -> Img,
+) -> Result<Img> {
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
@@ -118,13 +141,11 @@ pub(crate) fn render_standard_png(
             } else {
                 &empty_breaks
             };
-            let frame = render_frame(
-                &context,
+            let frame = draw(
                 &mut cache,
                 snapshot_time,
                 breaks,
                 &visible_groups[image_index],
-                None,
             );
             canvas.alpha_composite(&frame, x, y);
             let note = if image_index == 0 && row_timing.is_preview {

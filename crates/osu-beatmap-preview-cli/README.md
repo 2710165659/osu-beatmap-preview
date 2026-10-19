@@ -2,7 +2,7 @@
 
 [项目首页](../../README.md) | [Web 站点说明](../osu-beatmap-preview-web/README.md) | [WASM 使用说明](../osu-beatmap-preview-wasm/README.md)
 
-CLI 将四模式谱面导出为 PNG、GIF 或带音频的 MP4，并支持回放的 GIF/MP4 导出。运行时无需 FFmpeg、额外动态库或外部皮肤。
+CLI 将四模式谱面导出为 PNG、GIF 或带音频的 MP4，并支持回放的 PNG/GIF/MP4 导出。运行时无需 FFmpeg、额外动态库或外部皮肤。
 
 ## 获取与快速开始
 
@@ -54,7 +54,7 @@ osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osz-file=map.osz
 | `--mode=osu\|taiko\|fruits\|mania` | 仅玩家查询；指定谱面时省略默认 `osu`，无谱面时由官方使用玩家默认模式 |
 | `--include-fails` | 最近成绩查询包含失败成绩；默认排除，指定谱面时需搭配 `--score-select=recent` |
 | `--convert=<模式>` | `standard` / `std`、`taiko`、`ctb`、`mania`；只有 Standard 可转其他模式，同模式视为无操作 |
-| `--fmt=png\|gif\|mp4` | 谱面默认 Standard 为 GIF、其他为 PNG；回放默认 MP4，仅支持 GIF/MP4 |
+| `--fmt=png\|gif\|mp4` | 谱面默认 Standard 为 GIF、其他为 PNG；回放默认 MP4，支持 PNG/GIF/MP4 |
 | `--mod=<Mod>` | 缩写或全名，不区分大小写；全名空格写成短横杠，如 `hard-rock` |
 | `--time-points=<秒数或preview>` | 片段起点；GIF、Standard PNG 可重复，MP4 与其他模式 PNG 最多一个 |
 | `--duration-time=<秒数>` | GIF 每段时长、MP4 时长或区间段 PNG 时长；必须为有限正数 |
@@ -120,9 +120,9 @@ osu-beatmap-preview-cli --type=osr --user="玩家名" --mode=osu --include-fails
 
 ### 输出与兼容性
 
-- **GIF**：只使用 `.osu` 与 `.osr`，不读取或下载 OSZ，不加载音频、背景、视频或故事板。默认 2×2 同时播放不同片段，布局、选段、标签、时长、FPS 和缩放使用 `render.standard.gif` 配置。
+- **PNG/GIF**：只使用 `.osu` 与 `.osr`，不读取或下载 OSZ，不加载音频、背景、视频或故事板。PNG 使用 `render.standard.png` 的快照网格、选段、标签和缩放配置，每格显示对应时刻的回放与 HUD；GIF 默认 2×2 同时播放不同片段，使用 `render.standard.gif` 配置。
 - **MP4**：使用完整 OSZ 加载音乐、背景与音效，画面与音频开关使用 `render.standard.mp4` 配置。缺少资源时自动查谱下载。
-- **谱面匹配**：按回放记录的原始 `.osu` 字节 MD5 校验；同时提供外部谱面与媒体包时，两份谱面都必须匹配。
+- **谱面匹配**：按回放记录的原始 `.osu` 字节 MD5 校验；MP4 同时提供外部谱面与媒体包时，两份谱面都必须匹配。
 - **Mod**：使用回放文件中的 Mod，不接受 `--convert` 或 `--mod`。
 - **兼容性**：支持 stable、lazer、tachyon 回放；成绩按当前游戏规则重算，可能与历史记录不同。
 - **提前结束**：输入提前结束时显示失败，冻结成绩与光标，清空按键并停止玩家音效；MP4 中背景、谱面和音乐继续播放。
@@ -138,7 +138,7 @@ download:
     OSU_CLIENT_SECRET: "你的 Client Secret"
 ```
 
-本地 GIF 的 OSU + OSR、或本地 MP4 的完整 OSZ + OSR 匹配齐全时无需认证。认证配置不参与输出目录 hash，也不会写入输出目录的配置差异文件。回放字体与提示音已内嵌，许可见 [第三方声明](../../docs/THIRD_PARTY_NOTICES.md)。
+本地 PNG/GIF 的 OSU + OSR、或本地 MP4 的完整 OSZ + OSR 匹配齐全时无需认证。认证配置不参与输出目录 hash，也不会写入输出目录的配置差异文件。回放字体与提示音已内嵌，许可见 [第三方声明](../../docs/THIRD_PARTY_NOTICES.md)。
 
 ## 输出格式与选段
 
