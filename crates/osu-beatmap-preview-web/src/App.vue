@@ -11,6 +11,7 @@ import {
   clearLocalFile,
   clearReplayFile,
   cancelArrowHold,
+  checkWebGpu,
   loadPreview,
   pressArrowKey,
   readDeepLink,
@@ -75,6 +76,7 @@ function openLocation() {
 }
 
 onMounted(() => {
+  checkWebGpu();
   document.addEventListener('keydown', onKeydown);
   document.addEventListener('keyup', onKeyup);
   window.addEventListener('blur', cancelArrowHold);

@@ -18,9 +18,19 @@
 </head>
 <body>
 <h1>WebGPU 自检</h1>
-<p class="hint">这个页面不加载 wasm，只用浏览器原生 API 检查 WebGPU 是否可用。把结果截图发回即可定位问题。</p>
+<p class="hint">这个页面不加载 wasm，只用浏览器原生 API 检查 WebGPU 是否可用。检查结果可帮助定位失败阶段。</p>
 <dl id="report"></dl>
-<p class="hint"><a href="/">返回播放器</a></p>
+<section>
+  <h2>没有可用适配器时怎么排查？</h2>
+  <p>WebGPU 可以使用受支持的核显，不要求独显；high-performance 只是选择偏好。是否可用取决于浏览器、操作系统、显卡型号和驱动。手机上不同浏览器的支持情况也可能不同，版本号本身不保证可用。</p>
+  <ol>
+    <li>Edge：打开设置 → 系统和性能，启用“使用图形加速（如果可用）”，然后重启浏览器。</li>
+    <li>在 Edge 地址栏输入 <code>edge://gpu</code>（Chrome 使用 <code>chrome://gpu</code>），查看 Graphics Feature Status 中的 WebGPU，以及 Problems Detected 和 Driver Information。浏览器限制网页直接打开这些内部地址，请复制到地址栏。</li>
+    <li>更新浏览器和显卡驱动。远程桌面、虚拟机、组织策略或浏览器兼容性屏蔽也可能影响可用性，需结合上述诊断信息判断。</li>
+  </ol>
+  <p>存在 navigator.gpu 或成功创建 canvas 上下文，仅表示 API 已暴露；还必须取得适配器并成功创建设备。软件回退并非所有浏览器都提供。</p>
+</section>
+<p class="hint"><a href="./">返回播放器</a></p>
 <script>
 const report = document.getElementById('report');
 
@@ -40,13 +50,17 @@ async function run() {
     navigator.gpu ? 'ok' : 'bad');
 
   if (!navigator.gpu) {
-    add('结论', '浏览器没有暴露 WebGPU。请使用 Chrome 121+（Android 12 以上）或 Safari 26+，并确认不是应用内浏览器。', 'bad');
+    add('结论', window.isSecureContext
+      ? '浏览器没有暴露 WebGPU。请检查浏览器支持、图形加速设置及组织策略。'
+      : '当前页面不是安全上下文，请通过 HTTPS 或 localhost 访问。', 'bad');
     return;
   }
 
+  let adapter;
   try {
     const hardware = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
     if (hardware) {
+      adapter = hardware;
       const info = hardware.info ?? {};
       add('硬件适配器', [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(' / ') || '已取得', 'ok');
       add('适配器特性数量', String([...(hardware.features ?? [])].length));
@@ -58,10 +72,23 @@ async function run() {
   }
 
   try {
-    const fallback = await navigator.gpu.requestAdapter({ forceFallbackAdapter: true });
+    const fallback = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance', forceFallbackAdapter: true });
+    adapter ??= fallback;
     add('回退适配器（CPU）', fallback ? '可用' : '不可用', fallback ? 'ok' : 'warn');
   } catch (error) {
     add('回退适配器（CPU）', `请求失败：${error.message}`, 'bad');
+  }
+
+  if (adapter) {
+    try {
+      const device = await adapter.requestDevice();
+      device.destroy();
+      add('创建设备', '成功', 'ok');
+    } catch (error) {
+      add('创建设备', `失败：${error.message}`, 'bad');
+    }
+  } else {
+    add('结论', 'WebGPU API 已暴露，但没有可用适配器。请按下方指引检查浏览器图形加速与驱动；仅凭本页无法确定具体原因。', 'bad');
   }
 
   const canvas = document.createElement('canvas');

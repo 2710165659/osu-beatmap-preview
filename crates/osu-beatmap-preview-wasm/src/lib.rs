@@ -223,7 +223,7 @@ impl WebGpuSession {
                     .map_err(|fallback_error| {
                         JsValue::from_str(&format!(
                             "没有可用的 WebGPU 适配器（硬件：{hardware_error}；回退：{fallback_error}）。\
-                             请确认浏览器支持 WebGPU（Android Chrome 121+、iOS Safari 26+），\
+                             请检查浏览器图形加速、显卡驱动及 WebGPU 支持，\
                              并打开 /gpu-check.html 查看具体原因。"
                         ))
                     })?

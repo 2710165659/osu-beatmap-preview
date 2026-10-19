@@ -15,6 +15,7 @@ import { createReplayInput, resolveReplaySource, lookupReplayBeatmap } from './r
 import { createAudioContext, createAudioOutput } from './hitsound.js';
 import { createLocalInputs, resolveBeatmapSource } from './beatmap/load.js';
 import { readPreviewLink, previewPath } from './navigation.js';
+import { checkWebGpuAvailability } from './webgpu.js';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -243,10 +244,24 @@ export const state = reactive({
    * ready 进播放页（`.osz` 的解包与解码在 WASM 内完成）。
    */
   progress: { phase: 'idle', received: 0, total: 0, message: '', speed: 0, eta: null },
-  gpuAvailable: typeof navigator !== 'undefined' && Boolean(navigator.gpu),
-  /** 安全上下文（https / localhost）。WebGPU 只在这里可用，用它区分两种失败原因。 */
-  secureContext: typeof window === 'undefined' || window.isSecureContext !== false,
+  gpuStatus: 'checking',
+  gpuError: '',
 });
+
+export const GPU_CHECK_URL = `${import.meta.env.BASE_URL}gpu-check.html`;
+let gpuCheckPromise = null;
+
+/** 首次挂载与加载入口共享探测；失败后可由用户手动重试。 */
+export function checkWebGpu() {
+  if (gpuCheckPromise) return gpuCheckPromise;
+  state.gpuStatus = 'checking';
+  gpuCheckPromise = checkWebGpuAvailability().then((error) => {
+    state.gpuError = error;
+    state.gpuStatus = error ? 'unavailable' : 'ready';
+    return !error;
+  }).finally(() => { gpuCheckPromise = null; });
+  return gpuCheckPromise;
+}
 
 /** 加载阶段的文案；未知阶段一律显示「正在加载」。 */
 const PROGRESS_LABELS = {
@@ -970,6 +985,10 @@ export async function loadPreview() {
   state.hitsoundStatus = '';
   let pendingAudioContext = null;
   try {
+    if (state.gpuStatus !== 'ready') {
+      const available = await checkWebGpu();
+      if (token !== loadToken || !available) return;
+    }
     const wasm = await loadWasm();
     if (token !== loadToken) return;
 

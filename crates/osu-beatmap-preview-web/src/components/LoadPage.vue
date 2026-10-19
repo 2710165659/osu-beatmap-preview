@@ -5,6 +5,7 @@ import ReplayInput from './ReplayInput.vue';
 import {
   CONVERT_MODES, clearLocalFile, loadPreview, progressDetail, progressLabel,
   progressPercent, selectLocalFile, setPreviewType, state, replayRequested,
+  checkWebGpu, GPU_CHECK_URL,
 } from '../preview.js';
 
 const errors = reactive({ osu: '', osz: '' });
@@ -55,6 +56,18 @@ function removeFile(kind) {
           class="rounded-md px-3 py-2.5 text-sm font-bold transition-colors disabled:opacity-60"
           :class="state.previewType === item.type ? 'bg-[#ff5f45] text-white' : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'"
           @click="setPreviewType(item.type)">{{ item.label }}</button>
+      </div>
+
+      <div v-if="state.gpuStatus !== 'ready'" role="status" aria-live="polite"
+        class="mb-6 rounded-md border border-amber-700/60 bg-amber-950/40 p-3 text-xs leading-relaxed text-amber-300">
+        <template v-if="state.gpuStatus === 'checking'">正在检查 WebGPU 适配器与设备…</template>
+        <template v-else>
+          <p class="m-0">{{ state.gpuError }}</p>
+          <div class="mt-2 flex flex-wrap items-center gap-4">
+            <a class="underline" :href="GPU_CHECK_URL" target="_blank" rel="noreferrer">打开 WebGPU 自检</a>
+            <button type="button" class="underline" @click="checkWebGpu()">重新检测</button>
+          </div>
+        </template>
       </div>
 
       <form class="grid gap-4" @submit.prevent="loadPreview()">
@@ -118,7 +131,7 @@ function removeFile(kind) {
 
         <button
           type="submit"
-          :disabled="state.loading || state.replaySelecting || state.localOsuSelecting || state.localOszSelecting"
+          :disabled="state.gpuStatus !== 'ready' || state.loading || state.replaySelecting || state.localOsuSelecting || state.localOszSelecting"
           class="h-11 rounded-md bg-[#ff5f45] font-bold text-white transition hover:brightness-105 disabled:opacity-60"
         >
           {{ state.loading ? '加载中...' : '加载预览' }}
@@ -146,28 +159,12 @@ function removeFile(kind) {
         </div>
       </div>
 
-      <p
-        v-if="!state.gpuAvailable"
-        class="mt-5 rounded-md border border-amber-700/60 bg-amber-950/40 p-3 text-xs leading-relaxed text-amber-300"
-      >
-        <template v-if="!state.secureContext">
-          当前页面不是安全上下文（<code>http://</code> 加 IP 或域名），浏览器不会暴露
-          <code>navigator.gpu</code>，所以无法渲染。WebGPU 只允许
-          <code>https://</code>、<code>localhost</code> 和 <code>127.0.0.1</code>，
-          请改用 <code>https://</code> 访问本站（自签证书点“继续访问”也可以）。
-        </template>
-        <template v-else>
-          当前浏览器没有可用的 WebGPU（<code>navigator.gpu</code> 为空），页面无法渲染。
-        </template>
-        可以打开
-        <a class="underline" href="/gpu-check.html" target="_blank" rel="noreferrer">/gpu-check.html</a>
-        查看具体原因。
-      </p>
-
       <pre
         v-if="state.loadLogs.length"
         class="mt-5 max-h-32 overflow-auto font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-[#ff9d8a]"
       >{{ state.loadLogs.join('\n') }}</pre>
+      <a v-if="state.loadLogs.length" class="mt-2 inline-block text-xs text-amber-300 underline"
+        :href="GPU_CHECK_URL" target="_blank" rel="noreferrer">打开 WebGPU 自检</a>
     </div>
   </section>
 </template>
