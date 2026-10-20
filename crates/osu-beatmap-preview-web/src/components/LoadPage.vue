@@ -58,16 +58,13 @@ function removeFile(kind) {
           @click="setPreviewType(item.type)">{{ item.label }}</button>
       </div>
 
-      <div v-if="state.gpuStatus !== 'ready'" role="status" aria-live="polite"
+      <div v-if="state.gpuStatus === 'unavailable'" role="status" aria-live="polite"
         class="mb-6 rounded-md border border-amber-700/60 bg-amber-950/40 p-3 text-xs leading-relaxed text-amber-300">
-        <template v-if="state.gpuStatus === 'checking'">正在检查 WebGPU 适配器与设备…</template>
-        <template v-else>
-          <p class="m-0">{{ state.gpuError }}</p>
-          <div class="mt-2 flex flex-wrap items-center gap-4">
-            <a class="underline" :href="GPU_CHECK_URL" target="_blank" rel="noreferrer">打开 WebGPU 自检</a>
-            <button type="button" class="underline" @click="checkWebGpu()">重新检测</button>
-          </div>
-        </template>
+        <p class="m-0">{{ state.gpuError }}</p>
+        <div class="mt-2 flex flex-wrap items-center gap-4">
+          <a class="underline" :href="GPU_CHECK_URL" target="_blank" rel="noreferrer">打开 WebGPU 自检</a>
+          <button type="button" class="underline" @click="checkWebGpu()">重新检测</button>
+        </div>
       </div>
 
       <form class="grid gap-4" @submit.prevent="loadPreview()">
@@ -163,8 +160,6 @@ function removeFile(kind) {
         v-if="state.loadLogs.length"
         class="mt-5 max-h-32 overflow-auto font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-[#ff9d8a]"
       >{{ state.loadLogs.join('\n') }}</pre>
-      <a v-if="state.loadLogs.length" class="mt-2 inline-block text-xs text-amber-300 underline"
-        :href="GPU_CHECK_URL" target="_blank" rel="noreferrer">打开 WebGPU 自检</a>
     </div>
   </section>
 </template>
