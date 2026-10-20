@@ -90,3 +90,181 @@ pub use cache::*;
 pub use rules::*;
 pub use sizing::*;
 pub use style::*;
+
+/// PNG 固定排版与样式；尺寸按当前格式的倍率换算。
+#[allow(non_snake_case)]
+pub mod png {
+    #[derive(Clone, Copy)]
+    pub struct Sizing {
+        pub PAGE_MARGIN_TOP: i64,
+        pub PAGE_MARGIN_RIGHT: i64,
+        pub PAGE_MARGIN_BOTTOM: i64,
+        pub PAGE_MARGIN_LEFT: i64,
+        pub INFO_MARGIN_TOP: i64,
+        pub INFO_MARGIN_RIGHT: i64,
+        pub INFO_MARGIN_BOTTOM: i64,
+        pub INFO_MARGIN_LEFT: i64,
+        pub COLUMN_GAP: i64,
+        pub ROW_GAP: i64,
+        pub TIME_LABEL_FONT_SIZE: u32,
+        pub TIME_LABEL_NOTE_FONT_SIZE: u32,
+        pub TIME_LABEL_TOP_GAP: i64,
+        pub TIME_LABEL_NOTE_TOP_GAP: i64,
+    }
+
+    pub const SIZING: Sizing = Sizing {
+        PAGE_MARGIN_TOP: 20,
+        PAGE_MARGIN_RIGHT: 20,
+        PAGE_MARGIN_BOTTOM: 20,
+        PAGE_MARGIN_LEFT: 20,
+        INFO_MARGIN_TOP: 0,
+        INFO_MARGIN_RIGHT: 0,
+        INFO_MARGIN_BOTTOM: 84,
+        INFO_MARGIN_LEFT: 0,
+        COLUMN_GAP: 20,
+        ROW_GAP: 100,
+        TIME_LABEL_FONT_SIZE: 30,
+        TIME_LABEL_NOTE_FONT_SIZE: 22,
+        TIME_LABEL_TOP_GAP: 8,
+        TIME_LABEL_NOTE_TOP_GAP: 9,
+    };
+
+    pub fn sizing() -> Sizing {
+        use crate::render::geometry::{output_scale, scale_px, GameMode, OutputFormat};
+        let scale = output_scale(GameMode::Standard, OutputFormat::Png);
+        Sizing {
+            PAGE_MARGIN_TOP: scale_px(SIZING.PAGE_MARGIN_TOP as f64, scale),
+            PAGE_MARGIN_RIGHT: scale_px(SIZING.PAGE_MARGIN_RIGHT as f64, scale),
+            PAGE_MARGIN_BOTTOM: scale_px(SIZING.PAGE_MARGIN_BOTTOM as f64, scale),
+            PAGE_MARGIN_LEFT: scale_px(SIZING.PAGE_MARGIN_LEFT as f64, scale),
+            INFO_MARGIN_TOP: scale_px(SIZING.INFO_MARGIN_TOP as f64, scale),
+            INFO_MARGIN_RIGHT: scale_px(SIZING.INFO_MARGIN_RIGHT as f64, scale),
+            INFO_MARGIN_BOTTOM: scale_px(SIZING.INFO_MARGIN_BOTTOM as f64, scale),
+            INFO_MARGIN_LEFT: scale_px(SIZING.INFO_MARGIN_LEFT as f64, scale),
+            COLUMN_GAP: scale_px(SIZING.COLUMN_GAP as f64, scale),
+            ROW_GAP: scale_px(SIZING.ROW_GAP as f64, scale),
+            TIME_LABEL_FONT_SIZE: crate::render::text::scaled_bitmap_font_height(
+                SIZING.TIME_LABEL_FONT_SIZE,
+                scale,
+            ),
+            TIME_LABEL_NOTE_FONT_SIZE: crate::render::text::scaled_bitmap_font_height(
+                SIZING.TIME_LABEL_NOTE_FONT_SIZE,
+                scale,
+            ),
+            TIME_LABEL_TOP_GAP: scale_px(SIZING.TIME_LABEL_TOP_GAP as f64, scale),
+            TIME_LABEL_NOTE_TOP_GAP: scale_px(SIZING.TIME_LABEL_NOTE_TOP_GAP as f64, scale),
+        }
+    }
+
+    pub mod style {
+        pub const CANVAS_BACKGROUND_COLOR: [u8; 4] = [0, 0, 0, 255];
+        pub const IMAGE_BACKGROUND_COLOR: [u8; 4] = [0, 0, 0, 255];
+        pub const TIME_LABEL_COLOR: [u8; 4] = [232, 232, 232, 255];
+        pub const TIME_LABEL_NOTE_COLOR: [u8; 4] = [170, 170, 170, 255];
+        pub const PREVIEW_TIME_LABEL_COLOR: [u8; 4] = [95, 221, 108, 255];
+    }
+}
+
+/// GIF 固定排版与样式；尺寸按当前格式的倍率换算。
+#[allow(non_snake_case)]
+pub mod gif {
+    #[derive(Clone, Copy)]
+    pub struct Sizing {
+        pub GRID_GAP: i64,
+        pub PAGE_MARGIN_TOP: i64,
+        pub PAGE_MARGIN_RIGHT: i64,
+        pub PAGE_MARGIN_BOTTOM: i64,
+        pub PAGE_MARGIN_LEFT: i64,
+        pub INFO_MARGIN_TOP: i64,
+        pub INFO_MARGIN_RIGHT: i64,
+        pub INFO_MARGIN_BOTTOM: i64,
+        pub INFO_MARGIN_LEFT: i64,
+        pub TIME_LABEL_FONT_SIZE: u32,
+        pub TIME_LABEL_NOTE_FONT_SIZE: u32,
+        pub TIME_LABEL_TOP_GAP: i64,
+        pub TIME_LABEL_NOTE_TOP_GAP: i64,
+    }
+
+    pub const SIZING: Sizing = Sizing {
+        GRID_GAP: 20,
+        PAGE_MARGIN_TOP: 20,
+        PAGE_MARGIN_RIGHT: 20,
+        PAGE_MARGIN_BOTTOM: 20,
+        PAGE_MARGIN_LEFT: 20,
+        INFO_MARGIN_TOP: 0,
+        INFO_MARGIN_RIGHT: 0,
+        INFO_MARGIN_BOTTOM: 84,
+        INFO_MARGIN_LEFT: 0,
+        TIME_LABEL_FONT_SIZE: 30,
+        TIME_LABEL_NOTE_FONT_SIZE: 22,
+        TIME_LABEL_TOP_GAP: 8,
+        TIME_LABEL_NOTE_TOP_GAP: 9,
+    };
+
+    pub fn sizing() -> Sizing {
+        use crate::render::geometry::{output_scale, scale_px, GameMode, OutputFormat};
+        let scale = output_scale(GameMode::Standard, OutputFormat::Gif);
+        Sizing {
+            GRID_GAP: scale_px(SIZING.GRID_GAP as f64, scale),
+            PAGE_MARGIN_TOP: scale_px(SIZING.PAGE_MARGIN_TOP as f64, scale),
+            PAGE_MARGIN_RIGHT: scale_px(SIZING.PAGE_MARGIN_RIGHT as f64, scale),
+            PAGE_MARGIN_BOTTOM: scale_px(SIZING.PAGE_MARGIN_BOTTOM as f64, scale),
+            PAGE_MARGIN_LEFT: scale_px(SIZING.PAGE_MARGIN_LEFT as f64, scale),
+            INFO_MARGIN_TOP: scale_px(SIZING.INFO_MARGIN_TOP as f64, scale),
+            INFO_MARGIN_RIGHT: scale_px(SIZING.INFO_MARGIN_RIGHT as f64, scale),
+            INFO_MARGIN_BOTTOM: scale_px(SIZING.INFO_MARGIN_BOTTOM as f64, scale),
+            INFO_MARGIN_LEFT: scale_px(SIZING.INFO_MARGIN_LEFT as f64, scale),
+            TIME_LABEL_FONT_SIZE: crate::render::text::scaled_bitmap_font_height(
+                SIZING.TIME_LABEL_FONT_SIZE,
+                scale,
+            ),
+            TIME_LABEL_NOTE_FONT_SIZE: crate::render::text::scaled_bitmap_font_height(
+                SIZING.TIME_LABEL_NOTE_FONT_SIZE,
+                scale,
+            ),
+            TIME_LABEL_TOP_GAP: scale_px(SIZING.TIME_LABEL_TOP_GAP as f64, scale),
+            TIME_LABEL_NOTE_TOP_GAP: scale_px(SIZING.TIME_LABEL_NOTE_TOP_GAP as f64, scale),
+        }
+    }
+
+    pub mod style {
+        pub const SHOW_TIME_LABEL: bool = true;
+        pub const CANVAS_BACKGROUND_COLOR: [u8; 4] = [0, 0, 0, 255];
+        pub const IMAGE_BACKGROUND_COLOR: [u8; 4] = [0, 0, 0, 255];
+        pub const TIME_LABEL_COLOR: [u8; 4] = [232, 232, 232, 255];
+        pub const TIME_LABEL_NOTE_COLOR: [u8; 4] = [170, 170, 170, 255];
+        pub const PREVIEW_TIME_LABEL_COLOR: [u8; 4] = [95, 221, 108, 255];
+    }
+}
+
+/// MP4 固定排版与样式；尺寸按当前格式的倍率换算。
+#[allow(non_snake_case)]
+pub mod mp4 {
+    #[derive(Clone, Copy)]
+    pub struct Sizing {
+        pub LABEL_FONT_SIZE: u32,
+        pub LABEL_PAD: i64,
+    }
+
+    pub const SIZING: Sizing = Sizing {
+        LABEL_FONT_SIZE: 24,
+        LABEL_PAD: 12,
+    };
+
+    pub fn sizing() -> Sizing {
+        use crate::render::geometry::{output_scale, scale_px, GameMode, OutputFormat};
+        let scale = output_scale(GameMode::Standard, OutputFormat::Mp4);
+        Sizing {
+            LABEL_FONT_SIZE: crate::render::text::scaled_bitmap_font_height(
+                SIZING.LABEL_FONT_SIZE,
+                scale,
+            ),
+            LABEL_PAD: scale_px(SIZING.LABEL_PAD as f64, scale),
+        }
+    }
+
+    pub mod style {
+        pub const LABEL_COLOR: [u8; 4] = [232, 232, 232, 255];
+        pub const IMAGE_BACKGROUND_COLOR: [u8; 4] = [0, 0, 0, 255];
+    }
+}

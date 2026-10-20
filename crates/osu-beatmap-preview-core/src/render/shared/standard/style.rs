@@ -1,5 +1,7 @@
 //! 准备阶段解析当前格式的绘制样式，逐帧不再依赖调用线程的配置作用域。
 
+use crate::render::cpu::modes::standard::constants as standard_constants;
+
 use crate::render::geometry::OutputFormat;
 
 #[derive(Clone, Copy)]
@@ -14,15 +16,15 @@ impl StandardRenderStyle {
         let standard = &config.render.standard;
         let (background_color, slider_supersample) = match format {
             OutputFormat::Png => (
-                standard.png.style.IMAGE_BACKGROUND_COLOR,
+                standard_constants::png::style::IMAGE_BACKGROUND_COLOR,
                 standard.png.style.SLIDER_BODY_SUPERSAMPLE,
             ),
             OutputFormat::Gif => (
-                standard.gif.style.IMAGE_BACKGROUND_COLOR,
+                standard_constants::gif::style::IMAGE_BACKGROUND_COLOR,
                 standard.gif.style.SLIDER_BODY_SUPERSAMPLE,
             ),
             // 视频没有独立超采样配置，保留默认 2 倍，不借用 PNG 的独立设置。
-            OutputFormat::Mp4 => (standard.mp4.style.IMAGE_BACKGROUND_COLOR, 2),
+            OutputFormat::Mp4 => (standard_constants::mp4::style::IMAGE_BACKGROUND_COLOR, 2),
         };
         Self {
             background_color,

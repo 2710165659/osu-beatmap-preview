@@ -1,5 +1,7 @@
 //! osu!mania PNG 静态图导出：计算布局、准备对象，交给 core 绘制后保存。
 
+use osu_beatmap_preview_core::render::cpu::modes::mania::constants as mania_constants;
+
 use crate::export::segment::{resolve_png_window, PngSegment, PngWindow};
 use crate::media::image::save_png;
 use osu_beatmap_preview_core::model::mods::ModSettings;
@@ -149,6 +151,7 @@ fn build_png_layout(
     chart_end_time: i64,
     chart_start_time: i64,
 ) -> Result<ManiaPngLayout> {
+    let mania_png_sizing = mania_constants::png::sizing();
     let skin_config =
         super::skin::load_mania_skin_config(key_count, crate::export::geometry::OutputFormat::Png);
     let output_scale = crate::export::geometry::output_scale(
@@ -182,67 +185,20 @@ fn build_png_layout(
         output_scale,
     );
     let total_column_height = top_buffer + column_height;
-    let lane_area_width = skin_lane_area_width
-        + (key_count as i64 - 1) * crate::config::current().render.mania.png.sizing.LANE_GAP;
-    let column_width = crate::config::current()
-        .render
-        .mania
-        .png
-        .sizing
-        .LEFT_PANEL_WIDTH
-        + lane_area_width;
-    let image_width = crate::config::current()
-        .render
-        .mania
-        .png
-        .sizing
-        .PAGE_MARGIN_LEFT
-        + crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .PAGE_MARGIN_RIGHT
+    let lane_area_width = skin_lane_area_width + (key_count as i64 - 1) * mania_png_sizing.LANE_GAP;
+    let column_width = mania_png_sizing.LEFT_PANEL_WIDTH + lane_area_width;
+    let image_width = mania_png_sizing.PAGE_MARGIN_LEFT
+        + mania_png_sizing.PAGE_MARGIN_RIGHT
         + column_count
-            * (crate::config::current()
-                .render
-                .mania
-                .png
-                .sizing
-                .INFO_MARGIN_LEFT
+            * (mania_png_sizing.INFO_MARGIN_LEFT
                 + column_width
-                + crate::config::current()
-                    .render
-                    .mania
-                    .png
-                    .sizing
-                    .INFO_MARGIN_RIGHT)
-        + (column_count - 1) * crate::config::current().render.mania.png.sizing.COLUMN_GAP;
-    let image_height = crate::config::current()
-        .render
-        .mania
-        .png
-        .sizing
-        .PAGE_MARGIN_TOP
-        + crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .PAGE_MARGIN_BOTTOM
-        + crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .INFO_MARGIN_TOP
+                + mania_png_sizing.INFO_MARGIN_RIGHT)
+        + (column_count - 1) * mania_png_sizing.COLUMN_GAP;
+    let image_height = mania_png_sizing.PAGE_MARGIN_TOP
+        + mania_png_sizing.PAGE_MARGIN_BOTTOM
+        + mania_png_sizing.INFO_MARGIN_TOP
         + total_column_height
-        + crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .INFO_MARGIN_BOTTOM;
+        + mania_png_sizing.INFO_MARGIN_BOTTOM;
     Ok(ManiaPngLayout {
         column_count,
         time_per_column,
@@ -390,26 +346,11 @@ fn build_timing_lines(
                     TimingLine {
                         time: round_half_even(current),
                         color: if is_bar {
-                            crate::config::current()
-                                .render
-                                .mania
-                                .png
-                                .style
-                                .MEASURE_LINE_COLOR
+                            mania_constants::png::style::MEASURE_LINE_COLOR
                         } else if is_beat {
-                            crate::config::current()
-                                .render
-                                .mania
-                                .png
-                                .style
-                                .BEAT_LINE_COLOR
+                            mania_constants::png::style::BEAT_LINE_COLOR
                         } else {
-                            crate::config::current()
-                                .render
-                                .mania
-                                .png
-                                .style
-                                .SUBDIVISION_LINE
+                            mania_constants::png::style::SUBDIVISION_LINE
                         },
                         show_label: is_bar || is_beat,
                         bpm_label: None,

@@ -1,4 +1,5 @@
 //! OSR 应用服务：严格来源绑定、一次规则编译和只读媒体导出。
+
 use super::{
     artifact::ArtifactName,
     output_plan::{OutputFormat, RenderPlan},
@@ -226,6 +227,8 @@ fn execute_inner(
 
 #[cfg(test)]
 mod tests {
+    use osu_beatmap_preview_core::render::cpu::modes::standard::constants as standard_constants;
+
     use super::*;
     use crate::application::request::{RenderRequest, ReplaySource, RequestKind};
     use std::path::{Path, PathBuf};
@@ -264,17 +267,19 @@ mod tests {
             (image.width(), image.height()),
             (width as u32, height as u32)
         );
-        let x = config.sizing.PAGE_MARGIN_LEFT + config.sizing.INFO_MARGIN_LEFT;
-        let y = config.sizing.PAGE_MARGIN_TOP + config.sizing.INFO_MARGIN_TOP;
+        let x = standard_constants::png::sizing().PAGE_MARGIN_LEFT
+            + standard_constants::png::sizing().INFO_MARGIN_LEFT;
+        let y = standard_constants::png::sizing().PAGE_MARGIN_TOP
+            + standard_constants::png::sizing().INFO_MARGIN_TOP;
         let layout = crate::export::standard::context::build_frame_layout(
             crate::export::geometry::OutputFormat::Png,
         );
         let cell_width = layout.frame_width as u32;
         let cell_height = layout.frame_height as u32;
         let step = layout.frame_width
-            + config.sizing.INFO_MARGIN_LEFT
-            + config.sizing.INFO_MARGIN_RIGHT
-            + config.sizing.COLUMN_GAP;
+            + standard_constants::png::sizing().INFO_MARGIN_LEFT
+            + standard_constants::png::sizing().INFO_MARGIN_RIGHT
+            + standard_constants::png::sizing().COLUMN_GAP;
         let first = image::imageops::crop_imm(&image, x as u32, y as u32, cell_width, cell_height)
             .to_image();
         let second =

@@ -19,9 +19,7 @@ fn cpu_and_scene_keep_earlier_objects_on_top_in_every_format() {
         config.render.standard.png.SCALE = scale;
         config.render.standard.gif.SCALE = scale + 0.25;
         config.render.standard.mp4.SCALE = scale + 0.5;
-        config.render.standard.png.style.IMAGE_BACKGROUND_COLOR = [7, 9, 11, 255];
-        config.render.standard.gif.style.IMAGE_BACKGROUND_COLOR = [13, 15, 17, 255];
-        config.render.standard.mp4.style.IMAGE_BACKGROUND_COLOR = [19, 21, 23, 255];
+
         let config = Arc::new(config);
         for format in [OutputFormat::Png, OutputFormat::Gif, OutputFormat::Mp4] {
             let context = crate::config::with_config(Arc::clone(&config), || {

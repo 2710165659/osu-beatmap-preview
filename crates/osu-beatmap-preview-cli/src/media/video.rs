@@ -71,7 +71,7 @@ fn encoder_queue_capacity(par_chunk_size: usize) -> usize {
 /// 后端无关的视频合成样式。
 ///
 /// `Default` 只用于背景视频解码上下文的「尚未配置」占位（`background_video.rs`
-/// 在 `begin_decode` 前构造），实际渲染一律用 [`video_style`] 从配置取。
+/// 在 `begin_decode` 前构造），实际渲染由 [`video_style`] 组装可调配置与固定标签样式。
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct VideoStyle {
     pub(crate) enable_background_image: bool,
@@ -98,24 +98,26 @@ pub(crate) enum FrameComposition<'a> {
 pub(crate) fn video_style(mode: crate::export::geometry::GameMode) -> VideoStyle {
     let layout = &crate::config::current().render;
     macro_rules! make {
-        ($section:expr) => {{
-            let section = $section;
+        ($mode:ident) => {{
+            use osu_beatmap_preview_core::render::cpu::modes::$mode::constants::mp4;
+            let section = &layout.$mode.mp4;
+            let sizing = mp4::sizing();
             VideoStyle {
                 enable_background_image: section.style.ENABLE_BACKGROUND_IMAGE,
                 enable_background_video: section.style.ENABLE_BACKGROUND_VIDEO,
                 enable_storyboard: section.style.ENABLE_STORYBOARD,
                 background_dim: section.style.BACKGROUND_DIM,
-                label_color: section.style.LABEL_COLOR,
-                label_font_size: section.sizing.LABEL_FONT_SIZE,
-                label_pad: section.sizing.LABEL_PAD,
+                label_color: mp4::style::LABEL_COLOR,
+                label_font_size: sizing.LABEL_FONT_SIZE,
+                label_pad: sizing.LABEL_PAD,
             }
         }};
     }
     match mode {
-        crate::export::geometry::GameMode::Standard => make!(&layout.standard.mp4),
-        crate::export::geometry::GameMode::Taiko => make!(&layout.taiko.mp4),
-        crate::export::geometry::GameMode::Catch => make!(&layout.catch.mp4),
-        crate::export::geometry::GameMode::Mania => make!(&layout.mania.mp4),
+        crate::export::geometry::GameMode::Standard => make!(standard),
+        crate::export::geometry::GameMode::Taiko => make!(taiko),
+        crate::export::geometry::GameMode::Catch => make!(catch),
+        crate::export::geometry::GameMode::Mania => make!(mania),
     }
 }
 

@@ -1,5 +1,7 @@
 //! osu!catch PNG 静态图导出：计算布局、准备渲染对象，交给 core 绘制后保存。
 
+use osu_beatmap_preview_core::render::cpu::modes::catch::constants as catch_constants;
+
 use crate::export::segment::{resolve_png_window, PngSegment, PngWindow};
 use crate::media::image::save_png;
 use osu_beatmap_preview_core::model::mods::ModSettings;
@@ -83,6 +85,7 @@ fn build_layout(
     chart_start_time: i64,
     timing_lines: &[TimingLine],
 ) -> Result<CatchPngLayout> {
+    let catch_png_sizing = catch_constants::png::sizing();
     if beatmap_duration
         >= crate::config::current()
             .render
@@ -134,19 +137,18 @@ fn build_layout(
             .unwrap_or(max_area_height);
     let total_column_height = total_chart_height.min(aligned_height).max(1);
     let column_count = ceil_div(total_chart_height, total_column_height).max(1);
-    let config = &crate::config::current().render.catch.png;
-    let unit_width = config.sizing.INFO_MARGIN_LEFT
-        + config.sizing.COLUMN_WIDTH
-        + config.sizing.INFO_MARGIN_RIGHT;
-    let image_width = config.sizing.PAGE_MARGIN_LEFT
-        + config.sizing.PAGE_MARGIN_RIGHT
+    let unit_width = catch_png_sizing.INFO_MARGIN_LEFT
+        + catch_png_sizing.COLUMN_WIDTH
+        + catch_png_sizing.INFO_MARGIN_RIGHT;
+    let image_width = catch_png_sizing.PAGE_MARGIN_LEFT
+        + catch_png_sizing.PAGE_MARGIN_RIGHT
         + column_count * unit_width
-        + (column_count - 1) * config.sizing.COLUMN_GAP;
-    let image_height = config.sizing.PAGE_MARGIN_TOP
-        + config.sizing.PAGE_MARGIN_BOTTOM
-        + config.sizing.INFO_MARGIN_TOP
+        + (column_count - 1) * catch_png_sizing.COLUMN_GAP;
+    let image_height = catch_png_sizing.PAGE_MARGIN_TOP
+        + catch_png_sizing.PAGE_MARGIN_BOTTOM
+        + catch_png_sizing.INFO_MARGIN_TOP
         + total_column_height
-        + config.sizing.INFO_MARGIN_BOTTOM;
+        + catch_png_sizing.INFO_MARGIN_BOTTOM;
     Ok(CatchPngLayout {
         column_count,
         total_column_height,

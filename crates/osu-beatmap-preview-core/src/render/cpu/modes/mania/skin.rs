@@ -3,6 +3,8 @@
 //! 配置来自 `shared_config.yml` 生成的运行时快照；每个 `KEYS_N` 块都
 //! 显式保存列宽、列线宽和判定线位置。
 
+use crate::render::cpu::modes::mania::constants as mania_constants;
+
 /// 单个键数对应的 mania 皮肤配置。
 pub struct ManiaSkinConfig {
     /// 判定线距底部的逻辑距离（768 高坐标系）。
@@ -59,15 +61,11 @@ struct SkinFallback {
 }
 
 fn fallback_for_format(output_format: crate::render::geometry::OutputFormat) -> SkinFallback {
+    let mania_png_sizing = mania_constants::png::sizing();
     match output_format {
         crate::render::geometry::OutputFormat::Png => SkinFallback {
-            hit_position: crate::config::current()
-                .render
-                .mania
-                .png
-                .sizing
-                .HIT_TARGET_FROM_BOTTOM as f64,
-            lane_width: crate::config::current().render.mania.png.sizing.LANE_WIDTH,
+            hit_position: mania_png_sizing.HIT_TARGET_FROM_BOTTOM as f64,
+            lane_width: mania_png_sizing.LANE_WIDTH,
         },
         crate::render::geometry::OutputFormat::Gif | crate::render::geometry::OutputFormat::Mp4 => {
             SkinFallback {

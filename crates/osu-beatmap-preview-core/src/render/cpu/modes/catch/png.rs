@@ -1,5 +1,7 @@
 //! osu!catch PNG 场景绘制：根据 CLI 传入的布局和渲染对象绘制静态图。
 
+use crate::render::cpu::modes::catch::constants as catch_constants;
+
 use crate::processing::timeline::TimeAxis;
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
@@ -21,29 +23,24 @@ pub struct CatchPngLayout {
 }
 
 fn column_left(column_index: i64) -> i64 {
-    let config = &crate::config::current().render.catch.png;
-    config.sizing.PAGE_MARGIN_LEFT
-        + config.sizing.INFO_MARGIN_LEFT
+    let catch_png_sizing = catch_constants::png::sizing();
+    catch_png_sizing.PAGE_MARGIN_LEFT
+        + catch_png_sizing.INFO_MARGIN_LEFT
         + column_index
-            * (config.sizing.INFO_MARGIN_LEFT
-                + config.sizing.COLUMN_WIDTH
-                + config.sizing.INFO_MARGIN_RIGHT
-                + config.sizing.COLUMN_GAP)
+            * (catch_png_sizing.INFO_MARGIN_LEFT
+                + catch_png_sizing.COLUMN_WIDTH
+                + catch_png_sizing.INFO_MARGIN_RIGHT
+                + catch_png_sizing.COLUMN_GAP)
 }
 
 fn playfield_left(column_index: i64) -> i64 {
     column_left(column_index)
-        + crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .LEFT_PANEL_WIDTH
+        + catch_constants::png::sizing().LEFT_PANEL_WIDTH
         + playfield_side_padding()
 }
 
 fn playfield_side_padding() -> i64 {
-    let config = &crate::config::current().render.catch.png;
+    let catch_png_sizing = catch_constants::png::sizing();
     let render_scale = crate::render::geometry::output_scale(
         crate::render::geometry::GameMode::Catch,
         crate::render::geometry::OutputFormat::Png,
@@ -53,8 +50,8 @@ fn playfield_side_padding() -> i64 {
         render_scale,
     );
     playfield_side_padding_for(
-        config.sizing.COLUMN_WIDTH,
-        config.sizing.LEFT_PANEL_WIDTH,
+        catch_png_sizing.COLUMN_WIDTH,
+        catch_png_sizing.LEFT_PANEL_WIDTH,
         playfield_width,
     )
 }
@@ -87,25 +84,10 @@ pub struct RedlineSection {
 
 /// 绘制单列的标尺面板、游玩区域底色与边框。
 fn draw_column_background(image: &mut Img, layout: &CatchPngLayout, column_index: i64) {
+    let catch_png_sizing = catch_constants::png::sizing();
     let column_left = column_left(column_index);
-    let chart_top = crate::config::current()
-        .render
-        .catch
-        .png
-        .sizing
-        .PAGE_MARGIN_TOP
-        + crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .INFO_MARGIN_TOP;
-    let panel_width = crate::config::current()
-        .render
-        .catch
-        .png
-        .sizing
-        .LEFT_PANEL_WIDTH;
+    let chart_top = catch_png_sizing.PAGE_MARGIN_TOP + catch_png_sizing.INFO_MARGIN_TOP;
+    let panel_width = catch_png_sizing.LEFT_PANEL_WIDTH;
     let side_padding = playfield_side_padding();
     let visible_left = column_left + panel_width + side_padding;
     let visible_right = visible_left + layout.visible_playfield_width;
@@ -124,104 +106,55 @@ fn draw_column_background(image: &mut Img, layout: &CatchPngLayout, column_index
         chart_top,
         panel_width,
         layout.total_column_height,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .style
-            .LEFT_PANEL_BACKGROUND,
+        catch_constants::png::style::LEFT_PANEL_BACKGROUND,
     );
     image.set_rect_size(
         visible_left,
         chart_top,
         layout.visible_playfield_width,
         layout.total_column_height,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .style
-            .PLAYFIELD_BACKGROUND,
+        catch_constants::png::style::PLAYFIELD_BACKGROUND,
     );
     image.set_rect_size(
         border_left,
         chart_top,
         border_width,
         layout.total_column_height,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .style
-            .PLAYFIELD_BORDER,
+        catch_constants::png::style::PLAYFIELD_BORDER,
     );
     image.set_rect_size(
         border_right,
         chart_top,
         border_width,
         layout.total_column_height,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .style
-            .PLAYFIELD_BORDER,
+        catch_constants::png::style::PLAYFIELD_BORDER,
     );
 }
 
 /// 时间 → （列号, y 坐标）。时间从列底部向上递增（与游戏内下落方向一致）。
 fn locate_time(time: i64, layout: &CatchPngLayout) -> (i64, i64) {
+    let catch_png_sizing = catch_constants::png::sizing();
     let absolute_y = time as f64 * layout.pixels_per_ms;
     let column_index = ((absolute_y / layout.total_column_height as f64).floor() as i64)
         .clamp(0, layout.column_count - 1);
     let local_y_from_top = rhe(absolute_y - (column_index * layout.total_column_height) as f64);
     // 从列底部开始计算，时间 0 在底部，时间增大向上
-    let chart_bottom = crate::config::current()
-        .render
-        .catch
-        .png
-        .sizing
-        .PAGE_MARGIN_TOP
-        + crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .INFO_MARGIN_TOP
+    let chart_bottom = catch_png_sizing.PAGE_MARGIN_TOP
+        + catch_png_sizing.INFO_MARGIN_TOP
         + layout.total_column_height;
     let y = chart_bottom - local_y_from_top;
     (column_index, y)
 }
 
 fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &CatchPngLayout) {
+    let catch_png_sizing = catch_constants::png::sizing();
     let (column_index, y) = locate_time(timing_line.time, layout);
     let left = playfield_left(column_index);
     let right = left + layout.visible_playfield_width;
     let y = y.clamp(
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP
+        catch_png_sizing.PAGE_MARGIN_TOP + catch_png_sizing.INFO_MARGIN_TOP,
+        catch_png_sizing.PAGE_MARGIN_TOP
+            + catch_png_sizing.INFO_MARGIN_TOP
             + layout.total_column_height,
     );
 
@@ -232,22 +165,12 @@ fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &Catc
     let (thickness, color) = if timing_line.is_measure {
         (
             crate::render::geometry::scale_stroke_px(2.0, render_scale),
-            crate::config::current()
-                .render
-                .catch
-                .png
-                .style
-                .MEASURE_LINE_COLOR,
+            catch_constants::png::style::MEASURE_LINE_COLOR,
         )
     } else {
         (
             crate::render::geometry::scale_stroke_px(1.0, render_scale),
-            crate::config::current()
-                .render
-                .catch
-                .png
-                .style
-                .BEAT_LINE_COLOR,
+            catch_constants::png::style::BEAT_LINE_COLOR,
         )
     };
     image.set_rect_size(left, y, right - left, thickness, color);
@@ -259,53 +182,19 @@ fn draw_timing_label_png(
     layout: &CatchPngLayout,
     time_axis: TimeAxis,
 ) {
+    let catch_png_sizing = catch_constants::png::sizing();
     let (column_index, y) = locate_time(timing_line.time, layout);
-    let border_right = column_left(column_index)
-        + crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .COLUMN_WIDTH;
+    let border_right = column_left(column_index) + catch_png_sizing.COLUMN_WIDTH;
     let y = y.clamp(
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP
+        catch_png_sizing.PAGE_MARGIN_TOP + catch_png_sizing.INFO_MARGIN_TOP,
+        catch_png_sizing.PAGE_MARGIN_TOP
+            + catch_png_sizing.INFO_MARGIN_TOP
             + layout.total_column_height,
     );
     let label = crate::render::text::format_seconds_tenths(
         time_axis.to_display(timing_line.time + layout.chart_start_time),
     );
-    let (label_width, label_height) = text_size(
-        &label,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .TIME_LABEL_FONT_SIZE,
-    );
+    let (label_width, label_height) = text_size(&label, catch_png_sizing.TIME_LABEL_FONT_SIZE);
     let label_gap = crate::render::geometry::scale_px(
         4.0,
         crate::render::geometry::output_scale(
@@ -313,49 +202,16 @@ fn draw_timing_label_png(
             crate::render::geometry::OutputFormat::Png,
         ),
     );
-    let label_x = (border_right + label_gap).min(
-        layout.image_width
-            - label_width as i64
-            - crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .PAGE_MARGIN_LEFT,
-    );
+    let label_x = (border_right + label_gap)
+        .min(layout.image_width - label_width as i64 - catch_png_sizing.PAGE_MARGIN_LEFT);
     let label_y = (y as f64 - label_height as f64 / 2.0).floor() as i64;
     let bpm_label = timing_line.bpm.map(crate::render::timing::format_bpm);
     let bpm_height = bpm_label.as_ref().map_or(0, |text| {
-        text_size(
-            text,
-            crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .TIME_LABEL_FONT_SIZE,
-        )
-        .1 as i64
-            + crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .BPM_LABEL_GAP
+        text_size(text, catch_png_sizing.TIME_LABEL_FONT_SIZE).1 as i64
+            + catch_png_sizing.BPM_LABEL_GAP
     });
     let group_height = label_height as i64 + bpm_height;
-    let chart_top = crate::config::current()
-        .render
-        .catch
-        .png
-        .sizing
-        .PAGE_MARGIN_TOP
-        + crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .INFO_MARGIN_TOP;
+    let chart_top = catch_png_sizing.PAGE_MARGIN_TOP + catch_png_sizing.INFO_MARGIN_TOP;
     let chart_bottom = chart_top + layout.total_column_height;
     let label_y = (label_y - bpm_height / 2)
         .max(chart_top)
@@ -365,63 +221,20 @@ fn draw_timing_label_png(
         label_x,
         label_y,
         &label,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .TIME_LABEL_FONT_SIZE,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .style
-            .TIME_LABEL_COLOR,
+        catch_png_sizing.TIME_LABEL_FONT_SIZE,
+        catch_constants::png::style::TIME_LABEL_COLOR,
     );
     if let Some(bpm_label) = bpm_label {
-        let (bpm_width, _) = text_size(
-            &bpm_label,
-            crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .TIME_LABEL_FONT_SIZE,
-        );
-        let bpm_x = (border_right + label_gap).min(
-            layout.image_width
-                - bpm_width as i64
-                - crate::config::current()
-                    .render
-                    .catch
-                    .png
-                    .sizing
-                    .PAGE_MARGIN_LEFT,
-        );
+        let (bpm_width, _) = text_size(&bpm_label, catch_png_sizing.TIME_LABEL_FONT_SIZE);
+        let bpm_x = (border_right + label_gap)
+            .min(layout.image_width - bpm_width as i64 - catch_png_sizing.PAGE_MARGIN_LEFT);
         draw_text(
             image,
             bpm_x,
-            label_y
-                + label_height as i64
-                + crate::config::current()
-                    .render
-                    .catch
-                    .png
-                    .sizing
-                    .BPM_LABEL_GAP,
+            label_y + label_height as i64 + catch_png_sizing.BPM_LABEL_GAP,
             &bpm_label,
-            crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .TIME_LABEL_FONT_SIZE,
-            crate::config::current()
-                .render
-                .catch
-                .png
-                .style
-                .BPM_LABEL_COLOR,
+            catch_png_sizing.TIME_LABEL_FONT_SIZE,
+            catch_constants::png::style::BPM_LABEL_COLOR,
         );
     }
 }
@@ -464,6 +277,7 @@ fn time_axis_segments(
     end_x: f64,
     layout: &CatchPngLayout,
 ) -> Vec<LineSegment> {
+    let catch_png_sizing = catch_constants::png::sizing();
     if end_time <= start_time || layout.pixels_per_ms <= 0.0 {
         return Vec::new();
     }
@@ -471,18 +285,8 @@ fn time_axis_segments(
     let column_duration = layout.total_column_height as f64 / layout.pixels_per_ms;
     let start_column = (start_time / column_duration).floor() as i64;
     let end_column = (end_time / column_duration).floor() as i64;
-    let chart_bottom = (crate::config::current()
-        .render
-        .catch
-        .png
-        .sizing
-        .PAGE_MARGIN_TOP
-        + crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .INFO_MARGIN_TOP
+    let chart_bottom = (catch_png_sizing.PAGE_MARGIN_TOP
+        + catch_png_sizing.INFO_MARGIN_TOP
         + layout.total_column_height) as f64;
     let mut segments = Vec::new();
 
@@ -567,18 +371,8 @@ fn draw_edge_guides(image: &mut Img, render_objects: &[RenderObject], layout: &C
                 start.1,
                 end.0,
                 end.1,
-                crate::config::current()
-                    .render
-                    .catch
-                    .png
-                    .sizing
-                    .EDGE_GUIDE_WIDTH,
-                crate::config::current()
-                    .render
-                    .catch
-                    .png
-                    .style
-                    .EDGE_GUIDE_COLOR,
+                catch_constants::png::sizing().EDGE_GUIDE_WIDTH,
+                catch_constants::png::style::EDGE_GUIDE_COLOR,
             );
         }
     }
@@ -605,6 +399,7 @@ fn draw_edge_combo_labels(
     render_objects: &[RenderObject],
     layout: &CatchPngLayout,
 ) {
+    let catch_png_sizing = catch_constants::png::sizing();
     for (index, combo) in edge_combo_numbers(render_objects) {
         let current = &render_objects[index];
         let Some(next) = render_objects[index + 1..].iter().find(|candidate| {
@@ -616,10 +411,9 @@ fn draw_edge_combo_labels(
             continue;
         };
 
-        let config = &crate::config::current().render.catch.png;
         let label = format!("{combo}x");
         let (label_width, label_height) =
-            text_size(&label, config.sizing.EDGE_COMBO_LABEL_FONT_SIZE);
+            text_size(&label, catch_png_sizing.EDGE_COMBO_LABEL_FONT_SIZE);
         let (column_index, center_y) = locate_time(current.start_time, layout);
         let center_x = playfield_left(column_index) as f64 + current.x * layout.playfield_scale;
         let radius = super::drawing::object_diameter(
@@ -628,8 +422,8 @@ fn draw_edge_combo_labels(
             current.scale_factor,
         ) / 2.0;
         let left_x =
-            rhe(center_x - radius - config.sizing.EDGE_COMBO_LABEL_GAP - label_width as f64);
-        let right_x = rhe(center_x + radius + config.sizing.EDGE_COMBO_LABEL_GAP);
+            rhe(center_x - radius - catch_png_sizing.EDGE_COMBO_LABEL_GAP - label_width as f64);
+        let right_x = rhe(center_x + radius + catch_png_sizing.EDGE_COMBO_LABEL_GAP);
         let min_x = playfield_left(column_index);
         let max_x = min_x + layout.visible_playfield_width - label_width as i64;
         let prefer_left = next.x >= current.x;
@@ -640,7 +434,7 @@ fn draw_edge_combo_labels(
         } else {
             left_x.max(min_x)
         };
-        let chart_top = config.sizing.PAGE_MARGIN_TOP + config.sizing.INFO_MARGIN_TOP;
+        let chart_top = catch_png_sizing.PAGE_MARGIN_TOP + catch_png_sizing.INFO_MARGIN_TOP;
         let chart_bottom = chart_top + layout.total_column_height;
         let label_y = (center_y - label_height as i64 / 2)
             .max(chart_top)
@@ -648,27 +442,27 @@ fn draw_edge_combo_labels(
 
         // 深色底板可避免边界迫使标签与白色引导线同侧时难以辨认。
         image.fill_rect_size(
-            label_x - config.sizing.EDGE_COMBO_LABEL_PADDING,
-            label_y - config.sizing.EDGE_COMBO_LABEL_PADDING,
-            label_width as i64 + config.sizing.EDGE_COMBO_LABEL_PADDING * 2,
-            label_height as i64 + config.sizing.EDGE_COMBO_LABEL_PADDING * 2,
-            config.style.EDGE_COMBO_LABEL_BACKGROUND,
+            label_x - catch_png_sizing.EDGE_COMBO_LABEL_PADDING,
+            label_y - catch_png_sizing.EDGE_COMBO_LABEL_PADDING,
+            label_width as i64 + catch_png_sizing.EDGE_COMBO_LABEL_PADDING * 2,
+            label_height as i64 + catch_png_sizing.EDGE_COMBO_LABEL_PADDING * 2,
+            catch_constants::png::style::EDGE_COMBO_LABEL_BACKGROUND,
         );
         draw_text(
             image,
-            label_x + config.sizing.EDGE_COMBO_LABEL_SHADOW_GAP,
-            label_y + config.sizing.EDGE_COMBO_LABEL_SHADOW_GAP,
+            label_x + catch_png_sizing.EDGE_COMBO_LABEL_SHADOW_GAP,
+            label_y + catch_png_sizing.EDGE_COMBO_LABEL_SHADOW_GAP,
             &label,
-            config.sizing.EDGE_COMBO_LABEL_FONT_SIZE,
-            config.style.EDGE_COMBO_LABEL_SHADOW,
+            catch_png_sizing.EDGE_COMBO_LABEL_FONT_SIZE,
+            catch_constants::png::style::EDGE_COMBO_LABEL_SHADOW,
         );
         draw_text(
             image,
             label_x,
             label_y,
             &label,
-            config.sizing.EDGE_COMBO_LABEL_FONT_SIZE,
-            config.style.EDGE_COMBO_LABEL_COLOR,
+            catch_png_sizing.EDGE_COMBO_LABEL_FONT_SIZE,
+            catch_constants::png::style::EDGE_COMBO_LABEL_COLOR,
         );
     }
 }
@@ -713,12 +507,7 @@ pub fn render_catch_png_scene(
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
-        crate::config::current()
-            .render
-            .catch
-            .png
-            .style
-            .IMAGE_BACKGROUND,
+        catch_constants::png::style::IMAGE_BACKGROUND,
     );
 
     for column_index in 0..layout.column_count {
@@ -824,18 +613,8 @@ mod tests {
         let segments = edge_guide_segments(&current, &next, &test_layout(2));
 
         assert_eq!(segments.len(), 2);
-        let chart_top = (crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP) as f64;
+        let chart_top = (catch_constants::png::sizing().PAGE_MARGIN_TOP
+            + catch_constants::png::sizing().INFO_MARGIN_TOP) as f64;
         let chart_bottom = chart_top + 100.0;
         let ((_, first_start_y), (first_end_x, first_end_y)) = segments[0];
         let ((second_start_x, second_start_y), (_, second_end_y)) = segments[1];
@@ -857,27 +636,12 @@ mod tests {
         draw_edge_guides(&mut image, &[current, next], &layout);
 
         let midpoint_x = playfield_left(0) + 50;
-        let chart_bottom = crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP
+        let chart_bottom = catch_constants::png::sizing().PAGE_MARGIN_TOP
+            + catch_constants::png::sizing().INFO_MARGIN_TOP
             + layout.total_column_height;
         assert_eq!(
             image.get(midpoint_x as u32, (chart_bottom - 15) as u32),
-            crate::config::current()
-                .render
-                .catch
-                .png
-                .style
-                .EDGE_GUIDE_COLOR
+            catch_constants::png::style::EDGE_GUIDE_COLOR
         );
     }
 
@@ -893,18 +657,8 @@ mod tests {
 
         let route_x = playfield_left(0) + 50;
         let banana_midpoint_x = playfield_left(0) + 100;
-        let chart_bottom = crate::config::current()
-            .render
-            .catch
-            .png
-            .sizing
-            .PAGE_MARGIN_TOP
-            + crate::config::current()
-                .render
-                .catch
-                .png
-                .sizing
-                .INFO_MARGIN_TOP
+        let chart_bottom = catch_constants::png::sizing().PAGE_MARGIN_TOP
+            + catch_constants::png::sizing().INFO_MARGIN_TOP
             + layout.total_column_height;
         assert_eq!(
             image.get(route_x as u32, (chart_bottom - 15) as u32),
@@ -993,29 +747,13 @@ mod tests {
         let current = edge_fruit(100.0, 10);
         let mut next = edge_fruit(200.0, 20);
         next.edge = false;
-        let mut image = Img::new(
-            400,
-            130,
-            crate::config::current()
-                .render
-                .catch
-                .png
-                .style
-                .IMAGE_BACKGROUND,
-        );
+        let mut image = Img::new(400, 130, catch_constants::png::style::IMAGE_BACKGROUND);
 
         draw_edge_combo_labels(&mut image, &[current, next], &layout);
 
         let has_white_label_pixel = (0..image.h).any(|y| {
-            (0..image.w).any(|x| {
-                image.get(x, y)
-                    == crate::config::current()
-                        .render
-                        .catch
-                        .png
-                        .style
-                        .EDGE_COMBO_LABEL_COLOR
-            })
+            (0..image.w)
+                .any(|x| image.get(x, y) == catch_constants::png::style::EDGE_COMBO_LABEL_COLOR)
         });
         assert!(has_white_label_pixel);
     }

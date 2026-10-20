@@ -4,6 +4,8 @@
 //!
 //! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
+use osu_beatmap_preview_core::render::cpu::modes::mania::constants as mania_constants;
+
 use crate::export::canvas::{Img, Rgba};
 use crate::media::audio::AudioSourceJob;
 use crate::media::{
@@ -147,12 +149,7 @@ pub(crate) fn render_mania_video(
                 content.y,
                 content.width,
                 content.height,
-                crate::config::current()
-                    .render
-                    .mania
-                    .mp4
-                    .style
-                    .IMAGE_BACKGROUND,
+                mania_constants::mp4::style::IMAGE_BACKGROUND,
             );
         }
         draw_segment_background(&mut bg, segment_left(0, &layout), &layout);

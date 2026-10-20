@@ -175,26 +175,16 @@ fn apply_render_scales(config: &mut Value, scale_override: Option<f64>) -> Resul
                 })?;
                 section.insert("SCALE".to_string(), Value::Number(number));
             }
-            let sizing = section
-                .get_mut("sizing")
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| {
-                    format!("configuration section 'render.{mode}.{format}.sizing' is missing")
-                })?;
+            let Some(sizing) = section.get_mut("sizing").and_then(Value::as_object_mut) else {
+                continue;
+            };
             for (name, value) in sizing.iter_mut() {
                 let Some(number) = value.as_f64() else {
                     return Err(format!(
                         "configuration field 'render.{mode}.{format}.sizing.{name}' must be numeric"
                     ));
                 };
-                let scaled = if is_bitmap_font_size(name) {
-                    // 位图字体以 8px 字形为基础：先取整到实际绘制的基础高度，再应用
-                    // 输出倍率，既保持 1x 外观，又允许小数倍率精确缩放。
-                    let glyph_scale = (number.max(8.0) / 8.0).floor().max(1.0);
-                    (glyph_scale * 8.0 * scale).max(1.0)
-                } else {
-                    number * scale
-                };
+                let scaled = number * scale;
                 if value.as_i64().is_some() || value.as_u64().is_some() {
                     let rounded =
                         osu_beatmap_preview_core::processing::parse::round_half_even(scaled);
@@ -210,23 +200,6 @@ fn apply_render_scales(config: &mut Value, scale_override: Option<f64>) -> Resul
         }
     }
     Ok(())
-}
-
-fn is_bitmap_font_size(name: &str) -> bool {
-    matches!(
-        name,
-        "TIME_LABEL_FONT_SIZE"
-            | "SWELL_HIT_COUNT_FONT_SIZE"
-            | "SWELL_CLEAR_FONT_SIZE"
-            | "SWELL_DURATION_FONT_SIZE"
-            | "TIME_LABEL_NOTE_FONT_SIZE"
-            | "LABEL_FONT_SIZE"
-            | "BPM_FONT_SIZE"
-            | "SV_TEXT_FONT_SIZE"
-            | "EDGE_COMBO_LABEL_FONT_SIZE"
-            | "BREAK_OVERLAY_COUNTER_FONT_SIZE"
-            | "BREAK_OVERLAY_INFO_FONT_SIZE"
-    )
 }
 
 fn validate_video_background(config: &Value) -> Result<(), String> {
@@ -619,6 +592,11 @@ fn resolve_config_dir(template: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use osu_beatmap_preview_core::render::cpu::modes::catch::constants as catch_constants;
+    use osu_beatmap_preview_core::render::cpu::modes::mania::constants as mania_constants;
+    use osu_beatmap_preview_core::render::cpu::modes::standard::constants as standard_constants;
+    use osu_beatmap_preview_core::render::cpu::modes::taiko::constants as taiko_constants;
+
     use super::{
         config_variant, merge_values, output_directory_for_snapshot, parse_argument,
         parse_document, resolve_path, write_variant_file,
@@ -630,6 +608,16 @@ mod tests {
         let overlay = parse_document(source, "test config").unwrap();
         merge_values(&mut active, &overlay, "").unwrap();
         config_variant(&defaults, &active).unwrap()
+    }
+
+    fn with_core_config<T>(config: &super::RuntimeConfig, run: impl FnOnce() -> T) -> T {
+        osu_beatmap_preview_core::config::with_config(
+            std::sync::Arc::new(osu_beatmap_preview_core::config::CoreConfig {
+                render: config.render.clone(),
+                skin: config.skin.clone(),
+            }),
+            run,
+        )
     }
 
     fn load_snapshot(cli_value: Option<&str>) -> Result<super::RuntimeConfig, String> {
@@ -894,7 +882,6 @@ render:
         ROW_COUNT: 2
         IMAGES_PER_ROW: 2
       style:
-        SHOW_TIME_LABEL: true
         DURATION_MS: 5000
 "#;
         let partial_defaults = r#"
@@ -920,10 +907,9 @@ render:
         ROW_COUNT: 1
         IMAGES_PER_ROW: 2
       style:
-        SHOW_TIME_LABEL: false
         DURATION_MS: 10000
 "#;
-        let json = r#"{"render":{"standard":{"gif":{"structure":{"ROW_COUNT":1},"style":{"SHOW_TIME_LABEL":false,"DURATION_MS":10000}}}}}"#;
+        let json = r#"{"render":{"standard":{"gif":{"structure":{"ROW_COUNT":1},"style":{"DURATION_MS":10000}}}}}"#;
         let yaml_variant = variant(yaml).unwrap();
         let json_variant = variant(json).unwrap();
         assert_eq!(yaml_variant, json_variant);
@@ -936,7 +922,6 @@ render:
                         "gif": {
                             "structure": {"ROW_COUNT": 1},
                             "style": {
-                                "SHOW_TIME_LABEL": false,
                                 "DURATION_MS": 10000
                             }
                         }
@@ -1081,27 +1066,29 @@ render:
             }"#,
         ))
         .unwrap();
-        assert_eq!(configured.render.standard.png.sizing.PAGE_MARGIN_TOP, 40);
-        assert_eq!(configured.render.taiko.gif.sizing.ROW_GAP, 14);
-        assert_eq!(configured.render.catch.mp4.sizing.LABEL_PAD, 24);
-        assert_eq!(configured.render.mania.png.sizing.PIXELS_PER_MS, 0.8);
-        assert_eq!(configured.render.mania.png.sizing.SV_TEXT_FONT_SIZE, 16);
-        assert_eq!(
-            configured
-                .render
-                .mania
-                .png
-                .sizing
-                .MAX_AREA_HEIGHT_0_TO_1_MINUTES,
-            6000
-        );
-        // 时长、帧率和数量不是像素量，不随 SCALE 改变。
-        assert_eq!(configured.render.standard.png.style.MS_PER_IMAGE, 400);
-        assert_eq!(configured.render.taiko.gif.style.FPS, 15.0);
-        assert_eq!(
-            configured.render.catch.png.sizing.MAX_TOTAL_CHART_HEIGHT,
-            180000
-        );
+        with_core_config(&configured, || {
+            assert_eq!(standard_constants::png::sizing().PAGE_MARGIN_TOP, 40);
+            assert_eq!(taiko_constants::gif::sizing().ROW_GAP, 14);
+            assert_eq!(catch_constants::mp4::sizing().LABEL_PAD, 24);
+            assert_eq!(configured.render.mania.png.sizing.PIXELS_PER_MS, 0.8);
+            assert_eq!(mania_constants::png::sizing().SV_TEXT_FONT_SIZE, 16);
+            assert_eq!(
+                configured
+                    .render
+                    .mania
+                    .png
+                    .sizing
+                    .MAX_AREA_HEIGHT_0_TO_1_MINUTES,
+                6000
+            );
+            // 时长、帧率和数量不是像素量，不随 SCALE 改变。
+            assert_eq!(configured.render.standard.png.style.MS_PER_IMAGE, 400);
+            assert_eq!(configured.render.taiko.gif.style.FPS, 15.0);
+            assert_eq!(
+                configured.render.catch.png.sizing.MAX_TOTAL_CHART_HEIGHT,
+                180000
+            );
+        });
     }
 
     #[test]
@@ -1111,17 +1098,16 @@ render:
                 "render": {
                     "standard": {"mp4": {"style": {"ENABLE_BACKGROUND_IMAGE": false}}},
                     "taiko": {"mp4": {"style": {"BACKGROUND_DIM": 0.2}}},
-                    "catch": {"mp4": {"sizing": {"LABEL_PAD": 3}}},
-                    "mania": {"mp4": {"sizing": {"LABEL_FONT_SIZE": 18}}}
+                    "catch": {"mp4": {"style": {"ENABLE_BACKGROUND_VIDEO": true}}},
+                    "mania": {"mp4": {"style": {"ENABLE_HITSOUND": false}}}
                 }
             }"#,
         ))
         .unwrap();
         assert!(!configured.render.standard.mp4.style.ENABLE_BACKGROUND_IMAGE);
         assert_eq!(configured.render.taiko.mp4.style.BACKGROUND_DIM, 0.2);
-        assert_eq!(configured.render.catch.mp4.sizing.LABEL_PAD, 3);
-        // 18px 配置在旧 8x8 位图字体中实际为 16px；运行时保存实际绘制高度。
-        assert_eq!(configured.render.mania.mp4.sizing.LABEL_FONT_SIZE, 16);
+        assert!(configured.render.catch.mp4.style.ENABLE_BACKGROUND_VIDEO);
+        assert!(!configured.render.mania.mp4.style.ENABLE_HITSOUND);
         assert_eq!(configured.render.standard.mp4.style.BACKGROUND_DIM, 0.7);
         assert_eq!(configured.render.catch.mp4.style.BACKGROUND_DIM, 0.7);
     }
@@ -1157,23 +1143,24 @@ render:
             }"#,
         ))
         .unwrap();
-        assert_eq!(half.render.standard.png.sizing.TIME_LABEL_FONT_SIZE, 12);
-        assert_eq!(half.render.taiko.png.sizing.SWELL_HIT_COUNT_FONT_SIZE, 16);
-        assert_eq!(half.render.taiko.png.sizing.SWELL_DURATION_FONT_SIZE, 8);
-        assert_eq!(half.render.taiko.png.sizing.SWELL_DURATION_TOP_GAP, 2);
-        assert_eq!(half.render.taiko.gif.sizing.SWELL_HIT_COUNT_FONT_SIZE, 12);
-        assert_eq!(half.render.taiko.gif.sizing.SWELL_CLEAR_FONT_SIZE, 8);
-        assert_eq!(half.render.taiko.mp4.sizing.SWELL_HIT_COUNT_FONT_SIZE, 36);
-        assert_eq!(half.render.taiko.mp4.sizing.SWELL_CLEAR_FONT_SIZE, 24);
-        assert!(half.render.taiko.gif.style.SHOW_SWELL_HIT_COUNT);
-        assert!(half.render.taiko.gif.style.SHOW_SWELL_APPROACH_CIRCLE);
-        assert!(half.render.taiko.gif.style.SHOW_SWELL_CLEAR);
-        assert_eq!(half.render.mania.gif.sizing.SV_TEXT_FONT_SIZE, 4);
-        assert_eq!(half.render.mania.mp4.sizing.SV_TEXT_FONT_SIZE, 4);
+        with_core_config(&half, || {
+            assert_eq!(standard_constants::png::sizing().TIME_LABEL_FONT_SIZE, 12);
+            assert_eq!(taiko_constants::png::sizing().SWELL_HIT_COUNT_FONT_SIZE, 16);
+            assert_eq!(taiko_constants::png::sizing().SWELL_DURATION_FONT_SIZE, 8);
+            assert_eq!(taiko_constants::png::sizing().SWELL_DURATION_TOP_GAP, 2);
+            assert_eq!(taiko_constants::gif::sizing().SWELL_HIT_COUNT_FONT_SIZE, 12);
+            assert_eq!(taiko_constants::gif::sizing().SWELL_CLEAR_FONT_SIZE, 8);
+            assert_eq!(taiko_constants::mp4::sizing().SWELL_HIT_COUNT_FONT_SIZE, 36);
+            assert_eq!(taiko_constants::mp4::sizing().SWELL_CLEAR_FONT_SIZE, 24);
+            assert_eq!(mania_constants::gif::sizing().SV_TEXT_FONT_SIZE, 4);
+            assert_eq!(mania_constants::mp4::sizing().SV_TEXT_FONT_SIZE, 4);
+        });
 
         let one_and_half =
             load_snapshot(Some(r#"{"render":{"mania":{"gif":{"SCALE":1.5}}}}"#)).unwrap();
-        assert_eq!(one_and_half.render.mania.gif.sizing.SV_TEXT_FONT_SIZE, 12);
+        with_core_config(&one_and_half, || {
+            assert_eq!(mania_constants::gif::sizing().SV_TEXT_FONT_SIZE, 12);
+        });
     }
 
     #[test]
@@ -1189,13 +1176,12 @@ render:
             Some(0.5),
         )
         .unwrap();
-        assert_eq!(configured.render.standard.png.SCALE, 0.5);
-        assert_eq!(configured.render.standard.png.sizing.PAGE_MARGIN_TOP, 10);
-        assert_eq!(
-            configured.render.standard.png.sizing.TIME_LABEL_FONT_SIZE,
-            12
-        );
-        assert_eq!(configured.render.standard.png.style.MS_PER_IMAGE, 400);
+        with_core_config(&configured, || {
+            assert_eq!(configured.render.standard.png.SCALE, 0.5);
+            assert_eq!(standard_constants::png::sizing().PAGE_MARGIN_TOP, 10);
+            assert_eq!(standard_constants::png::sizing().TIME_LABEL_FONT_SIZE, 12);
+            assert_eq!(configured.render.standard.png.style.MS_PER_IMAGE, 400);
+        });
     }
 
     #[test]
@@ -1269,7 +1255,7 @@ render:
         let catch_base = [3000, 4125, 5250, 6375, 7500, 8625];
         let mania_base = [3000, 5000, 7000, 8500, 10000, 11500];
 
-        for scale in [0.5, 1.0, 1.5, 2.0] {
+        for scale in [0.5, 0.75, 1.0, 1.5, 2.0] {
             let source = format!(
                 r#"{{"render":{{"taiko":{{"png":{{"SCALE":{scale}}}}},"catch":{{"png":{{"SCALE":{scale}}}}},"mania":{{"png":{{"SCALE":{scale}}}}}}}}}"#
             );
@@ -1456,24 +1442,6 @@ render:
     }
 
     #[test]
-    fn every_render_format_uses_explicit_structure_sizing_and_style_sections() {
-        let defaults = parse_document(super::default_config_yaml(), "embedded defaults").unwrap();
-        for mode in ["standard", "taiko", "catch", "mania"] {
-            for format in ["png", "gif", "mp4"] {
-                let pointer = format!("/render/{mode}/{format}");
-                let section = defaults.pointer(&pointer).unwrap().as_object().unwrap();
-                assert!(section.get("SCALE").is_some(), "{pointer} 缺少 SCALE");
-                assert!(section.get("sizing").is_some(), "{pointer} 缺少 sizing");
-                assert!(section.get("style").is_some(), "{pointer} 缺少 style");
-                assert!(section.keys().all(|name| matches!(
-                    name.as_str(),
-                    "SCALE" | "structure" | "sizing" | "style"
-                )));
-            }
-        }
-    }
-
-    #[test]
     fn command_line_scale_is_validated_before_runtime_snapshot_creation() {
         for scale in [0.0, -1.0, f64::NAN, f64::INFINITY] {
             let error = load_snapshot_with_scale(None, Some(scale)).expect_err("倍率必须被拒绝");
@@ -1542,32 +1510,63 @@ render:
     }
 
     #[test]
-    fn taiko_swell_styles_are_independent_and_change_the_config_hash() {
-        let configured = load_snapshot(Some(
-            r#"{"render":{"taiko":{
-        "png":{"style":{"SWELL_COLOR":[10,20,30],"SWELL_TEXT_COLOR":[40,50,60,255]}},
-        "gif":{"style":{"SWELL_COLOR":[70,80,90,255],"SHOW_SWELL_HIT_COUNT":false,
-            "SHOW_SWELL_APPROACH_CIRCLE":false,"SHOW_SWELL_CLEAR":false}}
-    }}}"#,
-        ))
-        .unwrap();
-        assert_eq!(configured.render.taiko.png.style.SWELL_COLOR, [10, 20, 30]);
-        assert_eq!(
-            configured.render.taiko.gif.style.SWELL_COLOR,
-            [70, 80, 90, 255]
-        );
-        assert_eq!(
-            configured.render.taiko.mp4.style.SWELL_COLOR,
-            [82, 204, 180, 255]
-        );
-        assert!(!configured.render.taiko.gif.style.SHOW_SWELL_HIT_COUNT);
-        assert!(!configured.render.taiko.gif.style.SHOW_SWELL_APPROACH_CIRCLE);
-        assert!(!configured.render.taiko.gif.style.SHOW_SWELL_CLEAR);
-        assert!(configured.render.taiko.mp4.style.SHOW_SWELL_HIT_COUNT);
-        assert!(
-            variant(r#"{"render":{"taiko":{"gif":{"style":{"SHOW_SWELL_CLEAR":false}}}}}"#)
-                .is_some()
-        );
+    fn removed_render_fields_are_rejected_by_file_merging_and_core_types() {
+        let core_defaults: serde_json::Value =
+            serde_yaml::from_str(include_str!("../../../assets/shared_config.yml")).unwrap();
+        for (mode, format, group, field, value) in [
+            (
+                "standard",
+                "png",
+                "sizing",
+                "PAGE_MARGIN_TOP",
+                serde_json::json!(20),
+            ),
+            (
+                "standard",
+                "gif",
+                "style",
+                "SHOW_TIME_LABEL",
+                serde_json::json!(true),
+            ),
+            (
+                "standard",
+                "png",
+                "style",
+                "TIME_LABEL_COLOR",
+                serde_json::json!([232, 232, 232, 255]),
+            ),
+            (
+                "taiko",
+                "gif",
+                "style",
+                "SHOW_SWELL_CLEAR",
+                serde_json::json!(true),
+            ),
+            (
+                "catch",
+                "mp4",
+                "style",
+                "LABEL_COLOR",
+                serde_json::json!([232, 232, 232, 255]),
+            ),
+            (
+                "mania",
+                "png",
+                "sizing",
+                "LANE_WIDTH",
+                serde_json::json!(38),
+            ),
+        ] {
+            let overlay = serde_json::json!({"render": {mode: {format: {group: {field: value}}}}});
+            let error = load_snapshot(Some(&overlay.to_string())).unwrap_err();
+            assert!(error.contains("unknown configuration field"), "{error}");
+            let mut core = core_defaults.clone();
+            core["render"][mode][format][group][field] = value;
+            assert!(
+                serde_json::from_value::<osu_beatmap_preview_core::config::CoreConfig>(core)
+                    .is_err()
+            );
+        }
     }
 
     #[test]

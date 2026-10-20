@@ -3,6 +3,8 @@
 //!
 //! 子模块包括动画时序、常量、时间映射、程序化素材及各输出格式渲染器。
 
+use osu_beatmap_preview_core::render::cpu::modes::taiko::constants as taiko_constants;
+
 pub(crate) use osu_beatmap_preview_core::render::cpu::modes::taiko::{
     animation_render, constants, notes, timing,
 };
@@ -30,14 +32,13 @@ pub(crate) fn render_taiko_gif(
             deadline,
         );
     }
-    let style = &crate::config::current().render.taiko.gif.style;
     let label_colors = super::gif_time_label_colors(
-        style.SHOW_TIME_LABEL,
-        style.IMAGE_BACKGROUND,
+        taiko_constants::gif::style::SHOW_TIME_LABEL,
+        taiko_constants::gif::style::IMAGE_BACKGROUND,
         [
-            style.PREVIEW_TIME_LABEL_COLOR,
-            style.TIME_LABEL_COLOR,
-            style.TIME_LABEL_NOTE_COLOR,
+            taiko_constants::gif::style::PREVIEW_TIME_LABEL_COLOR,
+            taiko_constants::gif::style::TIME_LABEL_COLOR,
+            taiko_constants::gif::style::TIME_LABEL_NOTE_COLOR,
         ],
     );
     super::save_animation_frames(frames, output_path, deadline, &label_colors)

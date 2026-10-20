@@ -1,5 +1,7 @@
 //! 渲染上下文、难度、皮肤、连击信息、行时间和可见索引。
 
+use crate::render::cpu::modes::standard::constants as standard_constants;
+
 use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::{Beatmap, BreakPeriod, HitObjects, StandardHitObject};
 use crate::domain::mods::ModSettings;
@@ -586,15 +588,18 @@ pub fn choose_row_start_times(
 // ——— 画布尺寸 ———
 
 pub fn png_canvas_size() -> (i64, i64) {
+    let standard_png_sizing = standard_constants::png::sizing();
     let config = &crate::config::current().render.standard.png;
     let geometry =
         crate::render::geometry::standard_geometry(crate::render::geometry::OutputFormat::Png);
-    let unit_width =
-        geometry.content.width + config.sizing.INFO_MARGIN_LEFT + config.sizing.INFO_MARGIN_RIGHT;
-    let unit_height =
-        geometry.content.height + config.sizing.INFO_MARGIN_TOP + config.sizing.INFO_MARGIN_BOTTOM;
-    let width = config.sizing.PAGE_MARGIN_LEFT
-        + config.sizing.PAGE_MARGIN_RIGHT
+    let unit_width = geometry.content.width
+        + standard_png_sizing.INFO_MARGIN_LEFT
+        + standard_png_sizing.INFO_MARGIN_RIGHT;
+    let unit_height = geometry.content.height
+        + standard_png_sizing.INFO_MARGIN_TOP
+        + standard_png_sizing.INFO_MARGIN_BOTTOM;
+    let width = standard_png_sizing.PAGE_MARGIN_LEFT
+        + standard_png_sizing.PAGE_MARGIN_RIGHT
         + config.structure.IMAGES_PER_ROW as i64 * unit_width
         + (crate::config::current()
             .render
@@ -603,9 +608,9 @@ pub fn png_canvas_size() -> (i64, i64) {
             .structure
             .IMAGES_PER_ROW as i64
             - 1)
-            * config.sizing.COLUMN_GAP;
-    let height = config.sizing.PAGE_MARGIN_TOP
-        + config.sizing.PAGE_MARGIN_BOTTOM
+            * standard_png_sizing.COLUMN_GAP;
+    let height = standard_png_sizing.PAGE_MARGIN_TOP
+        + standard_png_sizing.PAGE_MARGIN_BOTTOM
         + config.structure.ROW_COUNT as i64 * unit_height
         + (crate::config::current()
             .render
@@ -614,36 +619,37 @@ pub fn png_canvas_size() -> (i64, i64) {
             .structure
             .ROW_COUNT as i64
             - 1)
-            * config.sizing.ROW_GAP;
+            * standard_png_sizing.ROW_GAP;
     (width, height)
 }
 
 pub fn gif_canvas_size() -> (i64, i64) {
+    let standard_gif_sizing = standard_constants::gif::sizing();
     let config = &crate::config::current().render.standard.gif;
     let geometry =
         crate::render::geometry::standard_geometry(crate::render::geometry::OutputFormat::Gif);
-    let unit_width =
-        geometry.content.width + config.sizing.INFO_MARGIN_LEFT + config.sizing.INFO_MARGIN_RIGHT;
-    // 时间标签关闭时，底部信息区和对应的单元步进都必须消失，保持旧行为。
-    let info_bottom = if config.style.SHOW_TIME_LABEL {
-        config.sizing.INFO_MARGIN_BOTTOM
+    let unit_width = geometry.content.width
+        + standard_gif_sizing.INFO_MARGIN_LEFT
+        + standard_gif_sizing.INFO_MARGIN_RIGHT;
+    let info_bottom = if standard_constants::gif::style::SHOW_TIME_LABEL {
+        standard_gif_sizing.INFO_MARGIN_BOTTOM
     } else {
         0
     };
-    let unit_height = geometry.content.height + config.sizing.INFO_MARGIN_TOP + info_bottom;
-    let width = config.sizing.PAGE_MARGIN_LEFT
-        + config.sizing.PAGE_MARGIN_RIGHT
+    let unit_height = geometry.content.height + standard_gif_sizing.INFO_MARGIN_TOP + info_bottom;
+    let width = standard_gif_sizing.PAGE_MARGIN_LEFT
+        + standard_gif_sizing.PAGE_MARGIN_RIGHT
         + config.structure.IMAGES_PER_ROW as i64 * unit_width
-        + (config.structure.IMAGES_PER_ROW as i64 - 1) * config.sizing.GRID_GAP;
-    let height = config.sizing.PAGE_MARGIN_TOP
-        + config.sizing.PAGE_MARGIN_BOTTOM
+        + (config.structure.IMAGES_PER_ROW as i64 - 1) * standard_gif_sizing.GRID_GAP;
+    let height = standard_gif_sizing.PAGE_MARGIN_TOP
+        + standard_gif_sizing.PAGE_MARGIN_BOTTOM
         + config.structure.ROW_COUNT as i64 * unit_height
-        + (config.structure.ROW_COUNT as i64 - 1) * config.sizing.GRID_GAP;
+        + (config.structure.ROW_COUNT as i64 - 1) * standard_gif_sizing.GRID_GAP;
     (width, height)
 }
 
 pub fn gif_frame_origin(segment_index: usize) -> (i64, i64) {
-    let config = &crate::config::current().render.standard.gif;
+    let standard_gif_sizing = standard_constants::gif::sizing();
     let geometry =
         crate::render::geometry::standard_geometry(crate::render::geometry::OutputFormat::Gif);
     let row_index = (segment_index
@@ -660,20 +666,21 @@ pub fn gif_frame_origin(segment_index: usize) -> (i64, i64) {
             .gif
             .structure
             .IMAGES_PER_ROW) as i64;
-    let unit_width =
-        geometry.content.width + config.sizing.INFO_MARGIN_LEFT + config.sizing.INFO_MARGIN_RIGHT;
-    let info_bottom = if config.style.SHOW_TIME_LABEL {
-        config.sizing.INFO_MARGIN_BOTTOM
+    let unit_width = geometry.content.width
+        + standard_gif_sizing.INFO_MARGIN_LEFT
+        + standard_gif_sizing.INFO_MARGIN_RIGHT;
+    let info_bottom = if standard_constants::gif::style::SHOW_TIME_LABEL {
+        standard_gif_sizing.INFO_MARGIN_BOTTOM
     } else {
         0
     };
-    let unit_height = geometry.content.height + config.sizing.INFO_MARGIN_TOP + info_bottom;
-    let x = config.sizing.PAGE_MARGIN_LEFT
-        + config.sizing.INFO_MARGIN_LEFT
-        + image_index * (unit_width + config.sizing.GRID_GAP);
-    let y = config.sizing.PAGE_MARGIN_TOP
-        + config.sizing.INFO_MARGIN_TOP
-        + row_index * (unit_height + config.sizing.GRID_GAP);
+    let unit_height = geometry.content.height + standard_gif_sizing.INFO_MARGIN_TOP + info_bottom;
+    let x = standard_gif_sizing.PAGE_MARGIN_LEFT
+        + standard_gif_sizing.INFO_MARGIN_LEFT
+        + image_index * (unit_width + standard_gif_sizing.GRID_GAP);
+    let y = standard_gif_sizing.PAGE_MARGIN_TOP
+        + standard_gif_sizing.INFO_MARGIN_TOP
+        + row_index * (unit_height + standard_gif_sizing.GRID_GAP);
     (x, y)
 }
 

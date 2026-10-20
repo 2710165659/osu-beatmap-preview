@@ -1,6 +1,8 @@
 //! osu!catch 渲染器：展开水果、果汁流、香蕉雨、HR 偏移和 hyperdash 等渲染对象，
 //! 并输出 PNG 网格和 GIF 预览。RNG 调用顺序严格匹配 Python/stable 实现。
 
+use osu_beatmap_preview_core::render::cpu::modes::catch::constants as catch_constants;
+
 pub(crate) use osu_beatmap_preview_core::render::cpu::modes::catch::{
     animation, constants, objects,
 };
@@ -19,14 +21,13 @@ pub(crate) fn render_catch_gif(
     deadline: &osu_beatmap_preview_core::support::timeout::RequestDeadline,
 ) -> osu_beatmap_preview_core::Result<()> {
     let frames = animation::prepare_catch_gif_frames(beatmap, mods, options, fps, deadline)?;
-    let style = &crate::config::current().render.catch.gif.style;
     let label_colors = super::gif_time_label_colors(
-        style.SHOW_TIME_LABEL,
-        style.PLAYFIELD_BACKGROUND,
+        catch_constants::gif::style::SHOW_TIME_LABEL,
+        catch_constants::gif::style::PLAYFIELD_BACKGROUND,
         [
-            style.PREVIEW_TIME_LABEL_COLOR,
-            style.TIME_LABEL_COLOR,
-            style.TIME_LABEL_NOTE_COLOR,
+            catch_constants::gif::style::PREVIEW_TIME_LABEL_COLOR,
+            catch_constants::gif::style::TIME_LABEL_COLOR,
+            catch_constants::gif::style::TIME_LABEL_NOTE_COLOR,
         ],
     );
     super::save_animation_frames(frames, output_path, deadline, &label_colors)

@@ -1,5 +1,7 @@
 //! osu!mania PNG 场景绘制：根据 CLI 传入的布局和对象绘制静态谱面图。
 
+use crate::render::cpu::modes::mania::constants as mania_constants;
+
 use crate::model::ManiaHitObject;
 use crate::processing::parse::round_half_even;
 use crate::processing::timeline::TimeAxis;
@@ -32,29 +34,19 @@ pub struct ManiaPngLayout {
 }
 
 fn png_column_left(column_index: i64, layout: &ManiaPngLayout) -> i64 {
-    let config = &crate::config::current().render.mania.png;
-    config.sizing.PAGE_MARGIN_LEFT
-        + config.sizing.INFO_MARGIN_LEFT
+    let mania_png_sizing = mania_constants::png::sizing();
+    mania_png_sizing.PAGE_MARGIN_LEFT
+        + mania_png_sizing.INFO_MARGIN_LEFT
         + column_index
-            * (config.sizing.INFO_MARGIN_LEFT
+            * (mania_png_sizing.INFO_MARGIN_LEFT
                 + layout.column_width
-                + config.sizing.INFO_MARGIN_RIGHT
-                + config.sizing.COLUMN_GAP)
+                + mania_png_sizing.INFO_MARGIN_RIGHT
+                + mania_png_sizing.COLUMN_GAP)
 }
 
 fn png_chart_top() -> i64 {
-    crate::config::current()
-        .render
-        .mania
-        .png
-        .sizing
-        .PAGE_MARGIN_TOP
-        + crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .INFO_MARGIN_TOP
+    let mania_png_sizing = mania_constants::png::sizing();
+    mania_png_sizing.PAGE_MARGIN_TOP + mania_png_sizing.INFO_MARGIN_TOP
 }
 
 fn draw_column_background(
@@ -63,50 +55,30 @@ fn draw_column_background(
     column_index: i64,
     layout: &ManiaPngLayout,
 ) {
+    let mania_png_sizing = mania_constants::png::sizing();
     let column_left = png_column_left(column_index, layout);
     let chart_top = png_chart_top();
-    let lane_area_left = column_left
-        + crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .LEFT_PANEL_WIDTH;
+    let lane_area_left = column_left + mania_png_sizing.LEFT_PANEL_WIDTH;
 
     image.set_rect_size(
         column_left,
         chart_top,
-        crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .LEFT_PANEL_WIDTH,
+        mania_png_sizing.LEFT_PANEL_WIDTH,
         layout.total_column_height,
-        crate::config::current()
-            .render
-            .mania
-            .png
-            .style
-            .LEFT_PANEL_BACKGROUND,
+        mania_constants::png::style::LEFT_PANEL_BACKGROUND,
     );
 
     for lane_index in 0..key_count as i64 {
         let lane_left = lane_area_left
             + layout.lane_left_offsets[lane_index as usize]
-            + lane_index * crate::config::current().render.mania.png.sizing.LANE_GAP;
+            + lane_index * mania_png_sizing.LANE_GAP;
         let lane_right = lane_left + layout.lane_widths[lane_index as usize];
         image.set_rect_size(
             lane_left,
             chart_top,
             lane_right - lane_left,
             layout.total_column_height,
-            crate::config::current()
-                .render
-                .mania
-                .png
-                .style
-                .LANE_BACKGROUND,
+            mania_constants::png::style::LANE_BACKGROUND,
         );
         if lane_index > 0 {
             let separator_width = crate::render::geometry::scale_stroke_px(
@@ -121,12 +93,7 @@ fn draw_column_background(
                 chart_top,
                 separator_width,
                 layout.total_column_height,
-                crate::config::current()
-                    .render
-                    .mania
-                    .png
-                    .style
-                    .LANE_SEPARATOR,
+                mania_constants::png::style::LANE_SEPARATOR,
             );
         }
     }
@@ -138,17 +105,12 @@ fn draw_timing_line(
     layout: &ManiaPngLayout,
     time_axis: TimeAxis,
 ) {
+    let mania_png_sizing = mania_constants::png::sizing();
     let column_index =
         (timing_line.time.div_euclid(layout.time_per_column)).min(layout.column_count - 1);
     let local_time = timing_line.time - column_index * layout.time_per_column;
     let column_left = png_column_left(column_index, layout);
-    let lane_area_left = column_left
-        + crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .LEFT_PANEL_WIDTH;
+    let lane_area_left = column_left + mania_png_sizing.LEFT_PANEL_WIDTH;
     let chart_top = png_chart_top() + layout.top_buffer;
     let y = chart_top + layout.column_height
         - round_half_even(
@@ -180,15 +142,7 @@ fn draw_timing_line(
         let label = crate::render::text::format_seconds_tenths(
             time_axis.to_display(timing_line.time + layout.chart_start_time),
         );
-        let (_, label_height) = text_size(
-            &label,
-            crate::config::current()
-                .render
-                .mania
-                .png
-                .sizing
-                .TIME_LABEL_FONT_SIZE,
-        );
+        let (_, label_height) = text_size(&label, mania_png_sizing.TIME_LABEL_FONT_SIZE);
         let text_mid_y = label_height as f64 / 2.0;
         // 右侧信息区从轨道右边缘开始左对齐，避免长文本被推回轨道内部。
         let text_gap = crate::render::geometry::scale_px(
@@ -205,30 +159,12 @@ fn draw_timing_line(
             label_x,
             label_y,
             &label,
-            crate::config::current()
-                .render
-                .mania
-                .png
-                .sizing
-                .TIME_LABEL_FONT_SIZE,
-            crate::config::current()
-                .render
-                .mania
-                .png
-                .style
-                .RULER_TEXT_COLOR,
+            mania_png_sizing.TIME_LABEL_FONT_SIZE,
+            mania_constants::png::style::RULER_TEXT_COLOR,
         );
 
         if let Some(ref bpm_label) = timing_line.bpm_label {
-            let (_, bpm_h) = text_size(
-                bpm_label,
-                crate::config::current()
-                    .render
-                    .mania
-                    .png
-                    .sizing
-                    .TIME_LABEL_FONT_SIZE,
-            );
+            let (_, bpm_h) = text_size(bpm_label, mania_png_sizing.TIME_LABEL_FONT_SIZE);
             let bpm_x = column_left + layout.column_width + text_gap;
             let bpm_gap = crate::render::geometry::scale_px(
                 3.0,
@@ -237,33 +173,15 @@ fn draw_timing_line(
                     crate::render::geometry::OutputFormat::Png,
                 ),
             );
-            let bpm_y = (label_y + label_height as i64 + bpm_gap).min(
-                crate::config::current()
-                    .render
-                    .mania
-                    .png
-                    .sizing
-                    .PAGE_MARGIN_TOP
-                    + layout.total_column_height
-                    - bpm_h as i64,
-            );
+            let bpm_y = (label_y + label_height as i64 + bpm_gap)
+                .min(mania_png_sizing.PAGE_MARGIN_TOP + layout.total_column_height - bpm_h as i64);
             draw_text(
                 image,
                 bpm_x,
                 bpm_y,
                 bpm_label,
-                crate::config::current()
-                    .render
-                    .mania
-                    .png
-                    .sizing
-                    .TIME_LABEL_FONT_SIZE,
-                crate::config::current()
-                    .render
-                    .mania
-                    .png
-                    .style
-                    .RULER_TEXT_COLOR,
+                mania_png_sizing.TIME_LABEL_FONT_SIZE,
+                mania_constants::png::style::RULER_TEXT_COLOR,
             );
         }
     }
@@ -275,6 +193,7 @@ fn draw_png_hit_object(
     palette: &[Rgba],
     layout: &ManiaPngLayout,
 ) {
+    let mania_png_sizing = mania_constants::png::sizing();
     let start_column =
         (hit_object.start_time.div_euclid(layout.time_per_column)).min(layout.column_count - 1);
     let end_column =
@@ -285,33 +204,16 @@ fn draw_png_hit_object(
 
     for column_index in start_column..=end_column {
         let column_left = png_column_left(column_index, layout);
-        let lane_area_left = column_left
-            + crate::config::current()
-                .render
-                .mania
-                .png
-                .sizing
-                .LEFT_PANEL_WIDTH;
+        let lane_area_left = column_left + mania_png_sizing.LEFT_PANEL_WIDTH;
         let chart_top = png_chart_top();
         let chart_axis_top = chart_top + layout.top_buffer;
         let chart_bottom = chart_axis_top + layout.column_height;
         let lane_left = lane_area_left
             + layout.lane_left_offsets[lane]
-            + lane as i64 * crate::config::current().render.mania.png.sizing.LANE_GAP
-            + crate::config::current()
-                .render
-                .mania
-                .png
-                .sizing
-                .NOTE_SIDE_PADDING;
-        let lane_right = lane_left + layout.lane_widths[lane]
-            - crate::config::current()
-                .render
-                .mania
-                .png
-                .sizing
-                .NOTE_SIDE_PADDING
-                * 2;
+            + lane as i64 * mania_png_sizing.LANE_GAP
+            + mania_png_sizing.NOTE_SIDE_PADDING;
+        let lane_right =
+            lane_left + layout.lane_widths[lane] - mania_png_sizing.NOTE_SIDE_PADDING * 2;
         let segment_start = hit_object
             .start_time
             .max(column_index * layout.time_per_column);
@@ -340,17 +242,7 @@ fn draw_png_hit_object(
             );
 
         if hit_object.is_long_note {
-            let body_top = chart_top.max(
-                y_end.min(
-                    y_start
-                        - crate::config::current()
-                            .render
-                            .mania
-                            .png
-                            .sizing
-                            .NOTE_HEAD_HEIGHT,
-                ),
-            );
+            let body_top = chart_top.max(y_end.min(y_start - mania_png_sizing.NOTE_HEAD_HEIGHT));
             let body_bottom = chart_bottom.min(y_start);
             if body_top < body_bottom {
                 image.set_rect_size(
@@ -362,15 +254,7 @@ fn draw_png_hit_object(
                 );
             }
             if column_index == start_column {
-                let head_top = chart_top.max(
-                    y_start
-                        - crate::config::current()
-                            .render
-                            .mania
-                            .png
-                            .sizing
-                            .NOTE_HEAD_HEIGHT,
-                );
+                let head_top = chart_top.max(y_start - mania_png_sizing.NOTE_HEAD_HEIGHT);
                 let head_bottom = chart_bottom.min(y_start);
                 if head_top < head_bottom {
                     image.set_rect_size(
@@ -383,15 +267,7 @@ fn draw_png_hit_object(
                 }
             }
         } else {
-            let head_top = chart_top.max(
-                y_start
-                    - crate::config::current()
-                        .render
-                        .mania
-                        .png
-                        .sizing
-                        .NOTE_HEAD_HEIGHT,
-            );
+            let head_top = chart_top.max(y_start - mania_png_sizing.NOTE_HEAD_HEIGHT);
             let head_bottom = chart_bottom.min(y_start);
             if head_top < head_bottom {
                 image.set_rect_size(
@@ -407,6 +283,7 @@ fn draw_png_hit_object(
 }
 
 fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &ManiaPngLayout) {
+    let mania_png_sizing = mania_constants::png::sizing();
     let (time, sv) = sv_change;
     let column_index = (time.div_euclid(layout.time_per_column)).min(layout.column_count - 1);
     let local_time = time - column_index * layout.time_per_column;
@@ -424,15 +301,7 @@ fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &ManiaPngLa
         );
 
     let label = format_sv_label(sv);
-    let (label_width, label_height) = text_size(
-        &label,
-        crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .SV_TEXT_FONT_SIZE,
-    );
+    let (label_width, label_height) = text_size(&label, mania_png_sizing.SV_TEXT_FONT_SIZE);
     let text_mid_y = label_height as f64 / 2.0;
     let label_gap = crate::render::geometry::scale_px(
         1.0,
@@ -448,18 +317,8 @@ fn draw_sv_indicator(image: &mut Img, sv_change: (i64, f64), layout: &ManiaPngLa
         label_x,
         label_y,
         &label,
-        crate::config::current()
-            .render
-            .mania
-            .png
-            .sizing
-            .SV_TEXT_FONT_SIZE,
-        crate::config::current()
-            .render
-            .mania
-            .png
-            .style
-            .SV_TEXT_COLOR,
+        mania_png_sizing.SV_TEXT_FONT_SIZE,
+        mania_constants::png::style::SV_TEXT_COLOR,
     );
 }
 
@@ -477,12 +336,7 @@ pub fn render_mania_png_scene(
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
-        crate::config::current()
-            .render
-            .mania
-            .png
-            .style
-            .IMAGE_BACKGROUND,
+        mania_constants::png::style::IMAGE_BACKGROUND,
     );
 
     for column_index in 0..layout.column_count {

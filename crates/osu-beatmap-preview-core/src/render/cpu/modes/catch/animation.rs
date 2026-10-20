@@ -3,6 +3,8 @@
 //! 单帧 683×384（16:9），playfield 的位置与缩放按游戏内 1080p 等比换算
 //! （见 `render.catch.gif` 中的 playfield 配置），上下左右留白与游戏一致。
 
+use crate::render::cpu::modes::catch::constants as catch_constants;
+
 use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::Beatmap;
 use crate::domain::mods::ModSettings;
@@ -118,25 +120,27 @@ pub fn build_animation_layout(
 
     let (canvas_width, canvas_height) = match output_format {
         crate::render::geometry::OutputFormat::Gif => {
+            let catch_gif_sizing = catch_constants::gif::sizing();
             let config = &crate::config::current().render.catch.gif;
             let unit_width = geometry.content.width
-                + config.sizing.INFO_MARGIN_LEFT
-                + config.sizing.INFO_MARGIN_RIGHT;
-            let info_bottom = if config.style.SHOW_TIME_LABEL {
-                config.sizing.INFO_MARGIN_BOTTOM
+                + catch_gif_sizing.INFO_MARGIN_LEFT
+                + catch_gif_sizing.INFO_MARGIN_RIGHT;
+            let info_bottom = if catch_constants::gif::style::SHOW_TIME_LABEL {
+                catch_gif_sizing.INFO_MARGIN_BOTTOM
             } else {
                 0
             };
-            let unit_height = geometry.content.height + config.sizing.INFO_MARGIN_TOP + info_bottom;
+            let unit_height =
+                geometry.content.height + catch_gif_sizing.INFO_MARGIN_TOP + info_bottom;
             (
-                config.sizing.PAGE_MARGIN_LEFT
-                    + config.sizing.PAGE_MARGIN_RIGHT
+                catch_gif_sizing.PAGE_MARGIN_LEFT
+                    + catch_gif_sizing.PAGE_MARGIN_RIGHT
                     + config.structure.IMAGES_PER_ROW as i64 * unit_width
-                    + (config.structure.IMAGES_PER_ROW as i64 - 1) * config.sizing.GRID_GAP,
-                config.sizing.PAGE_MARGIN_TOP
-                    + config.sizing.PAGE_MARGIN_BOTTOM
+                    + (config.structure.IMAGES_PER_ROW as i64 - 1) * catch_gif_sizing.GRID_GAP,
+                catch_gif_sizing.PAGE_MARGIN_TOP
+                    + catch_gif_sizing.PAGE_MARGIN_BOTTOM
                     + config.structure.ROW_COUNT as i64 * unit_height
-                    + (config.structure.ROW_COUNT as i64 - 1) * config.sizing.GRID_GAP,
+                    + (config.structure.ROW_COUNT as i64 - 1) * catch_gif_sizing.GRID_GAP,
             )
         }
         crate::render::geometry::OutputFormat::Mp4 => {
@@ -165,21 +169,9 @@ pub fn build_animation_layout(
         },
         playfield_background: match output_format {
             crate::render::geometry::OutputFormat::Mp4 => {
-                crate::config::current()
-                    .render
-                    .catch
-                    .mp4
-                    .style
-                    .PLAYFIELD_BACKGROUND
+                catch_constants::mp4::style::PLAYFIELD_BACKGROUND
             }
-            _ => {
-                crate::config::current()
-                    .render
-                    .catch
-                    .gif
-                    .style
-                    .PLAYFIELD_BACKGROUND
-            }
+            _ => catch_constants::gif::style::PLAYFIELD_BACKGROUND,
         },
         judgement_line_color:
             crate::render::cpu::modes::catch::constants::ANIMATION_JUDGEMENT_LINE_COLOR,
@@ -218,7 +210,7 @@ pub fn build_video_animation_layout(
 
 /// 第 segment_index 段在画布上的左上角。
 fn frame_origin(segment_index: usize, layout: &AnimationLayout) -> (i64, i64) {
-    let config = &crate::config::current().render.catch.gif;
+    let catch_gif_sizing = catch_constants::gif::sizing();
     let row_index = segment_index as i64
         / crate::config::current()
             .render
@@ -234,19 +226,19 @@ fn frame_origin(segment_index: usize, layout: &AnimationLayout) -> (i64, i64) {
             .structure
             .IMAGES_PER_ROW as i64;
     let unit_width =
-        layout.frame_width + config.sizing.INFO_MARGIN_LEFT + config.sizing.INFO_MARGIN_RIGHT;
-    let info_bottom = if config.style.SHOW_TIME_LABEL {
-        config.sizing.INFO_MARGIN_BOTTOM
+        layout.frame_width + catch_gif_sizing.INFO_MARGIN_LEFT + catch_gif_sizing.INFO_MARGIN_RIGHT;
+    let info_bottom = if catch_constants::gif::style::SHOW_TIME_LABEL {
+        catch_gif_sizing.INFO_MARGIN_BOTTOM
     } else {
         0
     };
-    let unit_height = layout.frame_height + config.sizing.INFO_MARGIN_TOP + info_bottom;
-    let x = config.sizing.PAGE_MARGIN_LEFT
-        + config.sizing.INFO_MARGIN_LEFT
-        + col_index * (unit_width + config.sizing.GRID_GAP);
-    let y = config.sizing.PAGE_MARGIN_TOP
-        + config.sizing.INFO_MARGIN_TOP
-        + row_index * (unit_height + config.sizing.GRID_GAP);
+    let unit_height = layout.frame_height + catch_gif_sizing.INFO_MARGIN_TOP + info_bottom;
+    let x = catch_gif_sizing.PAGE_MARGIN_LEFT
+        + catch_gif_sizing.INFO_MARGIN_LEFT
+        + col_index * (unit_width + catch_gif_sizing.GRID_GAP);
+    let y = catch_gif_sizing.PAGE_MARGIN_TOP
+        + catch_gif_sizing.INFO_MARGIN_TOP
+        + row_index * (unit_height + catch_gif_sizing.GRID_GAP);
     (x, y)
 }
 
@@ -363,12 +355,7 @@ fn prepare_catch_segment_gif_frames(
         let mut canvas = Img::new(
             layout.canvas_width as u32,
             layout.canvas_height as u32,
-            crate::config::current()
-                .render
-                .catch
-                .gif
-                .style
-                .PLAYFIELD_BACKGROUND,
+            catch_constants::gif::style::PLAYFIELD_BACKGROUND,
         );
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
@@ -392,13 +379,7 @@ fn prepare_catch_segment_gif_frames(
                 );
             }
             canvas.alpha_composite(&frame, frame_x, frame_y);
-            if crate::config::current()
-                .render
-                .catch
-                .gif
-                .style
-                .SHOW_TIME_LABEL
-            {
+            if catch_constants::gif::style::SHOW_TIME_LABEL {
                 draw_gif_time_label(
                     &mut canvas,
                     segment_timing.start_time,
@@ -573,102 +554,44 @@ fn draw_gif_time_label(
     time_axis: TimeAxis,
     layout: &AnimationLayout,
 ) {
+    let catch_gif_sizing = catch_constants::gif::sizing();
     let label = format!(
         "{} - {}",
         crate::render::text::format_mmss_floor(time_axis.to_display(start_time)),
         crate::render::text::format_mmss_floor(time_axis.to_display(start_time + duration_ms))
     );
     let color = if is_preview {
-        crate::config::current()
-            .render
-            .catch
-            .gif
-            .style
-            .PREVIEW_TIME_LABEL_COLOR
+        catch_constants::gif::style::PREVIEW_TIME_LABEL_COLOR
     } else {
-        crate::config::current()
-            .render
-            .catch
-            .gif
-            .style
-            .TIME_LABEL_COLOR
+        catch_constants::gif::style::TIME_LABEL_COLOR
     };
     let note_color = if is_preview {
-        crate::config::current()
-            .render
-            .catch
-            .gif
-            .style
-            .PREVIEW_TIME_LABEL_COLOR
+        catch_constants::gif::style::PREVIEW_TIME_LABEL_COLOR
     } else {
-        crate::config::current()
-            .render
-            .catch
-            .gif
-            .style
-            .TIME_LABEL_NOTE_COLOR
+        catch_constants::gif::style::TIME_LABEL_NOTE_COLOR
     };
-    let (label_w, label_h) = text_size(
-        &label,
-        crate::config::current()
-            .render
-            .catch
-            .gif
-            .sizing
-            .TIME_LABEL_FONT_SIZE,
-    );
+    let (label_w, label_h) = text_size(&label, catch_gif_sizing.TIME_LABEL_FONT_SIZE);
     let x = frame_x + (layout.frame_width - label_w as i64) / 2;
-    let y = frame_y
-        + layout.frame_height
-        + crate::config::current()
-            .render
-            .catch
-            .gif
-            .sizing
-            .TIME_LABEL_TOP_GAP;
+    let y = frame_y + layout.frame_height + catch_gif_sizing.TIME_LABEL_TOP_GAP;
     draw_text(
         canvas,
         x,
         y,
         &label,
-        crate::config::current()
-            .render
-            .catch
-            .gif
-            .sizing
-            .TIME_LABEL_FONT_SIZE,
+        catch_gif_sizing.TIME_LABEL_FONT_SIZE,
         color,
     );
 
     if is_preview {
         let note = "Preview Time";
-        let (note_w, _) = text_size(
-            note,
-            crate::config::current()
-                .render
-                .catch
-                .gif
-                .sizing
-                .TIME_LABEL_NOTE_FONT_SIZE,
-        );
+        let (note_w, _) = text_size(note, catch_gif_sizing.TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = frame_x + (layout.frame_width - note_w as i64) / 2;
         draw_text(
             canvas,
             note_x,
-            y + label_h as i64
-                + crate::config::current()
-                    .render
-                    .catch
-                    .gif
-                    .sizing
-                    .TIME_LABEL_NOTE_TOP_GAP,
+            y + label_h as i64 + catch_gif_sizing.TIME_LABEL_NOTE_TOP_GAP,
             note,
-            crate::config::current()
-                .render
-                .catch
-                .gif
-                .sizing
-                .TIME_LABEL_NOTE_FONT_SIZE,
+            catch_gif_sizing.TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
     }
@@ -751,7 +674,7 @@ mod tests {
         let mut config = crate::config::CoreConfig::default();
         config.render.catch.gif.structure.ROW_COUNT = 1;
         config.render.catch.gif.structure.IMAGES_PER_ROW = 1;
-        config.render.catch.gif.style.SHOW_TIME_LABEL = false;
+
         crate::config::with_config(std::sync::Arc::new(config), || {
             let beatmap = crate::parse_beatmap_bytes(
                 b"osu file format v14\n[General]\nMode:2\n[Difficulty]\nCircleSize:5\nApproachRate:5\n[TimingPoints]\n0,500,4,1,0,100,1,1\n[HitObjects]\n256,192,3000,1,0,0:0:0:0:\n",
@@ -809,7 +732,7 @@ mod tests {
         let mut config = crate::config::CoreConfig::default();
         config.render.catch.gif.structure.ROW_COUNT = 1;
         config.render.catch.gif.structure.IMAGES_PER_ROW = 1;
-        config.render.catch.gif.style.SHOW_TIME_LABEL = false;
+
         crate::config::with_config(std::sync::Arc::new(config), || {
             let beatmap = crate::parse_beatmap_bytes(
             b"osu file format v14\n[General]\nMode:2\n\
@@ -888,6 +811,17 @@ mod tests {
                 first.data == kiai.render(0).data,
                 "乱序出帧不能改变 Kiai 轮廓"
             );
+            // 标签使用输出时间，倍速下只比较游玩区域。
+            let playfield = |image: Img| {
+                image
+                    .crop(
+                        origin_x as u32,
+                        origin_y as u32,
+                        (origin_x + layout.frame_width) as u32,
+                        (origin_y + layout.frame_height) as u32,
+                    )
+                    .data
+            };
             for (speed, rate_index, normal_index) in [(1.5, 2, 3), (0.75, 4, 3)] {
                 let rate = ModSettings {
                     hidden: true,
@@ -907,7 +841,7 @@ mod tests {
                 )
                 .unwrap();
                 assert!(
-                    frames.render(rate_index).data == kiai.render(normal_index).data,
+                    playfield(frames.render(rate_index)) == playfield(kiai.render(normal_index)),
                     "倍速不能改变同一谱面时刻的 Kiai 轮廓"
                 );
             }

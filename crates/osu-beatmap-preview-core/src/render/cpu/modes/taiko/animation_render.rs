@@ -1,5 +1,7 @@
 //! osu!taiko GIF 渲染器：多段预览或单画面片段。
 
+use crate::render::cpu::modes::taiko::constants as taiko_constants;
+
 use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::{Beatmap, TaikoHitObject, TimingPoint};
 use crate::domain::mods::ModSettings;
@@ -224,12 +226,7 @@ fn prepare_taiko_segment_gif_frames(
         let mut bg = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
-            crate::config::current()
-                .render
-                .taiko
-                .gif
-                .style
-                .IMAGE_BACKGROUND,
+            taiko_constants::gif::style::IMAGE_BACKGROUND,
         );
         for segment_index in 0..segment_timings.len() {
             draw_row_background(&mut bg, &layout, segment_index as i64);
@@ -273,13 +270,7 @@ fn prepare_taiko_segment_gif_frames(
         }
 
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
-            if crate::config::current()
-                .render
-                .taiko
-                .gif
-                .style
-                .SHOW_TIME_LABEL
-            {
+            if taiko_constants::gif::style::SHOW_TIME_LABEL {
                 draw_time_label(
                     &mut canvas,
                     segment_timing.start_time,
@@ -521,26 +512,25 @@ pub fn build_animation_layout_with_segments_and_format(
 
     let (image_width, image_height, playfield_left, first_row_top, row_stride) =
         if output_format == crate::render::geometry::OutputFormat::Gif {
-            let config = &crate::config::current().render.taiko.gif;
-            let unit_width = config.sizing.INFO_MARGIN_LEFT
+            let taiko_gif_sizing = taiko_constants::gif::sizing();
+            let unit_width = taiko_gif_sizing.INFO_MARGIN_LEFT
                 + geometry.content.width
-                + config.sizing.INFO_MARGIN_RIGHT;
-            // 时间标签关闭时，底部信息区不参与行高度和行间步进。
-            let info_bottom = if config.style.SHOW_TIME_LABEL {
-                config.sizing.INFO_MARGIN_BOTTOM
+                + taiko_gif_sizing.INFO_MARGIN_RIGHT;
+            let info_bottom = if taiko_constants::gif::style::SHOW_TIME_LABEL {
+                taiko_gif_sizing.INFO_MARGIN_BOTTOM
             } else {
                 0
             };
-            let unit_height = config.sizing.INFO_MARGIN_TOP + row_height + info_bottom;
+            let unit_height = taiko_gif_sizing.INFO_MARGIN_TOP + row_height + info_bottom;
             (
-                config.sizing.PAGE_MARGIN_LEFT + unit_width + config.sizing.PAGE_MARGIN_RIGHT,
-                config.sizing.PAGE_MARGIN_TOP
+                taiko_gif_sizing.PAGE_MARGIN_LEFT + unit_width + taiko_gif_sizing.PAGE_MARGIN_RIGHT,
+                taiko_gif_sizing.PAGE_MARGIN_TOP
                     + segment_count as i64 * unit_height
-                    + (segment_count as i64 - 1) * config.sizing.ROW_GAP
-                    + config.sizing.PAGE_MARGIN_BOTTOM,
-                config.sizing.PAGE_MARGIN_LEFT + config.sizing.INFO_MARGIN_LEFT,
-                config.sizing.PAGE_MARGIN_TOP + config.sizing.INFO_MARGIN_TOP,
-                unit_height + config.sizing.ROW_GAP,
+                    + (segment_count as i64 - 1) * taiko_gif_sizing.ROW_GAP
+                    + taiko_gif_sizing.PAGE_MARGIN_BOTTOM,
+                taiko_gif_sizing.PAGE_MARGIN_LEFT + taiko_gif_sizing.INFO_MARGIN_LEFT,
+                taiko_gif_sizing.PAGE_MARGIN_TOP + taiko_gif_sizing.INFO_MARGIN_TOP,
+                unit_height + taiko_gif_sizing.ROW_GAP,
             )
         } else {
             (geometry.content.width, row_height, 0, 0, row_height)
@@ -554,24 +544,18 @@ pub fn build_animation_layout_with_segments_and_format(
     );
     let (track_background_color, track_edge_color, track_accent_color, judgement_line_color) =
         match output_format {
-            crate::render::geometry::OutputFormat::Gif => {
-                let config = &crate::config::current().render.taiko.gif;
-                (
-                    config.style.TRACK_BACKGROUND_COLOR,
-                    config.style.TRACK_EDGE_COLOR,
-                    config.style.TRACK_ACCENT_COLOR,
-                    config.style.JUDGEMENT_LINE_COLOR,
-                )
-            }
-            crate::render::geometry::OutputFormat::Mp4 => {
-                let config = &crate::config::current().render.taiko.mp4;
-                (
-                    config.style.TRACK_BACKGROUND_COLOR,
-                    config.style.TRACK_EDGE_COLOR,
-                    config.style.TRACK_ACCENT_COLOR,
-                    config.style.JUDGEMENT_LINE_COLOR,
-                )
-            }
+            crate::render::geometry::OutputFormat::Gif => (
+                taiko_constants::gif::style::TRACK_BACKGROUND_COLOR,
+                taiko_constants::gif::style::TRACK_EDGE_COLOR,
+                taiko_constants::gif::style::TRACK_ACCENT_COLOR,
+                taiko_constants::gif::style::JUDGEMENT_LINE_COLOR,
+            ),
+            crate::render::geometry::OutputFormat::Mp4 => (
+                taiko_constants::mp4::style::TRACK_BACKGROUND_COLOR,
+                taiko_constants::mp4::style::TRACK_EDGE_COLOR,
+                taiko_constants::mp4::style::TRACK_ACCENT_COLOR,
+                taiko_constants::mp4::style::JUDGEMENT_LINE_COLOR,
+            ),
             crate::render::geometry::OutputFormat::Png => unreachable!("PNG 不使用动画布局"),
         };
 
@@ -942,7 +926,6 @@ fn draw_swell_object(
     }
     let (center_x, center_y, diameter) =
         swell_frame_geometry(hit_object, layout, row_index, snapshot_time);
-    let runtime = crate::config::current();
     let (
         color,
         text_color,
@@ -955,31 +938,31 @@ fn draw_swell_object(
         show_marker,
     ) = match layout.output_format {
         crate::render::geometry::OutputFormat::Gif => {
-            let config = &runtime.render.taiko.gif;
+            let sizing = taiko_constants::gif::sizing();
             (
-                config.style.SWELL_COLOR,
-                config.style.SWELL_TEXT_COLOR,
-                config.sizing.SWELL_HIT_COUNT_FONT_SIZE,
-                config.sizing.SWELL_CLEAR_FONT_SIZE,
-                config.style.SHOW_SWELL_HIT_COUNT,
-                config.style.SHOW_SWELL_APPROACH_CIRCLE,
-                config.style.SHOW_SWELL_CLEAR,
-                config.style.SWELL_RING_THICKNESS_RATIO,
-                config.style.SHOW_SWELL_MARKER,
+                taiko_constants::gif::style::SWELL_COLOR,
+                taiko_constants::gif::style::SWELL_TEXT_COLOR,
+                sizing.SWELL_HIT_COUNT_FONT_SIZE,
+                sizing.SWELL_CLEAR_FONT_SIZE,
+                taiko_constants::gif::style::SHOW_SWELL_HIT_COUNT,
+                taiko_constants::gif::style::SHOW_SWELL_APPROACH_CIRCLE,
+                taiko_constants::gif::style::SHOW_SWELL_CLEAR,
+                taiko_constants::gif::style::SWELL_RING_THICKNESS_RATIO,
+                taiko_constants::gif::style::SHOW_SWELL_MARKER,
             )
         }
         crate::render::geometry::OutputFormat::Mp4 => {
-            let config = &runtime.render.taiko.mp4;
+            let sizing = taiko_constants::mp4::sizing();
             (
-                config.style.SWELL_COLOR,
-                config.style.SWELL_TEXT_COLOR,
-                config.sizing.SWELL_HIT_COUNT_FONT_SIZE,
-                config.sizing.SWELL_CLEAR_FONT_SIZE,
-                config.style.SHOW_SWELL_HIT_COUNT,
-                config.style.SHOW_SWELL_APPROACH_CIRCLE,
-                config.style.SHOW_SWELL_CLEAR,
-                config.style.SWELL_RING_THICKNESS_RATIO,
-                config.style.SHOW_SWELL_MARKER,
+                taiko_constants::mp4::style::SWELL_COLOR,
+                taiko_constants::mp4::style::SWELL_TEXT_COLOR,
+                sizing.SWELL_HIT_COUNT_FONT_SIZE,
+                sizing.SWELL_CLEAR_FONT_SIZE,
+                taiko_constants::mp4::style::SHOW_SWELL_HIT_COUNT,
+                taiko_constants::mp4::style::SHOW_SWELL_APPROACH_CIRCLE,
+                taiko_constants::mp4::style::SHOW_SWELL_CLEAR,
+                taiko_constants::mp4::style::SWELL_RING_THICKNESS_RATIO,
+                taiko_constants::mp4::style::SHOW_SWELL_MARKER,
             )
         }
         crate::render::geometry::OutputFormat::Png => unreachable!("PNG 不使用动画转盘"),
@@ -1322,6 +1305,7 @@ fn draw_time_label(
     is_preview: bool,
     time_axis: crate::domain::shared::time_selection::TimeAxis,
 ) {
+    let taiko_gif_sizing = taiko_constants::gif::sizing();
     let text_gap = crate::render::geometry::scale_px(
         5.0,
         crate::render::geometry::output_scale(
@@ -1336,44 +1320,16 @@ fn draw_time_label(
         crate::render::text::format_mmss_floor(time_axis.to_display(start_time + duration_ms))
     );
     let color = if is_preview {
-        crate::config::current()
-            .render
-            .taiko
-            .gif
-            .style
-            .PREVIEW_TIME_LABEL_COLOR
+        taiko_constants::gif::style::PREVIEW_TIME_LABEL_COLOR
     } else {
-        crate::config::current()
-            .render
-            .taiko
-            .gif
-            .style
-            .TIME_LABEL_COLOR
+        taiko_constants::gif::style::TIME_LABEL_COLOR
     };
     let note_color = if is_preview {
-        crate::config::current()
-            .render
-            .taiko
-            .gif
-            .style
-            .PREVIEW_TIME_LABEL_COLOR
+        taiko_constants::gif::style::PREVIEW_TIME_LABEL_COLOR
     } else {
-        crate::config::current()
-            .render
-            .taiko
-            .gif
-            .style
-            .TIME_LABEL_NOTE_COLOR
+        taiko_constants::gif::style::TIME_LABEL_NOTE_COLOR
     };
-    let (label_w, label_h) = text_size(
-        &label,
-        crate::config::current()
-            .render
-            .taiko
-            .gif
-            .sizing
-            .TIME_LABEL_FONT_SIZE,
-    );
+    let (label_w, label_h) = text_size(&label, taiko_gif_sizing.TIME_LABEL_FONT_SIZE);
     let x = (layout.playfield_left as f64
         + (layout.image_width - layout.playfield_left * 2 - label_w as i64) as f64 / 2.0)
         .floor() as i64;
@@ -1382,26 +1338,13 @@ fn draw_time_label(
         x,
         y,
         &label,
-        crate::config::current()
-            .render
-            .taiko
-            .gif
-            .sizing
-            .TIME_LABEL_FONT_SIZE,
+        taiko_gif_sizing.TIME_LABEL_FONT_SIZE,
         color,
     );
 
     if is_preview {
         let note = "Preview Time";
-        let (note_w, _) = text_size(
-            note,
-            crate::config::current()
-                .render
-                .taiko
-                .gif
-                .sizing
-                .TIME_LABEL_NOTE_FONT_SIZE,
-        );
+        let (note_w, _) = text_size(note, taiko_gif_sizing.TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = (layout.playfield_left as f64
             + (layout.image_width - layout.playfield_left * 2 - note_w as i64) as f64 / 2.0)
             .floor() as i64;
@@ -1417,12 +1360,7 @@ fn draw_time_label(
                     ),
                 ),
             note,
-            crate::config::current()
-                .render
-                .taiko
-                .gif
-                .sizing
-                .TIME_LABEL_NOTE_FONT_SIZE,
+            taiko_gif_sizing.TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
     }
@@ -1625,31 +1563,6 @@ mod tests {
     }
 
     #[test]
-    fn swell_details_can_be_disabled_without_changing_the_green_ring() {
-        let mut config = crate::config::CoreConfig::default();
-        config.render.taiko.gif.style.SHOW_SWELL_MARKER = false;
-        config.render.taiko.gif.style.SHOW_SWELL_HIT_COUNT = false;
-        config.render.taiko.gif.style.SHOW_SWELL_APPROACH_CIRCLE = false;
-        config.render.taiko.gif.style.SHOW_SWELL_CLEAR = false;
-        crate::config::with_config(std::sync::Arc::new(config), || {
-            let layout = swell_test_layout(1.0);
-            let image = render_test_swell(1200);
-            let x =
-                pyround(judgement_line_x(&layout) as f64 + layout.row_height as f64 * 0.44) as u32;
-            let y = gif_row_center_y(0, &layout) as u32;
-            assert_eq!(image.get(x, y)[3], 0);
-            assert!(
-                image
-                    .data
-                    .chunks_exact(4)
-                    .filter(|p| p[3] > 0)
-                    .all(|p| p[..3] == SWELL_COLOR),
-                "关闭附加信息后只显示青绿色圆环"
-            );
-        });
-    }
-
-    #[test]
     fn swell_marker_only_appears_before_the_first_hit() {
         for format in [
             crate::render::geometry::OutputFormat::Gif,
@@ -1671,32 +1584,37 @@ mod tests {
                 &[],
                 1.0,
             );
-            let render = |time, marker| {
-                let mut config = crate::config::CoreConfig::default();
-                config.render.taiko.gif.style.SHOW_SWELL_MARKER = marker;
-                config.render.taiko.mp4.style.SHOW_SWELL_MARKER = marker;
-                crate::config::with_config(std::sync::Arc::new(config), || {
-                    let mut image = Img::new(
-                        layout.image_width as u32,
-                        layout.image_height as u32,
-                        [0, 0, 0, 0],
-                    );
-                    draw_hit_object(
-                        &mut image,
-                        &objects[0],
-                        &layout,
-                        0,
-                        time,
-                        &mut RenderCache::default(),
-                    );
-                    image
-                })
+            let render = |time| {
+                let mut image = Img::new(
+                    layout.image_width as u32,
+                    layout.image_height as u32,
+                    [0, 0, 0, 0],
+                );
+                draw_hit_object(
+                    &mut image,
+                    &objects[0],
+                    &layout,
+                    0,
+                    time,
+                    &mut RenderCache::default(),
+                );
+                image
             };
-            let waiting = render(900, true);
-            assert!(
-                waiting.data != render(900, false).data,
-                "击打前必须显示中心标志"
-            );
+            let waiting = render(900);
+            // 中心标志为青绿色小环；击打后的数字和计时圈为白色。
+            let marker_region = |image: &Img, time| {
+                let (cx, cy, diameter) = swell_frame_geometry(&objects[0], &layout, 0, time);
+                (0..image.h)
+                    .flat_map(|y| (0..image.w).map(move |x| (x, y)))
+                    .filter(|&(x, y)| {
+                        (x as f64 - cx).powi(2) + (y as f64 - cy).powi(2)
+                            < (diameter as f64 * 0.3).powi(2)
+                    })
+                    .map(|(x, y)| image.get(x, y))
+                    .filter(|pixel| pixel[3] > 0 && pixel[..3] == SWELL_COLOR)
+                    .count()
+            };
+            assert!(marker_region(&waiting, 900) > 0, "击打前必须显示中心标志");
             assert!(
                 waiting
                     .data
@@ -1707,7 +1625,7 @@ mod tests {
             );
             for time in [1000, 1100, 1200, 1800] {
                 assert!(
-                    render(time, true).data == render(time, false).data,
+                    marker_region(&render(time), time) == 0,
                     "开始击打后必须隐藏中心标志"
                 );
             }
@@ -1730,19 +1648,6 @@ mod tests {
                 "转盘必须显示计数或完成文字"
             );
         }
-        let mut config = crate::config::CoreConfig::default();
-        config.render.taiko.gif.style.SHOW_SWELL_MARKER = false;
-        config.render.taiko.gif.style.SHOW_SWELL_HIT_COUNT = false;
-        config.render.taiko.gif.style.SHOW_SWELL_CLEAR = false;
-        let inner =
-            crate::config::with_config(std::sync::Arc::new(config), || render_test_swell(1200));
-        assert!(
-            inner
-                .data
-                .chunks_exact(4)
-                .any(|p| p[3] > 0 && p[..3] == NOTE_RING_COLOR[..3]),
-            "关闭文字后仍需保留计时内圈"
-        );
     }
 
     #[test]
@@ -2052,8 +1957,7 @@ mod tests {
         let mut config = crate::config::CoreConfig::default();
         config.render.taiko.gif.SCALE = 0.75;
         config.render.taiko.gif.structure.ROW_COUNT = 2;
-        config.render.taiko.gif.sizing.PAGE_MARGIN_RIGHT = 32;
-        config.render.taiko.gif.style.SHOW_TIME_LABEL = false;
+
         config.render.taiko.gif.style.SHOW_MEASURE_LINES = false;
         crate::config::with_config(std::sync::Arc::new(config), || {
             let layout = build_animation_layout(compute_time_range());
@@ -2114,7 +2018,7 @@ mod tests {
         let mut config = crate::config::CoreConfig::default();
         config.render.taiko.gif.SCALE = 0.5;
         config.render.taiko.gif.structure.ROW_COUNT = 1;
-        config.render.taiko.gif.style.SHOW_TIME_LABEL = false;
+
         config.render.taiko.gif.style.SHOW_MEASURE_LINES = false;
         crate::config::with_config(std::sync::Arc::new(config), || {
             let deadline = RequestDeadline::new(
@@ -2144,6 +2048,18 @@ mod tests {
                     )
                     .unwrap()
                 };
+                let layout = build_animation_layout(compute_time_range());
+                // 时间标签显示输出时间，倍速比较只检查相同谱面时间的轨道内容。
+                let track = |image: Img| {
+                    image
+                        .crop(
+                            0,
+                            layout.first_row_top as u32,
+                            image.w,
+                            (layout.first_row_top + layout.row_height) as u32,
+                        )
+                        .data
+                };
                 let normal = prepare(base);
                 for (rate, frame_index, normal_index) in [
                     ("DT", 4, 6),
@@ -2154,7 +2070,7 @@ mod tests {
                     let changed = prepare(&format!("{base} {rate}"));
                     assert_eq!(changed.frame_count(), 20);
                     assert!(
-                        changed.render(frame_index).data == normal.render(normal_index).data,
+                        track(changed.render(frame_index)) == track(normal.render(normal_index)),
                         "{base} {rate} 在相同谱面时间不能额外改变音符间距"
                     );
                 }

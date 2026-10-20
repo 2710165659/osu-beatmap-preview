@@ -11,33 +11,8 @@ pub struct RenderStandardPngStructureConfig {
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
-pub struct RenderStandardPngSizingConfig {
-    pub PAGE_MARGIN_TOP: i64,
-    pub PAGE_MARGIN_RIGHT: i64,
-    pub PAGE_MARGIN_BOTTOM: i64,
-    pub PAGE_MARGIN_LEFT: i64,
-    pub INFO_MARGIN_TOP: i64,
-    pub INFO_MARGIN_RIGHT: i64,
-    pub INFO_MARGIN_BOTTOM: i64,
-    pub INFO_MARGIN_LEFT: i64,
-    pub COLUMN_GAP: i64,
-    pub ROW_GAP: i64,
-    pub TIME_LABEL_FONT_SIZE: u32,
-    pub TIME_LABEL_NOTE_FONT_SIZE: u32,
-    pub TIME_LABEL_TOP_GAP: i64,
-    pub TIME_LABEL_NOTE_TOP_GAP: i64,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderStandardPngStyleConfig {
     pub MS_PER_IMAGE: i64,
-    pub CANVAS_BACKGROUND_COLOR: [u8; 4],
-    pub IMAGE_BACKGROUND_COLOR: [u8; 4],
-    pub TIME_LABEL_COLOR: [u8; 4],
-    pub TIME_LABEL_NOTE_COLOR: [u8; 4],
-    pub PREVIEW_TIME_LABEL_COLOR: [u8; 4],
     pub SLIDER_BODY_SUPERSAMPLE: i64,
 }
 
@@ -47,7 +22,6 @@ pub struct RenderStandardPngStyleConfig {
 pub struct RenderStandardPngConfig {
     pub SCALE: f64,
     pub structure: RenderStandardPngStructureConfig,
-    pub sizing: RenderStandardPngSizingConfig,
     pub style: RenderStandardPngStyleConfig,
 }
 
@@ -62,34 +36,9 @@ pub struct RenderStandardGifStructureConfig {
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
-pub struct RenderStandardGifSizingConfig {
-    pub GRID_GAP: i64,
-    pub PAGE_MARGIN_TOP: i64,
-    pub PAGE_MARGIN_RIGHT: i64,
-    pub PAGE_MARGIN_BOTTOM: i64,
-    pub PAGE_MARGIN_LEFT: i64,
-    pub INFO_MARGIN_TOP: i64,
-    pub INFO_MARGIN_RIGHT: i64,
-    pub INFO_MARGIN_BOTTOM: i64,
-    pub INFO_MARGIN_LEFT: i64,
-    pub TIME_LABEL_FONT_SIZE: u32,
-    pub TIME_LABEL_NOTE_FONT_SIZE: u32,
-    pub TIME_LABEL_TOP_GAP: i64,
-    pub TIME_LABEL_NOTE_TOP_GAP: i64,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderStandardGifStyleConfig {
-    pub SHOW_TIME_LABEL: bool,
     pub DURATION_MS: i64,
     pub FPS: i64,
-    pub CANVAS_BACKGROUND_COLOR: [u8; 4],
-    pub IMAGE_BACKGROUND_COLOR: [u8; 4],
-    pub TIME_LABEL_COLOR: [u8; 4],
-    pub TIME_LABEL_NOTE_COLOR: [u8; 4],
-    pub PREVIEW_TIME_LABEL_COLOR: [u8; 4],
     pub SLIDER_BODY_SUPERSAMPLE: i64,
 }
 
@@ -99,16 +48,7 @@ pub struct RenderStandardGifStyleConfig {
 pub struct RenderStandardGifConfig {
     pub SCALE: f64,
     pub structure: RenderStandardGifStructureConfig,
-    pub sizing: RenderStandardGifSizingConfig,
     pub style: RenderStandardGifStyleConfig,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, non_snake_case, non_camel_case_types)]
-pub struct RenderStandardMp4SizingConfig {
-    pub LABEL_FONT_SIZE: u32,
-    pub LABEL_PAD: i64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -123,8 +63,6 @@ pub struct RenderStandardMp4StyleConfig {
     pub ENABLE_BACKGROUND_VIDEO: bool,
     pub ENABLE_STORYBOARD: bool,
     pub BACKGROUND_DIM: f64,
-    pub LABEL_COLOR: [u8; 4],
-    pub IMAGE_BACKGROUND_COLOR: [u8; 4],
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -132,7 +70,6 @@ pub struct RenderStandardMp4StyleConfig {
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderStandardMp4Config {
     pub SCALE: f64,
-    pub sizing: RenderStandardMp4SizingConfig,
     pub style: RenderStandardMp4StyleConfig,
 }
 
@@ -156,37 +93,12 @@ pub struct RenderTaikoPngSizingConfig {
     pub BASE_ROW_WIDTH_4_TO_5_MINUTES: i64,
     pub BASE_ROW_WIDTH_5_TO_6_MINUTES: i64,
     pub BASE_ROW_WIDTH_6_TO_10_MINUTES: i64,
-    pub ROW_GAP: i64,
-    pub ROW_HEIGHT: i64,
-    pub ROW_INNER_PADDING_X: i64,
-    pub PAGE_MARGIN_TOP: i64,
-    pub PAGE_MARGIN_RIGHT: i64,
-    pub PAGE_MARGIN_BOTTOM: i64,
-    pub PAGE_MARGIN_LEFT: i64,
-    pub INFO_MARGIN_TOP: i64,
-    pub INFO_MARGIN_RIGHT: i64,
-    pub INFO_MARGIN_BOTTOM: i64,
-    pub INFO_MARGIN_LEFT: i64,
-    pub LABEL_RIGHT_PADDING: i64,
-    pub TIME_LABEL_FONT_SIZE: u32,
-    pub SWELL_HIT_COUNT_FONT_SIZE: u32,
-    pub SWELL_DURATION_FONT_SIZE: u32,
-    pub SWELL_DURATION_TOP_GAP: i64,
-    pub TIME_LABEL_NOTE_FONT_SIZE: u32,
-    pub BPM_FONT_SIZE: u32,
-    pub TIME_LABEL_TOP_GAP: i64,
-    pub TIME_LABEL_NOTE_TOP_GAP: i64,
-    pub BPM_TOP_GAP: i64,
-    pub SV_TEXT_FONT_SIZE: u32,
-    pub SV_TOP_GAP: i64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderTaikoPngStyleConfig {
-    pub SWELL_COLOR: [u8; 3],
-    pub SWELL_TEXT_COLOR: [u8; 4],
     pub MAX_SUPPORTED_DURATION_MS: i64,
     pub ROW_WIDTH_MULTIPLIER_BPM_0_TO_180: f64,
     pub ROW_WIDTH_MULTIPLIER_BPM_180_TO_240: f64,
@@ -194,15 +106,6 @@ pub struct RenderTaikoPngStyleConfig {
     pub ROW_WIDTH_MULTIPLIER_BPM_300_PLUS: f64,
     pub SPACING_PER_BPM: f64,
     pub TIME_LABEL_MIN_INTERVAL_MS: i64,
-    pub SV_TEXT_COLOR: [u8; 4],
-    pub IMAGE_BACKGROUND: [u8; 4],
-    pub BEAT_LINE_COLOR: [u8; 4],
-    pub RULER_TEXT_COLOR: [u8; 4],
-    pub ACCENT_LABEL_COLOR: [u8; 4],
-    pub MEASURE_LINE_COLOR: [u8; 4],
-    pub TRACK_BACKGROUND_COLOR: [u8; 4],
-    pub TRACK_EDGE_COLOR: [u8; 4],
-    pub TRACK_ACCENT_COLOR: [u8; 4],
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -224,45 +127,10 @@ pub struct RenderTaikoGifStructureConfig {
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
-pub struct RenderTaikoGifSizingConfig {
-    pub SWELL_HIT_COUNT_FONT_SIZE: u32,
-    pub SWELL_CLEAR_FONT_SIZE: u32,
-    pub ROW_GAP: i64,
-    pub PAGE_MARGIN_TOP: i64,
-    pub PAGE_MARGIN_RIGHT: i64,
-    pub PAGE_MARGIN_BOTTOM: i64,
-    pub PAGE_MARGIN_LEFT: i64,
-    pub INFO_MARGIN_TOP: i64,
-    pub INFO_MARGIN_RIGHT: i64,
-    pub INFO_MARGIN_BOTTOM: i64,
-    pub INFO_MARGIN_LEFT: i64,
-    pub TIME_LABEL_FONT_SIZE: u32,
-    pub TIME_LABEL_NOTE_FONT_SIZE: u32,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderTaikoGifStyleConfig {
-    pub SWELL_COLOR: [u8; 4],
-    pub SWELL_TEXT_COLOR: [u8; 4],
-    pub SWELL_RING_THICKNESS_RATIO: f64,
-    pub SHOW_SWELL_MARKER: bool,
-    pub SHOW_SWELL_HIT_COUNT: bool,
-    pub SHOW_SWELL_APPROACH_CIRCLE: bool,
-    pub SHOW_SWELL_CLEAR: bool,
-    pub IMAGE_BACKGROUND: [u8; 4],
-    pub TRACK_BACKGROUND_COLOR: [u8; 4],
-    pub TRACK_EDGE_COLOR: [u8; 4],
-    pub TRACK_ACCENT_COLOR: [u8; 4],
-    pub SHOW_TIME_LABEL: bool,
     pub SHOW_MEASURE_LINES: bool,
     pub DURATION_MS: f64,
     pub FPS: f64,
-    pub TIME_LABEL_COLOR: [u8; 4],
-    pub TIME_LABEL_NOTE_COLOR: [u8; 4],
-    pub PREVIEW_TIME_LABEL_COLOR: [u8; 4],
-    pub JUDGEMENT_LINE_COLOR: [u8; 4],
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -271,43 +139,19 @@ pub struct RenderTaikoGifStyleConfig {
 pub struct RenderTaikoGifConfig {
     pub SCALE: f64,
     pub structure: RenderTaikoGifStructureConfig,
-    pub sizing: RenderTaikoGifSizingConfig,
     pub style: RenderTaikoGifStyleConfig,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
-pub struct RenderTaikoMp4SizingConfig {
-    pub SWELL_HIT_COUNT_FONT_SIZE: u32,
-    pub SWELL_CLEAR_FONT_SIZE: u32,
-    pub LABEL_FONT_SIZE: u32,
-    pub LABEL_PAD: i64,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderTaikoMp4StyleConfig {
-    pub SWELL_COLOR: [u8; 4],
-    pub SWELL_TEXT_COLOR: [u8; 4],
-    pub SWELL_RING_THICKNESS_RATIO: f64,
-    pub SHOW_SWELL_MARKER: bool,
-    pub SHOW_SWELL_HIT_COUNT: bool,
-    pub SHOW_SWELL_APPROACH_CIRCLE: bool,
-    pub SHOW_SWELL_CLEAR: bool,
     pub ENABLE_BACKGROUND_IMAGE: bool,
     pub ENABLE_BACKGROUND_VIDEO: bool,
     pub ENABLE_STORYBOARD: bool,
     pub BACKGROUND_DIM: f64,
-    pub LABEL_COLOR: [u8; 4],
-    pub IMAGE_BACKGROUND: [u8; 4],
-    pub TRACK_BACKGROUND_COLOR: [u8; 4],
-    pub TRACK_EDGE_COLOR: [u8; 4],
-    pub TRACK_ACCENT_COLOR: [u8; 4],
     pub SHOW_MEASURE_LINES: bool,
     pub FPS: f64,
-    pub JUDGEMENT_LINE_COLOR: [u8; 4],
     pub ENABLE_HITSOUND: bool,
     pub ENABLE_BEATMAP_HITSOUND: bool,
     pub HITSOUND_VOLUME: i64,
@@ -318,7 +162,6 @@ pub struct RenderTaikoMp4StyleConfig {
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderTaikoMp4Config {
     pub SCALE: f64,
-    pub sizing: RenderTaikoMp4SizingConfig,
     pub style: RenderTaikoMp4StyleConfig,
 }
 
@@ -342,24 +185,6 @@ pub struct RenderCatchPngSizingConfig {
     pub MAX_AREA_HEIGHT_4_TO_5_MINUTES: i64,
     pub MAX_AREA_HEIGHT_5_TO_6_MINUTES: i64,
     pub MAX_TOTAL_CHART_HEIGHT: i64,
-    pub PAGE_MARGIN_TOP: i64,
-    pub PAGE_MARGIN_RIGHT: i64,
-    pub PAGE_MARGIN_BOTTOM: i64,
-    pub PAGE_MARGIN_LEFT: i64,
-    pub INFO_MARGIN_TOP: i64,
-    pub INFO_MARGIN_RIGHT: i64,
-    pub INFO_MARGIN_BOTTOM: i64,
-    pub INFO_MARGIN_LEFT: i64,
-    pub LEFT_PANEL_WIDTH: i64,
-    pub COLUMN_WIDTH: i64,
-    pub COLUMN_GAP: i64,
-    pub TIME_LABEL_FONT_SIZE: u32,
-    pub BPM_LABEL_GAP: i64,
-    pub EDGE_GUIDE_WIDTH: f64,
-    pub EDGE_COMBO_LABEL_FONT_SIZE: u32,
-    pub EDGE_COMBO_LABEL_GAP: f64,
-    pub EDGE_COMBO_LABEL_PADDING: i64,
-    pub EDGE_COMBO_LABEL_SHADOW_GAP: i64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -368,19 +193,7 @@ pub struct RenderCatchPngSizingConfig {
 pub struct RenderCatchPngStyleConfig {
     pub SHOW_BANANA_ROUTE: bool,
     pub MAX_SUPPORTED_DURATION_MS: i64,
-    pub LEFT_PANEL_BACKGROUND: [u8; 4],
-    pub IMAGE_BACKGROUND: [u8; 4],
-    pub PLAYFIELD_BACKGROUND: [u8; 4],
-    pub PLAYFIELD_BORDER: [u8; 4],
-    pub MEASURE_LINE_COLOR: [u8; 4],
-    pub BEAT_LINE_COLOR: [u8; 4],
     pub TIME_LABEL_MIN_INTERVAL_MS: i64,
-    pub TIME_LABEL_COLOR: [u8; 4],
-    pub BPM_LABEL_COLOR: [u8; 4],
-    pub EDGE_GUIDE_COLOR: [u8; 4],
-    pub EDGE_COMBO_LABEL_COLOR: [u8; 4],
-    pub EDGE_COMBO_LABEL_SHADOW: [u8; 4],
-    pub EDGE_COMBO_LABEL_BACKGROUND: [u8; 4],
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -403,33 +216,9 @@ pub struct RenderCatchGifStructureConfig {
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
-pub struct RenderCatchGifSizingConfig {
-    pub GRID_GAP: i64,
-    pub PAGE_MARGIN_TOP: i64,
-    pub PAGE_MARGIN_RIGHT: i64,
-    pub PAGE_MARGIN_BOTTOM: i64,
-    pub PAGE_MARGIN_LEFT: i64,
-    pub INFO_MARGIN_TOP: i64,
-    pub INFO_MARGIN_RIGHT: i64,
-    pub INFO_MARGIN_BOTTOM: i64,
-    pub INFO_MARGIN_LEFT: i64,
-    pub TIME_LABEL_FONT_SIZE: u32,
-    pub TIME_LABEL_NOTE_FONT_SIZE: u32,
-    pub TIME_LABEL_TOP_GAP: i64,
-    pub TIME_LABEL_NOTE_TOP_GAP: i64,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderCatchGifStyleConfig {
-    pub PLAYFIELD_BACKGROUND: [u8; 4],
-    pub SHOW_TIME_LABEL: bool,
     pub DURATION_MS: f64,
     pub FPS: f64,
-    pub TIME_LABEL_COLOR: [u8; 4],
-    pub TIME_LABEL_NOTE_COLOR: [u8; 4],
-    pub PREVIEW_TIME_LABEL_COLOR: [u8; 4],
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -438,16 +227,7 @@ pub struct RenderCatchGifStyleConfig {
 pub struct RenderCatchGifConfig {
     pub SCALE: f64,
     pub structure: RenderCatchGifStructureConfig,
-    pub sizing: RenderCatchGifSizingConfig,
     pub style: RenderCatchGifStyleConfig,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, non_snake_case, non_camel_case_types)]
-pub struct RenderCatchMp4SizingConfig {
-    pub LABEL_FONT_SIZE: u32,
-    pub LABEL_PAD: i64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -458,8 +238,6 @@ pub struct RenderCatchMp4StyleConfig {
     pub ENABLE_BACKGROUND_VIDEO: bool,
     pub ENABLE_STORYBOARD: bool,
     pub BACKGROUND_DIM: f64,
-    pub LABEL_COLOR: [u8; 4],
-    pub PLAYFIELD_BACKGROUND: [u8; 4],
     pub FPS: f64,
     pub ENABLE_HITSOUND: bool,
     pub ENABLE_BEATMAP_HITSOUND: bool,
@@ -471,7 +249,6 @@ pub struct RenderCatchMp4StyleConfig {
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderCatchMp4Config {
     pub SCALE: f64,
-    pub sizing: RenderCatchMp4SizingConfig,
     pub style: RenderCatchMp4StyleConfig,
 }
 
@@ -496,23 +273,6 @@ pub struct RenderManiaPngStructureConfig {
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderManiaPngSizingConfig {
     pub PIXELS_PER_MS: f64,
-    pub PAGE_MARGIN_TOP: i64,
-    pub PAGE_MARGIN_RIGHT: i64,
-    pub PAGE_MARGIN_BOTTOM: i64,
-    pub PAGE_MARGIN_LEFT: i64,
-    pub INFO_MARGIN_TOP: i64,
-    pub INFO_MARGIN_RIGHT: i64,
-    pub INFO_MARGIN_BOTTOM: i64,
-    pub INFO_MARGIN_LEFT: i64,
-    pub LANE_WIDTH: i64,
-    pub COLUMN_GAP: i64,
-    pub NOTE_HEAD_HEIGHT: i64,
-    pub LEFT_PANEL_WIDTH: i64,
-    pub HIT_TARGET_FROM_BOTTOM: i64,
-    pub NOTE_SIDE_PADDING: i64,
-    pub SV_TEXT_FONT_SIZE: u32,
-    pub LANE_GAP: i64,
-    pub TIME_LABEL_FONT_SIZE: u32,
     pub MAX_AREA_HEIGHT_0_TO_1_MINUTES: i64,
     pub MAX_AREA_HEIGHT_1_TO_2_MINUTES: i64,
     pub MAX_AREA_HEIGHT_2_TO_3_MINUTES: i64,
@@ -525,19 +285,10 @@ pub struct RenderManiaPngSizingConfig {
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderManiaPngStyleConfig {
-    pub LEFT_PANEL_BACKGROUND: [u8; 4],
-    pub IMAGE_BACKGROUND: [u8; 4],
-    pub LANE_BACKGROUND: [u8; 4],
-    pub RULER_TEXT_COLOR: [u8; 4],
-    pub SV_TEXT_COLOR: [u8; 4],
     pub SHOW_SV_LABEL: bool,
-    pub LANE_SEPARATOR: [u8; 4],
     pub TIME_LABEL_MIN_INTERVAL_MS: i64,
     pub MAX_SUPPORTED_DURATION_MS: i64,
     pub BOTTOM_PADDING_MS: i64,
-    pub MEASURE_LINE_COLOR: [u8; 4],
-    pub BEAT_LINE_COLOR: [u8; 4],
-    pub SUBDIVISION_LINE: [u8; 4],
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -560,40 +311,10 @@ pub struct RenderManiaGifStructureConfig {
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
-pub struct RenderManiaGifSizingConfig {
-    pub GRID_GAP: i64,
-    pub PAGE_MARGIN_TOP: i64,
-    pub PAGE_MARGIN_RIGHT: i64,
-    pub PAGE_MARGIN_BOTTOM: i64,
-    pub PAGE_MARGIN_LEFT: i64,
-    pub INFO_MARGIN_TOP: i64,
-    pub INFO_MARGIN_RIGHT: i64,
-    pub INFO_MARGIN_BOTTOM: i64,
-    pub INFO_MARGIN_LEFT: i64,
-    pub SEPARATOR_WIDTH: i64,
-    pub TIME_LABEL_TOP_GAP: i64,
-    pub TIME_LABEL_FONT_SIZE: u32,
-    pub TIME_LABEL_NOTE_FONT_SIZE: u32,
-    pub SV_TEXT_FONT_SIZE: u32,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderManiaGifStyleConfig {
-    pub LEFT_PANEL_BACKGROUND: [u8; 4],
-    pub SHOW_TIME_LABEL: bool,
     pub DURATION_MS: i64,
     pub FPS: i64,
     pub SCROLL_SPEED: f64,
-    pub TIME_LABEL_COLOR: [u8; 4],
-    pub TIME_LABEL_NOTE_COLOR: [u8; 4],
-    pub PREVIEW_TIME_LABEL_COLOR: [u8; 4],
-    pub JUDGEMENT_LINE_COLOR: [u8; 4],
-    pub SEPARATOR_BACKGROUND: [u8; 4],
-    pub IMAGE_BACKGROUND: [u8; 4],
-    pub LANE_BACKGROUND: [u8; 4],
-    pub SV_TEXT_COLOR: [u8; 4],
     pub SHOW_SV_LABEL: bool,
 }
 
@@ -603,19 +324,7 @@ pub struct RenderManiaGifStyleConfig {
 pub struct RenderManiaGifConfig {
     pub SCALE: f64,
     pub structure: RenderManiaGifStructureConfig,
-    pub sizing: RenderManiaGifSizingConfig,
     pub style: RenderManiaGifStyleConfig,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, non_snake_case, non_camel_case_types)]
-pub struct RenderManiaMp4SizingConfig {
-    pub INFO_MARGIN_LEFT: i64,
-    pub INFO_MARGIN_RIGHT: i64,
-    pub LABEL_FONT_SIZE: u32,
-    pub LABEL_PAD: i64,
-    pub SV_TEXT_FONT_SIZE: u32,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -626,13 +335,10 @@ pub struct RenderManiaMp4StyleConfig {
     pub ENABLE_BACKGROUND_VIDEO: bool,
     pub ENABLE_STORYBOARD: bool,
     pub BACKGROUND_DIM: f64,
-    pub LABEL_COLOR: [u8; 4],
     pub FPS: i64,
     pub ENABLE_HITSOUND: bool,
     pub ENABLE_BEATMAP_HITSOUND: bool,
     pub HITSOUND_VOLUME: i64,
-    pub IMAGE_BACKGROUND: [u8; 4],
-    pub SV_TEXT_COLOR: [u8; 4],
     pub SHOW_SV_LABEL: bool,
     pub LANE_DARKEN_ALPHA: f64,
 }
@@ -642,7 +348,6 @@ pub struct RenderManiaMp4StyleConfig {
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderManiaMp4Config {
     pub SCALE: f64,
-    pub sizing: RenderManiaMp4SizingConfig,
     pub style: RenderManiaMp4StyleConfig,
 }
 

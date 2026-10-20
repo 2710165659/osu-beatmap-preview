@@ -1,5 +1,7 @@
 //! osu!taiko PNG 场景绘制：根据 CLI 传入的布局计划把静态谱面绘制成图像。
 
+use crate::render::cpu::modes::taiko::constants as taiko_constants;
+
 use crate::model::TaikoHitObject;
 use crate::processing::timeline::TimeAxis;
 use crate::render::canvas::Img;
@@ -42,30 +44,22 @@ impl TaikoPngLayout {
 // ─── 行辅助函数 ───
 
 fn png_row_top(row_index: i64) -> i64 {
-    let config = &crate::config::current().render.taiko.png;
-    config.sizing.PAGE_MARGIN_TOP
-        + config.sizing.INFO_MARGIN_TOP
+    let taiko_png_sizing = taiko_constants::png::sizing();
+    taiko_png_sizing.PAGE_MARGIN_TOP
+        + taiko_png_sizing.INFO_MARGIN_TOP
         + row_index
-            * (config.sizing.ROW_HEIGHT + config.sizing.INFO_MARGIN_BOTTOM + config.sizing.ROW_GAP)
+            * (taiko_png_sizing.ROW_HEIGHT
+                + taiko_png_sizing.INFO_MARGIN_BOTTOM
+                + taiko_png_sizing.ROW_GAP)
 }
 
 fn png_row_center_y(row_index: i64) -> i64 {
-    png_row_top(row_index) + crate::config::current().render.taiko.png.sizing.ROW_HEIGHT / 2
+    png_row_top(row_index) + taiko_constants::png::sizing().ROW_HEIGHT / 2
 }
 
 fn png_row_chart_left(_layout: &TaikoPngLayout, _row_index: i64) -> i64 {
-    crate::config::current()
-        .render
-        .taiko
-        .png
-        .sizing
-        .PAGE_MARGIN_LEFT
-        + crate::config::current()
-            .render
-            .taiko
-            .png
-            .sizing
-            .ROW_INNER_PADDING_X
+    let taiko_png_sizing = taiko_constants::png::sizing();
+    taiko_png_sizing.PAGE_MARGIN_LEFT + taiko_png_sizing.ROW_INNER_PADDING_X
 }
 
 // ─── 行背景（已预渲染为 track_bg，逐行 alpha_composite） ───
@@ -85,7 +79,7 @@ fn draw_timing_line(
     }
     let line_x = pyround(png_row_chart_left(layout, row_index) as f64 + local_position);
     let line_y0 = png_row_top(row_index);
-    let line_y1 = line_y0 + crate::config::current().render.taiko.png.sizing.ROW_HEIGHT;
+    let line_y1 = line_y0 + taiko_constants::png::sizing().ROW_HEIGHT;
 
     let render_scale = crate::render::geometry::output_scale(
         crate::render::geometry::GameMode::Taiko,
@@ -94,22 +88,12 @@ fn draw_timing_line(
     let (width, color) = if timing_line.is_measure {
         (
             crate::render::geometry::scale_stroke_px(2.0, render_scale),
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .style
-                .MEASURE_LINE_COLOR,
+            taiko_constants::png::style::MEASURE_LINE_COLOR,
         )
     } else {
         (
             crate::render::geometry::scale_stroke_px(1.0, render_scale),
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .style
-                .BEAT_LINE_COLOR,
+            taiko_constants::png::style::BEAT_LINE_COLOR,
         )
     };
     image.fill_rect_size(line_x, line_y0, width, line_y1 - line_y0, color);
@@ -127,6 +111,7 @@ fn draw_time_label(
     layout: &TaikoPngLayout,
     time_axis: TimeAxis,
 ) {
+    let taiko_png_sizing = taiko_constants::png::sizing();
     let label = crate::render::text::format_seconds_tenths(
         time_axis.to_display(timing_line.time + layout.chart_start_time),
     );
@@ -136,204 +121,73 @@ fn draw_time_label(
         None
     };
     let label_color = if timing_line.is_kiai {
-        crate::config::current()
-            .render
-            .taiko
-            .png
-            .style
-            .ACCENT_LABEL_COLOR
+        taiko_constants::png::style::ACCENT_LABEL_COLOR
     } else {
-        crate::config::current()
-            .render
-            .taiko
-            .png
-            .style
-            .RULER_TEXT_COLOR
+        taiko_constants::png::style::RULER_TEXT_COLOR
     };
-    let (label_width, label_height) = text_size(
-        &label,
-        crate::config::current()
-            .render
-            .taiko
-            .png
-            .sizing
-            .TIME_LABEL_FONT_SIZE,
-    );
+    let (label_width, label_height) = text_size(&label, taiko_png_sizing.TIME_LABEL_FONT_SIZE);
     let label_x = pyround(line_x as f64 - label_width as f64 / 2.0)
         .min(
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .PAGE_MARGIN_LEFT
-                + layout.content_width
+            taiko_png_sizing.PAGE_MARGIN_LEFT + layout.content_width
                 - label_width as i64
-                - crate::config::current()
-                    .render
-                    .taiko
-                    .png
-                    .sizing
-                    .LABEL_RIGHT_PADDING,
+                - taiko_png_sizing.LABEL_RIGHT_PADDING,
         )
-        .max(
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .PAGE_MARGIN_LEFT,
-        );
-    let label_y = row_top
-        + crate::config::current().render.taiko.png.sizing.ROW_HEIGHT
-        + crate::config::current()
-            .render
-            .taiko
-            .png
-            .sizing
-            .TIME_LABEL_TOP_GAP;
+        .max(taiko_png_sizing.PAGE_MARGIN_LEFT);
+    let label_y = row_top + taiko_png_sizing.ROW_HEIGHT + taiko_png_sizing.TIME_LABEL_TOP_GAP;
 
     draw_text(
         image,
         label_x,
         label_y,
         &label,
-        crate::config::current()
-            .render
-            .taiko
-            .png
-            .sizing
-            .TIME_LABEL_FONT_SIZE,
+        taiko_png_sizing.TIME_LABEL_FONT_SIZE,
         label_color,
     );
 
     let mut next_y = label_y + label_height as i64;
     if let Some(note) = note {
-        let (note_width, note_height) = text_size(
-            note,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .TIME_LABEL_NOTE_FONT_SIZE,
-        );
+        let (note_width, note_height) = text_size(note, taiko_png_sizing.TIME_LABEL_NOTE_FONT_SIZE);
         let note_x = pyround(line_x as f64 - note_width as f64 / 2.0)
             .min(
-                crate::config::current()
-                    .render
-                    .taiko
-                    .png
-                    .sizing
-                    .PAGE_MARGIN_LEFT
-                    + layout.content_width
+                taiko_png_sizing.PAGE_MARGIN_LEFT + layout.content_width
                     - note_width as i64
-                    - crate::config::current()
-                        .render
-                        .taiko
-                        .png
-                        .sizing
-                        .LABEL_RIGHT_PADDING,
+                    - taiko_png_sizing.LABEL_RIGHT_PADDING,
             )
-            .max(
-                crate::config::current()
-                    .render
-                    .taiko
-                    .png
-                    .sizing
-                    .PAGE_MARGIN_LEFT,
-            );
-        let note_y = next_y
-            + crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .TIME_LABEL_NOTE_TOP_GAP;
+            .max(taiko_png_sizing.PAGE_MARGIN_LEFT);
+        let note_y = next_y + taiko_png_sizing.TIME_LABEL_NOTE_TOP_GAP;
         draw_text(
             image,
             note_x,
             note_y,
             note,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .TIME_LABEL_NOTE_FONT_SIZE,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .style
-                .ACCENT_LABEL_COLOR,
+            taiko_png_sizing.TIME_LABEL_NOTE_FONT_SIZE,
+            taiko_constants::png::style::ACCENT_LABEL_COLOR,
         );
         next_y = note_y + note_height as i64;
     }
 
     if let Some(bpm) = timing_line.bpm {
         let bpm_label = format!("{bpm:.0}BPM");
-        let (bpm_width, _) = text_size(
-            &bpm_label,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .BPM_FONT_SIZE,
-        );
+        let (bpm_width, _) = text_size(&bpm_label, taiko_png_sizing.BPM_FONT_SIZE);
         let bpm_x = pyround(line_x as f64 - bpm_width as f64 / 2.0)
             .min(
-                crate::config::current()
-                    .render
-                    .taiko
-                    .png
-                    .sizing
-                    .PAGE_MARGIN_LEFT
-                    + layout.content_width
+                taiko_png_sizing.PAGE_MARGIN_LEFT + layout.content_width
                     - bpm_width as i64
-                    - crate::config::current()
-                        .render
-                        .taiko
-                        .png
-                        .sizing
-                        .LABEL_RIGHT_PADDING,
+                    - taiko_png_sizing.LABEL_RIGHT_PADDING,
             )
-            .max(
-                crate::config::current()
-                    .render
-                    .taiko
-                    .png
-                    .sizing
-                    .PAGE_MARGIN_LEFT,
-            );
-        let bpm_y = next_y + crate::config::current().render.taiko.png.sizing.BPM_TOP_GAP;
+            .max(taiko_png_sizing.PAGE_MARGIN_LEFT);
+        let bpm_y = next_y + taiko_png_sizing.BPM_TOP_GAP;
         let bpm_color = if timing_line.is_kiai {
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .style
-                .ACCENT_LABEL_COLOR
+            taiko_constants::png::style::ACCENT_LABEL_COLOR
         } else {
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .style
-                .RULER_TEXT_COLOR
+            taiko_constants::png::style::RULER_TEXT_COLOR
         };
         draw_text(
             image,
             bpm_x,
             bpm_y,
             &bpm_label,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .BPM_FONT_SIZE,
+            taiko_png_sizing.BPM_FONT_SIZE,
             bpm_color,
         );
     }
@@ -342,51 +196,25 @@ fn draw_time_label(
 // ─── SV 标注 ───
 
 fn draw_sv_indicators(image: &mut Img, sv_changes: &[SvChange], layout: &TaikoPngLayout) {
+    let taiko_png_sizing = taiko_constants::png::sizing();
     for sv_change in sv_changes.iter().rev() {
         let (row_index, local_position) = layout.locate(sv_change.position);
         let x = pyround(png_row_chart_left(layout, row_index) as f64 + local_position);
         let row_top = png_row_top(row_index);
 
         let label = format_sv_label(sv_change.sv);
-        let (label_width, label_height) = text_size(
-            &label,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .SV_TEXT_FONT_SIZE,
-        );
+        let (label_width, label_height) = text_size(&label, taiko_png_sizing.SV_TEXT_FONT_SIZE);
 
         let label_x = pyround(x as f64 - label_width as f64 / 2.0);
-        let label_y = (row_top
-            - crate::config::current().render.taiko.png.sizing.SV_TOP_GAP
-            - label_height as i64)
-            .max(
-                crate::config::current()
-                    .render
-                    .taiko
-                    .png
-                    .sizing
-                    .PAGE_MARGIN_TOP,
-            );
+        let label_y = (row_top - taiko_png_sizing.SV_TOP_GAP - label_height as i64)
+            .max(taiko_png_sizing.PAGE_MARGIN_TOP);
         draw_text(
             image,
             label_x,
             label_y,
             &label,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .SV_TEXT_FONT_SIZE,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .style
-                .SV_TEXT_COLOR,
+            taiko_png_sizing.SV_TEXT_FONT_SIZE,
+            taiko_constants::png::style::SV_TEXT_COLOR,
         );
     }
 }
@@ -446,11 +274,10 @@ fn draw_swell_object(
     cache: &mut RenderCache,
     overall_difficulty: f64,
 ) {
+    let sizing = taiko_constants::png::sizing();
     let (row_index, local_position) =
         layout.locate(mapper.position_at(hit_object.start_time as f64));
     let center_x = pyround(png_row_chart_left(layout, row_index) as f64 + local_position);
-    let runtime = crate::config::current();
-    let config = &runtime.render.taiko.png.sizing;
     let center_y = png_row_center_y(row_index);
     let diameter = layout.big_note_diameter;
     // 恢复原来的实色长条、圆头与圆尾，只在起点叠加数字和时长。
@@ -461,13 +288,13 @@ fn draw_swell_object(
         layout,
         cache,
         true,
-        runtime.render.taiko.png.style.SWELL_COLOR,
+        taiko_constants::png::style::SWELL_COLOR,
         false,
     );
 
     let duration_ms = (hit_object.end_time - hit_object.start_time).max(0);
     let label = required_swell_hits(duration_ms, overall_difficulty).to_string();
-    let mut font_size = config.SWELL_HIT_COUNT_FONT_SIZE;
+    let mut font_size = sizing.SWELL_HIT_COUNT_FONT_SIZE;
     // 长转盘的多位数字缩小到圆内；字号与圆直径均已应用 PNG 的 SCALE。
     let available = pyround(diameter as f64 * 0.66).max(1) as u32;
     let (width, height) = text_size(&label, font_size);
@@ -482,27 +309,27 @@ fn draw_swell_object(
         center_y - height as i64 / 2,
         &label,
         font_size,
-        runtime.render.taiko.png.style.SWELL_TEXT_COLOR,
+        taiko_constants::png::style::SWELL_TEXT_COLOR,
     );
 
     let duration = crate::render::text::format_seconds_tenths(duration_ms);
     let duration_y =
-        pyround(center_y as f64 + diameter as f64 / 2.0) + config.SWELL_DURATION_TOP_GAP;
+        pyround(center_y as f64 + diameter as f64 / 2.0) + sizing.SWELL_DURATION_TOP_GAP;
     // 圆心保持在轨道中线，只缩小时长文字以避开轨道外的时间轴标签。
-    let duration_font_size = config
+    let duration_font_size = sizing
         .SWELL_DURATION_FONT_SIZE
-        .min((png_row_top(row_index) + config.ROW_HEIGHT - duration_y).max(1) as u32);
+        .min((png_row_top(row_index) + sizing.ROW_HEIGHT - duration_y).max(1) as u32);
     let (duration_width, _) = text_size(&duration, duration_font_size);
     let duration_x = (center_x - duration_width as i64 / 2)
-        .min(config.PAGE_MARGIN_LEFT + layout.content_width - duration_width as i64)
-        .max(config.PAGE_MARGIN_LEFT);
+        .min(sizing.PAGE_MARGIN_LEFT + layout.content_width - duration_width as i64)
+        .max(sizing.PAGE_MARGIN_LEFT);
     draw_text(
         image,
         duration_x,
         duration_y,
         &duration,
         duration_font_size,
-        runtime.render.taiko.png.style.RULER_TEXT_COLOR,
+        taiko_constants::png::style::RULER_TEXT_COLOR,
     );
 }
 
@@ -672,6 +499,7 @@ pub fn render_taiko_png_scene(
     sv_changes: &[SvChange],
     time_axis: TimeAxis,
 ) -> Img {
+    let taiko_png_sizing = taiko_constants::png::sizing();
     let render_scale = crate::render::geometry::output_scale(
         crate::render::geometry::GameMode::Taiko,
         crate::render::geometry::OutputFormat::Png,
@@ -679,19 +507,14 @@ pub fn render_taiko_png_scene(
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
-        crate::config::current()
-            .render
-            .taiko
-            .png
-            .style
-            .IMAGE_BACKGROUND,
+        taiko_constants::png::style::IMAGE_BACKGROUND,
     );
 
     // 预渲染轨道背景条，每一行都相同。
     let track_bg = {
         let mut bg = Img::new(
             layout.content_width as u32,
-            crate::config::current().render.taiko.png.sizing.ROW_HEIGHT as u32,
+            taiko_png_sizing.ROW_HEIGHT as u32,
             [0, 0, 0, 0],
         );
         draw_track_background(
@@ -699,19 +522,9 @@ pub fn render_taiko_png_scene(
             0,
             0,
             layout.content_width,
-            crate::config::current().render.taiko.png.sizing.ROW_HEIGHT,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .style
-                .TRACK_BACKGROUND_COLOR,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .style
-                .TRACK_EDGE_COLOR,
+            taiko_png_sizing.ROW_HEIGHT,
+            taiko_constants::png::style::TRACK_BACKGROUND_COLOR,
+            taiko_constants::png::style::TRACK_EDGE_COLOR,
             crate::render::geometry::scale_stroke_px(1.0, render_scale),
         );
         bg
@@ -719,16 +532,7 @@ pub fn render_taiko_png_scene(
 
     for row_index in 0..layout.row_count {
         let row_top = png_row_top(row_index);
-        image.alpha_composite(
-            &track_bg,
-            crate::config::current()
-                .render
-                .taiko
-                .png
-                .sizing
-                .PAGE_MARGIN_LEFT,
-            row_top,
-        );
+        image.alpha_composite(&track_bg, taiko_png_sizing.PAGE_MARGIN_LEFT, row_top);
     }
 
     let mut last_label_time: Option<i64> = None;
@@ -770,8 +574,7 @@ mod tests {
 
     #[test]
     fn png_swell_centers_the_circle_and_shows_total_hits_and_duration() {
-        let mut runtime = crate::config::CoreConfig::default();
-        runtime.render.taiko.png.sizing.SWELL_HIT_COUNT_FONT_SIZE = 24;
+        let runtime = crate::config::CoreConfig::default();
         crate::config::with_config(std::sync::Arc::new(runtime), || {
             let mut layout = TaikoPngLayout {
                 row_count: 1,
@@ -800,8 +603,7 @@ mod tests {
             };
             let x = png_row_chart_left(&layout, 0) + 150;
             let y = png_row_center_y(0);
-            let config = crate::config::current();
-            for (od, label) in [(5.0, "24"), (7.0, "29")] {
+            for (od, label, size) in [(5.0, "24", 28), (7.0, "29", 30)] {
                 layout.overall_difficulty = od;
                 let image = render_taiko_png_scene(
                     &layout,
@@ -829,7 +631,7 @@ mod tests {
                     image.get((x + 200) as u32, y as u32),
                     "转盘结束后必须恢复轨道背景"
                 );
-                let size = config.render.taiko.png.sizing.SWELL_HIT_COUNT_FONT_SIZE;
+                // 两种字形的宽度不同，默认字号分别缩到 28px 和 30px 后应居中。
                 let (width, height) = text_size(label, size);
                 let label_x = x - width as i64 / 2;
                 let label_y = y - height as i64 / 2;
@@ -848,17 +650,18 @@ mod tests {
                             label_y as u32 + height
                         )
                         .data,
-                    expected.data
+                    expected.data,
+                    "label={label}"
                 );
                 let below_ring = y
                     + layout.big_note_diameter / 2
-                    + config.render.taiko.png.sizing.SWELL_DURATION_TOP_GAP;
+                    + taiko_constants::png::sizing().SWELL_DURATION_TOP_GAP;
                 assert!(
-                    (below_ring..png_row_top(0) + config.render.taiko.png.sizing.ROW_HEIGHT).any(
+                    (below_ring..png_row_top(0) + taiko_constants::png::sizing().ROW_HEIGHT).any(
                         |row| {
                             (x - 20..x + 20).any(|col| {
                                 image.get(col as u32, row as u32)
-                                    == config.render.taiko.png.style.RULER_TEXT_COLOR
+                                    == taiko_constants::png::style::RULER_TEXT_COLOR
                             })
                         }
                     ),

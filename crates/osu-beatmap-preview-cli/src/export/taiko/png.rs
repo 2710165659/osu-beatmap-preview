@@ -1,5 +1,7 @@
 //! osu!taiko PNG 静态图导出：计算行布局并交给 core 绘制，然后编码保存。
 
+use osu_beatmap_preview_core::render::cpu::modes::taiko::constants as taiko_constants;
+
 use crate::export::segment::{resolve_png_window, PngSegment, PngWindow};
 use crate::media::image;
 use osu_beatmap_preview_core::model::mods::ModSettings;
@@ -184,6 +186,7 @@ fn build_png_layout(
     timing_lines: &[TimingLine],
     chart_start_time: i64,
 ) -> TaikoPngLayout {
+    let taiko_png_sizing = taiko_constants::png::sizing();
     let base_row_width = resolve_base_row_width(beatmap_duration);
     let bpm_width_multiplier = if crate::config::current()
         .render
@@ -222,35 +225,16 @@ fn build_png_layout(
     }
     let used_row_width = (used_row_width.ceil() as i64).clamp(1, max_row_width);
 
-    let content_width = crate::config::current()
-        .render
-        .taiko
-        .png
-        .sizing
-        .ROW_INNER_PADDING_X
-        * 2
-        + used_row_width;
-    let image_width = crate::config::current()
-        .render
-        .taiko
-        .png
-        .sizing
-        .PAGE_MARGIN_LEFT
-        + crate::config::current()
-            .render
-            .taiko
-            .png
-            .sizing
-            .PAGE_MARGIN_RIGHT
-        + content_width;
-    let config = &crate::config::current().render.taiko.png;
-    let image_height = config.sizing.PAGE_MARGIN_TOP
-        + config.sizing.PAGE_MARGIN_BOTTOM
-        + config.sizing.INFO_MARGIN_TOP
-        + row_count * (config.sizing.ROW_HEIGHT + config.sizing.INFO_MARGIN_BOTTOM)
-        + (row_count - 1).max(0) * config.sizing.ROW_GAP;
+    let content_width = taiko_png_sizing.ROW_INNER_PADDING_X * 2 + used_row_width;
+    let image_width =
+        taiko_png_sizing.PAGE_MARGIN_LEFT + taiko_png_sizing.PAGE_MARGIN_RIGHT + content_width;
+    let image_height = taiko_png_sizing.PAGE_MARGIN_TOP
+        + taiko_png_sizing.PAGE_MARGIN_BOTTOM
+        + taiko_png_sizing.INFO_MARGIN_TOP
+        + row_count * (taiko_png_sizing.ROW_HEIGHT + taiko_png_sizing.INFO_MARGIN_BOTTOM)
+        + (row_count - 1).max(0) * taiko_png_sizing.ROW_GAP;
     let normal_note_diameter = pyround(
-        crate::config::current().render.taiko.png.sizing.ROW_HEIGHT as f64
+        taiko_png_sizing.ROW_HEIGHT as f64
             * crate::export::taiko::constants::NORMAL_NOTE_SIZE_RATIO,
     );
     let big_note_diameter =

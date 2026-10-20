@@ -1,4 +1,6 @@
 //! 回放 GIF 复用普通预览的选段和网格；每格独立查询同一份不可变回放时间线。
+use osu_beatmap_preview_core::render::cpu::modes::standard::constants as standard_constants;
+
 use super::font;
 use crate::{
     application::{legacy::resolve_time_points, output_plan::RenderPlan},
@@ -46,6 +48,7 @@ fn render_with_config(
     deadline: &RequestDeadline,
     runtime: &crate::config::RuntimeConfig,
 ) -> Result<()> {
+    let standard_gif_sizing = standard_constants::gif::sizing();
     deadline.check()?;
     let axis = TimeAxis::new(prepared.objects[0].source.start_time);
     let context = build_replay_context(beatmap, prepared, axis, OutputFormat::Gif);
@@ -108,7 +111,7 @@ fn render_with_config(
             let mut canvas = Img::new(
                 width as u32,
                 height as u32,
-                config.style.CANVAS_BACKGROUND_COLOR,
+                standard_constants::gif::style::CANVAS_BACKGROUND_COLOR,
             );
             for (cell, segment) in segments.iter().enumerate() {
                 let time = snapshots[cell][index];
@@ -127,7 +130,7 @@ fn render_with_config(
                 osr::draw_overlay(&mut image, &context, prepared, gameplay, &visuals, time);
                 let (x, y) = origins[cell];
                 canvas.alpha_composite(&image, x, y);
-                if config.style.SHOW_TIME_LABEL {
+                if standard_constants::gif::style::SHOW_TIME_LABEL {
                     let label = format!(
                         "{} - {}",
                         format_mmssmmm(axis.to_display(segment.start_time)),
@@ -136,25 +139,26 @@ fn render_with_config(
                         )
                     );
                     let color = if segment.is_preview {
-                        config.style.PREVIEW_TIME_LABEL_COLOR
+                        standard_constants::gif::style::PREVIEW_TIME_LABEL_COLOR
                     } else {
-                        config.style.TIME_LABEL_COLOR
+                        standard_constants::gif::style::TIME_LABEL_COLOR
                     };
                     let note_color = if segment.is_preview {
-                        config.style.PREVIEW_TIME_LABEL_COLOR
+                        standard_constants::gif::style::PREVIEW_TIME_LABEL_COLOR
                     } else {
-                        config.style.TIME_LABEL_NOTE_COLOR
+                        standard_constants::gif::style::TIME_LABEL_NOTE_COLOR
                     };
                     draw_time_label(
                         &mut canvas,
                         &label,
                         x,
-                        y + context.frame_layout.frame_height + config.sizing.TIME_LABEL_TOP_GAP,
+                        y + context.frame_layout.frame_height
+                            + standard_gif_sizing.TIME_LABEL_TOP_GAP,
                         segment.is_preview.then_some("Preview Time"),
                         context.frame_layout.frame_width,
-                        config.sizing.TIME_LABEL_FONT_SIZE,
-                        config.sizing.TIME_LABEL_NOTE_FONT_SIZE,
-                        config.sizing.TIME_LABEL_NOTE_TOP_GAP,
+                        standard_gif_sizing.TIME_LABEL_FONT_SIZE,
+                        standard_gif_sizing.TIME_LABEL_NOTE_FONT_SIZE,
+                        standard_gif_sizing.TIME_LABEL_NOTE_TOP_GAP,
                         color,
                         note_color,
                     );
@@ -164,20 +168,24 @@ fn render_with_config(
         })
     };
     let mut fixed_colors = super::super::super::gif_time_label_colors(
-        config.style.SHOW_TIME_LABEL,
-        config.style.CANVAS_BACKGROUND_COLOR,
+        standard_constants::gif::style::SHOW_TIME_LABEL,
+        standard_constants::gif::style::CANVAS_BACKGROUND_COLOR,
         [
-            config.style.PREVIEW_TIME_LABEL_COLOR,
-            config.style.TIME_LABEL_COLOR,
-            config.style.TIME_LABEL_NOTE_COLOR,
+            standard_constants::gif::style::PREVIEW_TIME_LABEL_COLOR,
+            standard_constants::gif::style::TIME_LABEL_COLOR,
+            standard_constants::gif::style::TIME_LABEL_NOTE_COLOR,
         ],
     );
     // 回放包含大量接近背景的淡出颜色，量化器可能把纯黑背景偏向暗紫色。
     // 预留画布与游玩区域实际合成的底色，保证空白区域不被全局调色板染色。
-    let [r, g, b, _] = config.style.CANVAS_BACKGROUND_COLOR;
+    let [r, g, b, _] = standard_constants::gif::style::CANVAS_BACKGROUND_COLOR;
     fixed_colors.push([r, g, b]);
-    let mut background = Img::new(1, 1, config.style.CANVAS_BACKGROUND_COLOR);
-    background.blend_px(0, 0, config.style.IMAGE_BACKGROUND_COLOR);
+    let mut background = Img::new(
+        1,
+        1,
+        standard_constants::gif::style::CANVAS_BACKGROUND_COLOR,
+    );
+    background.blend_px(0, 0, standard_constants::gif::style::IMAGE_BACKGROUND_COLOR);
     fixed_colors.push([background.data[0], background.data[1], background.data[2]]);
     // 与普通预览共用限权采样、全局调色板和差分帧，避免逐帧全画布量化。
     // 编码器统一管理并行绘图的内存预算；标签预留精确合成色，防止再次发灰。
@@ -251,14 +259,7 @@ mod tests {
         let gameplay = compile_standard(&prepared, document).unwrap();
         // 缩小实际光栅和编码尺寸，让集成测试覆盖四格并保持执行时间可控。
         let mut runtime = crate::config::current().clone();
-        let defaults: serde_json::Value =
-            serde_yaml::from_str(crate::config::default_config_yaml()).unwrap();
-        let mut gif = defaults["render"]["standard"]["gif"].clone();
-        gif["SCALE"] = serde_json::json!(0.125);
-        for value in gif["sizing"].as_object_mut().unwrap().values_mut() {
-            *value = serde_json::json!((value.as_f64().unwrap() * 0.125).round() as i64);
-        }
-        runtime.render.standard.gif = serde_json::from_value(gif).unwrap();
+        runtime.render.standard.gif.SCALE = 0.125;
         let core_config = Arc::new(osu_beatmap_preview_core::config::CoreConfig {
             render: runtime.render.clone(),
             skin: runtime.skin.clone(),
@@ -318,11 +319,11 @@ mod tests {
             assert_eq!(frame.delay, 10);
             frame.buffer.to_vec()
         };
-        let preview_color = runtime.render.standard.gif.style.PREVIEW_TIME_LABEL_COLOR;
+        let preview_color = standard_constants::gif::style::PREVIEW_TIME_LABEL_COLOR;
         assert!(first.chunks_exact(4).any(|pixel| pixel == preview_color));
         assert_eq!(
             &first[..4],
-            &runtime.render.standard.gif.style.CANVAS_BACKGROUND_COLOR
+            &standard_constants::gif::style::CANVAS_BACKGROUND_COLOR
         );
         let context =
             osu_beatmap_preview_core::config::with_config(Arc::clone(&core_config), || {

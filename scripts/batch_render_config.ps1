@@ -4,9 +4,9 @@
 #   powershell -File "<repo>\scripts\batch_render_config.ps1"
 #
 # 渲染内容：
-#   - 正式任务共 47 项：四模式无时间标签 GIF、1x1 GIF、三档 PNG/GIF/MP4，
+#   - 正式任务共 43 项：四模式 1x1 GIF、三档 PNG/GIF/MP4，
 #     以及 Mania 关闭 SV 标签的 PNG 与 30 FPS GIF/MP4。所有 MP4 从 preview
-#     开始渲染 30 秒。任务清单、输出路径与文件名保持不变。
+#     开始渲染 30 秒。输出路径与文件名记录在报告中。
 #   - 渲染顺序：每个模式先渲染完全部 png，再渲染 gif，最后 mp4。
 # 输出：
 #   - 产物平铺到默认输出目录的 batch-config 子文件夹（任务名重命名，冲突时加序号）：
@@ -319,11 +319,7 @@ $modeSpecs = @(
 
 $tasks = New-Object System.Collections.Generic.List[object]
 foreach ($spec in $modeSpecs) {
-    $tasks.Add((New-ConfigTask `
-        "$($spec.name)_gif_no_time" $spec.mode $spec.configMode $spec.bid "gif" `
-        @{ SHOW_TIME_LABEL = $false } "关闭时间标签"))
-
-    $oneByOne = @{ SHOW_TIME_LABEL = $false }
+    $oneByOne = @{}
     if ($spec.name -eq "taiko") {
         $oneByOne.ROW_COUNT = 1
     } elseif ($spec.name -eq "mania") {
@@ -333,8 +329,8 @@ foreach ($spec in $modeSpecs) {
         $oneByOne.IMAGES_PER_ROW = 1
     }
     $tasks.Add((New-ConfigTask `
-        "$($spec.name)_gif_no_time_1x1" $spec.mode $spec.configMode $spec.bid "gif" `
-        $oneByOne "关闭时间标签；1x1 单图"))
+        "$($spec.name)_gif_1x1" $spec.mode $spec.configMode $spec.bid "gif" `
+        $oneByOne "1x1 单图"))
 
     foreach ($format in @("png", "gif", "mp4")) {
         foreach ($scale in @(0.5, 1.0, 2.0)) {

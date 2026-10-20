@@ -4,6 +4,8 @@
 //!
 //! 时间范围由 `--time-points` 和 `--duration-time` 控制。
 
+use osu_beatmap_preview_core::render::cpu::modes::taiko::constants as taiko_constants;
+
 use crate::export::canvas::Img;
 use crate::media::audio::AudioSourceJob;
 use crate::media::{
@@ -108,12 +110,7 @@ pub(crate) fn render_taiko_video(
                 content.y,
                 content.width,
                 content.height,
-                crate::config::current()
-                    .render
-                    .taiko
-                    .mp4
-                    .style
-                    .IMAGE_BACKGROUND,
+                taiko_constants::mp4::style::IMAGE_BACKGROUND,
             );
         }
         draw_row_background(&mut bg, &layout, 0);

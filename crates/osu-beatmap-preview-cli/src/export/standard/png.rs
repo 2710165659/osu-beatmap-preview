@@ -1,5 +1,7 @@
 //! osu!standard PNG 网格渲染器：5×8 游戏画面快照。
 
+use osu_beatmap_preview_core::render::cpu::modes::standard::constants as standard_constants;
+
 use crate::export::canvas::Img;
 use crate::export::text::format_mmssmmm;
 use osu_beatmap_preview_core::model::mods::ModSettings;
@@ -52,6 +54,7 @@ pub(super) fn render_grid(
         &[usize],
     ) -> Img,
 ) -> Result<Img> {
+    let standard_png_sizing = standard_constants::png::sizing();
     let row_timings = choose_row_start_times(
         beatmap,
         &context.hit_objects,
@@ -80,12 +83,7 @@ pub(super) fn render_grid(
     let mut canvas = Img::new(
         canvas_w as u32,
         canvas_h as u32,
-        crate::config::current()
-            .render
-            .standard
-            .png
-            .style
-            .CANVAS_BACKGROUND_COLOR,
+        standard_constants::png::style::CANVAS_BACKGROUND_COLOR,
     );
     let mut cache = RenderCache::default();
 
@@ -113,13 +111,12 @@ pub(super) fn render_grid(
             &snapshot_times,
             context.settings.preempt_ms,
         );
-        let config = &crate::config::current().render.standard.png;
         let unit_height = context.frame_layout.frame_height
-            + config.sizing.INFO_MARGIN_TOP
-            + config.sizing.INFO_MARGIN_BOTTOM;
-        let y = config.sizing.PAGE_MARGIN_TOP
-            + config.sizing.INFO_MARGIN_TOP
-            + row_index as i64 * (unit_height + config.sizing.ROW_GAP);
+            + standard_png_sizing.INFO_MARGIN_TOP
+            + standard_png_sizing.INFO_MARGIN_BOTTOM;
+        let y = standard_png_sizing.PAGE_MARGIN_TOP
+            + standard_png_sizing.INFO_MARGIN_TOP
+            + row_index as i64 * (unit_height + standard_png_sizing.ROW_GAP);
         for image_index in 0..crate::config::current()
             .render
             .standard
@@ -130,11 +127,11 @@ pub(super) fn render_grid(
             deadline.check()?;
             let snapshot_time = snapshot_times[image_index];
             let unit_width = context.frame_layout.frame_width
-                + config.sizing.INFO_MARGIN_LEFT
-                + config.sizing.INFO_MARGIN_RIGHT;
-            let x = config.sizing.PAGE_MARGIN_LEFT
-                + config.sizing.INFO_MARGIN_LEFT
-                + image_index as i64 * (unit_width + config.sizing.COLUMN_GAP);
+                + standard_png_sizing.INFO_MARGIN_LEFT
+                + standard_png_sizing.INFO_MARGIN_RIGHT;
+            let x = standard_png_sizing.PAGE_MARGIN_LEFT
+                + standard_png_sizing.INFO_MARGIN_LEFT
+                + image_index as i64 * (unit_width + standard_png_sizing.COLUMN_GAP);
             let empty_breaks: Vec<osu_beatmap_preview_core::model::BreakPeriod> = Vec::new();
             let breaks = if row_timing.is_preview {
                 &row_timing.break_periods
@@ -158,41 +155,21 @@ pub(super) fn render_grid(
                 &mut canvas,
                 &format_mmssmmm(time_axis.to_display(snapshot_time)),
                 x,
-                y + context.frame_layout.frame_height + config.sizing.TIME_LABEL_TOP_GAP,
+                y + context.frame_layout.frame_height + standard_png_sizing.TIME_LABEL_TOP_GAP,
                 note,
                 context.frame_layout.frame_width,
-                config.sizing.TIME_LABEL_FONT_SIZE,
-                config.sizing.TIME_LABEL_NOTE_FONT_SIZE,
-                config.sizing.TIME_LABEL_NOTE_TOP_GAP,
+                standard_png_sizing.TIME_LABEL_FONT_SIZE,
+                standard_png_sizing.TIME_LABEL_NOTE_FONT_SIZE,
+                standard_png_sizing.TIME_LABEL_NOTE_TOP_GAP,
                 if is_preview_label {
-                    crate::config::current()
-                        .render
-                        .standard
-                        .png
-                        .style
-                        .PREVIEW_TIME_LABEL_COLOR
+                    standard_constants::png::style::PREVIEW_TIME_LABEL_COLOR
                 } else {
-                    crate::config::current()
-                        .render
-                        .standard
-                        .png
-                        .style
-                        .TIME_LABEL_COLOR
+                    standard_constants::png::style::TIME_LABEL_COLOR
                 },
                 if is_preview_label {
-                    crate::config::current()
-                        .render
-                        .standard
-                        .png
-                        .style
-                        .PREVIEW_TIME_LABEL_COLOR
+                    standard_constants::png::style::PREVIEW_TIME_LABEL_COLOR
                 } else {
-                    crate::config::current()
-                        .render
-                        .standard
-                        .png
-                        .style
-                        .TIME_LABEL_NOTE_COLOR
+                    standard_constants::png::style::TIME_LABEL_NOTE_COLOR
                 },
             );
         }
