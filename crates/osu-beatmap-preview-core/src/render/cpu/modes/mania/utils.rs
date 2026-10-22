@@ -143,6 +143,13 @@ pub fn apply_hold_off_mod(hit_objects: &[ManiaHitObject]) -> Vec<ManiaHitObject>
     result
 }
 
+/// MR 按最终键数翻转整个键盘（包括 DS 转谱），仅改变轨道，不改变音符时间和类型。
+pub fn apply_mirror_mod(hit_objects: &mut [ManiaHitObject], key_count: i32) {
+    for ho in hit_objects {
+        ho.lane = key_count - 1 - ho.lane;
+    }
+}
+
 pub fn build_sv_changes(timing_points: &[TimingPoint], chart_end_time: i64) -> Vec<(i64, f64)> {
     let mut changes: Vec<(i64, f64)> = Vec::new();
     let mut prev_sv: Option<f64> = None;
@@ -172,5 +179,38 @@ pub fn format_sv_label(sv: f64) -> String {
         format!("{sv:.1}x")
     } else {
         format!("{sv:.2}x")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mirror_reverses_lanes_and_preserves_note_data() {
+        for key_count in 1..=MAX_KEY_COUNT {
+            let original: Vec<_> = (0..key_count)
+                .map(|lane| ManiaHitObject {
+                    lane,
+                    start_time: lane as i64 * 100,
+                    end_time: lane as i64 * 100 + if lane % 2 == 0 { 0 } else { 500 },
+                    is_long_note: lane % 2 != 0,
+                })
+                .collect();
+            let mut mirrored = original.clone();
+            apply_mirror_mod(&mut mirrored, key_count);
+            for (before, after) in original.iter().zip(&mirrored) {
+                assert_eq!(after.lane, key_count - 1 - before.lane);
+                assert_eq!(after.start_time, before.start_time);
+                assert_eq!(after.end_time, before.end_time);
+                assert_eq!(after.is_long_note, before.is_long_note);
+            }
+            apply_mirror_mod(&mut mirrored, key_count);
+            assert!(original
+                .iter()
+                .zip(&mirrored)
+                .all(|(a, b)| a.lane == b.lane));
+        }
+        apply_mirror_mod(&mut [], 4);
     }
 }

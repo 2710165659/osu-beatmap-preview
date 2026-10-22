@@ -28,8 +28,8 @@ use super::animation::{
 };
 use super::skin::load_mania_skin_config;
 use super::{
-    apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
-    mania_objects, resolve_key_count,
+    apply_hold_off_mod, apply_inverse_mod, apply_mirror_mod, build_sv_changes, darken,
+    is_native_mania, mania_objects, resolve_key_count,
 };
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_mania_video(
@@ -55,6 +55,9 @@ pub(crate) fn render_mania_video(
     }
     if mods.is_some_and(|m| m.hold_off) {
         hit_objects = apply_hold_off_mod(&hit_objects);
+    }
+    if mods.is_some_and(|m| m.mirror) {
+        apply_mirror_mod(&mut hit_objects, key_count);
     }
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     let hidden = mods.is_some_and(|mods| mods.hidden);

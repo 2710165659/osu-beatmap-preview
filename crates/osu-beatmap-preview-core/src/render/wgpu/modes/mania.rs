@@ -13,8 +13,8 @@ use crate::render::cpu::modes::mania::animation::{
 };
 use crate::render::cpu::modes::mania::skin::load_mania_skin_config;
 use crate::render::cpu::modes::mania::{
-    apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, is_native_mania,
-    mania_objects, resolve_key_count,
+    apply_hold_off_mod, apply_inverse_mod, apply_mirror_mod, build_sv_changes, darken,
+    is_native_mania, mania_objects, resolve_key_count,
 };
 use crate::render::geometry::{GameMode, OutputFormat};
 use crate::render::scene::{FrameSceneBuilder, SceneRect};
@@ -35,6 +35,9 @@ pub fn prepare_realtime(
     }
     if mods.is_some_and(|value| value.hold_off) {
         hit_objects = apply_hold_off_mod(&hit_objects);
+    }
+    if mods.is_some_and(|m| m.mirror) {
+        apply_mirror_mod(&mut hit_objects, key_count);
     }
     if hit_objects.is_empty() {
         return Err(PreviewError::render("mania beatmap has no hit objects"));

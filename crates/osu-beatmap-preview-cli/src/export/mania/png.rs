@@ -17,8 +17,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::{
-    apply_hold_off_mod, apply_inverse_mod, build_sv_changes, is_native_mania, mania_objects,
-    resolve_key_count,
+    apply_hold_off_mod, apply_inverse_mod, apply_mirror_mod, build_sv_changes, is_native_mania,
+    mania_objects, resolve_key_count,
 };
 
 pub(crate) fn render_mania_grid(
@@ -40,6 +40,9 @@ pub(crate) fn render_mania_grid(
     }
     if mods.is_some_and(|m| m.hold_off) {
         hit_objects = apply_hold_off_mod(&hit_objects);
+    }
+    if mods.is_some_and(|m| m.mirror) {
+        apply_mirror_mod(&mut hit_objects, key_count);
     }
 
     let cs_mode = mods.is_some_and(|m| m.cs_override);
