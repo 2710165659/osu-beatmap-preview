@@ -20,7 +20,7 @@ pub struct ModSettings {
     pub hard_rock: bool,
     pub hidden: bool,
     pub flashlight: bool,
-    /// Autoplay 光标或 catch 接盘。
+    /// Autoplay 光标、catch 接盘或太鼓动画导出。
     pub autoplay: bool,
     pub traceable: bool,
     /// 仅 Standard 实时预览支持；回放另行选择 Classic 判定策略。
@@ -525,7 +525,7 @@ fn mod_support_steps(mode: i32) -> [&'static [&'static str]; 3] {
         ],
         1 => [
             &["EZ", "HR", "SW"],
-            &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
+            &["HD", "FL", "CS", "DT", "HT", "NC", "DC", "AT"],
             &[],
         ],
         2 => [
@@ -553,7 +553,6 @@ fn supported_mod_codes(mode: i32, level: ModSupportLevel) -> Vec<&'static str> {
         .flat_map(|codes| codes.iter().copied())
         .collect()
 }
-
 /// 实时会话和回放使用能力级别校验，不能借用 MP4 格式放行实时专属 Mod。
 pub fn validate_mods_for_level(
     settings: &ModSettings,
@@ -676,7 +675,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         daycore: settings.daycore,
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
-        autoplay: settings.autoplay && matches!(mode, 0 | 2),
+        autoplay: settings.autoplay && matches!(mode, 0..=2),
         classic: settings.classic && mode == 0,
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
@@ -922,7 +921,7 @@ mod tests {
         }
     }
     #[test]
-    fn autoplay_is_standard_and_catch_and_case_insensitive() {
+    fn autoplay_is_standard_taiko_and_catch_and_case_insensitive() {
         let settings = super::parse_mods(&["at".into()]).unwrap();
         assert!(settings.autoplay && settings.has_any_mod());
         for format in ["png", "gif", "mp4"] {
@@ -934,11 +933,21 @@ mod tests {
             assert!(super::mods_for_mode(&settings, 2).autoplay);
             assert!(super::supported_mod_tokens(2).contains(&"AT".into()));
             for mode in [1, 3] {
-                assert!(!super::validate_mods(&settings, Some(mode), Some(format)).is_empty());
-                assert!(!super::mods_for_mode(&settings, mode).autoplay);
-                assert!(!super::supported_mod_tokens(mode).contains(&"AT".into()));
+                assert_eq!(
+                    super::validate_mods(&settings, Some(mode), Some(format)).is_empty(),
+                    mode == 1 && format != "png"
+                );
+                assert_eq!(super::mods_for_mode(&settings, mode).autoplay, mode == 1);
+                assert_eq!(
+                    super::supported_mod_tokens(mode).contains(&"AT".into()),
+                    mode == 1
+                );
             }
         }
+        assert!(
+            super::validate_mods_for_level(&settings, 1, super::ModSupportLevel::Realtime)
+                .is_empty()
+        );
     }
 
     use super::*;

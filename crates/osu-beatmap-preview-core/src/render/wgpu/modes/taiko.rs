@@ -91,6 +91,9 @@ pub fn prepare_realtime(
             )
         })
         .collect();
+    let autoplay = mods.is_some_and(|mods| mods.autoplay).then(|| {
+        crate::render::cpu::modes::taiko::autoplay::Autoplay::new(&prepared_hit_objects, &layout)
+    });
     Ok(RealtimeFrameSource::new(
         GameMode::Taiko,
         move |absolute_time_ms| {
@@ -108,6 +111,9 @@ pub fn prepare_realtime(
                 absolute_time_ms,
                 &hidden_sprites,
             );
+            if let Some(autoplay) = &autoplay {
+                autoplay.draw_scene(&mut scene, &layout, absolute_time_ms);
+            }
             if let Some(timeline) = &flashlight {
                 taiko_flashlight(timeline, absolute_time_ms, &layout, 0).draw_scene(
                     &mut scene,

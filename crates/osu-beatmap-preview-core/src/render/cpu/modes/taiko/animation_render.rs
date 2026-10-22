@@ -199,6 +199,9 @@ fn prepare_taiko_segment_gif_frames(
     let time_range = compute_time_range();
 
     let layout = build_animation_layout(time_range);
+    let autoplay = mods
+        .is_some_and(|mods| mods.autoplay)
+        .then(|| super::autoplay::Autoplay::new(&prepared_hit_objects, &layout));
     let frame_count = pyround(segment_duration_ms * fps / 1000.0).max(1) as usize;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
@@ -253,7 +256,16 @@ fn prepare_taiko_segment_gif_frames(
                     segment_index as i64,
                     snapshot_time,
                     &mut cache.borrow_mut(),
-                )
+                );
+                if let Some(autoplay) = &autoplay {
+                    autoplay.draw(
+                        &mut canvas,
+                        &layout,
+                        segment_index as i64,
+                        snapshot_time,
+                        &mut cache.borrow_mut(),
+                    );
+                }
             });
             if let Some(timeline) = &flashlight {
                 taiko_flashlight(timeline, snapshot_time, &layout, segment_index as i64).apply(

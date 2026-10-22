@@ -2,6 +2,7 @@
 
 pub mod animation;
 pub mod animation_render;
+pub mod autoplay;
 pub mod constants;
 pub mod notes;
 pub mod png;
