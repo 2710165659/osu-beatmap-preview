@@ -1,4 +1,4 @@
-//! 输出编码器：优化的 PNG 与 GIF（全局调色板 + 差分帧）。
+//! 输出编码器：优化的 PNG 与 GIF（全局调色板与差分帧，明显偏色时使用局部调色板）。
 //! GIF 写入器通过回调流式处理帧，因此完整动画不会同时驻留内存。
 //! 帧由 rayon 分块并行渲染，再按顺序编码以保持差分帧顺序。
 
@@ -194,7 +194,7 @@ fn build_png_lut(nq: &color_quant::NeuQuant) -> [[[u8; 32]; 32]; 32] {
 /// - 从少量采样帧构建全局 127 色调色板（NeuQuant），索引 127 保留给帧间透明度和 7 位 LZW 编码；
 /// - 每帧只编码相对上一帧的差分矩形，未改变像素设为透明；
 /// - 对异常大的画布动态缩小渲染分块。
-/// 为文字等固定元素预留精确颜色；其余像素仍使用全局调色板和差分帧。
+/// 为文字和规则色等固定元素预留精确颜色；全局调色板明显偏色时，改写当前完整帧及局部调色板。
 pub fn save_animated_gif_streamed_with_colors(
     frame_count: usize,
     render: impl Fn(usize) -> Img + Send + Sync,
@@ -338,9 +338,23 @@ pub fn save_animated_gif_streamed_with_colors(
             for (fi, frame) in (chunk_start..).zip(frames) {
                 deadline.check()?;
                 rgba_to_indexed(&frame, &lut, &mut indexed, pixel_count, &exact_colors);
+                // 抽样调色板可能遗漏后续帧才出现的颜色（例如滚奏黄色），不能强行映射成另一种色相。
+                if palette_distorts_frame(&frame, &indexed, &palette) {
+                    let mut local_frame = local_palette_frame(frame, fixed_colors);
+                    local_frame.delay = (((fi + 1) as f64 * 100.0 / frame_rate).round()
+                        - (fi as f64 * 100.0 / frame_rate).round())
+                    .max(1.0) as u16;
+                    local_frame.dispose = gif::DisposalMethod::Keep;
+                    encoder
+                        .write_frame(&local_frame)
+                        .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
+                    // 局部调色板的索引与全局索引不同；下一张全局帧必须完整覆盖，不能沿用旧差分。
+                    prev_indexed.clear();
+                    continue;
+                }
                 drop(frame);
 
-                let (rect, buffer, transparent) = if fi == 0 {
+                let (rect, buffer, transparent) = if prev_indexed.is_empty() {
                     // make_lzw_pre_encoded 会立即把借用的原始 buffer 替换为压缩数据，
                     // 因此首帧可以直接借用 indexed，省去一次整帧复制。
                     (
@@ -413,6 +427,72 @@ pub fn save_animated_gif_streamed_with_colors(
         deadline.check()?;
         Ok(())
     })
+}
+
+/// 限制每通道的编码误差；5 位分桶的正常误差远小于此值，明显变色时改用局部调色板。
+fn palette_distorts_frame(image: &Img, indexed: &[u8], palette: &[u8]) -> bool {
+    image
+        .data
+        .chunks_exact(4)
+        .zip(indexed)
+        .any(|(pixel, &index)| {
+            let color = &palette[index as usize * 3..index as usize * 3 + 3];
+            pixel[..3]
+                .iter()
+                .zip(color)
+                .any(|(&source, &encoded)| source.abs_diff(encoded) > 24)
+        })
+}
+
+/// 局部调色板按当前帧学习，并继续保留调用方指定的精确颜色。
+fn local_palette_frame(mut image: Img, fixed_colors: &[[u8; 3]]) -> gif::Frame<'static> {
+    let frame = gif::Frame::from_rgba_speed(image.w as u16, image.h as u16, &mut image.data, 1);
+    // 颜色数不超过 256 时 gif 库直接保留原色，无需再量化。
+    if frame.palette.as_ref().is_some_and(|palette| {
+        fixed_colors
+            .iter()
+            .filter(|color| {
+                image
+                    .data
+                    .chunks_exact(4)
+                    .any(|pixel| pixel[..3] == **color)
+            })
+            .all(|color| palette.chunks_exact(3).any(|entry| entry == color))
+    }) {
+        return frame;
+    }
+    let mut colors = fixed_colors.to_vec();
+    colors.sort_unstable();
+    colors.dedup();
+    let learned = 255 - colors.len();
+    let nq = color_quant::NeuQuant::new(10, learned, &image.data);
+    let mut palette = nq.color_map_rgb();
+    let exact: Vec<_> = colors
+        .into_iter()
+        .enumerate()
+        .map(|(index, color)| {
+            palette.extend_from_slice(&color);
+            (color, (learned + index) as u8)
+        })
+        .collect();
+    // 回退用于修复全局量化误差，不能再次海报化或按 5 位分桶损失 RGB 精度。
+    let indexed: Vec<_> = image
+        .data
+        .chunks_exact(4)
+        .map(|pixel| {
+            exact
+                .iter()
+                .find(|(color, _)| pixel[..3] == *color)
+                .map_or_else(|| nq.index_of(pixel) as u8, |&(_, index)| index)
+        })
+        .collect();
+    gif::Frame {
+        width: image.w as u16,
+        height: image.h as u16,
+        palette: Some(palette),
+        buffer: std::borrow::Cow::Owned(indexed),
+        ..Default::default()
+    }
 }
 
 /// 将 RGBA 帧映射为 GIF 使用的 indexed 像素。
@@ -645,6 +725,74 @@ mod timeout_tests {
                 render(index).data.as_slice(),
                 "第 {index} 帧只能改变透明度合成结果"
             );
+        }
+        drop(decoder);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn gif_preserves_unsampled_colors_and_resets_delta_after_local_palette() {
+        let path = std::env::temp_dir().join(format!(
+            "osu-preview-gif-late-color-{}.gif",
+            std::process::id()
+        ));
+        let deadline = RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(60));
+        // 全局只采样 0、2、4、6；1、3 帧中的黄色和绿色完全不参与调色板训练。
+        let render = |index| {
+            let mut image = Img::new(64, 32, [0, 0, 0, 255]);
+            let color = match index {
+                1 => [232, 198, 61, 255],
+                3 => [82, 204, 180, 255],
+                _ => [235, 69, 44, 255],
+            };
+            image.fill_rect_size(8, 8, 40, 16, color);
+            image.fill_rect_size(0, 0, 8, 8, [95, 221, 108, 255]);
+            image
+        };
+        save_animated_gif_streamed_with_colors(
+            7,
+            render,
+            &path,
+            20.0,
+            &deadline,
+            &[[95, 221, 108]],
+        )
+        .unwrap();
+        let mut options = gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::RGBA);
+        let mut decoder = options
+            .read_info(std::fs::File::open(&path).unwrap())
+            .unwrap();
+        let mut decoded = Img::new(64, 32, [0; 4]);
+        for index in 0..7 {
+            let frame = decoder.read_next_frame().unwrap().unwrap();
+            if [1, 3].contains(&index) {
+                assert!(frame.palette.is_some(), "未采样颜色必须使用当前帧的调色板");
+            } else if [2, 4].contains(&index) {
+                assert!(frame.transparent.is_none());
+                assert_eq!(
+                    (frame.left, frame.top, frame.width, frame.height),
+                    (0, 0, 64, 32)
+                );
+            }
+            decoded.alpha_composite(
+                &Img {
+                    w: u32::from(frame.width),
+                    h: u32::from(frame.height),
+                    data: frame.buffer.to_vec(),
+                },
+                i64::from(frame.left),
+                i64::from(frame.top),
+            );
+            let expected = render(index);
+            for (x, y) in [(20, 16), (2, 2)] {
+                let actual = decoded.get(x, y);
+                let source = expected.get(x, y);
+                assert!(
+                    actual.iter().zip(source).all(|(a, b)| a.abs_diff(b) <= 8),
+                    "帧 {index}: {actual:?} != {source:?}"
+                );
+            }
         }
         drop(decoder);
         std::fs::remove_file(path).unwrap();
