@@ -178,7 +178,7 @@ Windows 自动尝试 NVENC 或 AMF，失败时回退 CPU OpenH264；其他平台
 | Standard | Easy、Hard-Rock、Hidden、Flashlight、Autoplay、Difficulty-Adjust、Traceable、Mirror | Double-Time、Half-Time、Nightcore、Daycore | Classic、Relax、Spun-Out、Autopilot、Alternate、Single-Tap |
 | Taiko | Easy、Hard-Rock、Swap | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
 | Catch | Easy、Hard-Rock | Hidden、Flashlight、Autoplay、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
-| Mania | One-Key 至 Ten-Keys、Dual-Stages、Invert、Hold-Off | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
+| Mania | One-Key 至 Ten-Keys、Dual-Stages、Invert、Hold-Off、Mirror | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
 
 CLI 普通导出不支持“实时预览新增”列的 Mod；回放导出使用回放文件中的 Mod。
 

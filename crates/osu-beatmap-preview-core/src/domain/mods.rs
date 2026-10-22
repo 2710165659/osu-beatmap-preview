@@ -534,7 +534,7 @@ fn mod_support_steps(mode: i32) -> [&'static [&'static str]; 3] {
             &[],
         ],
         3 => [
-            &["K", "DS", "IN", "HO"],
+            &["K", "DS", "IN", "HO", "MR"],
             &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
             &[],
         ],
@@ -715,6 +715,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
             filtered.cs_override = settings.cs_override;
             filtered.inverse = settings.inverse;
             filtered.hold_off = settings.hold_off;
+            filtered.mirror = settings.mirror;
         }
         _ => {}
     }
@@ -758,6 +759,28 @@ pub fn supported_mod_tokens_for_level(mode: i32, level: ModSupportLevel) -> Vec<
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mirror_is_supported_for_standard_and_mania_in_all_formats() {
+        let settings = parse_mods(&["mr".into()]).unwrap();
+        assert!(settings.mirror && settings.has_any_mod());
+        assert_eq!(settings.tokens, ["MR"]);
+        for mode in 0..=3 {
+            assert_eq!(mods_for_mode(&settings, mode).mirror, matches!(mode, 0 | 3));
+            for fmt in ["png", "gif", "mp4"] {
+                assert_eq!(
+                    validate_mods(&settings, Some(mode), Some(fmt)).is_empty(),
+                    matches!(mode, 0 | 3)
+                );
+            }
+        }
+        assert!(supported_mod_tokens(3).contains(&"MR".into()));
+        assert!(validate_mods_for_level(&settings, 3, ModSupportLevel::Realtime).is_empty());
+        for token in ["IN", "HO", "DS", "4K", "CS", "DT"] {
+            let settings = parse_mods(&["MR".into(), token.into()]).unwrap();
+            assert!(validate_mods(&settings, Some(3), Some("gif")).is_empty());
+        }
+    }
+
     #[test]
     fn full_names_normalize_parameters_and_duplicates() {
         for (name, code) in [

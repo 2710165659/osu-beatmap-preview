@@ -15,8 +15,8 @@ use crate::render::text::{draw_text, render_text_sprite, text_size};
 use crate::render::visibility::{Flashlight, FlashlightKind, ManiaHidden, VisibilityTimeline};
 
 use super::{
-    apply_hold_off_mod, apply_inverse_mod, build_sv_changes, darken, format_sv_label,
-    is_native_mania, mania_objects, resolve_key_count,
+    apply_hold_off_mod, apply_inverse_mod, apply_mirror_mod, build_sv_changes, darken,
+    format_sv_label, is_native_mania, mania_objects, resolve_key_count,
 };
 
 use super::skin::load_mania_skin_config;
@@ -134,6 +134,9 @@ pub fn prepare_mania_gif_frames(
     }
     if mods.is_some_and(|m| m.hold_off) {
         hit_objects = apply_hold_off_mod(&hit_objects);
+    }
+    if mods.is_some_and(|m| m.mirror) {
+        apply_mirror_mod(&mut hit_objects, key_count);
     }
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     let hidden = mods.is_some_and(|mods| mods.hidden);
