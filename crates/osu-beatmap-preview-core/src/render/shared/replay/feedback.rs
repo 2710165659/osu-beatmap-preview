@@ -114,8 +114,8 @@ pub(crate) fn draw_judgement(
     scale: f64,
     age: f64,
 ) -> bool {
+    // OsuArgonSkinTransformer 在 PRO 中隐藏 Great 的整个判定组件，包括环形粒子。
     let (label, small, large, travel) = match result {
-        HitResult::Great => (0, 4, 4, 52.0),
         HitResult::Ok => (1, 4, 0, 31.2),
         HitResult::Meh => (2, 3, 0, 15.6),
         HitResult::Miss => (3, 0, 0, 0.0),

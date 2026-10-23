@@ -1,4 +1,4 @@
-//! 对照 lazer ArgonJudgementPiece 的文字、颜色、环数与动画曲线。
+//! 对照 lazer Argon PRO 2022 的判定可见性、文字、颜色、环数与动画曲线。
 //! 粒子随机量由事件 ID 固定，seek、并行导出和 FPS 改变不会重新抽样。
 use super::overlay::OverlayCanvas;
 use super::*;
@@ -144,6 +144,60 @@ mod tests {
     }
 
     #[test]
+    fn pro_hides_great_on_both_targets_and_keeps_other_judgements_at_the_note() {
+        for scale in [0.75, 1.0, 1.5] {
+            let visuals = FeedbackVisuals::new(scale, None);
+            for (result, label_index) in [
+                (HitResult::Great, 0),
+                (HitResult::Ok, 1),
+                (HitResult::Meh, 2),
+                (HitResult::Miss, 3),
+            ] {
+                for age in [100.0, 400.0, 100.0] {
+                    let position = [150.0, 150.0];
+                    let mut scene = FrameSceneBuilder::new(300, 300, age as i64);
+                    let mut image = Img::new(300, 300, [0; 4]);
+                    feedback::draw_judgement(
+                        &mut scene, &visuals, result, 10, position, scale, age,
+                    );
+                    feedback::draw_judgement(
+                        &mut image, &visuals, result, 10, position, scale, age,
+                    );
+                    let scene = scene.finish();
+                    if result == HitResult::Great {
+                        assert!(scene.commands.is_empty());
+                        assert!(image.data.iter().all(|byte| *byte == 0));
+                        continue;
+                    }
+                    assert!(image.data.chunks_exact(4).any(|pixel| pixel[3] > 0));
+                    let actual = scene
+                        .commands
+                        .iter()
+                        .find_map(|command| match command {
+                            DrawCommand::TransformedSprite {
+                                resource, position, ..
+                            } if Arc::ptr_eq(
+                                &scene.resources[resource],
+                                &visuals.labels[label_index],
+                            ) =>
+                            {
+                                Some(*position)
+                            }
+                            _ => None,
+                        })
+                        .expect("非 Great 判定仍须显示文字");
+                    assert_eq!(actual[0], position[0] as f32);
+                    if result == HitResult::Miss {
+                        assert!(actual[1] > position[1] as f32, "Miss 从物件位置向下坠落");
+                    } else {
+                        assert_eq!(actual[1], position[1] as f32);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn feedback_size_tracks_cs_and_current_output_scale() {
         let (context, _) = fixture(5);
         let normal = FeedbackVisuals::new(
@@ -155,14 +209,14 @@ mod tests {
             small_context.frame_layout.scale * small_context.settings.object_scale,
             None,
         );
-        assert!(small.labels[0].h < normal.labels[0].h);
+        assert!(small.labels[1].h < normal.labels[1].h);
         let mut context = context;
         context.frame_layout.scale *= 2.0;
         let double = FeedbackVisuals::new(
             context.frame_layout.scale * context.settings.object_scale,
             None,
         );
-        assert!(double.rings[0][0].w > normal.rings[0][0].w);
+        assert!(double.rings[1][0].w > normal.rings[1][0].w);
     }
 
     fn fixture(cs: u8) -> (RenderContext, PreparedStandard) {
