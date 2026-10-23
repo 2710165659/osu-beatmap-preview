@@ -187,7 +187,7 @@ pub(crate) fn render_taiko_video(
     )
 }
 
-/// MP4 的单行布局：帧尺寸为视频画布（物件只在视频边界被裁），单行内容带居中
+/// MP4 的单行布局：帧尺寸为视频画布（物件只在视频边界被裁），轨道位置与游戏一致
 ///（无四行堆叠、无行间距、无底部标签条）。
 fn build_video_layout(time_range: f64) -> AnimationLayout {
     build_video_animation_layout(time_range, crate::export::geometry::OutputFormat::Mp4)

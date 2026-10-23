@@ -11,7 +11,7 @@ use crate::render::{
     cpu::modes::taiko::{
         animation_render::*, autoplay::Autoplay, constants::*, notes::RenderCache, timing::*,
     },
-    geometry::{OutputFormat, PixelRect},
+    geometry::{taiko_playfield_top, OutputFormat, PixelRect},
     scene::FrameSceneBuilder,
     visibility::VisibilityTimeline,
 };
@@ -96,7 +96,7 @@ impl ReplayRenderPlan {
         let mut layout = build_video_animation_layout(compute_time_range(), OutputFormat::Mp4);
         if let Some((width, height)) = dimensions {
             let dx = (i64::from(width) - layout.image_width) / 2;
-            let dy = (i64::from(height) - layout.image_height) / 2;
+            let dy = taiko_playfield_top(height) - layout.content.y;
             layout.playfield_left += dx;
             layout.first_row_top += dy;
             layout.content.x += dx;
@@ -391,10 +391,10 @@ mod tests {
     #[test]
     fn replay_judgement_is_drawn_at_the_taiko_target_on_cpu_and_scene() {
         use crate::gameplay::events::{EventKind, HitResult};
-        for (hit_time, keys, expected, label_index) in [
-            (980, 1, HitResult::Great, 0),
-            (1040, 1, HitResult::Ok, 1),
-            (1000, 0, HitResult::Miss, 3),
+        for (hit_time, keys, expected, label_index, dimensions) in [
+            (980, 1, HitResult::Great, 0, None),
+            (1040, 1, HitResult::Ok, 1, Some((1280, 720))),
+            (1000, 0, HitResult::Miss, 3, Some((1280, 960))),
         ] {
             let beatmap = crate::parse_beatmap_bytes(
             b"osu file format v14\n[General]\nMode:1\n[Difficulty]\nOverallDifficulty:5\nHPDrainRate:5\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n0,0,1000,1,0\n",
@@ -449,7 +449,14 @@ mod tests {
                 100
             };
             let time = event.time.ceil() as i64 + age;
-            let plan = ReplayRenderPlan::new(prepared, gameplay, None, None).unwrap();
+            let plan = ReplayRenderPlan::new(prepared, gameplay, None, dimensions).unwrap();
+            let expected_top = plan.layout.image_height as f64 * 135.0 / 480.0;
+            assert!((plan.layout.first_row_top as f64 - expected_top).abs() <= 0.5);
+            assert_eq!(plan.layout.content.y, plan.layout.first_row_top);
+            if let Some((width, height)) = dimensions {
+                assert_eq!(plan.layout.image_width, i64::from(width));
+                assert_eq!(plan.layout.image_height, i64::from(height));
+            }
             let position = [
                 judgement_line_x(&plan.layout) as f32,
                 gif_row_center_y(0, &plan.layout) as f32,

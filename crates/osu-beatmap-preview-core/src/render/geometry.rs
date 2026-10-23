@@ -129,6 +129,11 @@ pub fn taiko_geometry(format: OutputFormat) -> PlayfieldGeometry {
     }
 }
 
+/// 与游戏的 TaikoPlayfieldAdjustmentContainer 一致，轨道顶端位于画布高度的 135/480。
+pub fn taiko_playfield_top(canvas_height: u32) -> i64 {
+    round_half_even(f64::from(canvas_height) * 135.0 / 480.0)
+}
+
 /// 视频画布尺寸与内容框在画布中的居中位置。
 ///
 /// `origin` 是内容框左上角在画布中的整数坐标：物件层的帧尺寸就是画布，

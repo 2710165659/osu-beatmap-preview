@@ -624,7 +624,7 @@ pub fn build_animation_layout_with_segments_and_format(
     }
 }
 
-/// MP4 物件层布局：帧尺寸 = 视频画布，单行内容带按 [`video_canvas`] 居中。
+/// 实时预览与 MP4 共用布局：帧尺寸为视频画布，轨道按游戏的相对高度定位。
 ///
 /// 物件层与最终画布同尺寸后，音符只会在视频边界被裁剪，不会再被内容框切掉一半；
 /// 行高、鼓面板与音符尺寸完全沿用内容框布局，因此分辨率与物件大小都不变。
@@ -635,14 +635,15 @@ pub fn build_video_animation_layout(
     let layout = build_animation_layout_with_segments_and_format(time_range, 1, output_format);
     let geometry = crate::render::geometry::taiko_geometry(output_format);
     let canvas = crate::render::geometry::video_canvas(geometry.content);
+    let top = crate::render::geometry::taiko_playfield_top(canvas.height);
     AnimationLayout {
         image_width: canvas.width as i64,
         image_height: canvas.height as i64,
         playfield_left: layout.playfield_left + canvas.origin_x,
-        first_row_top: layout.first_row_top + canvas.origin_y,
+        first_row_top: layout.first_row_top + top,
         content: crate::render::geometry::PixelRect {
             x: canvas.origin_x,
-            y: canvas.origin_y,
+            y: top,
             width: geometry.content.width,
             height: layout.row_height,
         },
@@ -2209,10 +2210,12 @@ mod tests {
     }
 
     #[test]
-    fn video_layout_centers_row_band_without_resizing_notes() {
-        for scale in [1.0_f64, 2.0] {
+    fn video_layout_matches_game_track_position_without_resizing_notes() {
+        for (scale, expected_top) in [(0.75, 81), (1.0, 109), (1.25, 135), (2.0, 216)] {
             let mut custom = crate::config::CoreConfig::default();
             custom.render.taiko.mp4.SCALE = scale;
+            custom.render.taiko.gif.SCALE = 3.0;
+            custom.render.taiko.png.SCALE = 4.0;
             crate::config::with_config(std::sync::Arc::new(custom), || {
                 let time_range = compute_time_range();
                 let content = build_animation_layout_with_segments_and_format(
@@ -2233,11 +2236,11 @@ mod tests {
                     (canvas.width as i64, canvas.height as i64)
                 );
                 assert_eq!(video.content.x, canvas.origin_x);
-                assert_eq!(video.content.y, canvas.origin_y);
+                assert_eq!(video.content.y, expected_top);
                 assert_eq!(video.content.width, geometry.content.width);
                 assert_eq!(video.content.height, content.row_height);
                 assert_eq!(video.playfield_left, canvas.origin_x);
-                assert_eq!(video.first_row_top, canvas.origin_y);
+                assert_eq!(video.first_row_top, expected_top);
                 // 行高与音符直径都不随画布变化。
                 assert_eq!(video.row_height, content.row_height);
                 assert_eq!(video.normal_note_diameter, content.normal_note_diameter);
