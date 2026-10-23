@@ -35,7 +35,7 @@ fn build_with<R: SampleResolver>(
     resolver: &mut R,
 ) -> HitsoundTimeline {
     let mut result = HitsoundTimeline::default();
-    let policy = gameplay.policy;
+    let policy = gameplay.standard_policy();
     for event in &gameplay.events {
         let mut builder = TimelineBuilder::new(resolver);
         if event.kind == EventKind::Fail || event.kind == EventKind::ComboBreak {

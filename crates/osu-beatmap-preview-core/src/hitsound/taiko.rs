@@ -74,7 +74,7 @@ fn taiko_sample_spec(
 }
 
 /// 敲击一次鼓面：红音符（鼓心）用 `hitnormal`，蓝音符（鼓边）用 `hitclap`。
-fn push_taiko_press<R: SampleResolver>(
+pub(super) fn push_taiko_press<R: SampleResolver>(
     builder: &mut TimelineBuilder<R>,
     samples: &[HitSample],
     beatmap: &Beatmap,
@@ -98,7 +98,7 @@ fn push_taiko_press<R: SampleResolver>(
 ///
 /// osu! 的第二下敲击会先 `flushCenter/RimTriggerSources()` 掐掉第一下的 base，两声几乎同刻，
 /// 因此这里只发「base + 追加音」两条事件，而不是 base 发两遍。
-fn push_taiko_strong<R: SampleResolver>(
+pub(super) fn push_taiko_strong<R: SampleResolver>(
     builder: &mut TimelineBuilder<R>,
     samples: &[HitSample],
     beatmap: &Beatmap,

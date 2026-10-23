@@ -6,6 +6,7 @@ pub(crate) use osu_beatmap_preview_core::render::geometry;
 pub(crate) mod mania;
 #[cfg(test)]
 pub(crate) use osu_beatmap_preview_core::render::scene;
+pub(crate) mod replay;
 pub(crate) mod standard;
 pub(crate) mod taiko;
 pub(crate) use osu_beatmap_preview_core::render::text;

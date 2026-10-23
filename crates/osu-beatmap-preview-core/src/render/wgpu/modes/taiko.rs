@@ -3,13 +3,13 @@
 use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::Beatmap;
 use crate::domain::mods::ModSettings;
-use crate::render::canvas::Img;
-use crate::render::cpu::modes::taiko::animation::{drum_roll_tick_transform, measure_line_alpha};
+use crate::render::cpu::modes::taiko::animation::measure_line_alpha;
 use crate::render::cpu::modes::taiko::animation_render::{
-    build_multiplier_points, build_video_animation_layout, compute_time_range, gif_row_center_y,
-    gif_row_top, hidden_alpha, judgement_line_x, object_x, prepare_hit_objects_with_mods,
-    prepare_measure_lines, taiko_flashlight, taiko_visibility_timeline, AnimationLayout,
-    MultiplierLookup, PreparedAnimationPoint, PreparedTaikoHitObject,
+    build_multiplier_points, build_video_animation_layout, compute_time_range,
+    draw_hit_object_state, gif_row_center_y, gif_row_top, judgement_line_x, object_x,
+    prepare_hit_objects_with_mods, prepare_measure_lines, taiko_flashlight,
+    taiko_visibility_timeline, AnimationLayout, MultiplierLookup, PreparedAnimationPoint,
+    PreparedTaikoHitObject,
 };
 use crate::render::cpu::modes::taiko::constants::*;
 use crate::render::cpu::modes::taiko::timing::{
@@ -20,12 +20,34 @@ use crate::render::geometry::{GameMode, OutputFormat};
 use crate::render::scene::{FrameSceneBuilder, SceneRect};
 use crate::render::wgpu::RealtimeFrameSource;
 use std::cell::RefCell;
+#[cfg(any(test, feature = "replay"))]
 use std::sync::Arc;
 
 thread_local! {
     // 实时转盘的直径随动画变化，按线程复用圆环缓存，避免每帧重复光栅化。
     static TAIKO_REALTIME_CACHE: RefCell<crate::render::cpu::modes::taiko::notes::RenderCache> =
         RefCell::new(crate::render::cpu::modes::taiko::notes::RenderCache::default());
+}
+
+#[cfg(feature = "replay")]
+pub fn prepare_replay(
+    prepared: Arc<crate::replay::preparation::taiko::PreparedTaiko>,
+    gameplay: Arc<crate::gameplay::timeline::GameplayTimeline>,
+    font: Option<crate::render::shared::replay::font::ArgonFont>,
+    dimensions: (u32, u32),
+) -> Result<RealtimeFrameSource> {
+    let plan = crate::render::shared::taiko::replay::ReplayRenderPlan::new(
+        prepared,
+        gameplay,
+        font,
+        Some(dimensions),
+    )?;
+    Ok(RealtimeFrameSource::new(GameMode::Taiko, move |time| {
+        let mut scene = FrameSceneBuilder::new(dimensions.0, dimensions.1, time);
+        plan.draw_scene(&mut scene, time);
+        plan.draw_scene_overlay(&mut scene, time);
+        Ok(scene.finish())
+    }))
 }
 
 /// 预计算 Taiko 滚动倍率、物件和小节线，供任意时间点重复取景。
@@ -67,30 +89,6 @@ pub fn prepare_realtime(
     let flashlight = mods
         .is_some_and(|mods| mods.flashlight)
         .then(|| taiko_visibility_timeline(&hit_objects, &beatmap.break_periods));
-    let hidden_sprites: Vec<_> = prepared_hit_objects
-        .iter()
-        .map(|object| {
-            (object.hidden && object.hit_object.hit_type & (DRUMROLL_FLAG | SWELL_FLAG) == 0).then(
-                || {
-                    let sound = object.hit_object.hitsound;
-                    Arc::new(crate::render::cpu::modes::taiko::notes::build_note_disc(
-                        if sound & HIT_SOUNDS_RIM != 0 {
-                            RIM_NOTE_COLOR
-                        } else {
-                            CENTRE_NOTE_COLOR
-                        },
-                        if sound & HIT_SOUNDS_STRONG != 0 {
-                            layout.big_note_diameter
-                        } else {
-                            layout.normal_note_diameter
-                        },
-                        crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
-                        false,
-                    ))
-                },
-            )
-        })
-        .collect();
     let autoplay = mods.is_some_and(|mods| mods.autoplay).then(|| {
         crate::render::cpu::modes::taiko::autoplay::Autoplay::new(&prepared_hit_objects, &layout)
     });
@@ -109,7 +107,6 @@ pub fn prepare_realtime(
                 &prepared_measure_lines,
                 &layout,
                 absolute_time_ms,
-                &hidden_sprites,
             );
             if let Some(autoplay) = &autoplay {
                 autoplay.draw_scene(&mut scene, &layout, absolute_time_ms);
@@ -216,7 +213,6 @@ fn draw_objects_scene(
     measure_lines: &[PreparedAnimationPoint],
     layout: &AnimationLayout,
     snapshot_time: i64,
-    hidden_sprites: &[Option<Arc<Img>>],
 ) {
     let clip_left = judgement_line_x(layout);
     let clip_right = layout.playfield_left + layout.left_panel_width + layout.right_panel_width;
@@ -228,25 +224,30 @@ fn draw_objects_scene(
         clip_left,
         clip_right,
     );
-    for (index, hit_object) in hit_objects.iter().enumerate().rev() {
-        if crate::render::cpu::modes::taiko::animation_render::can_skip(
-            hit_object,
-            snapshot_time,
-            layout,
-            clip_left,
-            clip_right,
-        ) {
-            continue;
-        }
+    TAIKO_REALTIME_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        for hit_object in hit_objects.iter().rev() {
+            if crate::render::cpu::modes::taiko::animation_render::can_skip(
+                hit_object,
+                snapshot_time,
+                layout,
+                clip_left,
+                clip_right,
+            ) {
+                continue;
+            }
 
-        draw_hit_object_scene(
-            scene,
-            hit_object,
-            layout,
-            snapshot_time,
-            hidden_sprites[index].as_ref(),
-        );
-    }
+            draw_hit_object_state::<bool>(
+                scene,
+                hit_object,
+                layout,
+                0,
+                snapshot_time,
+                &mut cache,
+                None,
+            );
+        }
+    });
 }
 
 fn draw_measure_lines_scene(
@@ -280,276 +281,10 @@ fn draw_measure_lines_scene(
     }
 }
 
-fn draw_hit_object_scene(
-    scene: &mut FrameSceneBuilder,
-    object: &PreparedTaikoHitObject,
-    layout: &AnimationLayout,
-    snapshot_time: i64,
-    hidden_sprite: Option<&Arc<Img>>,
-) {
-    let base = &object.hit_object;
-    if base.hit_type & SWELL_FLAG != 0 || (object.hidden && base.hit_type & DRUMROLL_FLAG != 0) {
-        if object.hidden
-            && hidden_alpha(
-                base.start_time as f64,
-                snapshot_time,
-                object.start_multiplier,
-                layout.time_range,
-            ) <= 0.0
-        {
-            return;
-        }
-        // 转盘与 HD 长条沿用 CPU 绘制，保证计数和整体淡出一致。
-        // 按当前圆心和直径裁出局部图层，视频大圆可以溢出轨道，但不必上传整张画布。
-        let is_swell = base.hit_type & SWELL_FLAG != 0;
-        let (left, top, right, bottom) = if is_swell {
-            let (x, y, diameter) =
-                crate::render::cpu::modes::taiko::animation_render::swell_frame_geometry(
-                    object,
-                    layout,
-                    0,
-                    snapshot_time,
-                );
-            let padding = crate::render::geometry::scale_stroke_px(2.0, layout.render_scale);
-            let radius = diameter as f64 / 2.0;
-            let left = ((x - radius).floor() as i64 - padding).clamp(0, layout.image_width);
-            let top = ((y - radius).floor() as i64 - padding).clamp(0, layout.image_height);
-            let right = ((x + radius).ceil() as i64 + padding).clamp(0, layout.image_width);
-            let bottom = ((y + radius).ceil() as i64 + padding).clamp(0, layout.image_height);
-            // round-half-even 在半像素处依赖整数奇偶，局部原点取偶数保持像素一致。
-            (left.div_euclid(2) * 2, top.div_euclid(2) * 2, right, bottom)
-        } else {
-            // HD 滚奏保留完整画布，避免圆头和长条边缘被局部图层裁剪。
-            (0, 0, layout.image_width, layout.image_height)
-        };
-        let mut local_layout = layout.clone();
-        local_layout.playfield_left -= left;
-        local_layout.first_row_top -= top;
-        local_layout.image_width = (right - left).max(1);
-        local_layout.image_height = (bottom - top).max(1);
-        let mut layer = Img::new(
-            local_layout.image_width as u32,
-            local_layout.image_height as u32,
-            [0, 0, 0, 0],
-        );
-        TAIKO_REALTIME_CACHE.with(|cache| {
-            crate::render::cpu::modes::taiko::animation_render::draw_hit_object(
-                &mut layer,
-                object,
-                &local_layout,
-                0,
-                snapshot_time,
-                &mut cache.borrow_mut(),
-            )
-        });
-        scene.sprite(
-            Arc::new(layer),
-            rect(
-                left,
-                top,
-                local_layout.image_width,
-                local_layout.image_height,
-            ),
-            1.0,
-        );
-        return;
-    }
-    if base.hit_type & DRUMROLL_FLAG != 0 {
-        draw_span_scene(
-            scene,
-            object,
-            layout,
-            snapshot_time,
-            base.hitsound & HIT_SOUNDS_STRONG != 0,
-            ROLL_COLOR,
-            false,
-        );
-    } else {
-        let center_x = object_x(
-            base.start_time as f64,
-            snapshot_time as f64,
-            object.start_multiplier,
-            layout,
-        );
-        // 与 CPU 路径一致：普通 note 的中心越过判定线后整颗消失，
-        // 不显示被 scissor 从中间切开的半颗 note。
-        if center_x < judgement_line_x(layout) {
-            return;
-        }
-        let diameter = if base.hitsound & HIT_SOUNDS_STRONG != 0 {
-            layout.big_note_diameter
-        } else {
-            layout.normal_note_diameter
-        };
-        let color = if base.hitsound & HIT_SOUNDS_RIM != 0 {
-            RIM_NOTE_COLOR
-        } else {
-            CENTRE_NOTE_COLOR
-        };
-        if let Some(sprite) = hidden_sprite {
-            let alpha = hidden_alpha(
-                base.start_time as f64,
-                snapshot_time,
-                object.start_multiplier,
-                layout.time_range,
-            );
-            if alpha > 0.0 {
-                scene.sprite(
-                    Arc::clone(sprite),
-                    rect(
-                        crate::domain::parser::round_half_even(
-                            center_x as f64 - diameter as f64 / 2.0,
-                        ),
-                        crate::domain::parser::round_half_even(
-                            gif_row_center_y(0, layout) as f64 - diameter as f64 / 2.0,
-                        ),
-                        diameter,
-                        diameter,
-                    ),
-                    alpha as f32,
-                );
-            }
-            return;
-        }
-        draw_note_disc_scene(
-            scene,
-            center_x,
-            gif_row_center_y(0, layout),
-            diameter,
-            color,
-            layout,
-            false,
-        );
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn draw_span_scene(
-    scene: &mut FrameSceneBuilder,
-    object: &PreparedTaikoHitObject,
-    layout: &AnimationLayout,
-    snapshot_time: i64,
-    large: bool,
-    color: [u8; 3],
-    swell_marker: bool,
-) {
-    if snapshot_time >= object.hit_object.end_time {
-        return;
-    }
-    let start_x = object_x(
-        object.hit_object.start_time as f64,
-        snapshot_time as f64,
-        object.start_multiplier,
-        layout,
-    )
-    .max(judgement_line_x(layout));
-    let end_x = object_x(
-        object.hit_object.end_time as f64,
-        snapshot_time as f64,
-        object.end_multiplier,
-        layout,
-    );
-    let center_y = gif_row_center_y(0, layout);
-    let head_diameter = if large {
-        layout.big_note_diameter
-    } else {
-        layout.normal_note_diameter
-    };
-    let body_ratio = if large {
-        SWELL_BODY_HEIGHT_RATIO
-    } else {
-        SPAN_BODY_HEIGHT_RATIO
-    };
-    let body_height = (head_diameter as f64 * body_ratio).round().max(1.0) as i64;
-    // 仅主体、圆尾和连打点裁剪于轨道，圆头在裁剪结束后完整绘制。
-    let clip_left = judgement_line_x(layout);
-    let clip_right = layout.playfield_left + layout.left_panel_width + layout.right_panel_width;
-    scene.push_clip(rect(
-        clip_left,
-        gif_row_top(0, layout),
-        clip_right - clip_left,
-        layout.row_height,
-    ));
-    if end_x > start_x {
-        scene.rectangle(
-            rect(
-                start_x,
-                (center_y as f64 - body_height as f64 / 2.0).round() as i64,
-                end_x - start_x,
-                body_height,
-            ),
-            [color[0], color[1], color[2], 255],
-        );
-        scene.circle(
-            [end_x as f32, center_y as f32],
-            body_height as f32 / 2.0,
-            [color[0], color[1], color[2], 255],
-        );
-    }
-    if object.hit_object.hit_type & DRUMROLL_FLAG != 0 {
-        let base_diameter = (layout.normal_note_diameter as f64 * DRUM_ROLL_TICK_DIAMETER_RATIO)
-            .round()
-            .max(1.0) as i64;
-        for tick in &object.drum_roll_ticks {
-            let (mut alpha, scale) = drum_roll_tick_transform(tick.time, snapshot_time);
-            if object.hidden {
-                alpha *= hidden_alpha(tick.time, snapshot_time, tick.multiplier, layout.time_range);
-            }
-            if alpha <= 0.0 {
-                continue;
-            }
-            let diameter = (base_diameter as f64 * scale).round().max(1.0) as f32;
-            let center_x = object_x(tick.time, snapshot_time as f64, tick.multiplier, layout);
-            let mut tick_color = DRUM_ROLL_TICK_COLOR;
-            tick_color[3] = (tick_color[3] as f64 * alpha).round().clamp(0.0, 255.0) as u8;
-            scene.circle(
-                [center_x as f32, center_y as f32],
-                diameter / 2.0,
-                tick_color,
-            );
-        }
-    }
-    scene.pop_clip();
-    draw_note_disc_scene(
-        scene,
-        start_x,
-        center_y,
-        head_diameter,
-        color,
-        layout,
-        swell_marker,
-    );
-}
-
-fn draw_note_disc_scene(
-    scene: &mut FrameSceneBuilder,
-    center_x: i64,
-    center_y: i64,
-    diameter: i64,
-    color: [u8; 3],
-    layout: &AnimationLayout,
-    swell_marker: bool,
-) {
-    let radius = diameter as f32 / 2.0;
-    let edge = crate::render::geometry::scale_stroke_px(1.0, layout.render_scale).max(1) as f32;
-    let ring = (diameter as f64 * NOTE_RING_THICKNESS_RATIO).max(1.0) as f32;
-    let center = [center_x as f32, center_y as f32];
-    scene.circle(center, radius, NOTE_EDGE_COLOR);
-    scene.circle(center, (radius - edge).max(0.0), NOTE_RING_COLOR);
-    let fill_radius = (radius - edge - ring).max(0.0);
-    let fill = [color[0], color[1], color[2], 255];
-    scene.circle(center, fill_radius, fill);
-    if swell_marker {
-        let inner = fill_radius * 0.55;
-        scene.circle(center, inner, NOTE_RING_COLOR);
-        scene.circle(center, (inner - ring).max(0.0), fill);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::scene::DrawCommand;
+    use crate::render::{canvas::Img, scene::DrawCommand};
 
     #[test]
     fn realtime_uses_a_judgement_ring_and_does_not_clip_swell_to_the_track() {
@@ -576,7 +311,7 @@ mod tests {
         );
         let mut builder =
             FrameSceneBuilder::new(layout.image_width as u32, layout.image_height as u32, 1200);
-        draw_objects_scene(&mut builder, &objects, &[], &layout, 1200, &[None]);
+        draw_objects_scene(&mut builder, &objects, &[], &layout, 1200);
         let scene = builder.finish();
         assert!(!scene
             .commands
@@ -627,7 +362,17 @@ mod tests {
                             &mut crate::render::cpu::modes::taiko::notes::RenderCache::default(),
                         );
                         let mut builder = FrameSceneBuilder::new(expected.w, expected.h, time);
-                        draw_hit_object_scene(&mut builder, &object, &layout, time, None);
+                        TAIKO_REALTIME_CACHE.with(|cache| {
+                            draw_hit_object_state::<bool>(
+                                &mut builder,
+                                &object,
+                                &layout,
+                                0,
+                                time,
+                                &mut cache.borrow_mut(),
+                                None,
+                            )
+                        });
                         let scene = builder.finish();
                         let mut actual = Img::new(expected.w, expected.h, [0, 0, 0, 0]);
                         for command in scene.commands.iter() {
@@ -684,7 +429,7 @@ mod tests {
                     layout.image_height as u32,
                     time,
                 );
-                draw_objects_scene(&mut builder, &objects, &[], &layout, time, &[None]);
+                draw_objects_scene(&mut builder, &objects, &[], &layout, time);
                 let scene = builder.finish();
                 let mut depth = 0;
                 let mut found_head = false;
@@ -697,14 +442,18 @@ mod tests {
                     match command {
                         DrawCommand::PushClip(_) => depth += 1,
                         DrawCommand::PopClip => depth -= 1,
-                        DrawCommand::Circle {
-                            center,
-                            radius,
-                            color,
-                        } if *color == NOTE_RING_COLOR => {
+                        DrawCommand::Sprite {
+                            resource,
+                            destination,
+                            ..
+                        } if scene.resources[resource].w == diameter as u32
+                            && scene.resources[resource].h == diameter as u32
+                            && destination.x + destination.width / 2.0
+                                == judgement_line_x(&layout) as f32
+                            && destination.y + destination.height / 2.0
+                                == gif_row_center_y(0, &layout) as f32 =>
+                        {
                             assert_eq!(depth, 0, "圆头不能被轨道裁掉左半边");
-                            assert_eq!(center[0], judgement_line_x(&layout) as f32);
-                            assert!(*radius > diameter as f32 * 0.4);
                             found_head = true;
                         }
                         _ => {}
@@ -714,7 +463,7 @@ mod tests {
             }
             let mut builder =
                 FrameSceneBuilder::new(layout.image_width as u32, layout.image_height as u32, 3000);
-            draw_objects_scene(&mut builder, &objects, &[], &layout, 3000, &[None]);
+            draw_objects_scene(&mut builder, &objects, &[], &layout, 3000);
             assert!(builder.finish().commands.is_empty());
         }
     }

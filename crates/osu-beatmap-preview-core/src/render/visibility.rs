@@ -18,6 +18,7 @@ pub enum FlashlightKind {
 /// 满连击时间轴独立于帧索引；分段、seek、并行和乱序出帧都得到相同结果。
 pub struct VisibilityTimeline {
     hit_times: Vec<f64>,
+    combos: Option<Vec<(f64, u32)>>,
     breaks: Vec<BreakPeriod>,
 }
 
@@ -30,11 +31,41 @@ impl VisibilityTimeline {
         hit_times.sort_by(f64::total_cmp);
         Self {
             hit_times,
+            combos: None,
             breaks: breaks.to_vec(),
         }
     }
 
+    #[cfg(feature = "replay")]
+    pub fn from_replay(
+        gameplay: &crate::gameplay::timeline::GameplayTimeline,
+        breaks: &[BreakPeriod],
+    ) -> Self {
+        let mut result = Self::new([], breaks);
+        let mut previous = 0;
+        result.combos = Some(
+            gameplay
+                .checkpoints
+                .iter()
+                .filter_map(|(time, state)| {
+                    if previous == state.combo {
+                        return None;
+                    }
+                    previous = state.combo;
+                    Some((*time, state.combo))
+                })
+                .collect(),
+        );
+        result
+    }
+
     pub fn combo_at(&self, time: i64) -> usize {
+        if let Some(combos) = &self.combos {
+            return combos
+                .partition_point(|p| p.0 <= time as f64)
+                .checked_sub(1)
+                .map_or(0, |i| combos[i].1 as usize);
+        }
         self.hit_times.partition_point(|&hit| hit <= time as f64)
     }
 
@@ -48,6 +79,9 @@ impl VisibilityTimeline {
     /// 动画按谱面时间计算，不能按导出帧累积，否则 DT/HT 或随机 seek 会改变遮罩。
     pub fn flashlight_scale(&self, kind: FlashlightKind, time: i64) -> f64 {
         let mut changes = Vec::with_capacity(2 + self.breaks.len() * 2);
+        if let Some(combos) = &self.combos {
+            changes.extend(combos.iter().map(|p| p.0));
+        }
         if !matches!(kind, FlashlightKind::Mania) {
             for threshold in [100, 200] {
                 if let Some(&hit) = self.hit_times.get(threshold - 1) {
@@ -73,7 +107,15 @@ impl VisibilityTimeline {
             let in_break = self.breaks.iter().any(|period| {
                 period.start_time as f64 <= change && change < period.end_time as f64
             });
-            let combo = self.hit_times.partition_point(|&hit| hit <= change);
+            let combo = self.combos.as_ref().map_or_else(
+                || self.hit_times.partition_point(|&hit| hit <= change),
+                |combos| {
+                    combos
+                        .partition_point(|p| p.0 <= change)
+                        .checked_sub(1)
+                        .map_or(0, |i| combos[i].1 as usize)
+                },
+            );
             let next = if in_break {
                 if matches!(kind, FlashlightKind::Catch) {
                     1.538

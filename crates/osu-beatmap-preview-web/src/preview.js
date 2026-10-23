@@ -955,9 +955,9 @@ function tick(now) {
  */
 export async function loadPreview() {
   if (state.loading || state.replaySelecting || state.localOsuSelecting || state.localOszSelecting) return;
-  // 回放转谱链接先保留目标模式；判定实现前必须明确拒绝，不能默默播放成 Standard。
-  if (replayRequested.value && state.replayConvert && state.replayConvert !== 'standard') {
-    logLoad(`尚未支持 ${state.replayConvert} 模式的回放预览`);
+  // 回放模式和 Mod 由 OSR 决定；用户不能通过普通转谱控件覆盖它们。
+  if (replayRequested.value && state.replayConvert) {
+    logLoad('回放预览不允许手动转谱，请清除转谱选项后继续');
     return;
   }
   let replay = replayRequested.value && state.replayMethod === 'file' ? replayInput.current() : null;

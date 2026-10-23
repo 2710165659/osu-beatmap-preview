@@ -1,15 +1,15 @@
 //! Argon 字体适配器；始终使用内嵌的完整 Torus Bold。
 use osu_beatmap_preview_core::{
-    render::{canvas::Img, cpu::modes::standard::osr::font::ArgonFont},
+    render::{canvas::Img, shared::replay::font::ArgonFont},
     PreviewError, Result,
 };
 use std::io::Cursor;
 
-const FONT: &[u8] = include_bytes!("../../../../../../assets/fonts/argon/Torus-Bold.bin");
-const ATLAS: &[u8] = include_bytes!("../../../../../../assets/fonts/argon/Torus-Bold_0.png");
+const FONT: &[u8] = include_bytes!("../../../../../assets/fonts/argon/Torus-Bold.bin");
+const ATLAS: &[u8] = include_bytes!("../../../../../assets/fonts/argon/Torus-Bold_0.png");
 const LABELS: &str = "0123456789.%:/-x GREAT OK MEH MISS REPLAY FAILED SS A B C D F M1 M2 K1 K2";
 
-pub(super) fn load() -> Result<Option<ArgonFont>> {
+pub(crate) fn load() -> Result<Option<ArgonFont>> {
     embedded().map(Some)
 }
 

@@ -135,8 +135,8 @@ fn validate(score: &Score) -> Result<()> {
     {
         return Err(PreviewError::download("官方成绩响应缺少有效谱面信息"));
     }
-    if score.ruleset_id != 0 {
-        return Err(PreviewError::download("只支持原生 Standard 成绩"));
+    if !matches!(score.ruleset_id, 0 | 1) {
+        return Err(PreviewError::download("只支持 Standard 和 Taiko 成绩"));
     }
     if !score.has_replay {
         return Err(PreviewError::download("选中的成绩没有可下载回放"));

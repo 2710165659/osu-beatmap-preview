@@ -5,6 +5,8 @@ use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::{Beatmap, HitObjects, StandardHitObject, TaikoHitObject, TimingPoint};
 use crate::domain::mods::ModSettings;
 
+pub mod gameplay;
+
 use crate::domain::shared::conversion::{almost_equals, std_objects, TimingCursor};
 
 // C# 常量为 1.4f，此处保持 float32 数值。

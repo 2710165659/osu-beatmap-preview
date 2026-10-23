@@ -10,6 +10,7 @@ use crate::domain::shared::time_selection::{GifRenderOptions, PreviewSegmentTimi
 use crate::domain::timeout::RequestDeadline;
 use crate::render::canvas::Img;
 use crate::render::cpu::AnimationFrames;
+use crate::render::shared::draw::OverlayCanvas;
 use crate::render::text::{draw_text, text_size};
 use crate::render::visibility::{Flashlight, FlashlightKind, VisibilityTimeline};
 use std::cell::RefCell;
@@ -21,10 +22,33 @@ use super::animation::{
 };
 use super::constants::*;
 use super::notes::{
-    cached_drum_roll_tick, cached_note_disc, cached_roll_tail, draw_drum_panel,
-    draw_track_background, paste_clipped, RenderCache,
+    cached_drum_roll_tick_arc, cached_note_disc_arc, cached_roll_tail_arc, draw_drum_panel,
+    draw_track_background, RenderCache,
 };
 use super::timing::*;
+
+pub(crate) trait TaikoReplayHitResult: Copy {
+    fn is_hit(self) -> bool;
+}
+
+impl TaikoReplayHitResult for bool {
+    fn is_hit(self) -> bool {
+        self
+    }
+}
+
+#[cfg(feature = "replay")]
+impl TaikoReplayHitResult for crate::gameplay::events::HitResult {
+    fn is_hit(self) -> bool {
+        crate::gameplay::events::HitResult::is_hit(self)
+    }
+}
+
+pub(crate) struct TaikoReplayDrawState<'a, T> {
+    pub head: Option<(f64, T)>,
+    pub end: Option<(f64, T)>,
+    pub nodes: &'a [Option<(f64, T)>],
+}
 
 #[inline]
 pub fn pyround(v: f64) -> i64 {
@@ -822,8 +846,43 @@ pub(crate) fn draw_hit_object(
     snapshot_time: i64,
     cache: &mut RenderCache,
 ) {
+    draw_hit_object_state::<bool>(
+        image,
+        hit_object,
+        layout,
+        row_index,
+        snapshot_time,
+        cache,
+        None,
+    );
+}
+
+pub(crate) fn draw_hit_object_state<T: TaikoReplayHitResult>(
+    target: &mut impl OverlayCanvas,
+    hit_object: &PreparedTaikoHitObject,
+    layout: &AnimationLayout,
+    row_index: i64,
+    snapshot_time: i64,
+    cache: &mut RenderCache,
+    replay_state: Option<&TaikoReplayDrawState<'_, T>>,
+) {
     let base = &hit_object.hit_object;
-    if hit_object.hidden && base.hit_type & (SWELL_FLAG | DRUMROLL_FLAG) != 0 {
+    if base.hit_type & DRUMROLL_FLAG != 0 {
+        let ended = snapshot_time >= base.end_time;
+        if (ended && (replay_state.is_none() || snapshot_time - base.end_time >= 100))
+            || (!ended
+                && can_skip(
+                    hit_object,
+                    snapshot_time,
+                    layout,
+                    judgement_line_x(layout),
+                    layout.playfield_left + layout.left_panel_width + layout.right_panel_width,
+                ))
+        {
+            return;
+        }
+    }
+    if hit_object.hidden && base.hit_type & DRUMROLL_FLAG != 0 {
         let alpha = hidden_alpha(
             base.start_time as f64,
             snapshot_time,
@@ -834,28 +893,104 @@ pub(crate) fn draw_hit_object(
             return;
         }
         // 整条物件先合成再淡出，避免头尾重叠处因重复混合而出现亮斑。
-        let mut layer = Img::new(image.w, image.h, [0, 0, 0, 0]);
+        let (width, height) = target.dimensions();
         let mut visible = hit_object.clone();
         visible.hidden = false;
-        draw_hit_object(
+        let mut layer = Img::new(width, height, [0; 4]);
+        draw_hit_object_state(
             &mut layer,
             &visible,
             layout,
             row_index,
             snapshot_time,
             cache,
+            replay_state,
         );
-        image.alpha_composite_scaled(&layer, 0, 0, alpha);
+        target.sprite_opacity(&std::sync::Arc::new(layer), 0, 0, alpha);
         return;
     }
     if base.hit_type & SWELL_FLAG != 0 {
-        draw_swell_object(image, hit_object, layout, row_index, snapshot_time, cache);
+        let progress = replay_state.map(|state| {
+            let completed = state
+                .nodes
+                .iter()
+                .flatten()
+                .filter(|(time, result)| *time <= snapshot_time as f64 && result.is_hit())
+                .count() as u32;
+            let finished = state.end.map_or(f64::INFINITY, |judgement| judgement.0);
+            (completed, finished)
+        });
+        let completed_at = progress.map_or_else(
+            || swell_hit_progress(base, hit_object.swell_required_hits, snapshot_time).1,
+            |(_, finished)| finished,
+        );
+        if snapshot_time as f64 > completed_at + SWELL_CLEAR_MS {
+            return;
+        }
+        let right_bound =
+            layout.playfield_left + layout.left_panel_width + layout.right_panel_width;
+        let x = object_x(
+            base.start_time as f64,
+            snapshot_time as f64,
+            hit_object.start_multiplier,
+            layout,
+        );
+        if x - layout.big_note_diameter / 2 > right_bound {
+            return;
+        }
+        let alpha = if hit_object.hidden {
+            hidden_alpha(
+                base.start_time as f64,
+                snapshot_time,
+                hit_object.start_multiplier,
+                layout.time_range,
+            )
+        } else {
+            1.0
+        };
+        if alpha <= 0.0 {
+            return;
+        }
+        let (center_x, center_y, diameter) =
+            swell_frame_geometry(hit_object, layout, row_index, snapshot_time);
+        let (width, height) = target.dimensions();
+        let padding = crate::render::geometry::scale_stroke_px(3.0, layout.render_scale);
+        // 局部原点取偶数，保持 round-half-even 在半像素边界的奇偶性。
+        let left = ((center_x - diameter as f64 / 2.0).floor() as i64 - padding)
+            .max(0)
+            .div_euclid(2)
+            * 2;
+        let top = ((center_y - diameter as f64 / 2.0).floor() as i64 - padding)
+            .max(0)
+            .div_euclid(2)
+            * 2;
+        let right =
+            ((center_x + diameter as f64 / 2.0).ceil() as i64 + padding).min(i64::from(width));
+        let bottom =
+            ((center_y + diameter as f64 / 2.0).ceil() as i64 + padding).min(i64::from(height));
+        if right <= left || bottom <= top {
+            return;
+        }
+        let mut local_layout = layout.clone();
+        local_layout.playfield_left -= left;
+        local_layout.first_row_top -= top;
+        let mut layer = Img::new((right - left) as u32, (bottom - top) as u32, [0; 4]);
+        draw_swell_object_with_progress(
+            &mut layer,
+            hit_object,
+            &local_layout,
+            row_index,
+            snapshot_time,
+            cache,
+            progress,
+        );
+        target.sprite_opacity(&std::sync::Arc::new(layer), left, top, alpha);
         return;
     }
     if base.hit_type & DRUMROLL_FLAG != 0 {
         let is_big_roll = base.hitsound & HIT_SOUNDS_STRONG != 0;
-        draw_span_object(
-            image,
+        draw_span_object_state(
+            target,
             hit_object,
             layout,
             row_index,
@@ -864,10 +999,19 @@ pub(crate) fn draw_hit_object(
             is_big_roll,
             crate::render::cpu::modes::taiko::constants::ROLL_COLOR,
             false,
+            replay_state,
         );
         return;
     }
-    draw_circle_object(image, hit_object, layout, row_index, snapshot_time, cache);
+    draw_circle_object(
+        target,
+        hit_object,
+        layout,
+        row_index,
+        snapshot_time,
+        cache,
+        replay_state,
+    );
 }
 
 /// GIF 转盘放在轨道内，视频转盘沿用经典皮肤在判定点右下方展开的大圆布局。
@@ -919,19 +1063,20 @@ pub(crate) fn swell_frame_geometry(
     )
 }
 
-/// 转盘在当前输出格式对应的位置展开，附加信息随圆心移动。
-fn draw_swell_object(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_swell_object_with_progress(
     image: &mut Img,
     hit_object: &PreparedTaikoHitObject,
     layout: &AnimationLayout,
     row_index: i64,
     snapshot_time: i64,
     cache: &mut RenderCache,
+    progress: Option<(u32, f64)>,
 ) {
     let base = &hit_object.hit_object;
     let elapsed = (snapshot_time - base.start_time) as f64;
-    let (completed, completed_at) =
-        swell_hit_progress(base, hit_object.swell_required_hits, snapshot_time);
+    let (completed, completed_at) = progress
+        .unwrap_or_else(|| swell_hit_progress(base, hit_object.swell_required_hits, snapshot_time));
     let clear_elapsed = snapshot_time as f64 - completed_at;
     if clear_elapsed > SWELL_CLEAR_MS {
         return;
@@ -1008,7 +1153,12 @@ fn draw_swell_object(
         if !show_clear {
             return;
         }
-        "CLEAR".to_owned()
+        if completed >= hit_object.swell_required_hits {
+            "CLEAR"
+        } else {
+            "MISS"
+        }
+        .to_owned()
     } else {
         if !show_hits {
             return;
@@ -1049,13 +1199,14 @@ fn draw_swell_object(
     );
 }
 
-fn draw_circle_object(
-    image: &mut Img,
+fn draw_circle_object<T: TaikoReplayHitResult>(
+    target: &mut impl OverlayCanvas,
     hit_object: &PreparedTaikoHitObject,
     layout: &AnimationLayout,
     row_index: i64,
     snapshot_time: i64,
     cache: &mut RenderCache,
+    replay_state: Option<&TaikoReplayDrawState<'_, T>>,
 ) {
     let base = &hit_object.hit_object;
     let center_x = object_x(
@@ -1068,7 +1219,14 @@ fn draw_circle_object(
 
     let judgement_x = judgement_line_x(layout);
     let right_bound = layout.playfield_left + layout.left_panel_width + layout.right_panel_width;
-    if center_x < judgement_x || center_x > right_bound {
+    if (replay_state.is_none() && center_x < judgement_x) || center_x > right_bound {
+        return;
+    }
+
+    let judged = replay_state
+        .and_then(|state| state.head)
+        .filter(|(time, _)| *time <= snapshot_time as f64);
+    if judged.is_some_and(|(_, result)| result.is_hit()) {
         return;
     }
 
@@ -1085,7 +1243,7 @@ fn draw_circle_object(
         crate::render::cpu::modes::taiko::constants::CENTRE_NOTE_COLOR
     };
 
-    let alpha = if hit_object.hidden {
+    let mut alpha = if hit_object.hidden {
         hidden_alpha(
             base.start_time as f64,
             snapshot_time,
@@ -1095,15 +1253,18 @@ fn draw_circle_object(
     } else {
         1.0
     };
+    if let Some((judged_at, _)) = judged {
+        alpha *= (1.0 - (snapshot_time as f64 - judged_at) / 100.0).clamp(0.0, 1.0);
+    }
     if alpha > 0.0 {
-        let sprite = cached_note_disc(
+        let sprite = cached_note_disc_arc(
             cache,
             color,
             diameter,
             crate::render::geometry::scale_stroke_px(1.0, layout.render_scale),
             false,
         );
-        image.alpha_composite_scaled(
+        target.sprite_opacity(
             sprite,
             pyround(center_x as f64 - diameter as f64 / 2.0),
             pyround(center_y as f64 - diameter as f64 / 2.0),
@@ -1113,6 +1274,7 @@ fn draw_circle_object(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn draw_span_object(
     image: &mut Img,
     hit_object: &PreparedTaikoHitObject,
@@ -1124,9 +1286,114 @@ fn draw_span_object(
     span_color: [u8; 3],
     draw_swell_marker: bool,
 ) {
+    draw_span_object_state::<bool>(
+        image,
+        hit_object,
+        layout,
+        row_index,
+        snapshot_time,
+        cache,
+        use_large_geometry,
+        span_color,
+        draw_swell_marker,
+        None,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_span_object_state<T: TaikoReplayHitResult>(
+    target: &mut impl OverlayCanvas,
+    hit_object: &PreparedTaikoHitObject,
+    layout: &AnimationLayout,
+    row_index: i64,
+    snapshot_time: i64,
+    cache: &mut RenderCache,
+    use_large_geometry: bool,
+    span_color: [u8; 3],
+    draw_swell_marker: bool,
+    replay_state: Option<&TaikoReplayDrawState<'_, T>>,
+) {
+    let end_time = hit_object.hit_object.end_time;
+    if replay_state.is_some() && snapshot_time >= end_time {
+        let alpha = (1.0 - (snapshot_time - end_time) as f64 / 100.0).clamp(0.0, 1.0);
+        if alpha <= 0.0 {
+            return;
+        }
+        let (width, height) = target.dimensions();
+        let diameter = if use_large_geometry {
+            layout.big_note_diameter
+        } else {
+            layout.normal_note_diameter
+        };
+        let center_x = judgement_line_x(layout);
+        let center_y = gif_row_center_y(row_index, layout);
+        let padding = crate::render::geometry::scale_stroke_px(2.0, layout.render_scale);
+        let left = (center_x - diameter / 2 - padding).max(0).div_euclid(2) * 2;
+        let top = (center_y - diameter / 2 - padding).max(0).div_euclid(2) * 2;
+        let tail_width = pyround(diameter as f64 * SPAN_BODY_HEIGHT_RATIO / 2.0).max(1);
+        let right = (center_x + diameter / 2 + tail_width + padding).min(i64::from(width));
+        let bottom = (center_y + diameter / 2 + padding).min(i64::from(height));
+        if right <= left || bottom <= top {
+            return;
+        }
+        let mut local_layout = layout.clone();
+        local_layout.playfield_left -= left;
+        local_layout.first_row_top -= top;
+        local_layout.image_width = right - left;
+        local_layout.image_height = bottom - top;
+        let mut layer = Img::new(
+            local_layout.image_width as u32,
+            local_layout.image_height as u32,
+            [0; 4],
+        );
+        draw_span_object_inner(
+            &mut layer,
+            hit_object,
+            &local_layout,
+            row_index,
+            snapshot_time,
+            cache,
+            use_large_geometry,
+            span_color,
+            draw_swell_marker,
+            replay_state,
+            true,
+        );
+        target.sprite_opacity(&std::sync::Arc::new(layer), left, top, alpha);
+    } else {
+        draw_span_object_inner(
+            target,
+            hit_object,
+            layout,
+            row_index,
+            snapshot_time,
+            cache,
+            use_large_geometry,
+            span_color,
+            draw_swell_marker,
+            replay_state,
+            false,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_span_object_inner<T: TaikoReplayHitResult>(
+    target: &mut impl OverlayCanvas,
+    hit_object: &PreparedTaikoHitObject,
+    layout: &AnimationLayout,
+    row_index: i64,
+    snapshot_time: i64,
+    cache: &mut RenderCache,
+    use_large_geometry: bool,
+    span_color: [u8; 3],
+    draw_swell_marker: bool,
+    replay_state: Option<&TaikoReplayDrawState<'_, T>>,
+    draw_after_end: bool,
+) {
     let base = &hit_object.hit_object;
     // 只有尾巴随时间缩短；到结束时整条物件（包括圆头）一次性消失。
-    if snapshot_time >= base.end_time {
+    if snapshot_time >= base.end_time && !draw_after_end {
         return;
     }
     let start_x = object_x(
@@ -1159,7 +1426,7 @@ fn draw_span_object(
     let body_height = pyround(head_diameter as f64 * body_ratio);
 
     draw_roll_body(
-        image,
+        target,
         span_color,
         start_x,
         end_x,
@@ -1169,7 +1436,7 @@ fn draw_span_object(
         clip_right,
     );
     draw_span_tail(
-        image,
+        target,
         span_color,
         end_x,
         center_y,
@@ -1182,7 +1449,7 @@ fn draw_span_object(
         // 尾端 tick 必须位于尾部半圆上方，否则交界处会被覆盖一半；
         // 头部最后绘制，仍保持 osu! 中头部遮挡首个 tick 的层级。
         draw_drum_roll_ticks(
-            image,
+            target,
             &hit_object.drum_roll_ticks,
             layout,
             snapshot_time,
@@ -1191,10 +1458,11 @@ fn draw_span_object(
             clip_left,
             clip_right,
             hit_object.hidden,
+            replay_state.map(|state| state.nodes),
         );
     }
     draw_span_head(
-        image,
+        target,
         span_color,
         start_x,
         center_y,
@@ -1209,8 +1477,8 @@ fn draw_span_object(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_drum_roll_ticks(
-    image: &mut Img,
+fn draw_drum_roll_ticks<T: TaikoReplayHitResult>(
+    target: &mut impl OverlayCanvas,
     ticks: &[PreparedAnimationPoint],
     layout: &AnimationLayout,
     snapshot_time: i64,
@@ -1219,12 +1487,26 @@ fn draw_drum_roll_ticks(
     clip_left: i64,
     clip_right: i64,
     hidden: bool,
+    replay_nodes: Option<&[Option<(f64, T)>]>,
 ) {
     let base_diameter =
         pyround(layout.normal_note_diameter as f64 * DRUM_ROLL_TICK_DIAMETER_RATIO).max(1);
 
-    for tick in ticks {
-        let (mut alpha, scale) = drum_roll_tick_transform(tick.time, snapshot_time);
+    for (index, tick) in ticks.iter().enumerate() {
+        let judged = replay_nodes
+            .and_then(|nodes| nodes.get(index))
+            .copied()
+            .flatten()
+            .filter(|(time, _)| *time <= snapshot_time as f64);
+        let (mut alpha, scale) = match judged {
+            Some((time, result)) if result.is_hit() => {
+                drum_roll_tick_transform(time, snapshot_time)
+            }
+            Some(_) => (0.0, 1.0),
+            // 回放只在实际击中时播放节点动画；普通预览仍按节点时间自动触发。
+            None if replay_nodes.is_some() => (1.0, 1.0),
+            None => drum_roll_tick_transform(tick.time, snapshot_time),
+        };
         if hidden {
             alpha *= hidden_alpha(tick.time, snapshot_time, tick.multiplier, layout.time_range);
         }
@@ -1239,14 +1521,14 @@ fn draw_drum_roll_ticks(
             continue;
         }
         let y = center_y - diameter / 2;
-        let sprite = cached_drum_roll_tick(cache, diameter, alpha);
-        paste_clipped(image, sprite, x, y, clip_left, clip_right);
+        let sprite = cached_drum_roll_tick_arc(cache, diameter, alpha);
+        target.sprite_clipped(sprite, x, y, clip_left, clip_right, 1.0);
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn draw_roll_body(
-    image: &mut Img,
+    target: &mut impl OverlayCanvas,
     color: [u8; 3],
     start_x: i64,
     end_x: i64,
@@ -1264,7 +1546,7 @@ fn draw_roll_body(
         return;
     }
     let y0 = pyround(center_y as f64 - height as f64 / 2.0);
-    image.fill_rect_size(
+    target.fill_rect_size(
         visible_left,
         y0,
         visible_right - visible_left,
@@ -1275,7 +1557,7 @@ fn draw_roll_body(
 
 #[allow(clippy::too_many_arguments)]
 fn draw_span_head(
-    image: &mut Img,
+    target: &mut impl OverlayCanvas,
     color: [u8; 3],
     center_x: i64,
     center_y: i64,
@@ -1288,13 +1570,13 @@ fn draw_span_head(
 ) {
     let sprite_x = pyround(center_x as f64 - diameter as f64 / 2.0);
     let sprite_y = pyround(center_y as f64 - diameter as f64 / 2.0);
-    let disc = cached_note_disc(cache, color, diameter, edge_width, draw_swell_marker);
-    paste_clipped(image, disc, sprite_x, sprite_y, clip_left, clip_right);
+    let disc = cached_note_disc_arc(cache, color, diameter, edge_width, draw_swell_marker);
+    target.sprite_clipped(disc, sprite_x, sprite_y, clip_left, clip_right, 1.0);
 }
 
 #[allow(clippy::too_many_arguments)]
 fn draw_span_tail(
-    image: &mut Img,
+    target: &mut impl OverlayCanvas,
     color: [u8; 3],
     join_x: i64,
     center_y: i64,
@@ -1304,8 +1586,8 @@ fn draw_span_tail(
     clip_right: i64,
 ) {
     let y = pyround(center_y as f64 - height as f64 / 2.0);
-    let tail = cached_roll_tail(cache, color, height);
-    paste_clipped(image, tail, join_x, y, clip_left, clip_right);
+    let tail = cached_roll_tail_arc(cache, color, height);
+    target.sprite_clipped(tail, join_x, y, clip_left, clip_right, 1.0);
 }
 
 fn draw_time_label(

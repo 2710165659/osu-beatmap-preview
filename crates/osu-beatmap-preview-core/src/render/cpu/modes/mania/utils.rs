@@ -195,6 +195,7 @@ mod tests {
                     start_time: lane as i64 * 100,
                     end_time: lane as i64 * 100 + if lane % 2 == 0 { 0 } else { 500 },
                     is_long_note: lane % 2 != 0,
+                    samples: Vec::new(),
                 })
                 .collect();
             let mut mirrored = original.clone();

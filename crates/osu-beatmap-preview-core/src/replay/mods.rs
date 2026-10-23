@@ -30,6 +30,9 @@ impl Default for ReplayMods {
 }
 
 pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
+    if document.header.ruleset_id == 1 {
+        return super::preparation::taiko::decode_mods(document);
+    }
     let mut result = ReplayMods::default();
     let mut tokens = Vec::new();
     // 与 LegacyScoreDecoder 一致：存在扩展时只使用扩展里的完整 Mod 声明。

@@ -1,11 +1,13 @@
-//! 回放叠加层共享绘制契约：CPU 合成像素，WebGPU 发出小精灵与几何命令。
+//! 物件与回放叠加层共享绘制契约：CPU 合成像素，WebGPU 提交精灵与几何命令。
 use crate::render::{
     canvas::Img,
     scene::{FrameSceneBuilder, SceneRect, SpriteSpec},
 };
 use std::sync::Arc;
 
-pub(super) trait OverlayCanvas {
+#[cfg_attr(not(feature = "replay"), allow(dead_code))]
+pub(crate) trait OverlayCanvas {
+    fn dimensions(&self) -> (u32, u32);
     fn flashlight(
         &mut self,
         mask: &crate::render::visibility::Flashlight,
@@ -14,6 +16,28 @@ pub(super) trait OverlayCanvas {
     fn alpha_composite(&mut self, image: &Img, x: i64, y: i64);
     fn shared_sprite(&mut self, image: &Arc<Img>, x: i64, y: i64) {
         self.alpha_composite(image, x, y);
+    }
+    fn sprite_opacity(&mut self, image: &Arc<Img>, x: i64, y: i64, alpha: f64);
+    fn sprite_clipped(
+        &mut self,
+        image: &Arc<Img>,
+        x: i64,
+        y: i64,
+        clip_left: i64,
+        clip_right: i64,
+        alpha: f64,
+    ) {
+        let left = x.max(clip_left);
+        let right = (x + i64::from(image.w)).min(clip_right);
+        if right <= left {
+            return;
+        }
+        if left == x && right == x + i64::from(image.w) {
+            self.sprite_opacity(image, x, y, alpha);
+        } else {
+            let crop = Arc::new(image.crop((left - x) as u32, 0, (right - x) as u32, image.h));
+            self.sprite_opacity(&crop, left, y, alpha);
+        }
     }
     /// 填充矩形；半透明颜色按 src-over 混合。
     fn fill_rect_size(&mut self, x: i64, y: i64, w: i64, h: i64, color: [u8; 4]);
@@ -59,6 +83,12 @@ pub(super) trait OverlayCanvas {
     }
 }
 impl OverlayCanvas for Img {
+    fn dimensions(&self) -> (u32, u32) {
+        (self.w, self.h)
+    }
+    fn sprite_opacity(&mut self, image: &Arc<Img>, x: i64, y: i64, alpha: f64) {
+        self.alpha_composite_scaled(image, x, y, alpha);
+    }
     fn flashlight(
         &mut self,
         mask: &crate::render::visibility::Flashlight,
@@ -83,6 +113,21 @@ impl OverlayCanvas for Img {
     }
 }
 impl OverlayCanvas for FrameSceneBuilder {
+    fn dimensions(&self) -> (u32, u32) {
+        (self.width(), self.height())
+    }
+    fn sprite_opacity(&mut self, image: &Arc<Img>, x: i64, y: i64, alpha: f64) {
+        self.sprite(
+            Arc::clone(image),
+            SceneRect {
+                x: x as f32,
+                y: y as f32,
+                width: image.w as f32,
+                height: image.h as f32,
+            },
+            alpha as f32,
+        );
+    }
     fn flashlight(
         &mut self,
         mask: &crate::render::visibility::Flashlight,

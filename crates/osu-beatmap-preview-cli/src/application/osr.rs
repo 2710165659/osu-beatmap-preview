@@ -12,10 +12,7 @@ use crate::{
     media::audio::{AudioSourceJob, AudioSourceRequest, OszLocation, ReplayAudio},
 };
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
-use osu_beatmap_preview_core::{
-    gameplay::engine::compile_standard, replay::preparation::standard::prepare_replay,
-    PreviewError, Result,
-};
+use osu_beatmap_preview_core::{replay::preparation::PreparedReplay, PreviewError, Result};
 use std::{sync::Arc, time::Instant};
 
 pub(super) fn execute(mut request: ValidatedRequest) -> Result<serde_json::Value> {
@@ -73,7 +70,13 @@ fn execute_inner(
     let deadline = RequestDeadline::new(started, &format, timeout);
     let cache_root = crate::config::resolve_path(&config.paths.CACHE_DIR);
     let t_source = Instant::now();
-    let source = source_osr::load(&request, &cache_root, &deadline)?;
+    let mut source = source_osr::load(&request, &cache_root, &deadline)?;
+    let is_taiko = source.document.header.ruleset_id == 1;
+    if is_taiko && format != "mp4" {
+        return Err(PreviewError::new(
+            "Taiko replay preview currently supports MP4 only; PNG/GIF are not supported",
+        ));
+    }
     logging::record_stage("load_replay_ms", t_source.elapsed().as_secs_f64() * 1000.0);
     // 日志保留谱面 ID，回放身份单独记录；产物命名继续沿用原有规则。
     rec.bid = source
@@ -88,15 +91,19 @@ fn execute_inner(
     rec.osu_bytes = Some(source.bytes.len() as u64);
     super::legacy::fill_beatmap_info(&source.beatmap, rec);
     let t_prepare = Instant::now();
-    let prepared = prepare_replay(&source.beatmap, &source.document).map(Arc::new);
+    let prepared = PreparedReplay::prepare(&source.beatmap, &source.document).map(Arc::new);
     logging::record_stage(
         "prepare_replay_ms",
         t_prepare.elapsed().as_secs_f64() * 1000.0,
     );
     let prepared = prepared?;
-    rec.mods = Some(prepared.mods.settings.tokens.join(","));
+    if let PreparedReplay::Taiko(p) = prepared.as_ref() {
+        source.beatmap = p.beatmap.clone();
+    }
+    rec.target_mode = Some(i32::from(source.document.header.ruleset_id));
+    rec.mods = Some(prepared.mods().settings.tokens.join(","));
     let t_compile = Instant::now();
-    let gameplay = compile_standard(&prepared, source.document.clone()).map(Arc::new);
+    let gameplay = prepared.compile(source.document.clone()).map(Arc::new);
     logging::record_stage(
         "compile_replay_ms",
         t_compile.elapsed().as_secs_f64() * 1000.0,
@@ -107,9 +114,9 @@ fn execute_inner(
     request.source.bid = format!("{}-osr-{}", rec.bid, source.identity);
     let directory = crate::config::output_directory(request.output.output_dir.as_deref())
         .map_err(PreviewError::new)?;
-    let mut plan = RenderPlan::build(request, 0, false)?;
+    let mut plan = RenderPlan::build(request, i32::from(source.document.header.ruleset_id), false)?;
     // Mod 只能来自回放；内部计划仍复用普通导出的速度与音频参数。
-    plan.mods = Some(prepared.mods.settings.clone());
+    plan.mods = Some(prepared.mods().settings.clone());
     super::selection::select(&source.beatmap, &mut plan)?;
     rec.selected_times_ms = plan.selected_times.clone();
     deadline.check()?;
@@ -136,7 +143,8 @@ fn execute_inner(
             "start",
             Some(&rec.bid),
             &format!(
-                "type=osr fmt={format} target=standard replay={} output_cache=miss output={}",
+                "type=osr fmt={format} target={} replay={} output_cache=miss output={}",
+                if is_taiko { "taiko" } else { "standard" },
                 source.identity,
                 path.display()
             ),
@@ -144,6 +152,9 @@ fn execute_inner(
         // 失败也记录已经花费的渲染时间；错误事件和汇总统一交由外层写入。
         let rendered = (|| {
             if plan.format != OutputFormat::Mp4 {
+                let PreparedReplay::Standard(prepared) = prepared.as_ref() else {
+                    return Err(PreviewError::new("Taiko replay supports MP4 only"));
+                };
                 // PNG/GIF 在启动音频/背景任务之前分流，只依赖 OSU 和 OSR。
                 osu_beatmap_preview_core::config::with_config(
                     crate::config::core_config(),
@@ -171,7 +182,11 @@ fn execute_inner(
                     cache_dir: cache_root.join("osz-download-cache"),
                     no_cache: plan.no_cache,
                     deadline: deadline.clone(),
-                    mode: crate::export::geometry::GameMode::Standard,
+                    mode: if is_taiko {
+                        crate::export::geometry::GameMode::Taiko
+                    } else {
+                        crate::export::geometry::GameMode::Standard
+                    },
                 })?
                 .with_replay(Arc::new(ReplayAudio {
                     prepared: prepared.clone(),
@@ -181,8 +196,8 @@ fn execute_inner(
                 let storyboard = audio.take_storyboard();
                 osu_beatmap_preview_core::config::with_config(
                     crate::config::core_config(),
-                    || {
-                        crate::export::standard::osr::render(
+                    || match prepared.as_ref() {
+                        PreparedReplay::Standard(prepared) => crate::export::standard::osr::render(
                             &source.beatmap,
                             &prepared,
                             &gameplay,
@@ -192,7 +207,17 @@ fn execute_inner(
                             storyboard,
                             audio,
                             &deadline,
-                        )
+                        ),
+                        PreparedReplay::Taiko(prepared) => crate::export::taiko::osr::render(
+                            Arc::clone(prepared),
+                            Arc::clone(&gameplay),
+                            &plan,
+                            &path,
+                            background,
+                            storyboard,
+                            audio,
+                            &deadline,
+                        ),
                     },
                 )?;
             }
@@ -216,7 +241,7 @@ fn execute_inner(
     let abs = path.canonicalize().unwrap_or(path);
     Ok(serde_json::json!({
         "status": "success", "preview-img": cache::clean_windows_path(&abs.to_string_lossy()),
-        "replay-info": {"player": source.document.header.player, "identity": source.identity,
+            "replay-info": {"player": source.document.header.player, "identity": source.identity, "rulesetId": source.document.header.ruleset_id,
             "state": gameplay.state_at(f64::INFINITY), "recorded-score": source.document.header.total_score,
             "failure-time": gameplay.failure_time, "cache-hit": cached,
             "recorded-result-differences": gameplay.recorded_differences},

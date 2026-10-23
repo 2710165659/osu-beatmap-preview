@@ -1,8 +1,7 @@
 //! 回放媒体导出：并行帧与音频共享不可变规则结果。
-mod font;
+use crate::export::replay::{font, time_plan};
 mod gif;
 mod png;
-mod time_plan;
 use crate::{
     application::output_plan::RenderPlan,
     media::{self, audio::AudioSourceJob, MediaBackground, MediaStoryboard},

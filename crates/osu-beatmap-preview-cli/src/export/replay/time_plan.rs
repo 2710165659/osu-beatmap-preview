@@ -3,13 +3,13 @@ use crate::application::output_plan::RenderPlan;
 use osu_beatmap_preview_core::{processing::validation::TimePoint, Beatmap, PreviewError, Result};
 
 const MAX_FRAMES: usize = 1_000_000;
-pub(super) struct TimePlan {
+pub(crate) struct TimePlan {
     pub fps: u32,
     pub start: i64,
     pub times: Vec<i64>,
 }
 
-pub(super) fn build(
+pub(crate) fn build(
     plan: &RenderPlan,
     beatmap: &Beatmap,
     first: i64,
@@ -22,7 +22,11 @@ pub(super) fn build(
         last,
         beatmap.audio_lead_in_ms(),
         beatmap.general.get_f64("PreviewTime"),
-        config.render.standard.mp4.style.FPS as u32,
+        if plan.target_mode == 1 {
+            config.render.taiko.mp4.style.FPS as u32
+        } else {
+            config.render.standard.mp4.style.FPS as u32
+        },
         config.advance.video.VIDEO_END_PADDING_MS,
     )
 }

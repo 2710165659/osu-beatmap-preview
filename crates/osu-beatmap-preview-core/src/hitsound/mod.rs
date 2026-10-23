@@ -17,9 +17,13 @@ mod music;
 mod nightcore;
 #[cfg(feature = "replay")]
 pub mod osr;
+#[cfg(feature = "replay")]
+pub mod replay;
 mod sample;
 mod standard;
 mod taiko;
+#[cfg(feature = "replay")]
+mod taiko_replay;
 mod timeline;
 
 pub use assets::{asset_bytes, asset_count, asset_names, has_embedded_asset, HITSOUND_ASSETS};

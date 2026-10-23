@@ -70,7 +70,9 @@ fn spinner_stops_and_restarts_phase_and_plays_bonus_after_the_score_cap() {
 fn classic_plays_missed_tail_once_and_respects_the_recorded_tail_sample_setting() {
     let (beatmap, prepared, mut gameplay) = fixture("100,100,1000,2,0,L|200:100,1,100");
     Arc::make_mut(&mut gameplay.document).header.version = 20200101;
-    gameplay.policy = crate::replay::compatibility::select(&gameplay.document).unwrap();
+    gameplay.policy = crate::replay::compatibility::ReplayPolicy::Standard(
+        crate::replay::compatibility::select(&gameplay.document).unwrap(),
+    );
     let mut head = event(1000.0, EventKind::Judgement, HitResult::LargeTickHit);
     head.maximum = HitResult::LargeTickHit;
     let mut tail = event(1464.0, EventKind::Judgement, HitResult::SmallTickMiss);
@@ -107,7 +109,9 @@ fn classic_plays_missed_tail_once_and_respects_the_recorded_tail_sample_setting(
             extra: Default::default(),
         }],
     });
-    gameplay.policy = crate::replay::compatibility::select(&gameplay.document).unwrap();
+    gameplay.policy = crate::replay::compatibility::ReplayPolicy::Standard(
+        crate::replay::compatibility::select(&gameplay.document).unwrap(),
+    );
     let timeline = build_timeline(&beatmap, &prepared, &gameplay, &library);
     assert_eq!(timeline.events.len(), 1);
     assert_eq!(timeline.events[0].start_ms, 1000.0);
@@ -174,6 +178,7 @@ fn fixture(objects: &str) -> (Beatmap, PreparedStandard, GameplayTimeline) {
         policy: Default::default(),
         document,
         input: ReplayTimeline::new(vec![]),
+        taiko_inputs: Vec::new(),
         events: vec![],
         objects: vec![ObjectState::default()],
         checkpoints: vec![],

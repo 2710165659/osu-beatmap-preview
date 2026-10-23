@@ -132,7 +132,7 @@ impl ArgonFont {
     }
 
     /// 字距 5 与字号 20 来自 ArgonJudgementPiece；缩放单个字形后再拼接。
-    pub(super) fn sprite_arc(
+    pub(crate) fn sprite_arc(
         &self,
         text: &str,
         size: f64,

@@ -44,7 +44,7 @@ mod audio {
             #[cfg(feature = "replay")]
             let mut names = self.osr.as_ref().map_or_else(
                 || hitsound::referenced_names(&self.beatmap),
-                |r| hitsound::osr::referenced_names(&self.beatmap, &r.prepared, &r.gameplay),
+                |r| hitsound::replay::referenced_names(&self.beatmap, &r.prepared, &r.gameplay),
             );
             #[cfg(not(feature = "replay"))]
             let mut names = hitsound::referenced_names(&self.beatmap);
@@ -98,7 +98,7 @@ mod audio {
                 let timeline = self.osr.as_ref().map_or_else(
                     || hitsound::build_timeline(&self.beatmap, self.mixer.library()),
                     |r| {
-                        hitsound::osr::build_timeline(
+                        hitsound::replay::build_timeline(
                             &self.beatmap,
                             &r.prepared,
                             &r.gameplay,
@@ -167,12 +167,12 @@ mod osr {
     use super::*;
     use crate::render::cpu::modes::standard::osr::font::ArgonFont;
     use crate::{
-        gameplay::timeline::GameplayTimeline, replay::preparation::standard::PreparedStandard,
+        gameplay::timeline::GameplayTimeline, replay::preparation::PreparedReplay,
         replay::ReplayDocument,
     };
 
     pub(super) struct OsrSessionData {
-        pub prepared: Arc<PreparedStandard>,
+        pub prepared: PreparedReplay,
         pub gameplay: Arc<GameplayTimeline>,
         font: Option<Arc<ArgonFont>>,
         config: Arc<config::CoreConfig>,
@@ -184,7 +184,7 @@ mod osr {
     }
     impl RealtimeSession {
         pub fn from_replay_bundle(
-            bundle: ResourceBundle,
+            mut bundle: ResourceBundle,
             options: RealtimeOptions,
             document: Arc<ReplayDocument>,
             font: Option<ArgonFont>,
@@ -192,29 +192,28 @@ mod osr {
             if options.convert.is_some() || !options.mods.is_empty() {
                 return Err(PreviewError::new("OSR 回放禁止转谱和用户 Mod"));
             }
-            crate::replay::compatibility::select(&document)?;
             let beatmap = bundle
                 .beatmap
                 .as_ref()
                 .ok_or_else(|| PreviewError::new("回放缺少谱面"))?;
-            let prepared = Arc::new(crate::replay::preparation::standard::prepare_replay(
-                beatmap, &document,
-            )?);
-            let gameplay = Arc::new(crate::gameplay::engine::compile_standard(
-                &prepared, document,
-            )?);
+            let prepared = PreparedReplay::prepare(beatmap, &document)?;
+            let gameplay = Arc::new(prepared.compile(document)?);
+            if let PreparedReplay::Taiko(p) = &prepared {
+                bundle.beatmap = Some(p.beatmap.clone());
+            }
             let mut session = Self::from_bundle(bundle, options)?;
-            let first = prepared.objects[0].source.start_time;
-            let last = prepared.last_end.max(gameplay.settlement_time).ceil() as i64;
-            let speed = prepared.mods.settings.speed_multiplier;
-            session.settings = prepared.mods.settings.clone();
+            let first = prepared.first();
+            let last = prepared.last_end().max(gameplay.settlement_time).ceil() as i64;
+            let speed = prepared.mods().settings.speed_multiplier;
+            session.settings = prepared.mods().settings.clone();
             session.options.mods = session.settings.tokens.clone();
             session.timeline =
                 preview_timeline(first, last, session.beatmap.audio_lead_in_ms(), speed);
             session.clock.set_rate(speed, 0.0);
-            session
-                .mixer
-                .set_music_rate(MusicRate::chart_domain(speed, prepared.mods.music_pitch()));
+            session.mixer.set_music_rate(MusicRate::chart_domain(
+                speed,
+                prepared.mods().music_pitch(),
+            ));
             session.osr = Some(Arc::new(OsrSessionData {
                 prepared,
                 gameplay,
@@ -232,23 +231,39 @@ mod osr {
             let osr = self.osr.as_ref().expect("仅 OSR 会话构建回放源");
             let mut cfg = (*osr.config).clone();
             let native_height = config::with_config(Arc::clone(&osr.config), || {
-                crate::render::cpu::modes::standard::osr::replay_layout(
+                match &osr.prepared {
+                    PreparedReplay::Standard(_) => crate::render::cpu::modes::standard::osr::replay_layout(
                     crate::render::geometry::OutputFormat::Mp4,
                 )
-                .frame_height
+                .frame_height,
+                    PreparedReplay::Taiko(_) => crate::render::cpu::modes::taiko::animation_render::build_video_animation_layout(crate::render::cpu::modes::taiko::animation_render::compute_time_range(),crate::render::geometry::OutputFormat::Mp4).image_height,
+                }
             });
             // 分辨率切换重新计算当前格式 SCALE，物件与 HUD 在目标像素尺寸直接绘制。
-            cfg.render.standard.mp4.SCALE *=
-                self.options.render.height as f64 / native_height as f64;
+            let scale = self.options.render.height as f64 / native_height as f64;
+            match &osr.prepared {
+                PreparedReplay::Standard(_) => cfg.render.standard.mp4.SCALE *= scale,
+                PreparedReplay::Taiko(_) => cfg.render.taiko.mp4.SCALE *= scale,
+            }
             let config = Arc::new(cfg);
-            self.source = config::with_config(Arc::clone(&config), || {
-                crate::render::wgpu::modes::standard::osr::prepare(
-                    &self.beatmap,
-                    Arc::clone(&osr.prepared),
-                    Arc::clone(&osr.gameplay),
-                    osr.font.as_ref().map(|f| (**f).clone()),
-                    self.options.render.dimensions(),
-                )
+            self.source = config::with_config(Arc::clone(&config), || match &osr.prepared {
+                PreparedReplay::Standard(prepared) => {
+                    crate::render::wgpu::modes::standard::osr::prepare(
+                        &self.beatmap,
+                        Arc::clone(prepared),
+                        Arc::clone(&osr.gameplay),
+                        osr.font.as_ref().map(|f| (**f).clone()),
+                        self.options.render.dimensions(),
+                    )
+                }
+                PreparedReplay::Taiko(prepared) => {
+                    crate::render::wgpu::modes::taiko::prepare_replay(
+                        Arc::clone(prepared),
+                        Arc::clone(&osr.gameplay),
+                        osr.font.as_ref().map(|f| (**f).clone()),
+                        self.options.render.dimensions(),
+                    )
+                }
             })?;
             self.options.core_config = config;
             Ok(())

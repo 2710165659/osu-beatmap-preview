@@ -2,7 +2,7 @@
 #[cfg(target_arch = "wasm32")]
 use super::WebGpuSession;
 use osu_beatmap_preview_core::{
-    render::cpu::modes::standard::osr::font::ArgonFont,
+    render::shared::replay::font::ArgonFont,
     render::Img,
     replay::{self, ReplayDocument},
     PreviewError, Result,
@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 pub fn parse(bytes: &[u8]) -> Result<Arc<ReplayDocument>> {
     let document = replay::parse_osr(bytes)?;
-    replay::compatibility::select(&document)?;
+    replay::compatibility::select_replay(&document)?;
     Ok(Arc::new(document))
 }
 pub fn font() -> Result<ArgonFont> {
@@ -64,6 +64,11 @@ pub fn replay_info(
     use wasm_bindgen::JsValue;
     let document = parse(&bytes).map_err(super::js_error)?;
     let result = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &result,
+        &JsValue::from_str("rulesetId"),
+        &JsValue::from_f64(document.header.ruleset_id as f64),
+    )?;
     js_sys::Reflect::set(
         &result,
         &JsValue::from_str("checksum"),

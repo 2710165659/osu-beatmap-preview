@@ -100,7 +100,7 @@ impl ReplayFrame<'_> {
                         object.start_time,
                         state.head,
                         time,
-                        gameplay.policy.fade_hit_circle_early,
+                        gameplay.standard_policy().fade_hit_circle_early,
                         prepared.od,
                     )
                 });
@@ -125,7 +125,7 @@ impl ReplayFrame<'_> {
                             object.start_time,
                             state.head,
                             time,
-                            gameplay.policy.fade_hit_circle_early,
+                            gameplay.standard_policy().fade_hit_circle_early,
                             prepared.od,
                         ),
                     )

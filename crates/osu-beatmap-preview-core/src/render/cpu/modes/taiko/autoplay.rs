@@ -21,6 +21,8 @@ fn hit_flight_offset(age: f64, row_height: i64) -> f64 {
 #[derive(Clone, Copy)]
 struct Hit {
     time: f64,
+    source_time: f64,
+    drum: bool,
     multiplier: f64,
     rim: bool,
     right: bool,
@@ -43,6 +45,8 @@ impl Autoplay {
             let mut add = |time, rim, right, strong, flying, multiplier| {
                 hits.push(Hit {
                     time,
+                    source_time: time,
+                    drum: true,
                     multiplier,
                     rim,
                     right,
@@ -126,6 +130,68 @@ impl Autoplay {
         Self { hits, drum_sprites }
     }
 
+    #[cfg(feature = "replay")]
+    pub fn from_replay(
+        objects: &[PreparedTaikoHitObject],
+        gameplay: &crate::gameplay::timeline::GameplayTimeline,
+        layout: &AnimationLayout,
+        classic: bool,
+    ) -> Self {
+        use crate::gameplay::events::{EventKind, HitResult};
+        let mut result = Self::new(&[], layout);
+        result
+            .hits
+            .extend(gameplay.taiko_inputs.iter().map(|press| Hit {
+                time: press.time,
+                source_time: press.time,
+                drum: true,
+                multiplier: 1.0,
+                rim: press.key & 10 != 0,
+                right: press.key & 12 != 0,
+                strong: false,
+                flying: false,
+            }));
+        for event in &gameplay.events {
+            if event.kind != EventKind::Judgement
+                || !matches!(
+                    event.result,
+                    HitResult::Great | HitResult::Ok | HitResult::SmallBonus
+                )
+            {
+                continue;
+            }
+            let object = &objects[event.object_id];
+            let multiplier = event
+                .node_id
+                .and_then(|id| object.drum_roll_ticks.get(id))
+                .map_or(object.start_multiplier, |tick| tick.multiplier);
+            let source_time = if classic {
+                event.time
+            } else {
+                event.sample_time
+            };
+            let rim = gameplay
+                .taiko_inputs
+                .iter()
+                .find(|p| p.time == event.time && p.object_id == Some(event.object_id))
+                .map_or(object.hit_object.hitsound & HIT_SOUNDS_RIM != 0, |p| {
+                    p.key & 10 != 0
+                });
+            result.hits.push(Hit {
+                time: event.time,
+                source_time,
+                drum: false,
+                multiplier,
+                rim,
+                right: false,
+                strong: object.hit_object.hitsound & HIT_SOUNDS_STRONG != 0,
+                flying: !object.hidden,
+            });
+        }
+        result.hits.sort_by(|a, b| a.time.total_cmp(&b.time));
+        result
+    }
+
     pub fn draw(
         &self,
         image: &mut Img,
@@ -154,7 +220,7 @@ impl Autoplay {
         });
     }
 
-    fn sprites(
+    pub(crate) fn sprites(
         &self,
         layout: &AnimationLayout,
         row: i64,
@@ -177,11 +243,11 @@ impl Autoplay {
                 (1.0 - (age - 40.0) / 1000.0).clamp(0.0, 1.0).powi(5)
             };
             let index = usize::from(hit.rim) * 2;
-            if hit.strong {
+            if hit.drum && hit.strong {
                 for value in &mut drum_alpha[index..index + 2] {
                     *value = (*value + alpha).min(1.0);
                 }
-            } else {
+            } else if hit.drum {
                 drum_alpha[index + usize::from(hit.right)] =
                     (drum_alpha[index + usize::from(hit.right)] + alpha).min(1.0);
             }
@@ -209,7 +275,7 @@ impl Autoplay {
                 false,
             );
             // 游戏的竖直命中动画仍处于滚动容器中，水平位置继续按该物件的 SV 向左推进。
-            let x = object_x(hit.time, time, hit.multiplier, layout) - diameter / 2;
+            let x = object_x(hit.source_time, time, hit.multiplier, layout) - diameter / 2;
             let y = (center_y + offset - diameter as f64 / 2.0).round() as i64;
             // GIF 各行拥有独立时间，击飞不能盖住相邻行及时间标签；MP4 可溢出轨道。
             let (top, bottom) =
@@ -420,6 +486,8 @@ mod tests {
                                 let mut autoplay = Autoplay::new(&[], &layout);
                                 autoplay.hits.push(Hit {
                                     time: 1000.0,
+                                    source_time: 1000.0,
+                                    drum: true,
                                     multiplier: 1.0,
                                     rim,
                                     right,

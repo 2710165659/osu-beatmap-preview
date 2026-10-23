@@ -1,7 +1,8 @@
 //! Argon 判定使用 (SrcAlpha, One) 加法混合；只影响回放反馈层。
 use crate::render::canvas::Img;
 
-pub(super) fn composite(destination: &mut Img, source: &Img, x: i64, y: i64, alpha: f64) {
+#[cfg_attr(not(feature = "replay"), allow(dead_code))]
+pub(crate) fn composite(destination: &mut Img, source: &Img, x: i64, y: i64, alpha: f64) {
     let alpha = alpha.clamp(0.0, 1.0);
     let left = x.max(0);
     let top = y.max(0);

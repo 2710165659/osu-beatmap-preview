@@ -1,12 +1,11 @@
 //! 回放帧消费不可变结果；玩法层和最终背景上的 HUD 查询同一时刻。
-mod blend;
+use crate::render::shared::replay::{feedback::FeedbackVisuals, overlay};
 mod feedback;
 mod flashlight;
-pub mod font;
+pub use crate::render::shared::replay::font;
 mod frame;
 mod hud;
 mod layout;
-mod overlay;
 mod slider;
 use crate::gameplay::timeline::GameplayTimeline;
 use crate::model::BreakPeriod;
@@ -18,7 +17,6 @@ use frame::head_alpha;
 pub(crate) use frame::ReplayDrawTarget;
 pub use frame::ReplayRenderPlan;
 pub(crate) use slider::data as slider_data;
-use std::sync::Arc;
 
 pub(crate) fn replay_layout(format: crate::render::geometry::OutputFormat) -> FrameLayout {
     layout::build(format)
@@ -29,9 +27,8 @@ pub struct ReplayVisuals {
     pub cursor: autoplay::AutoplayCursor,
     pub font: Option<font::ArgonFont>,
     /// 判定条颜色轴只与 OD 和当前格式 SCALE 有关，准备阶段生成一次。
-    hit_error_axis: Arc<Img>,
-    health: hud::HealthAnimation,
-    feedback: feedback::FeedbackVisuals,
+    hud: crate::render::shared::replay::hud::HudVisuals,
+    feedback: FeedbackVisuals,
     flashlight: Option<flashlight::ReplayFlashlight>,
 }
 impl ReplayVisuals {
@@ -52,9 +49,16 @@ impl ReplayVisuals {
         let scale = context.frame_layout.output_scale();
         Self {
             flashlight,
-            feedback: feedback::FeedbackVisuals::new(context, font.as_ref()),
-            hit_error_axis: hud::build_hit_error_axis(scale, od),
-            health: hud::HealthAnimation::new(gameplay),
+            feedback: FeedbackVisuals::new(
+                context.frame_layout.scale * context.settings.object_scale,
+                font.as_ref(),
+            ),
+            hud: crate::render::shared::replay::hud::HudVisuals::new(
+                gameplay,
+                font.clone(),
+                scale,
+                crate::replay::calculate::standard::circle::windows(od),
+            ),
             cursor,
             font,
         }

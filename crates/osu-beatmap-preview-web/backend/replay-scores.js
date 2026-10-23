@@ -74,7 +74,7 @@ export async function selectReplayScore(api, query) {
     if (String(score?.user_id) !== userId || (query.bid && String(score?.beatmap_id) !== query.bid)) throw new Error('官方返回的玩家或谱面 ID 不符');
   }
   if (!score || !Number.isSafeInteger(score.id) || score.id <= 0 || !Number.isSafeInteger(score.beatmap?.id) || score.beatmap.id <= 0 || score.beatmap_id !== score.beatmap.id || !Number.isSafeInteger(score.beatmap.beatmapset_id) || score.beatmap.beatmapset_id <= 0 || !/^[a-f0-9]{32}$/i.test(score.beatmap.checksum ?? '')) throw new Error('官方成绩响应缺少有效谱面信息');
-  if (score.ruleset_id !== 0) throw new Error('只支持原生 Standard 成绩');
+  if (![0, 1].includes(score.ruleset_id)) throw new Error('只支持 Standard 和 Taiko 成绩');
   if (!score.has_replay) throw new Error('选中的成绩没有可下载回放');
   return { scoreId: String(score.id), bid: String(score.beatmap.id), setId: String(score.beatmap.beatmapset_id), checksum: score.beatmap.checksum.toLowerCase() };
 }

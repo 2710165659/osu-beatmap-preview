@@ -1,4 +1,6 @@
-//! Lazer 几何和嵌套节点；Mod 在堆叠前应用，回放光标保持原始游戏坐标。
+//! Standard 回放逻辑准备：Lazer 几何和嵌套节点；Mod 在堆叠前应用，回放光标保持原始游戏坐标。
+pub use crate::domain::rulesets::standard as stacking;
+pub use crate::domain::rulesets::standard::apply_object_mods;
 use crate::domain::shared::slider_path::{build_lazer_slider_path, path_position_at, SliderPath};
 use crate::model::{Beatmap, StandardHitObject};
 use crate::support::error::{PreviewError, Result};
@@ -100,7 +102,7 @@ fn prepare_with_mods(
         );
     }
     let beatmap = &effective;
-    let objects = super::apply_object_mods(
+    let objects = apply_object_mods(
         beatmap.hit_objects.as_standard().unwrap().to_vec(),
         Some(&mods.settings),
     );
@@ -262,10 +264,10 @@ fn prepare_with_mods(
         .collect();
     let end_times: Vec<_> = prepared.iter().map(|o| o.end).collect();
     let mut sources: Vec<_> = prepared.iter().map(|o| o.source.clone()).collect();
-    super::stacking::apply_stacking_with_geometry(
+    stacking::apply_stacking_with_geometry(
         &mut sources,
         beatmap.format_version(),
-        super::stacking::calculate_preempt(ar) as f32 * beatmap.stack_leniency() as f32,
+        stacking::calculate_preempt(ar) as f32 * beatmap.stack_leniency() as f32,
         &end_positions,
         &end_times,
     );

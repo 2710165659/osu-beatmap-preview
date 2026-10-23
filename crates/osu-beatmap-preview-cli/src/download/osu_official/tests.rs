@@ -243,7 +243,7 @@ fn latest_forwards_explicit_mode_and_fails_without_changing_ruleset() {
     assert!(validate(&result)
         .unwrap_err()
         .to_string()
-        .contains("只支持原生 Standard"));
+        .contains("只支持 Standard 和 Taiko"));
     handle.join().unwrap();
 }
 

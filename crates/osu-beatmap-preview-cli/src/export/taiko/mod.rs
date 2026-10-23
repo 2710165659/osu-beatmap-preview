@@ -8,6 +8,7 @@ use osu_beatmap_preview_core::render::cpu::modes::taiko::constants as taiko_cons
 pub(crate) use osu_beatmap_preview_core::render::cpu::modes::taiko::{
     animation_render, constants, notes, timing,
 };
+pub(crate) mod osr;
 mod png;
 mod video;
 

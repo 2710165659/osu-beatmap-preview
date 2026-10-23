@@ -6,8 +6,8 @@ import { selectReplayScore } from './replay-scores.js';
 
 const LIMIT = 64 * 1024 * 1024;
 function verify(bytes, checksum) {
-  // Standard 头部的第一个字符串固定为 32 字节 MD5；拒绝 HTML、JSON 和错谱缓存。
-  if (!bytes.length || bytes.length > LIMIT || bytes[0] !== 0 || bytes[5] !== 0x0b || bytes[6] !== 32 || bytes.subarray(7, 39).toString('ascii').toLowerCase() !== checksum) throw new Error('BeatmapMismatch: 官方回放头部无效或谱面 MD5 不符');
+  // 头部包含模式、版本和 32 字节谱面 MD5；只允许当前支持的 Standard/Taiko 回放。
+  if (!bytes.length || bytes.length > LIMIT || ![0, 1].includes(bytes[0]) || bytes[5] !== 0x0b || bytes[6] !== 32 || bytes.subarray(7, 39).toString('ascii').toLowerCase() !== checksum) throw new Error('BeatmapMismatch: 官方回放头部无效或谱面 MD5 不符');
 }
 export function createReplayDownload({ api, cacheDir, noCache = false }) {
   const pending = new Map();

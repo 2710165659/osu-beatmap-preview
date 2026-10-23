@@ -11,6 +11,8 @@ mod classic;
 mod input_mods;
 mod objects;
 mod schedule;
+pub(crate) mod taiko;
+pub use taiko::compile_taiko;
 
 pub fn compile_standard(
     prepared: &PreparedStandard,
@@ -21,7 +23,7 @@ pub fn compile_standard(
         timeline.recorded_differences = super::validation::validate(
             &document,
             timeline.state_at(f64::INFINITY),
-            &maximum_statistics(prepared, timeline.policy),
+            &maximum_statistics(prepared, timeline.standard_policy()),
         )?;
     }
     Ok(timeline)
@@ -176,8 +178,9 @@ fn compile_timeline(
     let objects = engine.objects;
     Ok(GameplayTimeline {
         document,
-        policy,
+        policy: policy.into(),
         input: effective_input,
+        taiko_inputs: Vec::new(),
         events,
         objects,
         checkpoints,

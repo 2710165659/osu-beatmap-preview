@@ -178,7 +178,7 @@ fn replay_hud_keeps_layout_scale_outside_config_scope() {
             // 准备和逐帧绘制都可能在原配置作用域外执行，倍率应只取自已有布局。
             let visuals = ReplayVisuals::new(&context, &gameplay, None, &[], prepared.od);
             assert_eq!(
-                visuals.hit_error_axis.w,
+                visuals.hud.hit_error_axis.w,
                 (150.0 * output_scale).round() as u32
             );
             let draw = || {

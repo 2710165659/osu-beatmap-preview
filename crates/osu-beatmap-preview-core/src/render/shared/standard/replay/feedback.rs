@@ -3,76 +3,7 @@
 use super::overlay::OverlayCanvas;
 use super::*;
 use crate::gameplay::events::{EventKind, HitResult};
-use crate::render::text::{render_text_sprite, scaled_bitmap_font_height};
-use std::sync::Arc;
-
-/// 固定精灵只在准备阶段生成；动画统一由变换驱动，GPU 复用同一份纹理。
-pub(super) struct FeedbackVisuals {
-    labels: [Arc<Img>; 4],
-    rings: [[Arc<Img>; 2]; 3],
-    tick_misses: [Arc<Img>; 2],
-}
-
-const COLORS: [[u8; 3]; 4] = [
-    [102, 204, 255],
-    [136, 179, 0],
-    [255, 204, 34],
-    [237, 17, 33],
-];
-
-impl FeedbackVisuals {
-    pub(super) fn new(context: &RenderContext, font: Option<&font::ArgonFont>) -> Self {
-        let scale = context.frame_layout.scale * context.settings.object_scale;
-        let labels = std::array::from_fn(|i| {
-            let text = ["GREAT", "OK", "MEH", "MISS"][i];
-            let color = COLORS[i];
-            font.map_or_else(
-                || {
-                    Arc::new(render_text_sprite(
-                        text,
-                        scaled_bitmap_font_height(20, scale),
-                        [color[0], color[1], color[2], 255],
-                    ))
-                },
-                |font| font.sprite_arc(text, 20.0 * scale, 5.0 * scale, color),
-            )
-        });
-        let rings = std::array::from_fn(|i| {
-            std::array::from_fn(|size| {
-                let radius = [4.5, 7.0][size] * scale;
-                let side = (radius * 2.0).ceil().max(1.0) as u32 + 2;
-                let center = f64::from(side) / 2.0;
-                let mut ring = Img::new(side, side, [0; 4]);
-                let color = COLORS[i];
-                crate::render::cpu::modes::standard::slider::draw_ring_aa(
-                    &mut ring,
-                    center,
-                    center,
-                    radius,
-                    4.0 * scale,
-                    [color[0], color[1], color[2], 255],
-                );
-                Arc::new(ring)
-            })
-        });
-        let tick_misses = std::array::from_fn(|i| {
-            let radius = 6.0 * scale;
-            let side = (radius * 2.0).ceil() as u32 + 2;
-            let center = f64::from(side) / 2.0;
-            let mut piece = Img::new(side, side, [0; 4]);
-            let color = if i == 0 { [128; 3] } else { COLORS[3] };
-            crate::render::cpu::modes::standard::slider::fill_circle_gradient_aa(
-                &mut piece, center, center, radius, color, color,
-            );
-            Arc::new(piece)
-        });
-        Self {
-            labels,
-            rings,
-            tick_misses,
-        }
-    }
-}
+use crate::render::shared::replay::feedback::{self, FeedbackVisuals};
 
 /// 官方 DrawableOsuJudgement 使用物件中心和 CS 缩放，主滑条判定固定在尾端。
 fn judgement_position(
@@ -87,17 +18,6 @@ fn judgement_position(
     } else {
         object.position_at(object.end)
     }
-}
-
-fn out_quint(t: f64) -> f64 {
-    1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(5)
-}
-fn random(seed: &mut u64) -> f64 {
-    *seed = seed.wrapping_add(0x9e3779b97f4a7c15);
-    let mut value = *seed;
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
-    ((value ^ (value >> 31)) >> 11) as f64 / (1_u64 << 53) as f64
 }
 
 pub(super) fn draw(
@@ -143,61 +63,14 @@ pub(super) fn draw(
             }
             continue;
         }
-        let (label, small, large, travel) = match event.result {
-            HitResult::Great => (0, 4, 4, 52.0),
-            HitResult::Ok => (1, 4, 0, 31.2),
-            HitResult::Meh => (2, 3, 0, 15.6),
-            HitResult::Miss => (3, 0, 0, 0.0),
-            _ => continue,
-        };
         let object = &prepared.objects[event.object_id];
         let position = judgement_position(object, event.sample_time, event.node_id.is_some());
-        let (x, mut y) = to_frame_point(
+        let (x, y) = to_frame_point(
             position[0] as f64,
             position[1] as f64,
             &context.frame_layout,
         );
-        let missed = !event.result.is_hit();
-        let duration = 800.0;
-        if age >= duration {
-            continue;
-        }
-        let parent_alpha = 1.0 - age / duration;
-        let expansion = if missed {
-            1.6 - 0.6 * (age / 100.0).clamp(0.0, 1.0).powi(2)
-        } else {
-            1.0 + 0.2 * out_quint(age / 1800.0)
-        };
-        if small + large > 0 {
-            let alpha = parent_alpha * (1.0 - out_quint(age / 1000.0));
-            let mut seed = event.id as u64;
-            for index in 0..small + large {
-                let angle = random(&mut seed) * std::f64::consts::TAU;
-                let distance = travel
-                    * (0.5 + random(&mut seed) * 0.5)
-                    * (0.3 + 0.7 * out_quint(age / 600.0))
-                    * scale;
-                image.additive_transformed(
-                    &visuals.rings[label][usize::from(index >= small)],
-                    [x + angle.cos() * distance, y + angle.sin() * distance],
-                    1.0,
-                    0.0,
-                    alpha,
-                );
-            }
-        }
-        let alpha = if missed {
-            parent_alpha
-        } else {
-            parent_alpha * out_quint(age / 300.0)
-        };
-        let rotation = if missed {
-            y += 100.0 * scale * (age / 800.0).powi(5);
-            40.0 * (age / 800.0).powi(5)
-        } else {
-            0.0
-        };
-        image.additive_transformed(&visuals.labels[label], [x, y], expansion, rotation, alpha);
+        feedback::draw_judgement(image, visuals, event.result, event.id, [x, y], scale, age);
     }
 }
 
@@ -209,6 +82,7 @@ mod tests {
         geometry::OutputFormat,
         scene::{DrawCommand, FrameSceneBuilder},
     };
+    use std::sync::Arc;
 
     #[test]
     fn slider_head_nodes_and_parent_use_their_object_positions() {
@@ -230,7 +104,10 @@ mod tests {
     #[test]
     fn gpu_feedback_reuses_textures_for_scale_rotation_fade_and_seek() {
         let (context, _) = fixture(5);
-        let visuals = FeedbackVisuals::new(&context, None);
+        let visuals = FeedbackVisuals::new(
+            context.frame_layout.scale * context.settings.object_scale,
+            None,
+        );
         let sprite = &visuals.labels[3];
         for (scale, rotation, alpha) in [(1.6, 0.0, 1.0), (1.0, 20.0, 0.5), (1.6, 0.0, 1.0)] {
             let mut scene = FrameSceneBuilder::new(100, 100, 0);
@@ -269,13 +146,22 @@ mod tests {
     #[test]
     fn feedback_size_tracks_cs_and_current_output_scale() {
         let (context, _) = fixture(5);
-        let normal = FeedbackVisuals::new(&context, None);
+        let normal = FeedbackVisuals::new(
+            context.frame_layout.scale * context.settings.object_scale,
+            None,
+        );
         let (small_context, _) = fixture(8);
-        let small = FeedbackVisuals::new(&small_context, None);
+        let small = FeedbackVisuals::new(
+            small_context.frame_layout.scale * small_context.settings.object_scale,
+            None,
+        );
         assert!(small.labels[0].h < normal.labels[0].h);
         let mut context = context;
         context.frame_layout.scale *= 2.0;
-        let double = FeedbackVisuals::new(&context, None);
+        let double = FeedbackVisuals::new(
+            context.frame_layout.scale * context.settings.object_scale,
+            None,
+        );
         assert!(double.rings[0][0].w > normal.rings[0][0].w);
     }
 

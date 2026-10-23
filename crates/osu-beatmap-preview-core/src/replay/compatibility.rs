@@ -1,8 +1,75 @@
-//! 按回放内容选择 Standard 规则，不用客户端名称或分数版本建立白名单。
+//! 按回放内容选择 Standard/Taiko 规则，不用客户端名称或分数版本建立白名单。
 
 use super::ReplayDocument;
 use crate::model::Beatmap;
 use crate::support::error::{PreviewError, Result};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayPolicy {
+    Standard(StandardPolicy),
+    Taiko(TaikoPolicy),
+}
+
+impl Default for ReplayPolicy {
+    fn default() -> Self {
+        Self::Standard(StandardPolicy::default())
+    }
+}
+
+impl From<StandardPolicy> for ReplayPolicy {
+    fn from(policy: StandardPolicy) -> Self {
+        Self::Standard(policy)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaikoPolicy {
+    pub classic: bool,
+}
+
+pub fn select_replay(document: &ReplayDocument) -> Result<ReplayPolicy> {
+    match document.header.ruleset_id {
+        0 => select(document).map(ReplayPolicy::Standard),
+        1 => {
+            super::mods::decode(document)?;
+            if document.frames.is_empty()
+                || document
+                    .frames
+                    .windows(2)
+                    .any(|w| w[1].time_ms < w[0].time_ms)
+            {
+                return Err(PreviewError::parse(
+                    "InvalidReplay: empty or backwards Taiko frames",
+                ));
+            }
+            if document.frames.iter().any(|f| f.keys & !15 != 0) {
+                return Err(PreviewError::new(
+                    "UnsupportedReplayVariant: unknown Taiko input buttons",
+                ));
+            }
+            Ok(ReplayPolicy::Taiko(TaikoPolicy {
+                classic: document.header.version < 30_000_000
+                    || document
+                        .metadata
+                        .as_ref()
+                        .is_some_and(|m| m.mods.iter().any(|m| m.acronym == "CL")),
+            }))
+        }
+        mode => Err(PreviewError::new(format!(
+            "UnsupportedReplayVariant: mode {mode}; only Standard and Taiko replays are supported"
+        ))),
+    }
+}
+
+pub fn validate_replay_beatmap(beatmap: &Beatmap, document: &ReplayDocument) -> Result<()> {
+    match document.header.ruleset_id {
+        0 => validate_beatmap(beatmap),
+        1 if matches!(beatmap.mode(), 0 | 1) => Ok(()),
+        _ => Err(PreviewError::new(
+            "UnsupportedReplayVariant: beatmap mode does not match replay",
+        )),
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StandardPolicy {

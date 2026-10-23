@@ -43,7 +43,14 @@ pub(super) fn load(
     };
     let replay_bytes = read_limited(&osr_path, 64 * 1024 * 1024)?;
     let document = Arc::new(parse_osr(&replay_bytes)?);
-    compatibility::select(&document)?;
+    compatibility::select_replay(&document)?;
+    if document.header.ruleset_id == 1
+        && matches!(request.output.format.as_deref(), Some("png" | "gif"))
+    {
+        return Err(PreviewError::new(
+            "Taiko replay preview supports MP4 only; PNG/GIF are not supported",
+        ));
+    }
     let checksum = &document.header.beatmap_md5;
     let identity = format!("{:x}", Sha256::digest(&replay_bytes))[..16].to_string();
     let downloads = Official {
@@ -54,7 +61,7 @@ pub(super) fn load(
     };
     let (osu_path, osz_path, bytes) = resolve_resources(request, checksum, &downloads)?;
     let beatmap = parse_beatmap_bytes(&bytes)?;
-    compatibility::validate_beatmap(&beatmap)?;
+    compatibility::validate_replay_beatmap(&beatmap, &document)?;
     if let Some(path) = &osz_path {
         validate_archive_audio(path, &beatmap)?;
     }

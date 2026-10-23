@@ -5,10 +5,19 @@ use crate::gameplay::InputSnapshot;
 use crate::replay::{ReplayDocument, ReplayTimeline};
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Copy)]
+pub struct TaikoPress {
+    pub time: f64,
+    pub key: u32,
+    pub object_id: Option<usize>,
+    pub node_id: Option<usize>,
+}
+
 pub struct GameplayTimeline {
     pub document: Arc<ReplayDocument>,
-    pub policy: crate::replay::compatibility::StandardPolicy,
+    pub policy: crate::replay::compatibility::ReplayPolicy,
     pub input: ReplayTimeline,
+    pub taiko_inputs: Vec<TaikoPress>,
     pub events: Vec<GameplayEvent>,
     pub objects: Vec<ObjectState>,
     pub checkpoints: Vec<(f64, GameplayState)>,
@@ -19,6 +28,14 @@ pub struct GameplayTimeline {
     pub recorded_differences: Option<serde_json::Value>,
 }
 impl GameplayTimeline {
+    pub fn standard_policy(&self) -> crate::replay::compatibility::StandardPolicy {
+        match self.policy {
+            crate::replay::compatibility::ReplayPolicy::Standard(policy) => policy,
+            crate::replay::compatibility::ReplayPolicy::Taiko(_) => {
+                panic!("Standard consumer received Taiko replay")
+            }
+        }
+    }
     pub fn state_at(&self, time: f64) -> &GameplayState {
         self.checkpoints
             .partition_point(|p| p.0 <= time)
