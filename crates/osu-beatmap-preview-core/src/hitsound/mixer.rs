@@ -398,7 +398,9 @@ impl HitsoundMixer {
                 Some(source) if source.frames() > 0 => (
                     0,
                     event.start_ms
-                        + source.frames() as f64 * 1000.0 / source.sample_rate.max(1) as f64,
+                        + event.frequency.time_to_reach(
+                            source.frames() as f64 * 1000.0 / source.sample_rate.max(1) as f64,
+                        ),
                 ),
                 // 缺失或空样本：立刻结束，不占用声音列表。
                 _ => (0, event.start_ms),
@@ -998,6 +1000,56 @@ mod tests {
         assert!(
             at_1000 > at_1500 * 8.0,
             "DT 实时链路音高不保：1kHz={at_1000}, 1.5kHz={at_1500}"
+        );
+    }
+
+    /// 实时输出由 AudioWorklet 按 DT 速率重采样；谱面打击音需反向缩放频率，
+    /// 才能只缩短触发间隔而不抬高音高。
+    #[test]
+    fn realtime_chart_domain_keeps_hitsound_pitch() {
+        let rate = 48_000_u32;
+        let source = SampleData::stereo(
+            (0..rate as usize * 2)
+                .flat_map(|index| {
+                    let value = (2.0 * std::f64::consts::PI * 1000.0 * index as f64 / rate as f64)
+                        .sin() as f32;
+                    [value, value]
+                })
+                .collect(),
+            rate,
+        );
+        let mut library = SampleLibrary::new();
+        library.insert("hit", source);
+        let mut timeline = HitsoundTimeline {
+            events: vec![PlayEvent {
+                start_ms: 0.0,
+                duration_ms: 0.0,
+                source_id: 0,
+                gain: 1.0,
+                looping: false,
+                frequency: PlayFrequency::UNITY,
+            }],
+        };
+        timeline.scale_frequencies(1.0 / 1.5);
+        let mut mixer = HitsoundMixer::new(library, timeline, rate);
+        let ring = mixer.render(rate as usize * 3);
+        let ring_frames = ring.len() / 2;
+        let target = (ring_frames as f64 / 1.5) as usize;
+        let mut played = Vec::with_capacity(target);
+        let mut cursor = 0.0_f64;
+        while played.len() < target {
+            let base = (cursor.floor() as usize).min(ring_frames - 2);
+            let next = (base + 1).min(ring_frames - 1);
+            let fraction = (cursor - base as f64) as f32;
+            played.push(ring[base * 2] + (ring[next * 2] - ring[base * 2]) * fraction);
+            cursor += 1.5;
+        }
+        let window = &played[rate as usize / 2..rate as usize + rate as usize / 2];
+        let at_1000 = tone_magnitude(window, 1000.0, rate as f64);
+        let at_1500 = tone_magnitude(window, 1500.0, rate as f64);
+        assert!(
+            at_1000 > at_1500 * 8.0,
+            "DT 实时链路打击音音高不保：1kHz={at_1000}, 1.5kHz={at_1500}"
         );
     }
 

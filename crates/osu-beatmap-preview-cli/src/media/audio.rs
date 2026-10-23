@@ -664,7 +664,8 @@ impl HitsoundSettings {
 ///
 /// 缓冲区下标即输出帧下标，与音乐共用同一时间换算：第 i 帧对应谱面时间
 /// `chart_start_ms + i * 1000 * speed / sample_rate`；倍速通过「混音器内部采样率取
-/// `sample_rate / speed`」实现，音高随之变化（同 `ModRateAdjust.ApplyToSample`）。
+/// `sample_rate / speed`」实现。游戏内 gameplay hitsound 不挂在 Mod 音频调整链上，
+/// 因此在时间轴上按 `1 / speed` 补偿频率，保持音高不变。
 /// NC 节拍鼓点属于 Mod：即使 `ENABLE_HITSOUND` 关闭也照常混入。
 fn render_hitsound_segment(
     beatmap: &Beatmap,
@@ -716,6 +717,7 @@ fn render_hitsound_segment(
         let end_ms = chart_start_ms as f64 + frame_count as f64 * 1000.0 * speed / fps as f64;
         timeline.merge(hitsound::nightcore_events(beatmap, &library, end_ms));
     }
+    timeline.scale_frequencies(1.0 / speed);
     if timeline.is_empty() {
         return Ok(None);
     }

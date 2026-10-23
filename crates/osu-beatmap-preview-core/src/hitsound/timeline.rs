@@ -70,6 +70,44 @@ impl PlayFrequency {
             capped + max * (elapsed_ms - cap_ms)
         }
     }
+
+    /// 将频率倍率整体缩放；用于外层重采样已经承担变速时保留样本的原始音高。
+    pub fn scaled(self, multiplier: f64) -> Self {
+        if !multiplier.is_finite() || multiplier <= 0.0 {
+            return self;
+        }
+        Self {
+            start: self.start * multiplier,
+            per_ms: self.per_ms * multiplier,
+            max: self.max * multiplier,
+            phase: self.phase * multiplier,
+        }
+    }
+
+    /// 频率积分达到 `position_ms` 所需的经过时间。
+    pub fn time_to_reach(&self, position_ms: f64) -> f64 {
+        let position_ms = position_ms - self.phase;
+        if !position_ms.is_finite() || position_ms <= 0.0 {
+            return 0.0;
+        }
+        let start = sanitize_frequency(self.start, 1.0);
+        let max = sanitize_frequency(self.max, start).max(start);
+        let per_ms = if self.per_ms.is_finite() && self.per_ms > 0.0 {
+            self.per_ms
+        } else {
+            0.0
+        };
+        if per_ms == 0.0 {
+            return position_ms / start;
+        }
+        let cap_ms = (max - start) / per_ms;
+        let capped = start * cap_ms + 0.5 * per_ms * cap_ms * cap_ms;
+        if position_ms > capped {
+            cap_ms + (position_ms - capped) / max
+        } else {
+            ((start * start + 2.0 * per_ms * position_ms).sqrt() - start) / per_ms
+        }
+    }
 }
 
 impl Default for PlayFrequency {
@@ -113,6 +151,19 @@ impl HitsoundTimeline {
 
     pub fn len(&self) -> usize {
         self.events.len()
+    }
+
+    /// 将时间轴内所有样本的频率倍率整体缩放。
+    ///
+    /// 谱面时间仍由外层倍速压缩时，缩放为 `1 / speed` 可抵消重采样带来的变调；
+    /// 事件时刻保持不变，因此打击音仍与画面同步。
+    pub fn scale_frequencies(&mut self, multiplier: f64) {
+        if !multiplier.is_finite() || multiplier <= 0.0 || multiplier == 1.0 {
+            return;
+        }
+        for event in &mut self.events {
+            event.frequency = event.frequency.scaled(multiplier);
+        }
     }
 
     /// 归并另一条同样按开始时间升序的时间轴（例如 NC 的节拍鼓点）。

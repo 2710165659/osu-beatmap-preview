@@ -120,6 +120,9 @@ mod audio {
                     end_ms,
                 ));
             }
+            // 游戏内 gameplay hitsound 不挂在 Mod 的音频调整链上。实时输出会由
+            // AudioWorklet 按总倍速重采样，因此这里反向补偿谱面变速，保留原始音高。
+            timeline.scale_frequencies(1.0 / self.timeline.beatmap_speed);
             if self.storyboard_enabled {
                 if let Some((storyboard, _)) = &self.storyboard {
                     let mut samples = storyboard.sample_timeline(self.mixer.library());
