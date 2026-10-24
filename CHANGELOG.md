@@ -4,6 +4,36 @@
 
 ---
 
+## [1.5.2] - 2026.10.24
+
+### Added
+
+- 新增 Taiko 回放预览，支持 Web 实时预览与 CLI MP4 导出。
+- Standard 回放新增 PNG 快照网格导出。
+- Taiko 新增 `AT`（Autoplay），支持自动击打按键与 Note 击飞效果。
+- Mania 新增 `MR`（Mirror）镜像 Mod（#8）。
+
+### Changed
+
+- Standard MR 支持扩展至 PNG/GIF/MP4 导出。
+- Taiko GIF 默认采用 2×2 布局，调整 MP4 与实时预览的轨道位置以贴近游戏表现。
+- 简化渲染配置，将间距、配色等固定样式移入代码常量。
+- 优化 CPU 与 WGPU 渲染、GIF 编码及背景视频和故事板的处理性能。
+- Web 在加载谱面前检查 WebGPU 支持情况，仅在不可用时显示提示。
+
+### Fixed
+
+- 修复 Standard 回放预览未隐藏 Great 判定效果的问题。
+- 修复变速 Mod 导致打击音音高异常的问题。
+- 修复 Taiko GIF 在 `HD`、`FL` 下闪烁的问题。
+- 修复 Web 普通谱面预览可选择不影响画面的回放专用 Mod 的问题。
+
+### Contributors
+
+- `yaowan233`（#8）。
+
+---
+
 ## [1.5.1] - 2026.10.18
 
 ### Changed
