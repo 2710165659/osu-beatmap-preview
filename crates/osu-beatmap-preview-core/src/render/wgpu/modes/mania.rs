@@ -8,8 +8,8 @@ use crate::domain::mods::ModSettings;
 use crate::domain::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::cpu::modes::mania::animation::{
-    build_scroll_map, build_video_layout, compute_time_range, draw_gif_hit_object,
-    mania_flashlight, mania_hidden, mania_visibility_timeline, segment_left, visible_pos_window,
+    build_scroll_map, build_video_layout, compute_time_range, mania_flashlight, mania_hidden,
+    mania_visibility_timeline, segment_left, visible_pos_window,
 };
 use crate::render::cpu::modes::mania::skin::load_mania_skin_config;
 use crate::render::cpu::modes::mania::{
@@ -128,11 +128,17 @@ pub fn prepare_realtime(
                 pixels_per_scroll_unit,
             );
             let mut notes = hidden.then(|| {
-                Img::new(
-                    layout.image_width as u32,
-                    layout.image_height as u32,
-                    [0, 0, 0, 0],
-                )
+                // 每个键道单独裁切，左右各保留一列透明像素。小数倍率下 GPU 的
+                // 双线性采样需要这两列，直接拉伸一列会改变音符边缘的透明度。
+                (0..key_count as usize)
+                    .map(|lane| {
+                        Img::new(
+                            (layout.column_widths[lane] - layout.note_side_padding * 2 + 2) as u32,
+                            layout.image_height as u32,
+                            [0; 4],
+                        )
+                    })
+                    .collect::<Vec<_>>()
             });
             let (lo_pos, hi_pos) = visible_pos_window(
                 snapshot_pos,
@@ -145,43 +151,57 @@ pub fn prepare_realtime(
                 if pos_start[index] > hi_pos {
                     break;
                 }
-                if let Some(notes) = &mut notes {
-                    draw_gif_hit_object(
-                        notes,
-                        &hit_objects[index],
-                        &palette,
-                        &hold_colors,
-                        left,
-                        pos_start[index],
-                        pos_end[index],
-                        snapshot_pos,
-                        &layout,
-                        pixels_per_scroll_unit,
-                    );
-                } else {
-                    draw_hit_object_scene(
-                        &mut scene,
-                        &hit_objects[index],
-                        &palette,
-                        &hold_colors,
-                        left,
-                        pos_start[index],
-                        pos_end[index],
-                        snapshot_pos,
-                        &layout,
-                        pixels_per_scroll_unit,
-                    );
-                }
+                visit_hit_object_rects(
+                    |lane, rect, color| {
+                        if let Some(notes) = &mut notes {
+                            notes[lane].set_rect_size(
+                                1,
+                                rect.y as i64,
+                                rect.width as i64,
+                                rect.height as i64,
+                                color,
+                            );
+                        } else {
+                            scene.rectangle(rect, color);
+                        }
+                    },
+                    &hit_objects[index],
+                    &palette,
+                    &hold_colors,
+                    left,
+                    pos_start[index],
+                    pos_end[index],
+                    snapshot_pos,
+                    &layout,
+                    pixels_per_scroll_unit,
+                );
             }
+
             if let Some(timeline) = &visibility {
-                if let Some(mut notes) = notes {
-                    mania_hidden(timeline, absolute_time_ms, &layout)
-                        .apply(&mut notes, layout.content);
-                    scene.sprite(
-                        Arc::new(notes),
-                        rect(0, 0, layout.image_width, layout.image_height),
-                        1.0,
-                    );
+                if let Some(notes) = notes {
+                    let cover = mania_hidden(timeline, absolute_time_ms, &layout);
+                    for (lane, mut strip) in notes.into_iter().enumerate() {
+                        let strip_width = i64::from(strip.w);
+                        cover.apply(
+                            &mut strip,
+                            crate::render::geometry::PixelRect {
+                                x: 0,
+                                y: layout.content.y,
+                                width: strip_width,
+                                height: layout.content.height,
+                            },
+                        );
+                        let x = left
+                            + layout.left_panel_width
+                            + layout.column_left_offsets[lane]
+                            + layout.note_side_padding;
+                        let width = layout.column_widths[lane] - layout.note_side_padding * 2;
+                        scene.sprite(
+                            Arc::new(strip),
+                            rect(x - 1, 0, width + 2, layout.image_height),
+                            1.0,
+                        );
+                    }
                 }
                 if flashlight {
                     // FL 是整帧遮罩：lazer 的 `ModFlashlight` 把遮罩加到
@@ -287,8 +307,8 @@ fn draw_sv_scene(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_hit_object_scene(
-    scene: &mut FrameSceneBuilder,
+fn visit_hit_object_rects(
+    mut draw: impl FnMut(usize, SceneRect, Rgba),
     hit_object: &crate::domain::models::ManiaHitObject,
     palette: &[Rgba],
     hold_colors: &[Rgba],
@@ -318,7 +338,8 @@ fn draw_hit_object_scene(
         let body_top = top.max(y_end.min(y_start - layout.note_head_height));
         let body_bottom = bottom.min(y_start);
         if body_top < body_bottom {
-            scene.rectangle(
+            draw(
+                lane,
                 rect(lane_left, body_top, lane_width, body_bottom - body_top),
                 hold_colors[lane.min(hold_colors.len() - 1)],
             );
@@ -327,7 +348,8 @@ fn draw_hit_object_scene(
     let head_top = top.max(y_start - layout.note_head_height);
     let head_bottom = bottom.min(y_start);
     if head_top < head_bottom {
-        scene.rectangle(
+        draw(
+            lane,
             rect(lane_left, head_top, lane_width, head_bottom - head_top),
             palette[lane.min(palette.len() - 1)],
         );
@@ -342,4 +364,127 @@ fn y_at_position(
 ) -> i64 {
     layout.playfield_top + layout.hit_position_y
         - round_half_even((object_pos - snapshot_pos) * pixels_per_scroll_unit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::models::ManiaHitObject;
+    use crate::render::cpu::modes::mania::animation::draw_gif_hit_object;
+
+    #[test]
+    fn hidden_lane_strips_match_full_note_layer_with_overlapping_holds() {
+        for keys in [4, 7] {
+            let skin = load_mania_skin_config(keys, OutputFormat::Mp4);
+            let layout = build_video_layout(&skin, OutputFormat::Mp4);
+            let left = segment_left(0, &layout);
+            let palette = crate::render::cpu::modes::mania::lane_palette(keys);
+            let holds: Vec<_> = palette.iter().map(|&color| darken(color, 0.5)).collect();
+            let objects: Vec<_> = (0..keys as usize)
+                .flat_map(|lane| {
+                    [
+                        ManiaHitObject {
+                            lane: lane as i32,
+                            start_time: 1000,
+                            end_time: 3000,
+                            is_long_note: true,
+                            ..Default::default()
+                        },
+                        ManiaHitObject {
+                            lane: lane as i32,
+                            start_time: 1300,
+                            end_time: 3500,
+                            is_long_note: true,
+                            ..Default::default()
+                        },
+                        ManiaHitObject {
+                            lane: lane as i32,
+                            start_time: 1500,
+                            end_time: 1500,
+                            ..Default::default()
+                        },
+                    ]
+                })
+                .collect();
+            let timeline = mania_visibility_timeline(&objects, &[]);
+            for snapshot in [900, 1600, 3100] {
+                let mut full = Img::new(
+                    layout.image_width as u32,
+                    layout.image_height as u32,
+                    [0; 4],
+                );
+                let mut strips: Vec<_> = (0..keys as usize)
+                    .map(|lane| {
+                        Img::new(
+                            (layout.column_widths[lane] - layout.note_side_padding * 2 + 2) as u32,
+                            full.h,
+                            [0; 4],
+                        )
+                    })
+                    .collect();
+                for object in &objects {
+                    draw_gif_hit_object(
+                        &mut full,
+                        object,
+                        &palette,
+                        &holds,
+                        left,
+                        object.start_time as f64,
+                        object.end_time as f64,
+                        snapshot as f64,
+                        &layout,
+                        0.15 * layout.render_scale,
+                    );
+                    visit_hit_object_rects(
+                        |lane, area, color| {
+                            strips[lane].set_rect_size(
+                                1,
+                                area.y as i64,
+                                area.width as i64,
+                                area.height as i64,
+                                color,
+                            )
+                        },
+                        object,
+                        &palette,
+                        &holds,
+                        left,
+                        object.start_time as f64,
+                        object.end_time as f64,
+                        snapshot as f64,
+                        &layout,
+                        0.15 * layout.render_scale,
+                    );
+                }
+                let cover = mania_hidden(&timeline, snapshot, &layout);
+                cover.apply(&mut full, layout.content);
+                for (lane, mut strip) in strips.into_iter().enumerate() {
+                    let strip_width = i64::from(strip.w);
+                    cover.apply(
+                        &mut strip,
+                        crate::render::geometry::PixelRect {
+                            x: 0,
+                            y: layout.content.y,
+                            width: strip_width,
+                            height: layout.content.height,
+                        },
+                    );
+                    let x = left
+                        + layout.left_panel_width
+                        + layout.column_left_offsets[lane]
+                        + layout.note_side_padding;
+                    let width = layout.column_widths[lane] - layout.note_side_padding * 2;
+                    for y in 0..full.h {
+                        for column in [x, x + width / 2, x + width - 1] {
+                            assert_eq!(
+                                strip.get((column - x + 1) as u32, y),
+                                full.get(column as u32, y),
+                                "keys={keys} lane={lane} time={snapshot} y={y}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

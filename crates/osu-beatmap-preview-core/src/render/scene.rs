@@ -1,6 +1,6 @@
 //! 与具体后端无关的有序逐帧场景描述。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use crate::render::canvas::{Img, Rgba};
@@ -117,6 +117,7 @@ pub struct FrameSceneBuilder {
     absolute_time_ms: i64,
     commands: Vec<DrawCommand>,
     resources: BTreeMap<ResourceId, Arc<Img>>,
+    resource_ids: HashMap<usize, ResourceId>,
     next_resource: u64,
 }
 
@@ -193,6 +194,7 @@ impl FrameSceneBuilder {
             absolute_time_ms,
             commands: Vec::new(),
             resources: BTreeMap::new(),
+            resource_ids: HashMap::new(),
             next_resource: 0,
         }
     }
@@ -328,12 +330,19 @@ impl FrameSceneBuilder {
     }
 
     fn insert_resource(&mut self, image: Arc<Img>) -> ResourceId {
+        // 同一贴图可能被数千个故事板粒子引用。资源表持有 Arc，构建期间地址
+        // 不会复用；只登记一次可避免重复排序、合并映射和纹理缓存查询。
+        let identity = Arc::as_ptr(&image) as usize;
+        if let Some(&resource) = self.resource_ids.get(&identity) {
+            return resource;
+        }
         let resource = ResourceId(self.next_resource);
         self.next_resource = self
             .next_resource
             .checked_add(1)
             .expect("单帧资源编号不会耗尽 u64");
         self.resources.insert(resource, image);
+        self.resource_ids.insert(identity, resource);
         resource
     }
 }
@@ -440,11 +449,15 @@ fn transform_command(
             border,
             body,
         } => DrawCommand::SliderMesh {
-            vertices: vertices
-                .iter()
-                .map(|&vertex| point(vertex))
-                .collect::<Vec<_>>()
-                .into(),
+            vertices: if scale == 1.0 && offset == [0.0, 0.0] {
+                Arc::clone(vertices)
+            } else {
+                vertices
+                    .iter()
+                    .map(|&vertex| point(vertex))
+                    .collect::<Vec<_>>()
+                    .into()
+            },
             thickness: *thickness * scale,
             border: *border,
             body: *body,
@@ -455,6 +468,72 @@ fn transform_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repeated_sprites_and_merged_scenes_share_image_resources() {
+        let image = Arc::new(Img::new(2, 2, [255; 4]));
+        let mut builder = FrameSceneBuilder::new(10, 10, 0);
+        let rect = SceneRect {
+            x: 0.0,
+            y: 0.0,
+            width: 2.0,
+            height: 2.0,
+        };
+        builder.sprite(Arc::clone(&image), rect, 1.0);
+        builder.sprite(Arc::clone(&image), rect, 0.5);
+        let source = builder.finish();
+        let mut merged = FrameSceneBuilder::new(10, 10, 0);
+        merged.append(&source, [0.0; 2]);
+        merged.append(&source, [2.0; 2]);
+        merged.sprite(Arc::new((*image).clone()), rect, 1.0);
+        let scene = merged.finish();
+        assert_eq!(scene.resources.len(), 2);
+        for command in &scene.commands[..4] {
+            assert!(matches!(
+                command,
+                DrawCommand::Sprite {
+                    resource: ResourceId(0),
+                    ..
+                }
+            ));
+        }
+        assert!(matches!(
+            scene.commands[4],
+            DrawCommand::Sprite {
+                resource: ResourceId(1),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn slider_transform_reuses_only_unchanged_geometry() {
+        let vertices: Arc<[[f32; 2]]> = Arc::from([[1.0, 2.0], [3.0, 4.0]]);
+        let command = DrawCommand::SliderMesh {
+            vertices: Arc::clone(&vertices),
+            thickness: 3.0,
+            border: [0; 4],
+            body: [255; 4],
+        };
+        for (scale, offset) in [(1.0, [0.0, 0.0]), (1.5, [2.0, 3.0])] {
+            let DrawCommand::SliderMesh {
+                vertices: result,
+                thickness,
+                ..
+            } = transform_command(&command, &BTreeMap::new(), offset, scale)
+            else {
+                unreachable!()
+            };
+            assert_eq!(Arc::ptr_eq(&vertices, &result), scale == 1.0);
+            assert_eq!(thickness, 3.0 * scale);
+            for (source, target) in vertices.iter().zip(result.iter()) {
+                assert_eq!(
+                    *target,
+                    [source[0] * scale + offset[0], source[1] * scale + offset[1]]
+                );
+            }
+        }
+    }
 
     /// 图像场景使用稳定资源编号和有序命令。
     #[test]

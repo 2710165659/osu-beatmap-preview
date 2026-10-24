@@ -1,4 +1,4 @@
-# osu-beatmap-preview 批量渲染脚本 7：背景视频 / 故事板（MP4 配置测试）
+﻿# osu-beatmap-preview 批量渲染脚本 7：背景视频 / 故事板（MP4 配置测试）
 #
 # 用法（可从任意目录运行）：
 #   powershell -File "<repo>\scripts\batch_render_storyboard.ps1"
@@ -22,6 +22,8 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+. (Join-Path $PSScriptRoot "render_process.ps1")
+
 # ── 路径：脚本位于 scripts/ 下，二进制与工作目录都在仓库根 ──
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $bin = Join-Path $repoRoot "target\release\osu-beatmap-preview-cli.exe"
@@ -35,17 +37,6 @@ if (-not (Test-Path -LiteralPath $bin -PathType Leaf)) {
     throw "未找到 Release 二进制：$bin`n请先运行 cargo build --release。"
 }
 
-function Resolve-Executable {
-    param([string]$Value)
-
-    if (Test-Path -LiteralPath $Value -PathType Leaf) {
-        return (Resolve-Path -LiteralPath $Value).Path
-    }
-    $command = Get-Command $Value -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($command) { return $command.Source }
-    return $null
-}
-
 $ffprobe = Resolve-Executable $FfprobePath
 if (-not $ffprobe) {
     throw "未找到 ffprobe。请安装 FFmpeg 或传入 -FfprobePath <path>。"
@@ -55,140 +46,6 @@ if (-not $ffprobe) {
 if (Test-Path -LiteralPath $outdir) { Remove-Item -LiteralPath $outdir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $outdir | Out-Null
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-
-# 优先使用 Windows 的进程级 GPU 引擎计数器；不可用时回退到 nvidia-smi 的整卡利用率。
-$script:gpuCounterFailed = $false
-$script:nvidiaSmi = Resolve-Executable "nvidia-smi.exe"
-
-function Get-GpuUsageSample {
-    param([int]$ProcessId)
-
-    if (-not $script:gpuCounterFailed) {
-        try {
-            $needle = "pid_${ProcessId}_"
-            $samples = @(
-                (Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction Stop).CounterSamples |
-                    Where-Object { $_.Path.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 } |
-                    ForEach-Object { [double]$_.CookedValue }
-            )
-            if ($samples.Count -gt 0) {
-                # 任务管理器显示最繁忙的引擎，而不是把各引擎利用率相加到 100% 以上。
-                $maximum = ($samples | Measure-Object -Maximum).Maximum
-                return [pscustomobject]@{ value = [math]::Max(0.0, [double]$maximum); scope = "process" }
-            }
-        } catch {
-            $script:gpuCounterFailed = $true
-        }
-    }
-
-    if ($script:nvidiaSmi) {
-        try {
-            $values = @(
-                & $script:nvidiaSmi --query-gpu=utilization.gpu `
-                    --format=csv,noheader,nounits 2>$null |
-                    ForEach-Object {
-                        $parsed = 0.0
-                        if ([double]::TryParse($_.Trim(), [ref]$parsed)) { $parsed }
-                    }
-            )
-            if ($values.Count -gt 0) {
-                return [pscustomobject]@{
-                    value = [double](($values | Measure-Object -Maximum).Maximum)
-                    scope = "system"
-                }
-            }
-        } catch {}
-    }
-
-    return $null
-}
-
-function Add-ProcessArguments {
-    param(
-        [System.Diagnostics.ProcessStartInfo]$StartInfo,
-        [string[]]$Arguments
-    )
-
-    # PowerShell 7 使用 ArgumentList，旧版 Windows PowerShell 回退到转义后的命令行。
-    if ($StartInfo.PSObject.Properties.Name -contains "ArgumentList") {
-        foreach ($argument in $Arguments) { $StartInfo.ArgumentList.Add($argument) }
-        return
-    }
-
-    $quoted = foreach ($argument in $Arguments) {
-        if ($argument -notmatch '[\s"]') {
-            $argument
-        } else {
-            '"' + $argument.Replace('"', '\"') + '"'
-        }
-    }
-    $StartInfo.Arguments = $quoted -join " "
-}
-
-# 统一进程运行器：采集墙钟、峰值内存、CPU 时间与 GPU 利用率。
-function Invoke-Binary {
-    param([string[]]$ArgList)
-
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $bin
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-    $psi.UseShellExecute = $false
-    $psi.WorkingDirectory = $repoRoot
-    Add-ProcessArguments $psi $ArgList
-
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $peakBytes = 0L
-    $cpuMs = 0.0
-    $gpuValues = New-Object System.Collections.Generic.List[double]
-    $gpuScope = "unavailable"
-    $stdout = ""
-    $stderr = ""
-    $exitCode = -1
-    $nextGpuSampleMs = 0.0
-    try {
-        $process = [System.Diagnostics.Process]::Start($psi)
-        $outTask = $process.StandardOutput.ReadToEndAsync()
-        $errTask = $process.StandardError.ReadToEndAsync()
-        while (-not $process.HasExited) {
-            try {
-                $process.Refresh()
-                if ($process.PeakWorkingSet64 -gt $peakBytes) { $peakBytes = $process.PeakWorkingSet64 }
-            } catch {}
-            if ($sw.Elapsed.TotalMilliseconds -ge $nextGpuSampleMs) {
-                $sample = Get-GpuUsageSample $process.Id
-                if ($sample) {
-                    $gpuValues.Add([double]$sample.value)
-                    $gpuScope = $sample.scope
-                }
-                $nextGpuSampleMs = $sw.Elapsed.TotalMilliseconds + $GpuSampleIntervalMs
-            }
-            Start-Sleep -Milliseconds 25
-        }
-        try {
-            $process.Refresh()
-            if ($process.PeakWorkingSet64 -gt $peakBytes) { $peakBytes = $process.PeakWorkingSet64 }
-        } catch {}
-        $stdout = $outTask.Result
-        $stderr = $errTask.Result
-        $process.WaitForExit()
-        $exitCode = $process.ExitCode
-        try { $process.Refresh(); $cpuMs = $process.TotalProcessorTime.TotalMilliseconds } catch {}
-    } catch {
-        $stderr = $_.Exception.Message
-    }
-    $sw.Stop()
-
-    $gpuPeak = $null
-    if ($gpuValues.Count -gt 0) { $gpuPeak = ($gpuValues | Measure-Object -Maximum).Maximum }
-    return [pscustomobject]@{
-        stdout = $stdout; stderr = $stderr; exitCode = $exitCode
-        elapsedMs = $sw.ElapsedMilliseconds; peakBytes = $peakBytes; cpuMs = $cpuMs
-        gpuPeak = $gpuPeak; gpuScope = $gpuScope
-    }
-}
 
 function Get-Mp4DurationSeconds {
     param([string]$Path)
@@ -354,7 +211,7 @@ foreach ($task in $tasks) {
         "--config=$configJson"
     )
 
-    $run = Invoke-Binary $argList
+    $run = Invoke-Binary $argList -CollectGpu
 
     $status = "ERR"
     $message = ""

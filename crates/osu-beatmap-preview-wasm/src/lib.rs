@@ -286,6 +286,9 @@ impl WebGpuSession {
     /// 暂停：把当前时刻固化。
     pub fn pause(&mut self) {
         self.inner.pause(wall_ms());
+        if let Some(video) = self.video.as_ref() {
+            video.pause();
+        }
     }
 
     /// 跳到指定谱面绝对时间（毫秒，0 = 音频文件 0 点，可为负）。
@@ -534,6 +537,11 @@ impl WebGpuSession {
     #[wasm_bindgen(js_name = setBackgroundVideo)]
     pub fn set_background_video(&mut self, enabled: bool) {
         self.video_enabled = enabled && self.video.is_some();
+        if !self.video_enabled {
+            if let Some(video) = self.video.as_ref() {
+                video.pause();
+            }
+        }
         if !self.video_enabled && self.video_showing {
             self.video_showing = false;
             self.inner.clear_background_video();
@@ -566,6 +574,7 @@ impl WebGpuSession {
             return;
         };
         if !self.video_enabled || video.visibility_alpha(chart_ms) <= 0.0 {
+            video.pause();
             if self.video_showing {
                 self.video_showing = false;
                 self.inner.clear_background_video();

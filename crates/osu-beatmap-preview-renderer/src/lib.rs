@@ -3,7 +3,7 @@
 //! 平台负责创建 `Device`、`Queue`、surface 和目标 view；本 crate 不持有窗口或 Canvas 句柄。
 
 #[cfg(target_arch = "wasm32")]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use osu_beatmap_preview_core::{FrameScene, PreviewError, Result};
@@ -34,7 +34,7 @@ pub struct SurfaceConfig {
 /// `Device` 和 `Queue` 由平台创建并通过 `Arc` 共享，renderer 不持有窗口或 Canvas。
 pub struct SurfaceRenderer {
     #[cfg(target_arch = "wasm32")]
-    frame_pending: Arc<AtomicBool>,
+    frame_pending: Arc<AtomicUsize>,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     config: SurfaceConfig,
@@ -58,7 +58,7 @@ impl SurfaceRenderer {
             create_present_resources(&device, config.format, rasterizer.output_view());
         Ok(Self {
             #[cfg(target_arch = "wasm32")]
-            frame_pending: Arc::new(AtomicBool::new(false)),
+            frame_pending: Arc::new(AtomicUsize::new(0)),
             device,
             queue,
             config,
@@ -75,10 +75,10 @@ impl SurfaceRenderer {
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
-    /// 浏览器只保留一帧在途，GPU 忙时丢弃提交机会，恢复后直接绘制最新时刻。
+    /// 最多保留三帧在途，为浏览器合成与异步完成通知留出余量；GPU 忙时直接跳到最新时刻。
     #[cfg(target_arch = "wasm32")]
     pub fn frame_pending(&self) -> bool {
-        self.frame_pending.load(Ordering::Acquire)
+        self.frame_pending.load(Ordering::Acquire) >= 3
     }
     /// 把外部图像源（如浏览器视频帧）拷进槽位纹理，供场景的
     /// `DrawCommand::ExternalSprite` 绘制。
@@ -178,10 +178,10 @@ impl SurfaceRenderer {
         self.queue.submit([encoder.finish()]);
         #[cfg(target_arch = "wasm32")]
         {
-            self.frame_pending.store(true, Ordering::Release);
+            self.frame_pending.fetch_add(1, Ordering::AcqRel);
             let pending = Arc::clone(&self.frame_pending);
             self.queue.on_submitted_work_done(move || {
-                pending.store(false, Ordering::Release);
+                pending.fetch_sub(1, Ordering::AcqRel);
             });
         }
         Ok(())

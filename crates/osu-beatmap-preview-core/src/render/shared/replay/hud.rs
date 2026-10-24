@@ -8,7 +8,7 @@ use crate::gameplay::state::ReplayStatus;
 use crate::gameplay::timeline::GameplayTimeline;
 use crate::processing::timeline::TimeAxis;
 use crate::render::canvas::Img;
-use crate::render::text::{format_mmss_floor, render_text_sprite, scaled_bitmap_font_height};
+use crate::render::text::{format_mmss_floor, scaled_bitmap_font_height, shared_text_sprite};
 use std::sync::Arc;
 
 pub(crate) struct HudVisuals {
@@ -552,13 +552,7 @@ pub(crate) fn hud_text(
     scale: f64,
 ) -> std::sync::Arc<Img> {
     visuals.font.as_ref().map_or_else(
-        || {
-            std::sync::Arc::new(render_text_sprite(
-                value,
-                scaled_bitmap_font_height(size as u32, scale),
-                color,
-            ))
-        },
+        || shared_text_sprite(value, scaled_bitmap_font_height(size as u32, scale), color),
         |font| font.sprite_arc(value, size * scale, 0.0, [color[0], color[1], color[2]]),
     )
 }
@@ -566,8 +560,6 @@ pub(crate) fn hud_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gameplay::timeline::GameplayTimeline;
-    use crate::processing::timeline::TimeAxis;
     use crate::render::canvas::Img;
     use crate::render::scene::{DrawCommand, FrameSceneBuilder};
 

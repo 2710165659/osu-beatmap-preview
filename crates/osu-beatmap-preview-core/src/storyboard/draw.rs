@@ -9,9 +9,10 @@
 //! 淡入淡出与加色混合在同一次逐像素采样内完成，避免逐帧多次重采样分配。
 
 use super::{ElementState, Origin, SpriteDraw, Storyboard, Textures};
-use crate::render::canvas::Img;
+use crate::render::canvas::{round_channels, Img};
 use crate::render::scene::{FrameSceneBuilder, SpriteSpec};
 use std::sync::Arc;
+use wide::f32x4;
 
 /// 640×480 虚拟坐标 → 目标画布的映射与层遮罩（目标画布坐标，像素）。
 #[derive(Clone, Copy, Debug)]
@@ -185,70 +186,112 @@ pub fn draw_transformed_sprite(
         return;
     }
 
-    let colour = sprite.colour;
+    let colour = f32x4::new([sprite.colour[0], sprite.colour[1], sprite.colour[2], 1.0]);
     let additive = sprite.additive;
     let alpha_factor = sprite.alpha;
+
+    // 未旋转时两轴互不依赖，横向采样坐标整帧复用，纵向坐标整行复用。
+    // 保留原有除法顺序，避免负缩放、小数位置的纹理采样发生舍入偏移。
+    let columns = (sprite.rotation == 0.0).then(|| {
+        (x0..x1)
+            .map(|px| {
+                let u = (px as f32 + 0.5 - sprite.position[0]) / kx + anchor_px[0];
+                (0.0..=tw).contains(&u).then(|| sample_axis(u, texture.w))
+            })
+            .collect::<Vec<_>>()
+    });
 
     for py in y0..y1 {
         // 同一行的纵向位移和旋转项固定，提前计算且不改变逆映射的运算顺序。
         let dy = py as f32 + 0.5 - sprite.position[1];
         let dy_sin = dy * sin;
         let dy_cos = dy * cos;
+        let row = columns.as_ref().map(|_| {
+            let v = dy / ky + anchor_px[1];
+            (0.0..=th).contains(&v).then(|| sample_axis(v, texture.h))
+        });
+        if row == Some(None) {
+            continue;
+        }
         for px in x0..x1 {
             // 以像素中心 (px+0.5, py+0.5) 逆映射回纹理坐标。
-            let dx = px as f32 + 0.5 - sprite.position[0];
-            let lx = dx * cos + dy_sin;
-            let ly = -dx * sin + dy_cos;
-            let u = lx / kx + anchor_px[0];
-            let v = ly / ky + anchor_px[1];
-            if u < 0.0 || v < 0.0 || u > tw || v > th {
-                continue;
-            }
-            let sampled = sample_bilinear_clamped(texture, u, v);
+            let sampled = if let Some(columns) = &columns {
+                let Some(column) = columns[(px - x0) as usize] else {
+                    continue;
+                };
+                sample_bilinear_axes(texture, column, row.flatten().expect("有效采样行"))
+            } else {
+                let dx = px as f32 + 0.5 - sprite.position[0];
+                let lx = dx * cos + dy_sin;
+                let ly = -dx * sin + dy_cos;
+                let u = lx / kx + anchor_px[0];
+                let v = ly / ky + anchor_px[1];
+                if u < 0.0 || v < 0.0 || u > tw || v > th {
+                    continue;
+                }
+                sample_bilinear_clamped(texture, u, v)
+            };
             let alpha = (sampled[3] / 255.0 * alpha_factor).clamp(0.0, 1.0);
             if alpha <= 0.0 {
                 continue;
             }
-            let source = [
-                (sampled[0] * colour[0]).round().clamp(0.0, 255.0),
-                (sampled[1] * colour[1]).round().clamp(0.0, 255.0),
-                (sampled[2] * colour[2]).round().clamp(0.0, 255.0),
-            ];
+            let source = round_channels(f32x4::new(sampled) * colour);
             let index = (py as u32 * canvas.w + px as u32) as usize * 4;
             let dst = &mut canvas.data[index..index + 4];
+            let target = f32x4::new([dst[0] as f32, dst[1] as f32, dst[2] as f32, 0.0]);
+            let alpha_vector = f32x4::splat(alpha);
+            let blended = if additive {
+                target + source * alpha_vector
+            } else {
+                source * alpha_vector + target * f32x4::splat(1.0 - alpha)
+            };
+            let channels = round_channels(blended).trunc_int().to_array();
+            for channel in 0..3 {
+                dst[channel] = channels[channel] as u8;
+            }
             if additive {
                 // osu! 的 Additive = (SrcAlpha, One)：dst += src × alpha。
-                for channel in 0..3 {
-                    dst[channel] = (dst[channel] as f32 + source[channel] * alpha)
-                        .round()
-                        .clamp(0.0, 255.0) as u8;
-                }
-                dst[3] = (dst[3] as f32 + alpha * 255.0).round().clamp(0.0, 255.0) as u8;
+                dst[3] = rounded_channel(dst[3] as f32 + alpha * 255.0);
             } else {
-                for channel in 0..3 {
-                    let blended = source[channel] * alpha + dst[channel] as f32 * (1.0 - alpha);
-                    dst[channel] = blended.round().clamp(0.0, 255.0) as u8;
-                }
-                dst[3] = ((alpha + dst[3] as f32 / 255.0 * (1.0 - alpha)) * 255.0)
-                    .round()
-                    .clamp(0.0, 255.0) as u8;
+                dst[3] = rounded_channel((alpha + dst[3] as f32 / 255.0 * (1.0 - alpha)) * 255.0);
             }
         }
     }
+}
+
+// 通道值非负，拆分整数与小数即可四舍五入，避免基线 CPU 每通道调用 roundf。
+// 不能直接加 0.5：紧邻半整数的浮点数相加时可能被错误舍入到整数。
+#[inline]
+fn rounded_channel(value: f32) -> u8 {
+    let value = value.clamp(0.0, 255.0);
+    let integer = value as u8;
+    integer + u8::from(value - integer as f32 >= 0.5)
 }
 
 /// 双线性采样（clamp-to-edge，与 osu! 的纹理 WrapMode 一致）。
 ///
 /// 采样坐标是「像素空间」（0..w），纹理像素中心在半整数处。
 fn sample_bilinear_clamped(texture: &Img, u: f32, v: f32) -> [f32; 4] {
-    let x = (u - 0.5).clamp(0.0, texture.w.saturating_sub(1) as f32);
-    let y = (v - 0.5).clamp(0.0, texture.h.saturating_sub(1) as f32);
-    let x0 = x.floor() as u32;
-    let y0 = y.floor() as u32;
-    let x1 = (x0 + 1).min(texture.w - 1);
-    let y1 = (y0 + 1).min(texture.h - 1);
-    let fx = x - x0 as f32;
-    let fy = y - y0 as f32;
+    sample_bilinear_axes(
+        texture,
+        sample_axis(u, texture.w),
+        sample_axis(v, texture.h),
+    )
+}
+
+#[inline]
+fn sample_axis(coordinate: f32, size: u32) -> (u32, u32, f32) {
+    let coordinate = (coordinate - 0.5).clamp(0.0, size.saturating_sub(1) as f32);
+    let first = coordinate.floor() as u32;
+    (first, (first + 1).min(size - 1), coordinate - first as f32)
+}
+
+#[inline]
+fn sample_bilinear_axes(
+    texture: &Img,
+    (x0, x1, fx): (u32, u32, f32),
+    (y0, y1, fy): (u32, u32, f32),
+) -> [f32; 4] {
     // 四个邻接像素的地址与颜色通道无关，避免每个通道重复索引计算。
     let offsets = [
         (y0 * texture.w + x0) as usize * 4,
@@ -256,15 +299,14 @@ fn sample_bilinear_clamped(texture: &Img, u: f32, v: f32) -> [f32; 4] {
         (y1 * texture.w + x0) as usize * 4,
         (y1 * texture.w + x1) as usize * 4,
     ];
-    let mut result = [0.0; 4];
-    for (channel, value) in result.iter_mut().enumerate() {
-        let top = texture.data[offsets[0] + channel] as f32 * (1.0 - fx)
-            + texture.data[offsets[1] + channel] as f32 * fx;
-        let bottom = texture.data[offsets[2] + channel] as f32 * (1.0 - fx)
-            + texture.data[offsets[3] + channel] as f32 * fx;
-        *value = top * (1.0 - fy) + bottom * fy;
-    }
-    result
+    let pixels = offsets.map(|offset| {
+        f32x4::new(std::array::from_fn(|channel| {
+            texture.data[offset + channel] as f32
+        }))
+    });
+    let top = pixels[0] * f32x4::splat(1.0 - fx) + pixels[1] * f32x4::splat(fx);
+    let bottom = pixels[2] * f32x4::splat(1.0 - fx) + pixels[3] * f32x4::splat(fx);
+    (top * f32x4::splat(1.0 - fy) + bottom * f32x4::splat(fy)).to_array()
 }
 
 /// 把一个元素状态绘制到画布（内部按 [`sprite_geometry`] 推导几何）。
@@ -387,6 +429,54 @@ pub fn append_scene_sprites(
 mod tests {
     use super::*;
     use crate::storyboard::{AnimationLoop, Element, ElementCommands, ElementKind, Layer};
+
+    /// SIMD 的颜色量化与标量四舍五入在边界和饱和值上保持一致。
+    #[test]
+    fn simd_channel_rounding_matches_scalar_rounding() {
+        for values in [
+            [0.0, 0.49, 0.5, 1.5],
+            [127.49, 127.5, 254.5, 255.0],
+            [-1.0, 256.0, 10.49999, 10.50001],
+        ] {
+            let rounded = round_channels(f32x4::new(values)).trunc_int().to_array();
+            assert_eq!(
+                rounded.map(|value| value as u8),
+                values.map(rounded_channel),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_sampling_matches_rotated_reference() {
+        let mut texture = Img::new(7, 5, [0; 4]);
+        for (index, value) in texture.data.iter_mut().enumerate() {
+            *value = (index * 73 + 17) as u8;
+        }
+        // 一个极小旋转保留通用路径，且不影响本例任何采样坐标的有效位。
+        // 两条路径必须在翻转、透明与加色混合下产生完全相同的字节。
+        for size in [[19.3, 12.1], [-19.3, 12.1], [19.3, -12.1]] {
+            for additive in [false, true] {
+                let mut sprite = SpriteTransform {
+                    position: [16.25, 12.75],
+                    size,
+                    origin: [0.5, 1.0],
+                    rotation: 0.0,
+                    colour: [0.3, 0.7, 1.0],
+                    alpha: 0.63,
+                    additive,
+                };
+                let mut fast = Img::new(32, 24, [41, 123, 67, 197]);
+                let mut reference = fast.clone();
+                draw_transformed_sprite(&mut fast, &texture, &sprite, [2.0, 1.0, 29.0, 22.0]);
+                sprite.rotation = 1e-30;
+                draw_transformed_sprite(&mut reference, &texture, &sprite, [2.0, 1.0, 29.0, 22.0]);
+                assert_eq!(
+                    fast.data, reference.data,
+                    "size={size:?}, additive={additive}"
+                );
+            }
+        }
+    }
 
     /// 造一个测试用状态（测试辅助，仅测试构建使用）。
     #[cfg(test)]

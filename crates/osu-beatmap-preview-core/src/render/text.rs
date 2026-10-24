@@ -7,7 +7,8 @@
 use crate::render::canvas::{Img, Rgba};
 use font8x8::legacy::BASIC_LEGACY;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 // ─── 字形查找 ───
 
@@ -156,6 +157,38 @@ pub fn render_text_sprite(text: &str, size: u32, color: Rgba) -> Img {
     img
 }
 
+/// 复用整段文字的图像身份，使 GPU 贴图缓存能跨帧命中。
+/// 队列限制条数与像素总量，动态计分文字不会无限积累。
+pub fn shared_text_sprite(text: &str, size: u32, color: Rgba) -> Arc<Img> {
+    type TextKey = (String, u32, Rgba);
+    thread_local! {
+        static CACHE: RefCell<VecDeque<(TextKey, Arc<Img>)>> = const { RefCell::new(VecDeque::new()) };
+    }
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(index) = cache.iter().position(|((value, height, tint), _)| {
+            value == text && *height == size && *tint == color
+        }) {
+            let entry = cache.remove(index).unwrap();
+            let image = Arc::clone(&entry.1);
+            cache.push_back(entry);
+            return image;
+        }
+        let image = Arc::new(render_text_sprite(text, size, color));
+        let pixels = |image: &Img| image.w as usize * image.h as usize;
+        let image_pixels = pixels(&image);
+        const MAX_PIXELS: usize = 512 * 1024;
+        if image_pixels <= MAX_PIXELS {
+            let mut used = cache.iter().map(|(_, image)| pixels(image)).sum::<usize>();
+            while cache.len() >= 64 || used + image_pixels > MAX_PIXELS {
+                used -= pixels(&cache.pop_front().unwrap().1);
+            }
+            cache.push_back(((text.to_owned(), size, color), Arc::clone(&image)));
+        }
+        image
+    })
+}
+
 /// 在指定内容宽度内以 `(x, y)` 为基准水平居中绘制文字。
 fn draw_centered_text(
     canvas: &mut Img,
@@ -227,6 +260,23 @@ pub fn format_seconds_tenths(ms: i64) -> String {
 #[cfg(test)]
 mod time_format_tests {
     use super::*;
+
+    #[test]
+    fn shared_text_keeps_identity_and_respects_style() {
+        let first = shared_text_sprite("00:01", 18, [255; 4]);
+        assert!(Arc::ptr_eq(
+            &first,
+            &shared_text_sprite("00:01", 18, [255; 4])
+        ));
+        for other in [
+            shared_text_sprite("00:02", 18, [255; 4]),
+            shared_text_sprite("00:01", 27, [255; 4]),
+            shared_text_sprite("00:01", 18, [100; 4]),
+        ] {
+            assert!(!Arc::ptr_eq(&first, &other));
+        }
+        assert_eq!(first.data, render_text_sprite("00:01", 18, [255; 4]).data);
+    }
 
     #[test]
     fn formats_signed_millisecond_times() {

@@ -25,6 +25,8 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+. (Join-Path $PSScriptRoot "render_process.ps1")
+
 # ── 路径：脚本位于 scripts/ 下，二进制与工作目录都在仓库根 ──
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $bin = Join-Path $repoRoot "target\release\osu-beatmap-preview-cli.exe"
@@ -36,17 +38,6 @@ $logDir = Join-Path $outdir ".logs\$runId"
 
 if (-not (Test-Path -LiteralPath $bin -PathType Leaf)) {
     throw "未找到 Release 二进制：$bin`n请先运行 cargo build --release。"
-}
-
-function Resolve-Executable {
-    param([string]$Value)
-
-    if (Test-Path -LiteralPath $Value -PathType Leaf) {
-        return (Resolve-Path -LiteralPath $Value).Path
-    }
-    $command = Get-Command $Value -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($command) { return $command.Source }
-    return $null
 }
 
 $ffprobe = Resolve-Executable $FfprobePath
@@ -101,75 +92,6 @@ function Get-Mp4DurationSeconds {
     return 0.0
 }
 
-# 优先使用 Windows 的进程级 GPU 引擎计数器；不可用时回退到 nvidia-smi 的整卡利用率。
-$script:gpuCounterFailed = $false
-$script:nvidiaSmi = Resolve-Executable "nvidia-smi.exe"
-
-function Get-GpuUsageSample {
-    param([int]$ProcessId)
-
-    if (-not $script:gpuCounterFailed) {
-        try {
-            $needle = "pid_${ProcessId}_"
-            $samples = @(
-                (Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction Stop).CounterSamples |
-                    Where-Object { $_.Path.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 } |
-                    ForEach-Object { [double]$_.CookedValue }
-            )
-            if ($samples.Count -gt 0) {
-                # 任务管理器显示最繁忙的引擎，而不是把独立的 3D、复制和视频编码引擎相加到 100% 以上。
-                $maximum = ($samples | Measure-Object -Maximum).Maximum
-                return [pscustomobject]@{ value = [math]::Max(0.0, [double]$maximum); scope = "process" }
-            }
-        } catch {
-            $script:gpuCounterFailed = $true
-        }
-    }
-
-    if ($script:nvidiaSmi) {
-        try {
-            $values = @(
-                & $script:nvidiaSmi --query-gpu=utilization.gpu `
-                    --format=csv,noheader,nounits 2>$null |
-                    ForEach-Object {
-                        $parsed = 0.0
-                        if ([double]::TryParse($_.Trim(), [ref]$parsed)) { $parsed }
-                    }
-            )
-            if ($values.Count -gt 0) {
-                return [pscustomobject]@{
-                    value = [double](($values | Measure-Object -Maximum).Maximum)
-                    scope = "system"
-                }
-            }
-        } catch {}
-    }
-
-    return $null
-}
-
-function Add-ProcessArguments {
-    param(
-        [System.Diagnostics.ProcessStartInfo]$StartInfo,
-        [string[]]$Arguments
-    )
-
-    # PowerShell 7 使用 ArgumentList，旧版 Windows PowerShell 回退到转义后的命令行。
-    if ($StartInfo.PSObject.Properties.Name -contains "ArgumentList") {
-        foreach ($argument in $Arguments) { $StartInfo.ArgumentList.Add($argument) }
-        return
-    }
-
-    $quoted = foreach ($argument in $Arguments) {
-        if ($argument -notmatch '[\s"]') {
-            $argument
-        } else {
-            '"' + $argument.Replace('"', '\"') + '"'
-        }
-    }
-    $StartInfo.Arguments = $quoted -join " "
-}
-
 function Format-Number {
     param($Value, [int]$Decimals)
 
@@ -211,61 +133,14 @@ foreach ($task in $tasks) {
     )
     if ($NoCache) { $argList += "--no-cache" }
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $bin
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-    $psi.UseShellExecute = $false
-    $psi.WorkingDirectory = $repoRoot
-    Add-ProcessArguments $psi $argList
-
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $peakBytes = 0L
-    $cpuMs = 0.0
-    $gpuValues = New-Object System.Collections.Generic.List[double]
-    $gpuScope = "unavailable"
-    $stdout = ""
-    $stderr = ""
-    $exitCode = -1
-    $nextGpuSampleMs = 0.0
-
-    try {
-        $process = [System.Diagnostics.Process]::Start($psi)
-        $outTask = $process.StandardOutput.ReadToEndAsync()
-        $errTask = $process.StandardError.ReadToEndAsync()
-
-        while (-not $process.HasExited) {
-            try {
-                $process.Refresh()
-                if ($process.PeakWorkingSet64 -gt $peakBytes) { $peakBytes = $process.PeakWorkingSet64 }
-            } catch {}
-
-            if ($sw.Elapsed.TotalMilliseconds -ge $nextGpuSampleMs) {
-                $gpuSample = Get-GpuUsageSample $process.Id
-                if ($gpuSample) {
-                    $gpuValues.Add([double]$gpuSample.value)
-                    $gpuScope = $gpuSample.scope
-                }
-                $nextGpuSampleMs = $sw.Elapsed.TotalMilliseconds + $GpuSampleIntervalMs
-            }
-            Start-Sleep -Milliseconds 25
-        }
-
-        $process.WaitForExit()
-        try {
-            $process.Refresh()
-            if ($process.PeakWorkingSet64 -gt $peakBytes) { $peakBytes = $process.PeakWorkingSet64 }
-            $cpuMs = $process.TotalProcessorTime.TotalMilliseconds
-        } catch {}
-        $stdout = $outTask.Result
-        $stderr = $errTask.Result
-        $exitCode = $process.ExitCode
-    } catch {
-        $stderr = $_.Exception.Message
-    }
-    $sw.Stop()
+    $run = Invoke-Binary $argList -CollectGpu
+    $stdout = $run.stdout
+    $stderr = $run.stderr
+    $exitCode = $run.exitCode
+    $peakBytes = $run.peakBytes
+    $cpuMs = $run.cpuMs
+    $gpuValues = $run.gpuValues
+    $gpuScope = $run.gpuScope
 
     # 每个任务的原始 stdout/stderr 存档，便于事后排查。
     $stdoutPath = Join-Path $logDir "$($task.mode)_$($task.bid).stdout.txt"
@@ -304,7 +179,7 @@ foreach ($task in $tasks) {
         $message = "进程成功退出但未返回有效 JSON。"
     }
 
-    $elapsedMs = $sw.Elapsed.TotalMilliseconds
+    $elapsedMs = $run.elapsedMs
     $msPerSec = if ($durationSec -gt 0) { $elapsedMs / $durationSec } else { $null }
     $peakMB = $peakBytes / 1MB
     $sizeKB = $sizeBytes / 1KB

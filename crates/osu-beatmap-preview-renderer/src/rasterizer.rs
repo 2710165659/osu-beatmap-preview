@@ -1,12 +1,11 @@
 //! 将后端无关的场景命令直接光栅化到 WGPU RGBA8 离屏目标。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::f32::consts::TAU;
 use std::ops::Range;
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
-use wgpu::util::DeviceExt;
 
 use osu_beatmap_preview_core::render::scene::ResourceId;
 use osu_beatmap_preview_core::{DrawCommand, FrameScene, SceneRect};
@@ -62,15 +61,14 @@ struct CachedTexture {
     _texture: wgpu::Texture,
     bind_group: wgpu::BindGroup,
     image: Arc<Img>,
-    /// 最近一次被场景引用的帧序号；配合 [`TEXTURE_EVICTION_GRACE_FRAMES`] 做延迟驱逐。
+    /// 最近一次被场景引用的帧序号；超出缓存预算时优先驱逐最久未用的纹理。
     last_used: u64,
 }
 
-/// 纹理驱逐宽限窗口（帧）：暂时不可见的贴图（淡入淡出过零点、动画换帧）再
-/// 短暂驻留，重新出现时直接命中缓存而不是重新上传——故事板的贴图动辄数兆
-/// 字节，逐次重传会把帧率打穿。宽限窗口也给常驻内存划了界：只有最近
-/// 半秒左右出现过的贴图才会驻留。
-const TEXTURE_EVICTION_GRACE_FRAMES: u64 = 32;
+/// 按实际字节控制驻留，避免高刷下固定帧数窗口过短、循环动画反复上传，
+/// 同时避免大故事板在短时间内出现大量贴图时无界占用显存。
+const TEXTURE_CACHE_BYTES: usize = 128 * 1024 * 1024;
+const TEXTURE_CACHE_ENTRIES: usize = 512;
 
 /// 外部纹理槽位的纹理：内容由 `copy_external_image_to_texture` 从外部源
 /// （浏览器视频帧）直接拷入，逐帧视频像素不进 CPU 内存。
@@ -134,7 +132,7 @@ struct PipelineSpec<'a> {
 struct DrawBatch {
     kind: BatchKind,
     scissor: [u32; 4],
-    vertices: Vec<GpuVertex>,
+    vertices: Arc<Vec<GpuVertex>>,
 }
 
 struct UploadedBatch {
@@ -167,8 +165,10 @@ pub(crate) struct SceneRasterizer {
     depth_stencil_view: wgpu::TextureView,
     textures: HashMap<ResourceKey, CachedTexture>,
     external_textures: HashMap<u32, CachedExternalTexture>,
-    /// 已处理的场景帧数：给纹理驱逐的宽限窗口计时。
+    /// 已处理的场景帧数，用于记录纹理最近使用的顺序。
     frames_seen: u64,
+    vertex_buffer: Option<wgpu::Buffer>,
+    vertex_capacity: u64,
 }
 
 impl SceneRasterizer {
@@ -368,6 +368,8 @@ impl SceneRasterizer {
             textures: HashMap::new(),
             external_textures: HashMap::new(),
             frames_seen: 0,
+            vertex_buffer: None,
+            vertex_capacity: 0,
         }
     }
 
@@ -451,13 +453,20 @@ impl SceneRasterizer {
         self.prepare_textures(device, queue, scene)?;
         let batches = build_batches(scene, self.width, self.height)?;
         let (vertices, batches) = upload_batches(batches);
-        let vertex_buffer = (!vertices.is_empty()).then(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("osu-beatmap-preview scene vertices"),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
+        if !vertices.is_empty() {
+            let bytes = bytemuck::cast_slice(&vertices);
+            if bytes.len() as u64 > self.vertex_capacity {
+                self.vertex_capacity = (bytes.len() as u64).next_power_of_two();
+                self.vertex_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("osu-beatmap-preview scene vertices"),
+                    size: self.vertex_capacity,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }));
+            }
+            // 同一 Queue 的写入与提交按序执行，上一帧读取结束后才会覆盖缓冲。
+            queue.write_buffer(self.vertex_buffer.as_ref().unwrap(), 0, bytes);
+        }
         {
             let (view, resolve_target, store) = if let Some(view) = &self.msaa_view {
                 (view, Some(&self.composite_view), wgpu::StoreOp::Discard)
@@ -487,7 +496,7 @@ impl SceneRasterizer {
                 depth_stencil_attachment: depth_stencil,
                 ..Default::default()
             });
-            if let Some(vertex_buffer) = &vertex_buffer {
+            if let Some(vertex_buffer) = &self.vertex_buffer {
                 pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                 for batch in batches {
                     pass.set_scissor_rect(
@@ -582,9 +591,8 @@ impl SceneRasterizer {
     /// 上传场景引用的纹理并驱逐不再引用的条目；返回本次真正上传的张数。
     ///
     /// 跨帧命中条件是「同一图像实例」（[`ResourceKey`]）：同一 `Arc<Img>` 在
-    /// 帧间复用同一张 GPU 纹理，只有换图才重新上传。暂时不可见的贴图延后
-    /// [`TEXTURE_EVICTION_GRACE_FRAMES`] 帧再驱逐，淡入淡出与动画换帧不会
-    /// 反复重传。
+    /// 帧间复用同一张 GPU 纹理，只有换图才重新上传。暂时不可见的贴图在
+    /// 字节预算内保留，超过预算后按最近使用顺序回收；当前帧纹理不能驱逐。
     fn prepare_textures(
         &mut self,
         device: &wgpu::Device,
@@ -593,14 +601,6 @@ impl SceneRasterizer {
     ) -> Result<usize> {
         self.frames_seen += 1;
         let frames_seen = self.frames_seen;
-        let live = scene
-            .resources
-            .iter()
-            .map(|(&id, image)| ResourceKey::new(id, image))
-            .collect::<HashSet<_>>();
-        self.textures.retain(|key, cached| {
-            live.contains(key) || cached.last_used + TEXTURE_EVICTION_GRACE_FRAMES >= frames_seen
-        });
         let mut uploads = 0;
         for (&id, image) in scene.resources.iter() {
             if image.w == 0
@@ -670,6 +670,29 @@ impl SceneRasterizer {
                     last_used: frames_seen,
                 },
             );
+        }
+        let mut bytes: usize = self
+            .textures
+            .values()
+            .map(|cached| cached.image.data.len())
+            .sum();
+        let mut entries = self.textures.len();
+        if bytes > TEXTURE_CACHE_BYTES || entries > TEXTURE_CACHE_ENTRIES {
+            let mut idle: Vec<_> = self
+                .textures
+                .iter()
+                .filter(|(_, cached)| cached.last_used != frames_seen)
+                .map(|(&key, cached)| (key, cached.last_used, cached.image.data.len()))
+                .collect();
+            idle.sort_unstable_by_key(|(_, last_used, _)| *last_used);
+            for (key, _, size) in idle {
+                if bytes <= TEXTURE_CACHE_BYTES && entries <= TEXTURE_CACHE_ENTRIES {
+                    break;
+                }
+                self.textures.remove(&key);
+                bytes -= size;
+                entries -= 1;
+            }
         }
         Ok(uploads)
     }
@@ -1353,7 +1376,8 @@ fn push_slider_layer(
     coverage_kind: BatchKind,
     color_kind: BatchKind,
 ) {
-    if points.is_empty() || thickness <= 0.0 || color[3] == 0 {
+    if points.is_empty() || thickness <= 0.0 || color[3] == 0 || scissor[2] == 0 || scissor[3] == 0
+    {
         return;
     }
     let mut path = Vec::with_capacity(points.len());
@@ -1397,13 +1421,19 @@ fn push_slider_layer(
     }
     // 圆形连接头和端帽保留 CPU 的 round join 外观；stencil coverage pass 会将重叠区域去重。
     let segments = circle_segments(thickness / 2.0);
+    let unit_circle: Vec<_> = (0..=segments)
+        .map(|index| radial_point([0.0; 2], 1.0, index, segments))
+        .collect();
     for &center in &path {
         let center_vertex = vertex(center, [0.0; 2], rgba, offset, width, height);
         for index in 0..segments {
             vertices.extend_from_slice(&[
                 center_vertex,
                 vertex(
-                    radial_point(center, thickness / 2.0, index, segments),
+                    [
+                        center[0] + unit_circle[index][0] * thickness / 2.0,
+                        center[1] + unit_circle[index][1] * thickness / 2.0,
+                    ],
                     [0.0; 2],
                     rgba,
                     offset,
@@ -1411,7 +1441,10 @@ fn push_slider_layer(
                     height,
                 ),
                 vertex(
-                    radial_point(center, thickness / 2.0, index + 1, segments),
+                    [
+                        center[0] + unit_circle[index + 1][0] * thickness / 2.0,
+                        center[1] + unit_circle[index + 1][1] * thickness / 2.0,
+                    ],
                     [0.0; 2],
                     rgba,
                     offset,
@@ -1424,8 +1457,18 @@ fn push_slider_layer(
     if vertices.is_empty() {
         return;
     }
-    push_batch(batches, coverage_kind, scissor, vertices.clone());
-    push_batch(batches, color_kind, scissor, vertices);
+    // 两遍模板绘制共用同一份几何与上传区间。
+    let vertices = Arc::new(vertices);
+    batches.push(DrawBatch {
+        kind: coverage_kind,
+        scissor,
+        vertices: Arc::clone(&vertices),
+    });
+    batches.push(DrawBatch {
+        kind: color_kind,
+        scissor,
+        vertices,
+    });
 }
 
 fn push_batch(
@@ -1439,28 +1482,45 @@ fn push_batch(
     }
     if let Some(last) = batches.last_mut() {
         if last.kind == kind && last.scissor == scissor {
-            last.vertices.extend(vertices);
+            Arc::make_mut(&mut last.vertices).extend(vertices);
             return;
         }
     }
     batches.push(DrawBatch {
         kind,
         scissor,
-        vertices,
+        vertices: Arc::new(vertices),
     });
 }
 
 fn upload_batches(batches: Vec<DrawBatch>) -> (Vec<GpuVertex>, Vec<UploadedBatch>) {
-    let count = batches.iter().map(|batch| batch.vertices.len()).sum();
+    let count = batches
+        .iter()
+        .enumerate()
+        .filter(|(index, batch)| {
+            *index == 0 || !Arc::ptr_eq(&batches[index - 1].vertices, &batch.vertices)
+        })
+        .map(|(_, batch)| batch.vertices.len())
+        .sum();
+    let mut previous: Option<Arc<Vec<GpuVertex>>> = None;
     let mut vertices = Vec::with_capacity(count);
-    let mut uploaded = Vec::with_capacity(batches.len());
+    let mut uploaded: Vec<UploadedBatch> = Vec::with_capacity(batches.len());
     for batch in batches {
-        let start = vertices.len() as u32;
-        vertices.extend(batch.vertices);
+        let range = if previous
+            .as_ref()
+            .is_some_and(|last| Arc::ptr_eq(last, &batch.vertices))
+        {
+            uploaded.last().unwrap().vertices.clone()
+        } else {
+            let start = vertices.len() as u32;
+            vertices.extend(batch.vertices.iter().copied());
+            start..vertices.len() as u32
+        };
+        previous = Some(batch.vertices);
         uploaded.push(UploadedBatch {
             kind: batch.kind,
             scissor: batch.scissor,
-            vertices: start..vertices.len() as u32,
+            vertices: range,
         });
     }
     (vertices, uploaded)
@@ -1568,6 +1628,49 @@ mod tests {
     use super::*;
     use osu_beatmap_preview_core::render::scene::{ResourceId, SceneSize};
 
+    #[test]
+    #[ignore = "需要本机可用的 WGPU 适配器"]
+    fn texture_cache_reuses_animation_frames_and_evicts_old_entries() {
+        pollster::block_on(async {
+            let instance =
+                wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+            let adapter = instance.request_adapter(&Default::default()).await.unwrap();
+            let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
+            let mut renderer = SceneRasterizer::new(&device, 100, 50, 1);
+            let image = Arc::new(Img::new(1, 1, [255; 4]));
+            let mut frame = scene(vec![]);
+            frame.resources = Arc::new(BTreeMap::from([(ResourceId(0), Arc::clone(&image))]));
+            assert_eq!(
+                renderer.prepare_textures(&device, &queue, &frame).unwrap(),
+                1
+            );
+            for _ in 0..40 {
+                renderer
+                    .prepare_textures(&device, &queue, &scene(vec![]))
+                    .unwrap();
+            }
+            assert_eq!(
+                renderer.prepare_textures(&device, &queue, &frame).unwrap(),
+                0
+            );
+            for _ in 0..TEXTURE_CACHE_ENTRIES {
+                frame.resources = Arc::new(BTreeMap::from([(
+                    ResourceId(0),
+                    Arc::new(Img::new(1, 1, [0; 4])),
+                )]));
+                renderer.prepare_textures(&device, &queue, &frame).unwrap();
+            }
+            assert_eq!(renderer.textures.len(), TEXTURE_CACHE_ENTRIES);
+            assert!(!renderer
+                .textures
+                .contains_key(&ResourceKey::new(ResourceId(0), &image)));
+            let current = frame.resources.get(&ResourceId(0)).unwrap();
+            assert!(renderer
+                .textures
+                .contains_key(&ResourceKey::new(ResourceId(0), current)));
+        });
+    }
+
     fn scene(commands: Vec<DrawCommand>) -> FrameScene {
         FrameScene {
             size: SceneSize {
@@ -1644,6 +1747,12 @@ mod tests {
         assert_eq!(batches[2].vertices.len(), batches[3].vertices.len());
         assert_eq!(stencil_reference(batches[0].kind), 1);
         assert_eq!(stencil_reference(batches[2].kind), 3);
+        let expected = batches[0].vertices.len() + batches[2].vertices.len();
+        let (vertices, uploaded) = upload_batches(batches);
+        assert_eq!(vertices.len(), expected);
+        assert_eq!(uploaded[0].vertices, uploaded[1].vertices);
+        assert_eq!(uploaded[2].vertices, uploaded[3].vertices);
+        assert!(uploaded[0].vertices.end <= uploaded[2].vertices.start);
     }
 
     /// 资源键只认图像实例：换图换键，同一张图跨帧（编号可变）复用同一键。

@@ -1,5 +1,7 @@
 //! RGBA8 图像类型，提供兼容 PIL 的 alpha 合成、Lanczos 缩放、旋转和二维绘图原语。
 
+use wide::{f32x4, CmpGe};
+
 #[derive(Debug, Clone)]
 pub struct Img {
     pub w: u32,
@@ -10,6 +12,25 @@ pub struct Img {
 pub type Rgba = [u8; 4];
 
 pub const BLACK_OPAQUE: Rgba = [0, 0, 0, 255];
+
+/// 对非负颜色通道饱和取整，保持标量 `round().clamp()` 的半整数行为。
+#[inline]
+pub(crate) fn round_channels(values: f32x4) -> f32x4 {
+    let values = values.max(f32x4::ZERO).min(f32x4::splat(255.0));
+    let integers = values.trunc_int().round_float();
+    integers
+        + (values - integers)
+            .cmp_ge(f32x4::splat(0.5))
+            .blend(f32x4::ONE, f32x4::ZERO)
+}
+
+#[inline]
+fn round_pixel_channels(values: f32x4) -> Rgba {
+    round_channels(values)
+        .trunc_int()
+        .to_array()
+        .map(|value| value as u8)
+}
 
 impl Img {
     pub fn new(w: u32, h: u32, color: Rgba) -> Self {
@@ -195,7 +216,7 @@ impl Img {
             let y1 = (y0 + 1).min(h as usize - 1);
             let fy = sy - y0 as f32;
             for (x, &(x0, x1, fx)) in columns.iter().enumerate() {
-                let mut acc = [0.0_f32; 4];
+                let mut acc = wide::f32x4::ZERO;
                 for (row, wy) in [(y0, 1.0 - fy), (y1, fy)] {
                     for (col, wx) in [(x0, 1.0 - fx), (x1, fx)] {
                         let weight = wy * wx;
@@ -203,15 +224,13 @@ impl Img {
                             continue;
                         }
                         let pixel = &self.data[(row * w as usize + col) * 4..][..4];
-                        for channel in 0..4 {
-                            acc[channel] += pixel[channel] as f32 * weight;
-                        }
+                        acc +=
+                            wide::f32x4::new(std::array::from_fn(|channel| pixel[channel] as f32))
+                                * wide::f32x4::splat(weight);
                     }
                 }
                 let base = (y as usize * nw as usize + x) * 4;
-                for (channel, value) in acc.iter().enumerate() {
-                    out.data[base + channel] = value.round().clamp(0.0, 255.0) as u8;
-                }
+                out.data[base..base + 4].copy_from_slice(&round_pixel_channels(acc));
             }
         }
         out

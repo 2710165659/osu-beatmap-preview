@@ -168,6 +168,13 @@ impl BackgroundVideo {
         self.captured_time_s = f64::NAN;
     }
 
+    /// 不显示视频时停止浏览器解码；重新开启后由 `capture_at` 对时并续播。
+    pub fn pause(&self) {
+        if !self.element.paused() {
+            let _ = self.element.pause();
+        }
+    }
+
     /// 更新抓帧暗化亮度（= 1 − 背景暗化系数）并强制重新抓帧。
     ///
     /// 暗化挂在 `drawImage` 的 canvas filter 上，改完必须重抓一次才会按新亮度

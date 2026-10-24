@@ -762,6 +762,9 @@ mod tests {
     fn mirror_is_supported_for_standard_and_mania_in_all_formats() {
         let settings = parse_mods(&["mr".into()]).unwrap();
         assert!(settings.mirror && settings.has_any_mod());
+        for fmt in ["png", "gif", "mp4"] {
+            assert!(validate_mods(&settings, None, Some(fmt)).is_empty());
+        }
         assert_eq!(settings.tokens, ["MR"]);
         for mode in 0..=3 {
             assert_eq!(mods_for_mode(&settings, mode).mirror, matches!(mode, 0 | 3));
@@ -888,21 +891,6 @@ mod tests {
                 !validate_mods_for_level(&settings, 0, ModSupportLevel::Realtime).is_empty(),
                 "{pair:?}"
             );
-        }
-    }
-
-    #[test]
-    fn mirror_is_supported_for_all_standard_outputs() {
-        let settings = parse_mods(&["mirror".into()]).unwrap();
-        for fmt in ["png", "gif", "mp4"] {
-            assert!(validate_mods(&settings, None, Some(fmt)).is_empty());
-            for mode in 0..=3 {
-                assert_eq!(
-                    validate_mods(&settings, Some(mode), Some(fmt)).is_empty(),
-                    mode == 0,
-                    "{mode}/{fmt}"
-                );
-            }
         }
     }
 

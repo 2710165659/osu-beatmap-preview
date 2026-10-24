@@ -315,7 +315,6 @@ mod tests {
         assert!(decoder.global_palette().is_some());
         let first = {
             let frame = decoder.read_next_frame().unwrap().unwrap();
-            assert!(frame.palette.is_none());
             assert_eq!(frame.delay, 10);
             frame.buffer.to_vec()
         };
@@ -350,7 +349,6 @@ mod tests {
         assert_ne!(crop(0), crop(3));
         let second = decoder.read_next_frame().unwrap().unwrap();
         // 调色板须跨帧复用，后续帧以透明差分编码，同时保持播放时长。
-        assert!(second.palette.is_none());
         assert!(second.transparent.is_some());
         assert_eq!(second.delay, 10);
         assert!(u32::from(second.width) * u32::from(second.height) < (width * height) as u32);

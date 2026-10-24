@@ -1,10 +1,13 @@
-//! 输出编码器：优化的 PNG 与 GIF（全局调色板与差分帧，明显偏色时使用局部调色板）。
+//! 输出编码器：PNG 与流式 GIF；GIF 复用调色板并按需补色，保留帧间差分。
 //! GIF 写入器通过回调流式处理帧，因此完整动画不会同时驻留内存。
 //! 帧由 rayon 分块并行渲染，再按顺序编码以保持差分帧顺序。
+
+mod palette;
 
 use crate::export::canvas::Img;
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
+use palette::{build_gif_lut, local_palette_frame, posterize, AdaptivePalette};
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -113,8 +116,8 @@ pub fn save_animated_gif_with_frame_palettes(
         // 调色板随帧变化，索引不能用于帧间差分；逐帧写完整画面，内存只保留一帧。
         for index in 0..frame_count {
             deadline.check()?;
-            let mut image = first.take().unwrap_or_else(|| render(index));
-            let mut frame = gif::Frame::from_rgba_speed(width, height, &mut image.data, 1);
+            let image = first.take().unwrap_or_else(|| render(index));
+            let mut frame = local_palette_frame(image, &[]);
             frame.delay = (((index + 1) as f64 * 100.0 / frame_rate).round()
                 - (index as f64 * 100.0 / frame_rate).round())
             .max(1.0) as u16;
@@ -127,39 +130,6 @@ pub fn save_animated_gif_with_frame_palettes(
         deadline.check()?;
         Ok(())
     })
-}
-
-/// 将通道海报化为 5 位（32 级），复制高位以保持完整 0..255 范围。
-/// 这能稳定帧间抗锯齿/渐变像素，缩小差分区域并延长 LZW 连续段。
-#[inline]
-fn posterize(v: u8) -> u8 {
-    (v & 0xF8) | (v >> 5)
-}
-
-/// 预计算将海报化 RGB 映射到调色板索引的 32³ 查找表。
-///
-/// `posterize()` 每通道产生 32 个值，`>> 3` 把它们无冲突地映射到 32 个
-/// 槽位，因此完整颜色空间可放入 32768 项数组；`transparent_idx` 映射到前
-/// 一个调色板项，避免被当作普通像素索引。每个槽位由 `posterize(ri << 3)` 构建，与查
-/// 找时的颜色精确对齐，命中与逐像素 `index_of()` 相同的结果、无量化漂移。
-fn build_gif_lut(nq: &color_quant::NeuQuant, transparent_idx: u8) -> [[[u8; 32]; 32]; 32] {
-    let mut lut = [[[0u8; 32]; 32]; 32];
-    for ri in 0..32u8 {
-        let r = posterize(ri << 3);
-        for gi in 0..32u8 {
-            let g = posterize(gi << 3);
-            for bi in 0..32u8 {
-                let b = posterize(bi << 3);
-                let idx = nq.index_of(&[r, g, b, 255]) as u8;
-                lut[ri as usize][gi as usize][bi as usize] = if idx == transparent_idx {
-                    transparent_idx.saturating_sub(1)
-                } else {
-                    idx
-                };
-            }
-        }
-    }
-    lut
 }
 
 /// 为 PNG 预计算将 `>>3` 分桶 RGB 映射到调色板索引的 32³ 查找表。
@@ -194,7 +164,7 @@ fn build_png_lut(nq: &color_quant::NeuQuant) -> [[[u8; 32]; 32]; 32] {
 /// - 从少量采样帧构建全局 127 色调色板（NeuQuant），索引 127 保留给帧间透明度和 7 位 LZW 编码；
 /// - 每帧只编码相对上一帧的差分矩形，未改变像素设为透明；
 /// - 对异常大的画布动态缩小渲染分块。
-/// 为文字和规则色等固定元素预留精确颜色；全局调色板明显偏色时，改写当前完整帧及局部调色板。
+/// 固定元素保留精确颜色，遗漏的颜色按需补入局部调色板并跨帧复用；容量耗尽时回收补色。
 pub fn save_animated_gif_streamed_with_colors(
     frame_count: usize,
     render: impl Fn(usize) -> Img + Send + Sync,
@@ -310,6 +280,7 @@ pub fn save_animated_gif_streamed_with_colors(
             .set_repeat(gif::Repeat::Infinite)
             .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
 
+        let mut palette = AdaptivePalette::new(palette, lut, transparent_idx, exact_colors);
         let pixel_count = w.saturating_mul(h);
         // 两块缓冲区交替保存当前帧和上一帧，避免每帧重新分配并清零整张 indexed 图像。
         let mut prev_indexed: Vec<u8> = Vec::with_capacity(pixel_count);
@@ -322,24 +293,19 @@ pub fn save_animated_gif_streamed_with_colors(
             / frame_bytes)
             .clamp(1, crate::config::current().advance.gif.PAR_CHUNK_SIZE);
 
-        // ── 分块并行渲染与编码 ──
-        for chunk_start in (0..frame_count).step_by(par_chunk_size) {
-            deadline.check()?;
-            let chunk_end = (chunk_start + par_chunk_size).min(frame_count);
-
-            // 并行渲染当前分块；每个线程独立调用 `render(i)`。
-            let frames: Vec<Img> = (chunk_start..chunk_end)
-                .into_par_iter()
-                .map(&render)
-                .collect();
-            deadline.check()?;
-
-            // 顺序编码（差分帧必须保持顺序）。
-            for (fi, frame) in (chunk_start..).zip(frames) {
+        // 编码当前帧时并行准备后续帧，消费者与分块共用原有帧数预算。
+        encode_rendered_frames(
+            frame_count,
+            par_chunk_size,
+            &render,
+            deadline,
+            |fi, frame| {
                 deadline.check()?;
-                rgba_to_indexed(&frame, &lut, &mut indexed, pixel_count, &exact_colors);
-                // 抽样调色板可能遗漏后续帧才出现的颜色（例如滚奏黄色），不能强行映射成另一种色相。
-                if palette_distorts_frame(&frame, &indexed, &palette) {
+                let (reset, needs_local_palette) = palette.index_frame(&frame, &mut indexed);
+                if reset {
+                    prev_indexed.clear();
+                }
+                if needs_local_palette {
                     let mut local_frame = local_palette_frame(frame, fixed_colors);
                     local_frame.delay = (((fi + 1) as f64 * 100.0 / frame_rate).round()
                         - (fi as f64 * 100.0 / frame_rate).round())
@@ -350,7 +316,7 @@ pub fn save_animated_gif_streamed_with_colors(
                         .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
                     // 局部调色板的索引与全局索引不同；下一张全局帧必须完整覆盖，不能沿用旧差分。
                     prev_indexed.clear();
-                    continue;
+                    return Ok(());
                 }
                 drop(frame);
 
@@ -412,7 +378,7 @@ pub fn save_animated_gif_streamed_with_colors(
                     transparent,
                     needs_user_input: false,
                     interlaced: false,
-                    palette: None,
+                    palette: palette.frame_palette(),
                     buffer,
                 };
                 gframe.make_lzw_pre_encoded();
@@ -421,106 +387,55 @@ pub fn save_animated_gif_streamed_with_colors(
                     .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
                 // gframe 在此之后已不再借用 indexed，安全地交换两块帧缓冲区。
                 std::mem::swap(&mut indexed, &mut prev_indexed);
-            }
-        }
+                Ok(())
+            },
+        )?;
         drop(encoder); // flush buffered bytes before the temp file is renamed
         deadline.check()?;
         Ok(())
     })
 }
 
-/// 限制每通道的编码误差；5 位分桶的正常误差远小于此值，明显变色时改用局部调色板。
-fn palette_distorts_frame(image: &Img, indexed: &[u8], palette: &[u8]) -> bool {
-    image
-        .data
-        .chunks_exact(4)
-        .zip(indexed)
-        .any(|(pixel, &index)| {
-            let color = &palette[index as usize * 3..index as usize * 3 + 3];
-            pixel[..3]
-                .iter()
-                .zip(color)
-                .any(|(&source, &encoded)| source.abs_diff(encoded) > 24)
-        })
-}
-
-/// 局部调色板按当前帧学习，并继续保留调用方指定的精确颜色。
-fn local_palette_frame(mut image: Img, fixed_colors: &[[u8; 3]]) -> gif::Frame<'static> {
-    let frame = gif::Frame::from_rgba_speed(image.w as u16, image.h as u16, &mut image.data, 1);
-    // 颜色数不超过 256 时 gif 库直接保留原色，无需再量化。
-    if frame.palette.as_ref().is_some_and(|palette| {
-        fixed_colors
+/// 零容量通道只交接当前帧；失败时先断开接收端，再等待生产者退出，避免阻塞或泄漏线程。
+fn encode_rendered_frames(
+    frame_count: usize,
+    max_frames: usize,
+    render: &(impl Fn(usize) -> Img + Send + Sync),
+    deadline: &RequestDeadline,
+    mut encode: impl FnMut(usize, Img) -> Result<()>,
+) -> Result<()> {
+    if max_frames == 1 {
+        for index in 0..frame_count {
+            deadline.check()?;
+            encode(index, render(index))?;
+        }
+        return Ok(());
+    }
+    let chunk_size = max_frames - 1;
+    std::thread::scope(|scope| {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(0);
+        let producer = scope.spawn(move || -> Result<()> {
+            for start in (0..frame_count).step_by(chunk_size) {
+                deadline.check()?;
+                let end = (start + chunk_size).min(frame_count);
+                let frames: Vec<_> = (start..end).into_par_iter().map(render).collect();
+                for item in (start..).zip(frames) {
+                    if sender.send(item).is_err() {
+                        return Ok(());
+                    }
+                }
+            }
+            Ok(())
+        });
+        let result = receiver
             .iter()
-            .filter(|color| {
-                image
-                    .data
-                    .chunks_exact(4)
-                    .any(|pixel| pixel[..3] == **color)
-            })
-            .all(|color| palette.chunks_exact(3).any(|entry| entry == color))
-    }) {
-        return frame;
-    }
-    let mut colors = fixed_colors.to_vec();
-    colors.sort_unstable();
-    colors.dedup();
-    let learned = 255 - colors.len();
-    let nq = color_quant::NeuQuant::new(10, learned, &image.data);
-    let mut palette = nq.color_map_rgb();
-    let exact: Vec<_> = colors
-        .into_iter()
-        .enumerate()
-        .map(|(index, color)| {
-            palette.extend_from_slice(&color);
-            (color, (learned + index) as u8)
-        })
-        .collect();
-    // 回退用于修复全局量化误差，不能再次海报化或按 5 位分桶损失 RGB 精度。
-    let indexed: Vec<_> = image
-        .data
-        .chunks_exact(4)
-        .map(|pixel| {
-            exact
-                .iter()
-                .find(|(color, _)| pixel[..3] == *color)
-                .map_or_else(|| nq.index_of(pixel) as u8, |&(_, index)| index)
-        })
-        .collect();
-    gif::Frame {
-        width: image.w as u16,
-        height: image.h as u16,
-        palette: Some(palette),
-        buffer: std::borrow::Cow::Owned(indexed),
-        ..Default::default()
-    }
-}
-
-/// 将 RGBA 帧映射为 GIF 使用的 indexed 像素。
-///
-/// 帧尺寸由渲染器保证一致；输入数据不足时用 0 填充尾部。
-fn rgba_to_indexed(
-    frame: &Img,
-    lut: &[[[u8; 32]; 32]; 32],
-    indexed: &mut Vec<u8>,
-    pixel_count: usize,
-    exact_colors: &[([u8; 3], u8)],
-) {
-    indexed.clear();
-    // 容量已在动画开始时预分配，resize 不会在正常帧尺寸下重新分配。
-    indexed.resize(pixel_count, 0);
-    for (i, px) in frame.data.chunks_exact(4).enumerate().take(pixel_count) {
-        // 精确颜色绕过海报化和 5 位分桶；同桶中的相近颜色仍走原查找表，避免误染音符。
-        indexed[i] = exact_colors
-            .iter()
-            .find(|(color, _)| px[..3] == *color)
-            .map_or_else(
-                || {
-                    lut[posterize(px[0]) as usize >> 3][posterize(px[1]) as usize >> 3]
-                        [posterize(px[2]) as usize >> 3]
-                },
-                |&(_, index)| index,
-            );
-    }
+            .try_for_each(|(index, frame)| encode(index, frame));
+        drop(receiver);
+        let rendered = producer
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+        result.and(rendered)
+    })
 }
 
 /// 查找 `cur` 与 `prev` 之间不同字节的包围盒。
@@ -654,6 +569,38 @@ mod timeout_tests {
     }
 
     #[test]
+    fn render_pipeline_stops_producer_when_encoding_fails() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        for max_frames in [1, 3] {
+            let rendered = AtomicUsize::new(0);
+            let deadline = RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(10));
+            let mut seen = Vec::new();
+            let error = encode_rendered_frames(
+                100,
+                max_frames,
+                &|index| {
+                    rendered.fetch_add(1, Ordering::Relaxed);
+                    Img::new(1, 1, [index as u8, 0, 0, 255])
+                },
+                &deadline,
+                |index, frame| {
+                    seen.push(index);
+                    assert_eq!(frame.data[0], index as u8);
+                    if index == 2 {
+                        Err(PreviewError::render("encoding stopped"))
+                    } else {
+                        Ok(())
+                    }
+                },
+            )
+            .unwrap_err();
+            assert_eq!(seen, [0, 1, 2]);
+            assert!(rendered.load(Ordering::Relaxed) < 100);
+            assert!(error.to_string().contains("encoding stopped"));
+        }
+    }
+
+    #[test]
     fn png_timeout_does_not_replace_existing_output() {
         let path = std::env::temp_dir().join(format!(
             "osu-preview-png-timeout-test-{}.png",
@@ -731,7 +678,7 @@ mod timeout_tests {
     }
 
     #[test]
-    fn gif_preserves_unsampled_colors_and_resets_delta_after_local_palette() {
+    fn gif_preserves_unsampled_colors_and_keeps_delta_with_palette_extensions() {
         let path = std::env::temp_dir().join(format!(
             "osu-preview-gif-late-color-{}.gif",
             std::process::id()
@@ -767,10 +714,10 @@ mod timeout_tests {
         for index in 0..7 {
             let frame = decoder.read_next_frame().unwrap().unwrap();
             if [1, 3].contains(&index) {
-                assert!(frame.palette.is_some(), "未采样颜色必须使用当前帧的调色板");
-            } else if [2, 4].contains(&index) {
-                assert!(frame.transparent.is_none());
-                assert_eq!(
+                assert!(frame.palette.is_some(), "补充颜色必须随帧提供调色板");
+            } else if [2, 4, 5].contains(&index) {
+                assert!(frame.transparent.is_some(), "补色后仍应使用差分帧");
+                assert_ne!(
                     (frame.left, frame.top, frame.width, frame.height),
                     (0, 0, 64, 32)
                 );
@@ -790,6 +737,83 @@ mod timeout_tests {
                 let source = expected.get(x, y);
                 assert!(
                     actual.iter().zip(source).all(|(a, b)| a.abs_diff(b) <= 8),
+                    "帧 {index}: {actual:?} != {source:?}"
+                );
+            }
+        }
+        drop(decoder);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn gif_palette_overflow_preserves_labels_and_resumes_delta() {
+        let path = std::env::temp_dir().join(format!(
+            "osu-preview-gif-palette-overflow-{}.gif",
+            std::process::id()
+        ));
+        let deadline = RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(60));
+        let label = [95, 221, 108];
+        let render = |index| {
+            let mut image = Img::new(64, 32, [0, 0, 0, 255]);
+            image.fill_rect_size(8, 8, 48, 16, [235, 69, 44, 255]);
+            if index == 1 {
+                // 抽样帧只有红色；216 种相距 51 的新颜色超过补色容量。
+                for i in 0..216 {
+                    image.fill_rect_size(
+                        8 + i % 24 * 2,
+                        8 + i / 24,
+                        2,
+                        1,
+                        [
+                            (i / 36 * 51) as u8,
+                            (i / 6 % 6 * 51) as u8,
+                            (i % 6 * 51) as u8,
+                            255,
+                        ],
+                    );
+                }
+            }
+            image.fill_rect_size(0, 0, 8, 8, [label[0], label[1], label[2], 255]);
+            image
+        };
+        save_animated_gif_streamed_with_colors(7, render, &path, 20.0, &deadline, &[label])
+            .unwrap();
+        let mut options = gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::RGBA);
+        let mut decoder = options
+            .read_info(std::fs::File::open(&path).unwrap())
+            .unwrap();
+        let mut decoded = Img::new(64, 32, [0; 4]);
+        for index in 0..7 {
+            let frame = decoder.read_next_frame().unwrap().unwrap();
+            if index == 1 {
+                assert!(frame.palette.is_some());
+                assert_eq!((frame.width, frame.height), (64, 32));
+            } else if index == 2 {
+                assert!(frame.transparent.is_none(), "独立量化后必须完整覆盖画面");
+                assert_eq!((frame.width, frame.height), (64, 32));
+            } else if index > 2 {
+                assert!(frame.transparent.is_some());
+                assert_eq!((frame.width, frame.height), (1, 1));
+            }
+            decoded.alpha_composite(
+                &Img {
+                    w: u32::from(frame.width),
+                    h: u32::from(frame.height),
+                    data: frame.buffer.to_vec(),
+                },
+                i64::from(frame.left),
+                i64::from(frame.top),
+            );
+            assert_eq!(decoded.get(2, 2), [label[0], label[1], label[2], 255]);
+            let expected = render(index);
+            for (actual, source) in decoded
+                .data
+                .chunks_exact(4)
+                .zip(expected.data.chunks_exact(4))
+            {
+                assert!(
+                    actual.iter().zip(source).all(|(a, b)| a.abs_diff(*b) <= 32),
                     "帧 {index}: {actual:?} != {source:?}"
                 );
             }

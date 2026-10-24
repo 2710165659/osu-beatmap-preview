@@ -12,7 +12,7 @@ use crate::domain::errors::PreviewError;
 use crate::domain::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::scene::{FrameScene, FrameSceneBuilder, SceneRect};
-use crate::render::text::{draw_text, text_size};
+use crate::render::text::{shared_text_sprite, text_size};
 use crate::storyboard::draw::{append_scene_sprites, StoryboardViewport};
 use crate::storyboard::{Storyboard, Textures};
 
@@ -136,10 +136,9 @@ pub fn compose_video_scene(
     let label_font_size = round_half_even(style.label_font_size as f64 * label_scale).max(1) as u32;
     let label_pad = round_half_even(style.label_pad as f64 * label_scale).max(0);
     let (label_width, label_height) = text_size(&label, label_font_size);
-    let mut image = Img::new(label_width.max(1), label_height.max(1), [0, 0, 0, 0]);
-    draw_text(&mut image, 0, 0, &label, label_font_size, style.label_color);
+    let image = shared_text_sprite(&label, label_font_size, style.label_color);
     builder.sprite(
-        Arc::new(image),
+        image,
         SceneRect {
             x: (width as i64 - label_width as i64 - label_pad) as f32,
             y: label_pad as f32,

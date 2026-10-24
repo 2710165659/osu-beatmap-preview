@@ -1152,8 +1152,8 @@ render:
             assert_eq!(taiko_constants::png::sizing().SWELL_HIT_COUNT_FONT_SIZE, 16);
             assert_eq!(taiko_constants::png::sizing().SWELL_DURATION_FONT_SIZE, 8);
             assert_eq!(taiko_constants::png::sizing().SWELL_DURATION_TOP_GAP, 2);
-            assert_eq!(taiko_constants::gif::sizing().SWELL_HIT_COUNT_FONT_SIZE, 12);
-            assert_eq!(taiko_constants::gif::sizing().SWELL_CLEAR_FONT_SIZE, 8);
+            assert_eq!(taiko_constants::gif::sizing().SWELL_HIT_COUNT_FONT_SIZE, 9);
+            assert_eq!(taiko_constants::gif::sizing().SWELL_CLEAR_FONT_SIZE, 6);
             assert_eq!(taiko_constants::mp4::sizing().SWELL_HIT_COUNT_FONT_SIZE, 36);
             assert_eq!(taiko_constants::mp4::sizing().SWELL_CLEAR_FONT_SIZE, 24);
             assert_eq!(mania_constants::gif::sizing().SV_TEXT_FONT_SIZE, 4);

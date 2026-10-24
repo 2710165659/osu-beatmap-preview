@@ -325,8 +325,8 @@ mod osr {
 
         #[test]
         fn replay_feedback_keeps_gpu_resources_across_frames_and_seek() {
-            let session = session(false);
-            let reference = session.scene_at_absolute(1050).unwrap();
+            let session = session_with_hit_time(true, serde_json::json!([]), 1075);
+            let reference = session.scene_at_absolute(1120).unwrap();
             let resources = reference
                 .commands
                 .iter()
@@ -343,9 +343,9 @@ mod osr {
                     }
                 })
                 .collect::<Vec<_>>();
-            // GREAT 的文字与两组各四个环都必须复用已准备图像。
-            assert_eq!(resources.len(), 9);
-            for time in [1100, 1200, 1050] {
+            // PRO 隐藏 GREAT；用 OK 的文字与四个环检查资源复用。
+            assert_eq!(resources.len(), 5);
+            for time in [1150, 1200, 1120] {
                 let frame = session.scene_at_absolute(time).unwrap();
                 let actual = frame
                     .commands
@@ -401,6 +401,14 @@ mod osr {
         }
 
         fn session_with_mods(fail: bool, mods: serde_json::Value) -> RealtimeSession {
+            session_with_hit_time(fail, mods, 1010)
+        }
+
+        fn session_with_hit_time(
+            fail: bool,
+            mods: serde_json::Value,
+            hit_time: i64,
+        ) -> RealtimeSession {
             let raw = format!("osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:4\nApproachRate:5\nOverallDifficulty:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n100,100,1000,1,0\n{}", if fail { "400,100,2000,1,0" } else { "" });
             let beatmap = crate::parse_beatmap_bytes(raw.as_bytes()).unwrap();
             let replay = ReplayDocument {
@@ -439,8 +447,8 @@ mod osr {
                     },
                     ReplayFrame {
                         sequence: 1,
-                        time_ms: 1010,
-                        delta_ms: 1010,
+                        time_ms: hit_time,
+                        delta_ms: hit_time,
                         cursor: [100.0; 2],
                         keys: 1,
                     },
