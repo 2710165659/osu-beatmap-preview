@@ -156,6 +156,52 @@ pub fn render_text_sprite(text: &str, size: u32, color: Rgba) -> Img {
     img
 }
 
+/// 在指定内容宽度内以 `(x, y)` 为基准水平居中绘制文字。
+fn draw_centered_text(
+    canvas: &mut Img,
+    text: &str,
+    x: i64,
+    y: i64,
+    size: u32,
+    color: [u8; 4],
+    content_width: i64,
+) {
+    let (text_w, _) = text_size(text, size);
+    let text_x = x + (content_width - text_w as i64) / 2;
+    draw_text(canvas, text_x, y, text, size, color);
+}
+
+/// 在 `(x, y)` 下方居中绘制时间标签及可选提示文字。
+#[allow(clippy::too_many_arguments)]
+pub fn draw_time_label(
+    canvas: &mut Img,
+    label: &str,
+    x: i64,
+    y: i64,
+    note: Option<&str>,
+    content_width: i64,
+    label_size: u32,
+    note_size: u32,
+    note_top_gap: i64,
+    label_color: [u8; 4],
+    note_color: [u8; 4],
+) {
+    draw_centered_text(canvas, label, x, y, label_size, label_color, content_width);
+    if let Some(note_text) = note {
+        let (_, label_h) = text_size(label, label_size);
+        let note_y = y + label_h as i64 + note_top_gap;
+        draw_centered_text(
+            canvas,
+            note_text,
+            x,
+            note_y,
+            note_size,
+            note_color,
+            content_width,
+        );
+    }
+}
+
 pub fn format_mmssmmm(ms: i64) -> String {
     let sign = if ms < 0 { "-" } else { "" };
     let magnitude = ms.unsigned_abs();

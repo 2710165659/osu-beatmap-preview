@@ -7,6 +7,8 @@ pub const STANDARD_CATCH_PLAYFIELD_HEIGHT: f64 = 307.2;
 pub const TAIKO_PLAYFIELD_WIDTH: f64 = 682.665;
 pub const TAIKO_PLAYFIELD_HEIGHT: f64 = 100.0;
 pub const MANIA_PLAYFIELD_HEIGHT: f64 = 384.0;
+const PREVIEW_FRAME_WIDTH: f64 = 530.0;
+const PREVIEW_FRAME_HEIGHT: f64 = 384.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameMode {
@@ -66,10 +68,17 @@ pub fn scale_stroke_px(value: f64, scale: f64) -> i64 {
     scale_px(value, scale).max(1)
 }
 
+/// Standard 内容框与太鼓 GIF 单格使用相同尺寸，各自应用当前格式的倍率。
+pub fn preview_frame_size(scale: f64) -> (i64, i64) {
+    (
+        scale_px(PREVIEW_FRAME_WIDTH, scale),
+        scale_px(PREVIEW_FRAME_HEIGHT, scale),
+    )
+}
+
 pub fn standard_geometry(format: OutputFormat) -> PlayfieldGeometry {
     let scale = output_scale(GameMode::Standard, format);
-    let content_width = scale_px(530.0, scale);
-    let content_height = scale_px(384.0, scale);
+    let (content_width, content_height) = preview_frame_size(scale);
     let playfield_width = scale_px(STANDARD_CATCH_PLAYFIELD_WIDTH, scale);
     let playfield_height = scale_px(STANDARD_CATCH_PLAYFIELD_HEIGHT, scale);
     let left = scale_px((530.0 - STANDARD_CATCH_PLAYFIELD_WIDTH) / 2.0, scale);
@@ -115,8 +124,17 @@ pub fn catch_geometry(format: OutputFormat) -> PlayfieldGeometry {
     }
 }
 
-pub fn taiko_geometry(format: OutputFormat) -> PlayfieldGeometry {
+/// GIF 轨道等比适配宫格宽度，视频与 PNG 保持游戏逻辑尺寸。
+pub fn taiko_playfield_scale(format: OutputFormat) -> f64 {
     let scale = output_scale(GameMode::Taiko, format);
+    match format {
+        OutputFormat::Gif => scale * PREVIEW_FRAME_WIDTH / TAIKO_PLAYFIELD_WIDTH,
+        OutputFormat::Png | OutputFormat::Mp4 => scale,
+    }
+}
+
+pub fn taiko_geometry(format: OutputFormat) -> PlayfieldGeometry {
+    let scale = taiko_playfield_scale(format);
     let rect = PixelRect {
         x: 0,
         y: 0,

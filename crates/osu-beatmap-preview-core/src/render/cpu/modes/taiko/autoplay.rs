@@ -1,7 +1,7 @@
 //! Taiko 自动击打事件与命中动画；预计算后支持并行、任意顺序取帧。
 
 use super::animation_render::{
-    gif_row_center_y, gif_row_top, object_x, AnimationLayout, PreparedTaikoHitObject,
+    gif_row_center_y, object_x, AnimationLayout, PreparedTaikoHitObject,
 };
 use super::constants::*;
 use super::notes::{cached_note_disc, RenderCache};
@@ -277,16 +277,8 @@ impl Autoplay {
             // 游戏的竖直命中动画仍处于滚动容器中，水平位置继续按该物件的 SV 向左推进。
             let x = object_x(hit.source_time, time, hit.multiplier, layout) - diameter / 2;
             let y = (center_y + offset - diameter as f64 / 2.0).round() as i64;
-            // GIF 各行拥有独立时间，击飞不能盖住相邻行及时间标签；MP4 可溢出轨道。
-            let (top, bottom) =
-                if layout.output_format == crate::render::geometry::OutputFormat::Gif {
-                    (
-                        gif_row_top(row, layout),
-                        gif_row_top(row, layout) + layout.row_height,
-                    )
-                } else {
-                    (0, layout.image_height)
-                };
+            // GIF 每格在独立画布内合成；击飞与视频一样只裁到画布边界。
+            let (top, bottom) = (0, layout.image_height);
             if y >= bottom || y + diameter <= top {
                 continue;
             }
@@ -326,7 +318,7 @@ thread_local! {
 #[cfg(test)]
 mod tests {
     use super::super::animation_render::{
-        build_animation_layout_with_segments_and_format, build_multiplier_points,
+        build_animation_layout_with_format, build_multiplier_points, build_video_animation_layout,
         prepare_hit_objects, MultiplierLookup,
     };
     use super::*;
@@ -369,7 +361,7 @@ mod tests {
             &[],
             1.0,
         );
-        let layout = build_animation_layout_with_segments_and_format(1000.0, 1, OutputFormat::Gif);
+        let layout = build_animation_layout_with_format(1000.0, OutputFormat::Gif);
         let autoplay = Autoplay::new(&objects, &layout);
         assert!(!autoplay.hits[0].right);
         assert!(autoplay.hits[1].strong && autoplay.hits[1].rim);
@@ -479,7 +471,7 @@ mod tests {
                 config.render.taiko.gif.SCALE = scale;
                 config.render.taiko.mp4.SCALE = scale;
                 crate::config::with_config(std::sync::Arc::new(config), || {
-                    let layout = build_animation_layout_with_segments_and_format(1000.0, 1, format);
+                    let layout = build_animation_layout_with_format(1000.0, format);
                     for rim in [false, true] {
                         for right in [false, true] {
                             for strong in [false, true] {
@@ -560,14 +552,14 @@ mod tests {
     }
 
     #[test]
-    fn frames_are_seek_independent_clipped_to_gif_row_and_expire() {
+    fn flying_notes_use_the_full_canvas_are_seek_independent_and_expire() {
         for format in [OutputFormat::Gif, OutputFormat::Mp4] {
             for scale in [0.75, 1.5] {
                 let mut config = crate::config::CoreConfig::default();
                 config.render.taiko.gif.SCALE = scale;
                 config.render.taiko.mp4.SCALE = scale;
                 crate::config::with_config(std::sync::Arc::new(config), || {
-                    let layout = build_animation_layout_with_segments_and_format(1000.0, 2, format);
+                    let layout = build_video_animation_layout(1000.0, format);
                     let objects = prepare_hit_objects(
                         &[TaikoHitObject {
                             start_time: 1000,
@@ -576,7 +568,7 @@ mod tests {
                             ..Default::default()
                         }],
                         &MultiplierLookup {
-                            points: build_multiplier_points(&[], 1.0),
+                            points: build_multiplier_points(&[], 0.05),
                         },
                         &[],
                         1.0,
@@ -598,14 +590,28 @@ mod tests {
                         assert!(draw(time).data.iter().all(|value| *value == 0));
                     }
                     assert_eq!(first.data, draw(1100).data);
-                    if format == OutputFormat::Gif {
-                        let top = gif_row_top(0, &layout) as usize;
-                        let bottom = top + layout.row_height as usize;
-                        let stride = first.w as usize * 4;
-                        assert!(first.data[..top * stride].iter().all(|value| *value == 0));
-                        assert!(first.data[bottom * stride..]
-                            .iter()
-                            .all(|value| *value == 0));
+                    let top = layout.first_row_top as usize;
+                    let bottom = top + layout.row_height as usize;
+                    let stride = first.w as usize * 4;
+                    assert!(
+                        first.data[..top * stride]
+                            .chunks_exact(4)
+                            .any(|pixel| pixel[3] != 0),
+                        "击飞音符必须能显示在轨道上方"
+                    );
+                    let falling = draw(1790);
+                    assert!(
+                        falling.data[bottom * stride..]
+                            .chunks_exact(4)
+                            .any(|pixel| pixel[3] != 0),
+                        "下落音符必须能显示在轨道下方"
+                    );
+                    for time in [1100, 1300, 1790] {
+                        for (sprite, (_, y), _) in
+                            autoplay.sprites(&layout, 0, time, &mut RenderCache::default())
+                        {
+                            assert!(y >= 0 && y + i64::from(sprite.h) <= layout.image_height);
+                        }
                     }
                 });
             }

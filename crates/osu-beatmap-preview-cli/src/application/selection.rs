@@ -29,7 +29,11 @@ pub(super) fn select(beatmap: &Beatmap, plan: &mut RenderPlan) -> Result<()> {
         (OutputFormat::Gif, 1) => {
             let config = &runtime.render.taiko.gif;
             (
-                usize::try_from(config.structure.ROW_COUNT).ok(),
+                config
+                    .structure
+                    .ROW_COUNT
+                    .checked_mul(config.structure.IMAGES_PER_ROW)
+                    .and_then(|value| usize::try_from(value).ok()),
                 config.style.DURATION_MS,
             )
         }

@@ -122,6 +122,7 @@ pub struct RenderTaikoPngConfig {
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderTaikoGifStructureConfig {
     pub ROW_COUNT: usize,
+    pub IMAGES_PER_ROW: usize,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

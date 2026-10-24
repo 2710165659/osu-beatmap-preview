@@ -706,13 +706,17 @@ mod tests {
     #[test]
     fn taiko_animation_outputs_have_independent_measure_line_switches() {
         let defaults = load_snapshot(None).unwrap();
+        assert_eq!(defaults.render.taiko.gif.structure.ROW_COUNT, 2);
+        assert_eq!(defaults.render.taiko.gif.structure.IMAGES_PER_ROW, 2);
         assert!(defaults.render.taiko.gif.style.SHOW_MEASURE_LINES);
         assert!(defaults.render.taiko.mp4.style.SHOW_MEASURE_LINES);
 
         let config = load_snapshot(Some(
-            r#"{"render":{"taiko":{"gif":{"style":{"SHOW_MEASURE_LINES":false}}}}}"#,
+            r#"{"render":{"taiko":{"gif":{"structure":{"ROW_COUNT":1,"IMAGES_PER_ROW":3},"style":{"SHOW_MEASURE_LINES":false}}}}}"#,
         ))
         .unwrap();
+        assert_eq!(config.render.taiko.gif.structure.ROW_COUNT, 1);
+        assert_eq!(config.render.taiko.gif.structure.IMAGES_PER_ROW, 3);
         assert!(!config.render.taiko.gif.style.SHOW_MEASURE_LINES);
         assert!(config.render.taiko.mp4.style.SHOW_MEASURE_LINES);
     }
@@ -1068,7 +1072,7 @@ render:
         .unwrap();
         with_core_config(&configured, || {
             assert_eq!(standard_constants::png::sizing().PAGE_MARGIN_TOP, 40);
-            assert_eq!(taiko_constants::gif::sizing().ROW_GAP, 14);
+            assert_eq!(taiko_constants::gif::sizing().GRID_GAP, 40);
             assert_eq!(catch_constants::mp4::sizing().LABEL_PAD, 24);
             assert_eq!(configured.render.mania.png.sizing.PIXELS_PER_MS, 0.8);
             assert_eq!(mania_constants::png::sizing().SV_TEXT_FONT_SIZE, 16);

@@ -175,7 +175,7 @@ pub mod gif {
     pub struct Sizing {
         pub SWELL_HIT_COUNT_FONT_SIZE: u32,
         pub SWELL_CLEAR_FONT_SIZE: u32,
-        pub ROW_GAP: i64,
+        pub GRID_GAP: i64,
         pub PAGE_MARGIN_TOP: i64,
         pub PAGE_MARGIN_RIGHT: i64,
         pub PAGE_MARGIN_BOTTOM: i64,
@@ -186,37 +186,42 @@ pub mod gif {
         pub INFO_MARGIN_LEFT: i64,
         pub TIME_LABEL_FONT_SIZE: u32,
         pub TIME_LABEL_NOTE_FONT_SIZE: u32,
+        pub TIME_LABEL_TOP_GAP: i64,
+        pub TIME_LABEL_NOTE_TOP_GAP: i64,
     }
 
     pub const SIZING: Sizing = Sizing {
         SWELL_HIT_COUNT_FONT_SIZE: 24,
         SWELL_CLEAR_FONT_SIZE: 16,
-        ROW_GAP: 7,
-        PAGE_MARGIN_TOP: 8,
-        PAGE_MARGIN_RIGHT: 8,
-        PAGE_MARGIN_BOTTOM: 8,
-        PAGE_MARGIN_LEFT: 8,
+        GRID_GAP: 20,
+        PAGE_MARGIN_TOP: 20,
+        PAGE_MARGIN_RIGHT: 20,
+        PAGE_MARGIN_BOTTOM: 20,
+        PAGE_MARGIN_LEFT: 20,
         INFO_MARGIN_TOP: 0,
         INFO_MARGIN_RIGHT: 0,
-        INFO_MARGIN_BOTTOM: 33,
+        INFO_MARGIN_BOTTOM: 84,
         INFO_MARGIN_LEFT: 0,
-        TIME_LABEL_FONT_SIZE: 20,
-        TIME_LABEL_NOTE_FONT_SIZE: 14,
+        TIME_LABEL_FONT_SIZE: 30,
+        TIME_LABEL_NOTE_FONT_SIZE: 22,
+        TIME_LABEL_TOP_GAP: 8,
+        TIME_LABEL_NOTE_TOP_GAP: 9,
     };
 
     pub fn sizing() -> Sizing {
         use crate::render::geometry::{output_scale, scale_px, GameMode, OutputFormat};
         let scale = output_scale(GameMode::Taiko, OutputFormat::Gif);
+        let playfield_scale = crate::render::geometry::taiko_playfield_scale(OutputFormat::Gif);
         Sizing {
             SWELL_HIT_COUNT_FONT_SIZE: crate::render::text::scaled_bitmap_font_height(
                 SIZING.SWELL_HIT_COUNT_FONT_SIZE,
-                scale,
+                playfield_scale,
             ),
             SWELL_CLEAR_FONT_SIZE: crate::render::text::scaled_bitmap_font_height(
                 SIZING.SWELL_CLEAR_FONT_SIZE,
-                scale,
+                playfield_scale,
             ),
-            ROW_GAP: scale_px(SIZING.ROW_GAP as f64, scale),
+            GRID_GAP: scale_px(SIZING.GRID_GAP as f64, scale),
             PAGE_MARGIN_TOP: scale_px(SIZING.PAGE_MARGIN_TOP as f64, scale),
             PAGE_MARGIN_RIGHT: scale_px(SIZING.PAGE_MARGIN_RIGHT as f64, scale),
             PAGE_MARGIN_BOTTOM: scale_px(SIZING.PAGE_MARGIN_BOTTOM as f64, scale),
@@ -233,6 +238,8 @@ pub mod gif {
                 SIZING.TIME_LABEL_NOTE_FONT_SIZE,
                 scale,
             ),
+            TIME_LABEL_TOP_GAP: scale_px(SIZING.TIME_LABEL_TOP_GAP as f64, scale),
+            TIME_LABEL_NOTE_TOP_GAP: scale_px(SIZING.TIME_LABEL_NOTE_TOP_GAP as f64, scale),
         }
     }
 

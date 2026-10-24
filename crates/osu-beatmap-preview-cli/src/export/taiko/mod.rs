@@ -1,4 +1,4 @@
-//! osu!taiko 渲染器：多行 PNG 滚动谱面和四行 GIF 动画
+//! osu!taiko 渲染器：多行 PNG 滚动谱面和 2×2 分段 GIF 动画。
 //!（lazer Overlapping scroll 算法）。移植自 beatmap_preview/taiko/*。
 //!
 //! 子模块包括动画时序、常量、时间映射、程序化素材及各输出格式渲染器。

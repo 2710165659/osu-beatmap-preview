@@ -57,7 +57,8 @@ render:
     gif:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
       structure:
-        ROW_COUNT: 4 # 同时显示的轨道行数
+        ROW_COUNT: 2 # 动画画面的网格行数
+        IMAGES_PER_ROW: 2 # 动画画面每行包含的游玩区域数
       style:
         SHOW_MEASURE_LINES: true # 是否绘制随谱面滚动的小节线
         DURATION_MS: 5000.0 # 每个动画片段覆盖的谱面时长
