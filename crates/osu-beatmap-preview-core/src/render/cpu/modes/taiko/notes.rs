@@ -1,5 +1,9 @@
 //! 太鼓行背景与 note 的程序化绘制（classic-2013 风格，无图片资源）。
 
+use super::constants::{
+    DRUM_PANEL_BACKGROUND_COLOR, DRUM_PANEL_CENTER_LINE_COLOR, DRUM_PANEL_FACE_COLOR,
+    DRUM_PANEL_OUTLINE_COLOR,
+};
 use crate::domain::parser::round_half_even;
 use crate::render::canvas::Img;
 use std::collections::HashMap;
@@ -41,7 +45,7 @@ pub fn draw_drum_panel(
         return;
     }
     // 底色：深色面板
-    image.fill_rect_size(x, y, w, h, [30, 30, 30, 255]);
+    image.fill_rect_size(x, y, w, h, DRUM_PANEL_BACKGROUND_COLOR);
     // 左右红色饰条（约占面板宽度的 12%）
     let stripe = ((w as f64 * 0.12) as i64).max(2);
     image.fill_rect_size(x, y, stripe, h, accent_color);
@@ -50,8 +54,13 @@ pub fn draw_drum_panel(
     let cx = x as f64 + w as f64 / 2.0;
     let cy = y as f64 + h as f64 / 2.0;
     let r = (h.min(w) as f64) * 0.36;
-    image.fill_circle_aa(cx, cy, r + (1.5 * detail_scale).max(0.5), [20, 20, 20, 255]);
-    image.fill_circle_aa(cx, cy, r, [248, 238, 220, 255]);
+    image.fill_circle_aa(
+        cx,
+        cy,
+        r + (1.5 * detail_scale).max(0.5),
+        DRUM_PANEL_OUTLINE_COLOR,
+    );
+    image.fill_circle_aa(cx, cy, r, DRUM_PANEL_FACE_COLOR);
     // 鼓面中线（左右手分界）
     let center_line_width = crate::render::geometry::scale_stroke_px(2.0, detail_scale);
     image.fill_rect_size(
@@ -59,7 +68,7 @@ pub fn draw_drum_panel(
         pyround(cy - r),
         center_line_width,
         pyround(2.0 * r).max(1),
-        [180, 165, 135, 255],
+        DRUM_PANEL_CENTER_LINE_COLOR,
     );
 }
 

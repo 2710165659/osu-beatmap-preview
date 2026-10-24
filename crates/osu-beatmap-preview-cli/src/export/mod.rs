@@ -20,6 +20,7 @@ fn save_animation_frames(
     output_path: &std::path::Path,
     deadline: &osu_beatmap_preview_core::support::timeout::RequestDeadline,
     label_colors: &[[u8; 3]],
+    precise_fades: bool,
 ) -> osu_beatmap_preview_core::Result<()> {
     let frame_count = frames.frame_count();
     let frame_rate = frames.frame_rate();
@@ -30,6 +31,7 @@ fn save_animation_frames(
         frame_rate,
         deadline,
         label_colors,
+        precise_fades,
     )
 }
 
@@ -60,7 +62,14 @@ mod tests {
 
     #[test]
     fn non_standard_gifs_preserve_rendered_time_label_colors() {
-        for mode in 1..=3 {
+        for (mode, name, hidden, flashlight) in (1..=3).flat_map(|mode| {
+            [
+                (mode, "nm", false, false),
+                (mode, "hd", true, false),
+                (mode, "fl", false, true),
+                (mode, "hdfl", true, true),
+            ]
+        }) {
             let source = format!(
                 "osu file format v14\n[General]\nMode:{mode}\nPreviewTime:1000\n\
                  [Difficulty]\nCircleSize:4\nApproachRate:5\nOverallDifficulty:5\n\
@@ -71,26 +80,31 @@ mod tests {
             let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(source.as_bytes()).unwrap();
             let options = GifRenderOptions::ResolvedSegments {
                 times_ms: vec![0, 1000],
-                duration_seconds: Some(0.2),
+                duration_seconds: Some(0.6),
                 time_axis: TimeAxis::new(0),
             };
             let path = std::env::temp_dir().join(format!(
-                "osu-preview-mode-{mode}-label-colors-{}.gif",
+                "osu-preview-mode-{mode}-{name}-label-colors-{}.gif",
                 std::process::id()
             ));
             let deadline = RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(60));
+            let mods = osu_beatmap_preview_core::ModSettings {
+                hidden,
+                flashlight,
+                ..Default::default()
+            };
             let frames = match mode {
                 1 => taiko::animation_render::prepare_taiko_gif_frames,
                 2 => catch::animation::prepare_catch_gif_frames,
                 _ => mania::animation::prepare_mania_gif_frames,
-            }(&beatmap, None, options.clone(), Some(10), &deadline)
+            }(&beatmap, Some(&mods), options.clone(), Some(10), &deadline)
             .unwrap();
             let render = match mode {
                 1 => taiko::render_taiko_gif,
                 2 => catch::render_catch_gif,
                 _ => mania::render_mania_gif,
             };
-            render(&beatmap, None, options, &path, Some(10), &deadline).unwrap();
+            render(&beatmap, Some(&mods), options, &path, Some(10), &deadline).unwrap();
 
             let mut decode = gif::DecodeOptions::new();
             decode.set_color_output(gif::ColorOutput::RGBA);
@@ -114,8 +128,15 @@ mod tests {
                     i64::from(frame.top),
                 );
                 let expected = frames.render(index);
-                // 同时验证普通时间和 Preview Time，并重建差分帧检查后续帧没有颜色漂移。
-                for color in [[95, 221, 108, 255], [232, 232, 232, 255]] {
+                // 重建差分帧，逐帧验证时间标签及 Taiko 的静态大色块没有颜色漂移。
+                let mut colors = vec![[95, 221, 108, 255], [232, 232, 232, 255]];
+                if mode == 1 {
+                    colors.push(taiko::constants::gif::style::IMAGE_BACKGROUND);
+                    if !flashlight {
+                        colors.push(taiko::constants::DRUM_PANEL_FACE_COLOR);
+                    }
+                }
+                for color in colors {
                     let mut count = 0;
                     for (source, actual) in expected
                         .data
@@ -123,11 +144,14 @@ mod tests {
                         .zip(decoded.data.chunks_exact(4))
                     {
                         if source == color {
-                            assert_eq!(actual, color, "模式 {mode} 第 {index} 帧标签颜色改变");
+                            assert_eq!(
+                                actual, color,
+                                "模式 {mode} {name} 第 {index} 帧固定颜色改变"
+                            );
                             count += 1;
                         }
                     }
-                    assert!(count > 0, "模式 {mode} 必须实际绘制标签颜色 {color:?}");
+                    assert!(count > 0, "模式 {mode} 必须实际绘制固定颜色 {color:?}");
                 }
             }
             assert!(decoder.read_next_frame().unwrap().is_none());

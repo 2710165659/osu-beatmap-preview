@@ -197,5 +197,6 @@ fn render_standard_segment_gif(
         fps,
         deadline,
         &label_colors,
+        false,
     )
 }

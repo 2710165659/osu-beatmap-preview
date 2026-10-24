@@ -24,15 +24,6 @@ pub(crate) fn render_taiko_gif(
     deadline: &osu_beatmap_preview_core::support::timeout::RequestDeadline,
 ) -> osu_beatmap_preview_core::Result<()> {
     let frames = animation_render::prepare_taiko_gif_frames(beatmap, mods, options, fps, deadline)?;
-    if mods.is_some_and(|mods| mods.hidden || mods.flashlight) {
-        return crate::media::image::save_animated_gif_with_frame_palettes(
-            frames.frame_count(),
-            |index| frames.render(index),
-            output_path,
-            frames.frame_rate(),
-            deadline,
-        );
-    }
     let mut fixed_colors = super::gif_time_label_colors(
         taiko_constants::gif::style::SHOW_TIME_LABEL,
         taiko_constants::gif::style::IMAGE_BACKGROUND,
@@ -50,9 +41,29 @@ pub(crate) fn render_taiko_gif(
         constants::SWELL_COLOR,
     ]);
     fixed_colors.extend(
-        [constants::NOTE_RING_COLOR, constants::DRUM_ROLL_TICK_COLOR].map(|[r, g, b, _]| [r, g, b]),
+        [
+            constants::NOTE_RING_COLOR,
+            constants::DRUM_ROLL_TICK_COLOR,
+            constants::DRUM_PANEL_BACKGROUND_COLOR,
+            constants::DRUM_PANEL_OUTLINE_COLOR,
+            constants::DRUM_PANEL_FACE_COLOR,
+            constants::DRUM_PANEL_CENTER_LINE_COLOR,
+            taiko_constants::gif::style::IMAGE_BACKGROUND,
+            taiko_constants::gif::style::TRACK_BACKGROUND_COLOR,
+            taiko_constants::gif::style::TRACK_EDGE_COLOR,
+            taiko_constants::gif::style::TRACK_ACCENT_COLOR,
+            taiko_constants::gif::style::JUDGEMENT_LINE_COLOR,
+        ]
+        .map(|[r, g, b, _]| [r, g, b]),
     );
-    super::save_animation_frames(frames, output_path, deadline, &fixed_colors)
+    // HD/FL 也复用稳定调色板；逐帧重新量化会让未变化的轨道和标签随音符明暗闪烁。
+    super::save_animation_frames(
+        frames,
+        output_path,
+        deadline,
+        &fixed_colors,
+        mods.is_some_and(|mods| mods.hidden || mods.flashlight),
+    )
 }
 
 #[cfg(test)]

@@ -47,6 +47,7 @@ pub(super) struct AdaptivePalette {
     resolved: [u8; 32768],
     transparent_idx: u8,
     exact_colors: Vec<([u8; 3], u8)>,
+    max_color_error: u8,
 }
 
 impl AdaptivePalette {
@@ -55,6 +56,7 @@ impl AdaptivePalette {
         lut: [[[u8; 32]; 32]; 32],
         transparent_idx: u8,
         exact_colors: Vec<([u8; 3], u8)>,
+        max_color_error: u8,
     ) -> Self {
         Self {
             base_len: colors.len(),
@@ -64,6 +66,7 @@ impl AdaptivePalette {
             resolved: [0; 32768],
             transparent_idx,
             exact_colors,
+            max_color_error,
         }
     }
 
@@ -82,7 +85,8 @@ impl AdaptivePalette {
             self.resolved.fill(0);
             overflow = self.map_frame(image, indexed);
         }
-        let distorted = overflow && palette_distorts_frame(image, indexed, &self.colors);
+        let distorted =
+            overflow && palette_distorts_frame(image, indexed, &self.colors, self.max_color_error);
         (reset, distorted)
     }
 
@@ -132,11 +136,11 @@ impl AdaptivePalette {
         ];
         let bucket = [pixel[0] & 0xF8, pixel[1] & 0xF8, pixel[2] & 0xF8];
         // 验证整个桶的误差上界，后续帧只需查表，无需逐像素检查偏色。
+        let max_color_error = self.max_color_error;
         let fits_bucket = |color: &[u8]| {
-            bucket
-                .iter()
-                .zip(color)
-                .all(|(&lo, &c)| lo.abs_diff(c) <= 24 && (lo + 7).abs_diff(c) <= 24)
+            bucket.iter().zip(color).all(|(&lo, &c)| {
+                lo.abs_diff(c) <= max_color_error && (lo + 7).abs_diff(c) <= max_color_error
+            })
         };
         let index = self.lut[r][g][b] as usize;
         if fits_bucket(&self.colors[index * 3..index * 3 + 3]) {
@@ -163,8 +167,13 @@ impl AdaptivePalette {
     }
 }
 
-/// 限制每通道的编码误差；5 位分桶的正常误差远小于此值，明显变色时改用局部调色板。
-fn palette_distorts_frame(image: &Img, indexed: &[u8], palette: &[u8]) -> bool {
+/// 补色容量不足时检查当前帧的颜色误差，超出容差才回退到局部量化。
+fn palette_distorts_frame(
+    image: &Img,
+    indexed: &[u8],
+    palette: &[u8],
+    max_color_error: u8,
+) -> bool {
     image
         .data
         .chunks_exact(4)
@@ -174,7 +183,7 @@ fn palette_distorts_frame(image: &Img, indexed: &[u8], palette: &[u8]) -> bool {
             pixel[..3]
                 .iter()
                 .zip(color)
-                .any(|(&source, &encoded)| source.abs_diff(encoded) > 24)
+                .any(|(&source, &encoded)| source.abs_diff(encoded) > max_color_error)
         })
 }
 

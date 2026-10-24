@@ -30,6 +30,10 @@ pub mod style {
     pub const SPAN_BODY_HEIGHT_RATIO: f64 = 0.72;
     pub const SWELL_BODY_HEIGHT_RATIO: f64 = 0.8;
     pub const DRUM_PANEL_WIDTH_RATIO: f64 = 0.905;
+    pub const DRUM_PANEL_BACKGROUND_COLOR: [u8; 4] = [30, 30, 30, 255];
+    pub const DRUM_PANEL_OUTLINE_COLOR: [u8; 4] = [20, 20, 20, 255];
+    pub const DRUM_PANEL_FACE_COLOR: [u8; 4] = [248, 238, 220, 255];
+    pub const DRUM_PANEL_CENTER_LINE_COLOR: [u8; 4] = [180, 165, 135, 255];
     pub const CENTRE_NOTE_COLOR: [u8; 3] = [235, 69, 44];
     pub const RIM_NOTE_COLOR: [u8; 3] = [67, 142, 172];
     pub const ROLL_COLOR: [u8; 3] = [232, 198, 61];

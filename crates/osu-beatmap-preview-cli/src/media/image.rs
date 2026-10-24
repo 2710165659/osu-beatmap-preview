@@ -85,53 +85,6 @@ pub fn save_png(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<
     })
 }
 
-/// 使用逐帧调色板保留连续淡出的合成颜色，不对 RGB 做预量化。
-/// GIF 不支持半透明，必须编码已与背景合成的颜色；全局采样调色板容易遗漏暗色。
-pub fn save_animated_gif_with_frame_palettes(
-    frame_count: usize,
-    mut render: impl FnMut(usize) -> Img,
-    path: &Path,
-    frame_rate: f64,
-    deadline: &RequestDeadline,
-) -> Result<()> {
-    deadline.check()?;
-    if frame_count == 0 {
-        return Err(PreviewError::render("no frames to encode"));
-    }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
-    }
-    let first = render(0);
-    let (width, height) = (first.w as u16, first.h as u16);
-    crate::cache::with_atomic_output_deadline(path, "gif.tmp", deadline, |tmp_path| {
-        let file = std::fs::File::create(tmp_path)
-            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-        let mut encoder = gif::Encoder::new(std::io::BufWriter::new(file), width, height, &[])
-            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-        encoder
-            .set_repeat(gif::Repeat::Infinite)
-            .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-        let mut first = Some(first);
-        // 调色板随帧变化，索引不能用于帧间差分；逐帧写完整画面，内存只保留一帧。
-        for index in 0..frame_count {
-            deadline.check()?;
-            let image = first.take().unwrap_or_else(|| render(index));
-            let mut frame = local_palette_frame(image, &[]);
-            frame.delay = (((index + 1) as f64 * 100.0 / frame_rate).round()
-                - (index as f64 * 100.0 / frame_rate).round())
-            .max(1.0) as u16;
-            frame.dispose = gif::DisposalMethod::Keep;
-            encoder
-                .write_frame(&frame)
-                .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
-        }
-        drop(encoder);
-        deadline.check()?;
-        Ok(())
-    })
-}
-
 /// 为 PNG 预计算将 `>>3` 分桶 RGB 映射到调色板索引的 32³ 查找表。
 ///
 /// 与 `build_gif_lut` 不同，这里没有需要重映射的透明索引。每个通道量化为 32 级
@@ -165,6 +118,7 @@ fn build_png_lut(nq: &color_quant::NeuQuant) -> [[[u8; 32]; 32]; 32] {
 /// - 每帧只编码相对上一帧的差分矩形，未改变像素设为透明；
 /// - 对异常大的画布动态缩小渲染分块。
 /// 固定元素保留精确颜色，遗漏的颜色按需补入局部调色板并跨帧复用；容量耗尽时回收补色。
+/// `precise_fades` 收紧连续淡出的颜色误差，必要时以局部量化换取精度。
 pub fn save_animated_gif_streamed_with_colors(
     frame_count: usize,
     render: impl Fn(usize) -> Img + Send + Sync,
@@ -172,6 +126,7 @@ pub fn save_animated_gif_streamed_with_colors(
     frame_rate: f64,
     deadline: &RequestDeadline,
     fixed_colors: &[[u8; 3]],
+    precise_fades: bool,
 ) -> Result<()> {
     deadline.check()?;
     if frame_count == 0 {
@@ -280,7 +235,10 @@ pub fn save_animated_gif_streamed_with_colors(
             .set_repeat(gif::Repeat::Infinite)
             .map_err(|e| PreviewError::render(format!("failed to write gif: {e}")))?;
 
-        let mut palette = AdaptivePalette::new(palette, lut, transparent_idx, exact_colors);
+        // 普通预览复用较宽的颜色桶以维持吞吐；连续淡出需更小误差，避免暗色音符转灰。
+        let max_color_error = if precise_fades { 8 } else { 24 };
+        let mut palette =
+            AdaptivePalette::new(palette, lut, transparent_idx, exact_colors, max_color_error);
         let pixel_count = w.saturating_mul(h);
         // 两块缓冲区交替保存当前帧和上一帧，避免每帧重新分配并清零整张 indexed 图像。
         let mut prev_indexed: Vec<u8> = Vec::with_capacity(pixel_count);
@@ -632,6 +590,7 @@ mod timeout_tests {
             10.0,
             &expired("gif"),
             &[],
+            false,
         )
         .unwrap_err();
         assert!(error.to_string().contains("GIF preview request timed out"));
@@ -640,7 +599,7 @@ mod timeout_tests {
     }
 
     #[test]
-    fn frame_palettes_preserve_note_rgb_during_fade() {
+    fn gif_preserves_note_rgb_during_fade() {
         let path =
             std::env::temp_dir().join(format!("osu-preview-fade-rgb-{}.gif", std::process::id()));
         let deadline = RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(60));
@@ -659,19 +618,31 @@ mod timeout_tests {
             }
             image
         };
-        save_animated_gif_with_frame_palettes(21, render, &path, 20.0, &deadline).unwrap();
+        save_animated_gif_streamed_with_colors(21, render, &path, 20.0, &deadline, &[], true)
+            .unwrap();
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
         let mut decoder = options
             .read_info(std::fs::File::open(&path).unwrap())
             .unwrap();
+        let mut decoded = Img::new(64, 16, [0; 4]);
         for index in 0..21 {
             let frame = decoder.read_next_frame().unwrap().unwrap();
-            assert_eq!(
-                frame.buffer.as_ref(),
-                render(index).data.as_slice(),
-                "第 {index} 帧只能改变透明度合成结果"
+            decoded.alpha_composite(
+                &Img {
+                    w: u32::from(frame.width),
+                    h: u32::from(frame.height),
+                    data: frame.buffer.to_vec(),
+                },
+                i64::from(frame.left),
+                i64::from(frame.top),
             );
+            for (actual, expected) in decoded.data.iter().zip(&render(index).data) {
+                assert!(
+                    actual.abs_diff(*expected) <= 8,
+                    "第 {index} 帧淡出颜色失真：{actual} != {expected}"
+                );
+            }
         }
         drop(decoder);
         std::fs::remove_file(path).unwrap();
@@ -703,6 +674,7 @@ mod timeout_tests {
             20.0,
             &deadline,
             &[[95, 221, 108]],
+            false,
         )
         .unwrap();
         let mut options = gif::DecodeOptions::new();
@@ -776,7 +748,7 @@ mod timeout_tests {
             image.fill_rect_size(0, 0, 8, 8, [label[0], label[1], label[2], 255]);
             image
         };
-        save_animated_gif_streamed_with_colors(7, render, &path, 20.0, &deadline, &[label])
+        save_animated_gif_streamed_with_colors(7, render, &path, 20.0, &deadline, &[label], false)
             .unwrap();
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
@@ -843,6 +815,7 @@ mod timeout_tests {
             20.0,
             &deadline,
             &[],
+            false,
         )
         .unwrap();
         let mut options = gif::DecodeOptions::new();
@@ -884,6 +857,7 @@ mod timeout_tests {
                 fps as f64,
                 &deadline,
                 &[],
+                false,
             )
             .unwrap();
             let mut decoder = gif::DecodeOptions::new()
@@ -971,8 +945,10 @@ mod timeout_tests {
             let deadline = RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(30));
             let mut reserved = fixed.to_vec();
             reserved.push(fixed[0]);
-            save_animated_gif_streamed_with_colors(3, render, &path, 15.0, &deadline, &reserved)
-                .unwrap();
+            save_animated_gif_streamed_with_colors(
+                3, render, &path, 15.0, &deadline, &reserved, false,
+            )
+            .unwrap();
             let mut options = gif::DecodeOptions::new();
             options.set_color_output(gif::ColorOutput::RGBA);
             let mut decoder = options

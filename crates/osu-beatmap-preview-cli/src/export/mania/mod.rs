@@ -31,5 +31,5 @@ pub(crate) fn render_mania_gif(
             mania_constants::gif::style::TIME_LABEL_NOTE_COLOR,
         ],
     );
-    super::save_animation_frames(frames, output_path, deadline, &label_colors)
+    super::save_animation_frames(frames, output_path, deadline, &label_colors, false)
 }

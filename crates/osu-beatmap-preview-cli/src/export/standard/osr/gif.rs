@@ -189,7 +189,15 @@ fn render_with_config(
     fixed_colors.push([background.data[0], background.data[1], background.data[2]]);
     // 与普通预览共用限权采样、全局调色板和差分帧，避免逐帧全画布量化。
     // 编码器统一管理并行绘图的内存预算；标签预留精确合成色，防止再次发灰。
-    save_animated_gif_streamed_with_colors(frame_count, draw, path, fps, deadline, &fixed_colors)
+    save_animated_gif_streamed_with_colors(
+        frame_count,
+        draw,
+        path,
+        fps,
+        deadline,
+        &fixed_colors,
+        false,
+    )
 }
 
 fn checked_frame_count(duration_ms: f64, fps: f64, speed: f64, cells: usize) -> Result<usize> {
