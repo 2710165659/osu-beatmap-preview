@@ -1,4 +1,4 @@
-//! osu!catch 自动盘子时间轴，供 AT 绘制和 FL 定位共用。
+//! osu!catch 自动接盘时间轴与几何，供 FL 定位与接盘绘制复用。
 
 use super::animation::AnimationLayout;
 use super::constants::*;
@@ -526,15 +526,8 @@ mod tests {
         let beatmap = crate::parse_beatmap_bytes(
             b"osu file format v14\n[General]\nMode:2\n[Difficulty]\nCircleSize:4\nApproachRate:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n0,192,1000,1,0\n512,192,1000,1,0\n0,192,1000,1,0\n512,192,1100,1,0\n"
         ).unwrap();
-        for (autoplay, flashlight) in [
-            (true, false),
-            (false, false),
-            (true, true),
-            (false, true),
-            (true, false),
-        ] {
+        for flashlight in [false, true, false] {
             let mods = ModSettings {
-                autoplay,
                 flashlight,
                 ..ModSettings::new()
             };
@@ -624,7 +617,7 @@ mod tests {
     }
 
     #[test]
-    fn mods_share_the_path_and_only_at_draws_the_plate() {
+    fn flashlight_preserves_the_path_without_drawing_the_plate() {
         use super::super::animation::build_video_animation_layout;
         use super::super::objects::{build_catch_render_objects, effective_difficulty};
         use crate::domain::mods::ModSettings;
@@ -636,9 +629,8 @@ mod tests {
             [(false, false, 1.0), (true, false, 1.5), (false, true, 0.75)]
         {
             let mut reference = None;
-            for (autoplay, flashlight) in [(true, false), (false, true), (true, true)] {
+            for flashlight in [false, true] {
                 let mods = ModSettings {
-                    autoplay,
                     flashlight,
                     easy,
                     hard_rock,
@@ -674,7 +666,7 @@ mod tests {
                         matches!(command, crate::render::scene::DrawCommand::Rectangle { .. })
                     })
                     .count();
-                assert_eq!(rectangles, if autoplay { 32 } else { 2 });
+                assert_eq!(rectangles, 2);
                 let layout =
                     build_video_animation_layout(difficulty.cs, difficulty.ar, OutputFormat::Mp4);
                 let center =

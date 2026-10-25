@@ -12,6 +12,7 @@ pub struct RenderStandardPngStructureConfig {
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderStandardPngStyleConfig {
+    pub SHOW_CURSOR: bool,
     pub MS_PER_IMAGE: i64,
     pub SLIDER_BODY_SUPERSAMPLE: i64,
 }
@@ -37,6 +38,7 @@ pub struct RenderStandardGifStructureConfig {
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderStandardGifStyleConfig {
+    pub SHOW_CURSOR: bool,
     pub DURATION_MS: i64,
     pub FPS: i64,
     pub SLIDER_BODY_SUPERSAMPLE: i64,
@@ -55,6 +57,7 @@ pub struct RenderStandardGifConfig {
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderStandardMp4StyleConfig {
+    pub SHOW_CURSOR: bool,
     pub FPS: i64,
     pub ENABLE_HITSOUND: bool,
     pub ENABLE_BEATMAP_HITSOUND: bool,
@@ -129,6 +132,8 @@ pub struct RenderTaikoGifStructureConfig {
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderTaikoGifStyleConfig {
+    pub SHOW_HIT_EFFECTS: bool,
+    pub SHOW_KEY_OVERLAY: bool,
     pub SHOW_MEASURE_LINES: bool,
     pub DURATION_MS: f64,
     pub FPS: f64,
@@ -147,6 +152,8 @@ pub struct RenderTaikoGifConfig {
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderTaikoMp4StyleConfig {
+    pub SHOW_HIT_EFFECTS: bool,
+    pub SHOW_KEY_OVERLAY: bool,
     pub ENABLE_BACKGROUND_IMAGE: bool,
     pub ENABLE_BACKGROUND_VIDEO: bool,
     pub ENABLE_STORYBOARD: bool,

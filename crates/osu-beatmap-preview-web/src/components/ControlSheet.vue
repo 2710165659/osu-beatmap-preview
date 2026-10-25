@@ -2,7 +2,7 @@
 // 播放设置抽屉：默认收起，视频区域因此保持最大。
 //
 // 手机上从底部弹出，桌面（lg）变成右下角浮层；四组内容分别是画面参数
-//（帧率/清晰度/倍速/背景暗化 + 「其他」四个开关）、声音（音乐音量与打击音）、
+//（帧率/清晰度/倍速/背景暗化与其他显示开关）、声音（音乐音量与打击音）、
 // Mod 与运行日志。
 import { computed } from 'vue';
 import ChipGroup from './ChipGroup.vue';
@@ -20,6 +20,7 @@ import {
   setFps,
   setHitsoundVolume,
   setResolution,
+  setShowCursor,
   setShowFps,
   setSheetOpen,
   setSpeed,
@@ -84,7 +85,7 @@ const chipClass = (active) => (active
           <output class="text-right font-mono">{{ state.backgroundDim }}%</output>
         </label>
 
-        <!-- 「其他」四个开关按钮，点名称即切换，默认全开。 -->
+        <!-- 「其他」开关按钮，点名称即切换。 -->
         <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
           <span class="text-xs text-neutral-400">其他</span>
           <div class="flex flex-wrap items-center gap-1.5">
@@ -123,6 +124,15 @@ const chipClass = (active) => (active
               @click="setShowFps(!state.showFps)"
             >
               帧率显示
+            </button>
+            <button
+              v-if="state.modeKey === 'standard' && !state.replayActive"
+              type="button"
+              class="rounded-md border px-2.5 py-1 text-xs transition"
+              :class="chipClass(state.showCursor)"
+              @click="setShowCursor(!state.showCursor)"
+            >
+              光标
             </button>
           </div>
         </div>

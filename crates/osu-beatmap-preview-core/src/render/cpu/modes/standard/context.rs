@@ -181,7 +181,7 @@ pub struct RenderContext {
     pub output_format: crate::render::geometry::OutputFormat,
     /// 等最终画布布局就绪后初始化，避免 MP4 居中偏移使自动光圈错位。
     pub flashlight: Option<super::visibility::StandardFlashlightCache>,
-    /// AT 的轨迹与精灵在最终布局确定后按需初始化，并跨导出线程共享。
+    /// 自动光标轨迹与精灵在最终布局确定后按需初始化，并跨导出线程共享。
     pub autoplay: Option<super::autoplay::AutoplayCache>,
     pub show_cursor: bool,
 }
@@ -409,6 +409,7 @@ fn build_context(
 ) -> RenderContext {
     let skin = load_skin(beatmap);
     let settings = build_render_settings(beatmap, mods);
+    let style = crate::render::shared::standard::style::StandardRenderStyle::current(output_format);
     if stack {
         super::stacking::apply_stacking(
             &mut hit_objects,
@@ -461,7 +462,7 @@ fn build_context(
         }
     }
     RenderContext {
-        style: crate::render::shared::standard::style::StandardRenderStyle::current(output_format),
+        style,
         spinner_od,
         spinner_rate: mods.map_or(1.0, |mods| mods.speed_multiplier),
         hit_objects,
@@ -502,10 +503,9 @@ fn build_context(
             .is_some_and(|mods| mods.flashlight)
             .then(|| super::visibility::StandardFlashlightCache::new(&beatmap.break_periods)),
         spun_out: mods.is_some_and(|mods| mods.spun_out),
-        autoplay: mods
-            .is_some_and(|mods| mods.autoplay || mods.autopilot || mods.flashlight)
+        autoplay: (style.show_cursor || mods.is_some_and(|mods| mods.flashlight))
             .then(super::autoplay::AutoplayCache::new),
-        show_cursor: mods.is_some_and(|mods| mods.autoplay || mods.autopilot),
+        show_cursor: style.show_cursor,
     }
 }
 

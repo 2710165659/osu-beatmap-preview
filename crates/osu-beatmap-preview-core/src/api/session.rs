@@ -703,6 +703,32 @@ impl RealtimeSession {
         Ok(())
     }
 
+    /// 仅重建 Standard 的光标显示配置与帧源，保持播放时钟和音频不变。
+    pub fn set_show_cursor(&mut self, enabled: bool) -> Result<()> {
+        #[cfg(feature = "replay")]
+        if self.osr.is_some() {
+            return Err(PreviewError::new("OSR 回放光标由回放数据控制"));
+        }
+        let style = &self.options.core_config.render.standard.mp4.style;
+        if style.SHOW_CURSOR == enabled {
+            return Ok(());
+        }
+        let mut config = (*self.options.core_config).clone();
+        config.render.standard.mp4.style.SHOW_CURSOR = enabled;
+        let config = Arc::new(config);
+        if self.mode_as_i32() == 0 {
+            self.source = prepare_source(
+                &self.beatmap,
+                0,
+                &self.settings,
+                TimeAxis::new(self.timeline.first_object_ms),
+                &config,
+            )?;
+        }
+        self.options.core_config = config;
+        Ok(())
+    }
+
     pub fn set_background(&mut self, background: ImageData) -> Result<()> {
         let image = background_image(&background)?;
         self.resources.background = Some(background);
@@ -1592,6 +1618,45 @@ mod tests {
         assert!(!session.hitsound_enabled());
     }
 
+    #[test]
+    fn cursor_toggle_preserves_playback_and_survives_mods_and_resize() {
+        let mut session = session();
+        session.seek(100.0, 0.0);
+        session.play(100.0);
+        let hidden = session.scene_at_absolute(0).unwrap().commands.len();
+        let epoch = session.audio_epoch();
+        assert!(
+            !session
+                .options()
+                .core_config
+                .render
+                .standard
+                .mp4
+                .style
+                .SHOW_CURSOR
+        );
+        session.set_show_cursor(true).unwrap();
+        assert!(session.scene_at_absolute(0).unwrap().commands.len() > hidden);
+        assert_eq!(session.audio_epoch(), epoch);
+        assert_eq!(session.clock_ms(200.0), 100.0);
+        session.set_mods(vec!["HR".into()], 200.0).unwrap();
+        session.set_render_size(854, 480).unwrap();
+        assert!(
+            session
+                .options()
+                .core_config
+                .render
+                .standard
+                .mp4
+                .style
+                .SHOW_CURSOR
+        );
+        session.set_show_cursor(false).unwrap();
+        let without_cursor = session.scene_at_absolute(0).unwrap().commands.len();
+        session.set_show_cursor(true).unwrap();
+        assert!(session.scene_at_absolute(0).unwrap().commands.len() > without_cursor);
+    }
+
     /// 背景暗化运行时可调并夹紧到 0～1；背景/视频/故事板三层共用这一系数。
     #[test]
     fn background_dim_is_runtime_adjustable_and_clamped() {
@@ -1605,7 +1670,7 @@ mod tests {
     }
     /// Tewi Maze 同刻多物件曾触发零时长 hyperdash 切片崩溃，需反复热切换验证。
     #[test]
-    fn catch_overlapping_objects_allow_repeated_at_and_fl_switches() {
+    fn catch_overlapping_objects_allow_repeated_fl_switches() {
         // 内嵌最小复现：双物件、七物件重叠及后续跳转，不依赖额外谱面文件。
         let beatmap = crate::parse_beatmap_bytes(
             b"osu file format v14\n[General]\nMode:2\n\
@@ -1622,13 +1687,11 @@ mod tests {
             RealtimeSession::from_bundle(ResourceBundle::new(beatmap), RealtimeOptions::default())
                 .unwrap();
         for tokens in [
-            vec!["AT"],
-            vec![],
-            vec!["AT", "FL"],
             vec!["FL"],
-            vec!["AT", "HR"],
-            vec!["AT", "EZ"],
-            vec!["AT"],
+            vec![],
+            vec!["FL", "HR"],
+            vec!["FL", "EZ"],
+            vec![],
         ] {
             session
                 .set_mods(tokens.into_iter().map(str::to_string).collect(), 0.0)

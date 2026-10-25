@@ -511,21 +511,29 @@ mod tests {
     use crate::render::geometry::OutputFormat;
 
     fn context(objects: &str, mods: &ModSettings) -> RenderContext {
+        context_with_cursor(objects, mods, true)
+    }
+
+    fn context_with_cursor(objects: &str, mods: &ModSettings, show_cursor: bool) -> RenderContext {
         let text = format!("osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:4\nApproachRate:5\nOverallDifficulty:5\nSliderMultiplier:1.4\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n{objects}\n");
         let beatmap = parse_beatmap_bytes(text.as_bytes()).unwrap();
         let objects = apply_standard_object_mods(standard_objects(&beatmap).unwrap(), Some(mods));
-        build_video_render_context(
-            &beatmap,
-            objects,
-            Some(mods),
-            TimeAxis::new(0),
-            OutputFormat::Mp4,
-        )
+        let mut config = (*crate::config::current()).clone();
+        config.render.standard.mp4.style.SHOW_CURSOR = show_cursor;
+        crate::config::with_config(std::sync::Arc::new(config), || {
+            build_video_render_context(
+                &beatmap,
+                objects,
+                Some(mods),
+                TimeAxis::new(0),
+                OutputFormat::Mp4,
+            )
+        })
     }
 
     #[test]
     fn cursor_hits_circles_waits_and_supports_out_of_order_queries() {
-        let mods = parse_mods(&["AT".into(), "HR".into()]).unwrap();
+        let mods = parse_mods(&["HR".into()]).unwrap();
         let context = context("100,100,1000,1,0\n400,200,4000,1,0", &mods);
         let cursor = context.autoplay.as_ref().unwrap().get(&context);
         for index in [1, 0, 1] {
@@ -547,7 +555,7 @@ mod tests {
 
     #[test]
     fn slider_reverses_and_overlap_prioritises_new_circle() {
-        let mods = parse_mods(&["AT".into()]).unwrap();
+        let mods = ModSettings::new();
         let context = context("100,192,1000,2,0,L|400:192,2,300\n250,100,1500,1,0", &mods);
         let cursor = context.autoplay.as_ref().unwrap().get(&context);
         let circle = to_frame_point(250.0, 100.0, &context.frame_layout);
@@ -561,7 +569,7 @@ mod tests {
 
     #[test]
     fn spinner_rotation_uses_real_time_and_scaled_radius() {
-        let mods = parse_mods(&["AT".into(), "DT".into()]).unwrap();
+        let mods = parse_mods(&["DT".into()]).unwrap();
         let context = context("256,192,1000,8,0,3000", &mods);
         let cursor = context.autoplay.as_ref().unwrap().get(&context);
         let center = to_frame_point(256.0, 192.0, &context.frame_layout);
@@ -576,15 +584,42 @@ mod tests {
     }
 
     #[test]
-    fn disabled_mod_does_not_allocate_cursor_cache() {
-        assert!(context("100,100,1000,1,0", &ModSettings::new())
-            .autoplay
-            .is_none());
+    fn cursor_config_is_independent_for_each_output_format() {
+        let beatmap = parse_beatmap_bytes(b"osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n100,100,1000,1,0\n").unwrap();
+        let formats = [OutputFormat::Png, OutputFormat::Gif, OutputFormat::Mp4];
+        for enabled_format in formats {
+            let mut config = crate::config::CoreConfig::default();
+            config.render.standard.png.style.SHOW_CURSOR = enabled_format == OutputFormat::Png;
+            config.render.standard.gif.style.SHOW_CURSOR = enabled_format == OutputFormat::Gif;
+            config.render.standard.mp4.style.SHOW_CURSOR = enabled_format == OutputFormat::Mp4;
+            crate::config::with_config(std::sync::Arc::new(config), || {
+                for format in formats {
+                    let context = build_video_render_context(
+                        &beatmap,
+                        standard_objects(&beatmap).unwrap(),
+                        None,
+                        TimeAxis::new(0),
+                        format,
+                    );
+                    assert_eq!(context.show_cursor, format == enabled_format);
+                    assert_eq!(context.autoplay.is_some(), format == enabled_format);
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn disabled_cursor_does_not_allocate_cursor_cache() {
+        assert!(
+            context_with_cursor("100,100,1000,1,0", &ModSettings::new(), false)
+                .autoplay
+                .is_none()
+        );
     }
 
     #[test]
     fn trail_fades_stops_and_is_independent_of_query_order() {
-        let mods = parse_mods(&["AT".into()]).unwrap();
+        let mods = ModSettings::new();
         let context = context("100,192,1000,1,0\n400,192,2000,1,0", &mods);
         let cursor = context.autoplay.as_ref().unwrap().get(&context);
         let collect = |time| {
@@ -604,7 +639,7 @@ mod tests {
         assert_eq!(collect(1900), moving);
         assert!(collect(-1000).is_empty());
         let fl = parse_mods(&["FL".into()]).unwrap();
-        let hidden = super::tests::context("100,192,1000,1,0\n400,192,2000,1,0", &fl);
+        let hidden = context_with_cursor("100,192,1000,1,0\n400,192,2000,1,0", &fl, false);
         let mut count = 0;
         hidden
             .autoplay
@@ -617,7 +652,7 @@ mod tests {
 
     #[test]
     fn click_expands_outer_ring_and_release_contracts_it() {
-        let mods = parse_mods(&["AT".into()]).unwrap();
+        let mods = ModSettings::new();
         let context = context("100,192,1000,2,0,L|400:192,1,300", &mods);
         let cursor = context.autoplay.as_ref().unwrap().get(&context);
         assert_eq!(cursor.expansion_at(999.0), 1.0);
@@ -637,10 +672,9 @@ mod tests {
     #[test]
     fn flashlight_only_shares_motion_without_allocating_sprites() {
         let fl = parse_mods(&["FL".into()]).unwrap();
-        let both = parse_mods(&["FL".into(), "AT".into()]).unwrap();
         let objects = "100,192,1000,1,0\n400,192,2000,1,0";
-        let hidden = context(objects, &fl);
-        let shown = context(objects, &both);
+        let hidden = context_with_cursor(objects, &fl, false);
+        let shown = context(objects, &fl);
         assert!(!hidden.show_cursor && shown.show_cursor);
         let hidden_cursor = hidden.autoplay.as_ref().unwrap().get(&hidden);
         assert!(hidden_cursor.sprites.is_empty());

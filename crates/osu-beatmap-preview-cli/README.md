@@ -175,9 +175,9 @@ Windows 自动尝试 NVENC 或 AMF，失败时回退 CPU OpenH264；其他平台
 
 | 模式 | PNG | GIF / MP4（新增） | 实时预览（新增） |
 | --- | --- | --- | --- |
-| Standard | Easy、Hard-Rock、Hidden、Flashlight、Autoplay、Difficulty-Adjust、Traceable、Mirror | Double-Time、Half-Time、Nightcore、Daycore | Classic、Relax、Spun-Out、Autopilot、Alternate、Single-Tap |
-| Taiko | Easy、Hard-Rock、Swap | Hidden、Flashlight、Autoplay、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
-| Catch | Easy、Hard-Rock | Hidden、Flashlight、Autoplay、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
+| Standard | Easy、Hard-Rock、Hidden、Flashlight、Difficulty-Adjust、Traceable、Mirror | Double-Time、Half-Time、Nightcore、Daycore | Classic、Relax、Spun-Out、Autopilot、Alternate、Single-Tap |
+| Taiko | Easy、Hard-Rock、Swap | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
+| Catch | Easy、Hard-Rock | Hidden、Flashlight、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
 | Mania | One-Key 至 Ten-Keys、Dual-Stages、Invert、Hold-Off、Mirror | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
 
 CLI 普通导出不支持“实时预览新增”列的 Mod；回放导出使用回放文件中的 Mod。
@@ -192,7 +192,6 @@ CLI 普通导出不支持“实时预览新增”列的 Mod；回放导出使用
 | Hard-Rock | HR |
 | Hidden | HD |
 | Flashlight | FL |
-| Autoplay | AT |
 | Difficulty-Adjust | DA（需附加难度参数） |
 | Traceable | TC |
 | Double-Time | DT |
@@ -225,7 +224,6 @@ CLI 普通导出不支持“实时预览新增”列的 Mod；回放导出使用
 Mod 的效果与冲突规则遵循游戏。
 
 - `DA` 目前仅实现 Standard，参数支持 `cs`、`ar`、`od`、`hp`，例如 `--mod=dacs5ar9.5`。
-- `AT`（Autoplay）用于显示 Standard 的自动光标、Taiko 的自动击打按键与击飞 Note，或 Catch 自动移动的接盘，普通谱面预览默认隐藏；本项目仅提供预览，不涉及实际游玩。
 - 变速 Mod 可指定倍率，例如 `--mod=dt1.25`、`--mod=nc1.4`；加速范围为 1.01–2.00 倍，减速范围为 0.50–0.99 倍。
 
 ## 配置

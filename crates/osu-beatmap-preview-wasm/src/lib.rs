@@ -82,7 +82,7 @@ impl WebGpuSession {
     /// （音乐、背景、自带音效全部在 WASM 内解出）。
     ///
     /// `options`：`{ bid?, difficulty?, convert?, mods?, width, height, sampleRate?,
-    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard?, replayBytes?, osuBytes? }`。
+    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard?, showCursor?, replayBytes?, osuBytes? }`。
     /// `osuBytes` 为可选外部谱面，提供时 `bytes` 必须为包含对应难度的 `.osz`。
     /// 有 `replayBytes` 时按回放 MD5 选谱并拒绝转谱和用户 Mod，输入需为完整谱面包。
     /// 难度选择优先 `difficulty`（压缩包条目名），其次 `bid`（`BeatmapID`），都没有时
@@ -111,6 +111,14 @@ impl WebGpuSession {
         let beatmap = parse_beatmap_bytes(&content.beatmap).map_err(js_error)?;
 
         let mut realtime = RealtimeOptions::default();
+        if let Some(enabled) = option_bool(&options, "showCursor") {
+            std::sync::Arc::make_mut(&mut realtime.core_config)
+                .render
+                .standard
+                .mp4
+                .style
+                .SHOW_CURSOR = enabled;
+        }
         if !options.is_undefined() && !options.is_null() {
             if let Ok(value) = js_sys::Reflect::get(&options, &JsValue::from_str("convert")) {
                 realtime.convert = value.as_string();
@@ -486,6 +494,12 @@ impl WebGpuSession {
             ..
         } = self;
         load_samples(inner, custom_samples, *use_beatmap_samples);
+    }
+
+    /// 切换普通 Standard 预览的自动光标。
+    #[wasm_bindgen(js_name = setShowCursor)]
+    pub fn set_show_cursor(&mut self, enabled: bool) -> Result<(), JsValue> {
+        self.inner.set_show_cursor(enabled).map_err(js_error)
     }
 
     /// 热切换当前会话的 mod，数组中的每项对应一个独立 token。

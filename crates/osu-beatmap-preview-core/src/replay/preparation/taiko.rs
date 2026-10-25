@@ -178,7 +178,7 @@ fn score_multiplier(s: &ModSettings) -> f64 {
     if s.cs_override {
         value *= 0.9;
     }
-    // 当前 TaikoScoreProcessor 的无成绩上下文计算：AT、SW、CL 不改变倍率。
+    // 当前 TaikoScoreProcessor 的无成绩上下文计算：SW、CL 不改变倍率。
     value
 }
 
@@ -188,15 +188,8 @@ pub fn decode_mods(document: &ReplayDocument) -> Result<ReplayMods> {
         metadata.mods.clone()
     } else {
         let bits = document.header.mods_bits;
-        let supported = (1 << 1)
-            | (1 << 3)
-            | (1 << 4)
-            | (1 << 6)
-            | (1 << 8)
-            | (1 << 9)
-            | (1 << 10)
-            | (1 << 11)
-            | (1 << 29);
+        let supported =
+            (1 << 1) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 29);
         if bits & !supported != 0 {
             return Err(unsupported(format!("legacy Taiko Mods 0x{bits:08x}")));
         }
@@ -208,7 +201,6 @@ pub fn decode_mods(document: &ReplayDocument) -> Result<ReplayMods> {
             (8, "HT"),
             (9, "NC"),
             (10, "FL"),
-            (11, "AT"),
         ]
         .into_iter()
         .filter(|&(bit, _)| bits & (1 << bit) != 0 && !(bit == 6 && bits & (1 << 9) != 0))
@@ -235,7 +227,7 @@ pub fn decode_mods(document: &ReplayDocument) -> Result<ReplayMods> {
         }
         if !matches!(
             code,
-            "EZ" | "HR" | "HD" | "FL" | "CS" | "SW" | "DT" | "HT" | "NC" | "DC" | "AT" | "CL"
+            "EZ" | "HR" | "HD" | "FL" | "CS" | "SW" | "DT" | "HT" | "NC" | "DC" | "CL"
         ) {
             return Err(unsupported(format!("Mod {code}")));
         }

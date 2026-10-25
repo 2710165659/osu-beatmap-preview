@@ -33,7 +33,7 @@ pub(crate) fn render_taiko_gif(
             taiko_constants::gif::style::TIME_LABEL_NOTE_COLOR,
         ],
     );
-    // 规则颜色不能依赖抽样帧是否恰好包含对应物件，AT 与普通预览使用同一套颜色来源。
+    // 规则颜色不能依赖抽样帧是否恰好包含对应物件，击飞效果与普通物件使用同一套颜色来源。
     fixed_colors.extend([
         constants::CENTRE_NOTE_COLOR,
         constants::RIM_NOTE_COLOR,
@@ -74,34 +74,38 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
-    fn gif_keeps_rendered_note_and_roll_colours_with_and_without_autoplay() {
+    fn gif_keeps_rendered_note_and_roll_colours_with_and_without_hit_effects() {
         let beatmap = osu_beatmap_preview_core::parse_beatmap_bytes(
             b"osu file format v14\n[General]\nMode:1\n[Difficulty]\nSliderMultiplier:1.4\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n256,192,1000,1,0,0:0:0:0:\n256,192,1200,1,8,0:0:0:0:\n256,192,1500,2,0,B|384:192,1,280\n",
         ).unwrap();
-        for autoplay in [false, true] {
-            let mods = osu_beatmap_preview_core::ModSettings {
-                autoplay,
-                ..Default::default()
-            };
+        for show_hit_effects in [false, true] {
+            let mut config = osu_beatmap_preview_core::config::CoreConfig::default();
+            config.render.taiko.gif.style.SHOW_HIT_EFFECTS = show_hit_effects;
+            let mods = osu_beatmap_preview_core::ModSettings::new();
             let options = GifRenderOptions::ResolvedSegments {
                 times_ms: vec![1000],
                 duration_seconds: Some(0.5),
                 time_axis: TimeAxis::new(0),
             };
             let path = std::env::temp_dir().join(format!(
-                "osu-preview-taiko-colours-{}-{autoplay}.gif",
+                "osu-preview-taiko-colours-{}-{show_hit_effects}.gif",
                 std::process::id()
             ));
             let deadline = RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(60));
-            let frames = animation_render::prepare_taiko_gif_frames(
-                &beatmap,
-                Some(&mods),
-                options.clone(),
-                Some(10),
-                &deadline,
-            )
-            .unwrap();
-            render_taiko_gif(&beatmap, Some(&mods), options, &path, Some(10), &deadline).unwrap();
+            let frames =
+                osu_beatmap_preview_core::config::with_config(std::sync::Arc::new(config), || {
+                    let frames = animation_render::prepare_taiko_gif_frames(
+                        &beatmap,
+                        Some(&mods),
+                        options.clone(),
+                        Some(10),
+                        &deadline,
+                    )
+                    .unwrap();
+                    render_taiko_gif(&beatmap, Some(&mods), options, &path, Some(10), &deadline)
+                        .unwrap();
+                    frames
+                });
             let mut decode = gif::DecodeOptions::new();
             decode.set_color_output(gif::ColorOutput::RGBA);
             let mut decoder = decode
@@ -137,7 +141,10 @@ mod tests {
                 {
                     if let Some(color_index) = colors.iter().position(|color| source[..3] == *color)
                     {
-                        assert_eq!(source, actual, "AT={autoplay}，帧 {index} 的物件颜色改变");
+                        assert_eq!(
+                            source, actual,
+                            "SHOW_HIT_EFFECTS={show_hit_effects}，帧 {index} 的物件颜色改变"
+                        );
                         counts[color_index] += 1;
                     }
                 }

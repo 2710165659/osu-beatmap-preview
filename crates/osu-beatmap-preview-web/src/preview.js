@@ -192,6 +192,8 @@ export const state = reactive({
   renderFps: 0,
   /** 是否显示帧率角标（画面右上角）。 */
   showFps: true,
+  /** 普通 Standard 预览是否显示自动光标，默认关闭。 */
+  showCursor: false,
   /**
    * 打击音音量百分比（0–100）。
    *
@@ -1038,6 +1040,7 @@ export async function loadPreview() {
       musicVolume: Math.round(state.volume * 100),
       beatmapHitsound: state.hitsoundBeatmap,
       storyboard: state.storyboard,
+      showCursor: state.showCursor,
     });
     if (token !== loadToken) {
       createdSession.free();
@@ -1399,6 +1402,19 @@ export function setResolution(key) {
 /** 切换帧率角标（画面右上角）的显示。 */
 export function setShowFps(value) {
   state.showFps = Boolean(value);
+}
+
+/** 自动光标只改变普通 Standard 预览的画面，不影响音频与播放位置。 */
+export function setShowCursor(value) {
+  if (state.modeKey !== 'standard' || state.replayActive) return;
+  const enabled = Boolean(value);
+  try {
+    session?.setShowCursor(enabled);
+    state.showCursor = enabled;
+    render();
+  } catch (error) {
+    logPlay(`光标切换失败：${errorText(error)}`);
+  }
 }
 
 /**

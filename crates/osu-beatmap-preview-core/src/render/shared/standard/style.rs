@@ -8,6 +8,7 @@ use crate::render::geometry::OutputFormat;
 pub struct StandardRenderStyle {
     pub background_color: [u8; 4],
     pub slider_supersample: i64,
+    pub show_cursor: bool,
 }
 
 impl StandardRenderStyle {
@@ -29,6 +30,11 @@ impl StandardRenderStyle {
         Self {
             background_color,
             slider_supersample,
+            show_cursor: match format {
+                OutputFormat::Png => standard.png.style.SHOW_CURSOR,
+                OutputFormat::Gif => standard.gif.style.SHOW_CURSOR,
+                OutputFormat::Mp4 => standard.mp4.style.SHOW_CURSOR,
+            },
         }
     }
 }

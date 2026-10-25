@@ -13,6 +13,7 @@ render:
         ROW_COUNT: 5 # 行数
         IMAGES_PER_ROW: 8 # 每行图片数
       style:
+        SHOW_CURSOR: false # 是否显示自动光标
         MS_PER_IMAGE: 400 # 同一行相邻图片之间的时间间隔，单位毫秒
         SLIDER_BODY_SUPERSAMPLE: 2 # 滑条本体的超采样倍数，越大越平滑但渲染越慢
     gif:
@@ -21,12 +22,14 @@ render:
         ROW_COUNT: 2 # 动画画面的网格行数
         IMAGES_PER_ROW: 2 # 动画画面每行包含的游玩区域数
       style:
+        SHOW_CURSOR: false # 是否显示自动光标
         DURATION_MS: 5000 # 每个游玩区域覆盖的谱面时长
         FPS: 15 # GIF 帧率
         SLIDER_BODY_SUPERSAMPLE: 2 # 滑条本体的超采样倍数
     mp4:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
       style:
+        SHOW_CURSOR: false # 是否显示自动光标
         FPS: 15 # MP4 帧率
         ENABLE_BACKGROUND_IMAGE: true # 是否启用谱面背景图
         ENABLE_BACKGROUND_VIDEO: false # 是否启用谱面背景视频
@@ -60,6 +63,8 @@ render:
         ROW_COUNT: 2 # 动画画面的网格行数
         IMAGES_PER_ROW: 2 # 动画画面每行包含的游玩区域数
       style:
+        SHOW_HIT_EFFECTS: true # 是否显示 Note 击飞效果
+        SHOW_KEY_OVERLAY: true # 是否显示击打按键
         SHOW_MEASURE_LINES: true # 是否绘制随谱面滚动的小节线
         DURATION_MS: 5000.0 # 每个动画片段覆盖的谱面时长
         FPS: 15.0 # GIF 帧率
@@ -70,6 +75,8 @@ render:
         ENABLE_BACKGROUND_VIDEO: false # 是否启用谱面背景视频
         ENABLE_STORYBOARD: false # 是否启用故事板
         BACKGROUND_DIM: 0.7 # 背景与故事板暗化程度（0～1）
+        SHOW_HIT_EFFECTS: true # 是否显示 Note 击飞效果
+        SHOW_KEY_OVERLAY: true # 是否显示击打按键
         SHOW_MEASURE_LINES: true # 是否绘制随谱面滚动的小节线
         FPS: 15.0 # MP4 帧率
         ENABLE_HITSOUND: true # 是否启用打击音

@@ -282,7 +282,7 @@ fn prepare_catch_segment_gif_frames(
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects =
         build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
-    let catcher = mods.filter(|m| m.autoplay || m.flashlight).map(|_| {
+    let catcher = mods.filter(|m| m.flashlight).map(|_| {
         std::sync::Arc::new(super::catcher::build_catcher_path(
             &render_objects,
             difficulty.cs,
@@ -350,7 +350,6 @@ fn prepare_catch_segment_gif_frames(
     // 各段按时间二分裁剪可见窗口，避免每帧全量遍历
     let start_times: Vec<i64> = render_objects.iter().map(|o| o.start_time).collect();
 
-    let show_catcher = mods.is_some_and(|m| m.autoplay);
     let render = move |frame_index: usize| -> Img {
         let mut canvas = Img::new(
             layout.canvas_width as u32,
@@ -362,11 +361,6 @@ fn prepare_catch_segment_gif_frames(
             let (frame_x, frame_y) = frame_origin(segment_index, &layout);
             let mut frame =
                 render_animation_frame(&render_objects, &start_times, snapshot_time, &layout, None);
-            if show_catcher {
-                if let Some(catcher) = &catcher {
-                    catcher.draw_cpu(&mut frame, snapshot_time, &layout);
-                }
-            }
             if let Some(flashlight) = &flashlight {
                 flashlight.at(snapshot_time, &layout).apply(
                     &mut frame,

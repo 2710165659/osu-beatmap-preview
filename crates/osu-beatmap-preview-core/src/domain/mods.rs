@@ -20,8 +20,6 @@ pub struct ModSettings {
     pub hard_rock: bool,
     pub hidden: bool,
     pub flashlight: bool,
-    /// Autoplay 光标、catch 接盘或太鼓动画导出。
-    pub autoplay: bool,
     pub traceable: bool,
     /// 仅 Standard 实时预览支持；回放另行选择 Classic 判定策略。
     pub classic: bool,
@@ -84,7 +82,6 @@ impl ModSettings {
             || self.hard_rock
             || self.hidden
             || self.flashlight
-            || self.autoplay
             || self.traceable
             || self.classic
             || self.relax
@@ -137,7 +134,6 @@ fn canonical_mod_token(raw: &str) -> String {
         ("HARD-ROCK", "HR"),
         ("HIDDEN", "HD"),
         ("FLASHLIGHT", "FL"),
-        ("AUTOPLAY", "AT"),
         ("TRACEABLE", "TC"),
         ("CLASSIC", "CL"),
         ("RELAX", "RX"),
@@ -241,7 +237,6 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         "HR" => s.hard_rock = true,
         "HD" => s.hidden = true,
         "FL" => s.flashlight = true,
-        "AT" => s.autoplay = true,
         "TC" => s.traceable = true,
         "CL" => s.classic = true,
         "RX" => s.relax = true,
@@ -389,14 +384,9 @@ pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str
     // 与 Standard 的自动输入和输入限制 Mod 的官方互斥关系一致。
     for (left, right, label) in [
         (settings.relax, settings.autopilot, "RX and AP"),
-        (settings.relax, settings.autoplay, "RX and AT"),
         (settings.relax, settings.alternate, "RX and AL"),
         (settings.relax, settings.single_tap, "RX and SG"),
-        (settings.spun_out, settings.autoplay, "SO and AT"),
         (settings.spun_out, settings.autopilot, "SO and AP"),
-        (settings.autopilot, settings.autoplay, "AP and AT"),
-        (settings.alternate, settings.autoplay, "AL and AT"),
-        (settings.single_tap, settings.autoplay, "SG and AT"),
         (settings.alternate, settings.single_tap, "AL and SG"),
         (settings.mirror, settings.hard_rock, "MR and HR"),
     ] {
@@ -519,20 +509,16 @@ pub enum ModSupportLevel {
 fn mod_support_steps(mode: i32) -> [&'static [&'static str]; 3] {
     match mode {
         0 => [
-            &["EZ", "HR", "HD", "FL", "AT", "DA", "TC", "MR"],
+            &["EZ", "HR", "HD", "FL", "DA", "TC", "MR"],
             &["DT", "HT", "NC", "DC"],
             &["CL", "RX", "SO", "AP", "AL", "SG"],
         ],
         1 => [
             &["EZ", "HR", "SW"],
-            &["HD", "FL", "CS", "DT", "HT", "NC", "DC", "AT"],
+            &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
             &[],
         ],
-        2 => [
-            &["EZ", "HR"],
-            &["HD", "FL", "AT", "DT", "HT", "NC", "DC"],
-            &[],
-        ],
+        2 => [&["EZ", "HR"], &["HD", "FL", "DT", "HT", "NC", "DC"], &[]],
         3 => [
             &["K", "DS", "IN", "HO", "MR"],
             &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
@@ -606,9 +592,6 @@ fn active_switch_mods(settings: &ModSettings) -> Vec<(String, String)> {
     if settings.flashlight {
         active.push(("FL".into(), "FL".into()));
     }
-    if settings.autoplay {
-        active.push(("AT".into(), "AT".into()));
-    }
     if settings.traceable {
         active.push(("TC".into(), "TC".into()));
     }
@@ -675,7 +658,6 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         daycore: settings.daycore,
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
-        autoplay: settings.autoplay && matches!(mode, 0..=2),
         classic: settings.classic && mode == 0,
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
@@ -790,7 +772,6 @@ mod tests {
             ("hard-rock", "HR"),
             ("hidden", "HD"),
             ("flashlight", "FL"),
-            ("autoplay", "AT"),
             ("traceable", "TC"),
             ("classic", "CL"),
             ("relax", "RX"),
@@ -880,11 +861,6 @@ mod tests {
             ["AP", "SO"],
             ["MR", "HR"],
             ["AL", "SG"],
-            ["AT", "RX"],
-            ["AT", "SO"],
-            ["AT", "AP"],
-            ["AT", "AL"],
-            ["AT", "SG"],
         ] {
             let settings = parse_mods(&pair.map(str::to_owned)).unwrap();
             assert!(
@@ -909,33 +885,19 @@ mod tests {
         }
     }
     #[test]
-    fn autoplay_is_standard_taiko_and_catch_and_case_insensitive() {
-        let settings = super::parse_mods(&["at".into()]).unwrap();
-        assert!(settings.autoplay && settings.has_any_mod());
-        for format in ["png", "gif", "mp4"] {
-            assert!(super::validate_mods(&settings, Some(0), Some(format)).is_empty());
-            assert_eq!(
-                super::validate_mods(&settings, Some(2), Some(format)).is_empty(),
-                format != "png"
-            );
-            assert!(super::mods_for_mode(&settings, 2).autoplay);
-            assert!(super::supported_mod_tokens(2).contains(&"AT".into()));
-            for mode in [1, 3] {
-                assert_eq!(
-                    super::validate_mods(&settings, Some(mode), Some(format)).is_empty(),
-                    mode == 1 && format != "png"
-                );
-                assert_eq!(super::mods_for_mode(&settings, mode).autoplay, mode == 1);
-                assert_eq!(
-                    super::supported_mod_tokens(mode).contains(&"AT".into()),
-                    mode == 1
-                );
+    fn autoplay_is_rejected_and_not_advertised() {
+        for token in ["AT", "at", "Autoplay", "autoplay"] {
+            assert!(parse_mods(&[token.into()]).is_err());
+        }
+        for mode in 0..=3 {
+            for level in [
+                ModSupportLevel::Png,
+                ModSupportLevel::Animation,
+                ModSupportLevel::Realtime,
+            ] {
+                assert!(!supported_mod_tokens_for_level(mode, level).contains(&"AT".into()));
             }
         }
-        assert!(
-            super::validate_mods_for_level(&settings, 1, super::ModSupportLevel::Realtime)
-                .is_empty()
-        );
     }
 
     use super::*;

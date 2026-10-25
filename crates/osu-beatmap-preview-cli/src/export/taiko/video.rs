@@ -92,12 +92,10 @@ pub(crate) fn render_taiko_video(
     // 播放倍率已由 snapshot_time 推进，不能再次缩放滚动窗口。
     let time_range = compute_time_range();
     let layout = build_video_layout(time_range);
-    let autoplay = mods.is_some_and(|mods| mods.autoplay).then(|| {
-        osu_beatmap_preview_core::render::cpu::modes::taiko::autoplay::Autoplay::new(
-            &prepared_hit_objects,
-            &layout,
-        )
-    });
+    let autoplay = osu_beatmap_preview_core::render::cpu::modes::taiko::autoplay::Autoplay::new(
+        &prepared_hit_objects,
+        &layout,
+    );
 
     let static_bg = {
         // 背景图在最终视频画布上统一处理；这里仅绘制 Taiko 自身的轨道面板。
@@ -142,15 +140,13 @@ pub(crate) fn render_taiko_video(
                 snapshot_time,
                 &mut cache.borrow_mut(),
             );
-            if let Some(autoplay) = &autoplay {
-                autoplay.draw(
-                    &mut canvas,
-                    &layout,
-                    0,
-                    snapshot_time,
-                    &mut cache.borrow_mut(),
-                );
-            }
+            autoplay.draw(
+                &mut canvas,
+                &layout,
+                0,
+                snapshot_time,
+                &mut cache.borrow_mut(),
+            );
         });
         if let Some(timeline) = &flashlight {
             taiko_flashlight(timeline, snapshot_time, &layout, 0).apply(

@@ -33,6 +33,8 @@ struct Hit {
 pub struct Autoplay {
     hits: Vec<Hit>,
     drum_sprites: [Img; 4],
+    show_hit_effects: bool,
+    show_key_overlay: bool,
 }
 
 impl Autoplay {
@@ -127,7 +129,24 @@ impl Autoplay {
             }
             sprite
         });
-        Self { hits, drum_sprites }
+        let config = crate::config::current();
+        let (show_hit_effects, show_key_overlay) = match layout.output_format {
+            crate::render::geometry::OutputFormat::Gif => (
+                config.render.taiko.gif.style.SHOW_HIT_EFFECTS,
+                config.render.taiko.gif.style.SHOW_KEY_OVERLAY,
+            ),
+            crate::render::geometry::OutputFormat::Mp4 => (
+                config.render.taiko.mp4.style.SHOW_HIT_EFFECTS,
+                config.render.taiko.mp4.style.SHOW_KEY_OVERLAY,
+            ),
+            crate::render::geometry::OutputFormat::Png => (false, false),
+        };
+        Self {
+            hits,
+            drum_sprites,
+            show_hit_effects,
+            show_key_overlay,
+        }
     }
 
     #[cfg(feature = "replay")]
@@ -243,15 +262,15 @@ impl Autoplay {
                 (1.0 - (age - 40.0) / 1000.0).clamp(0.0, 1.0).powi(5)
             };
             let index = usize::from(hit.rim) * 2;
-            if hit.drum && hit.strong {
+            if self.show_key_overlay && hit.drum && hit.strong {
                 for value in &mut drum_alpha[index..index + 2] {
                     *value = (*value + alpha).min(1.0);
                 }
-            } else if hit.drum {
+            } else if self.show_key_overlay && hit.drum {
                 drum_alpha[index + usize::from(hit.right)] =
                     (drum_alpha[index + usize::from(hit.right)] + alpha).min(1.0);
             }
-            if !hit.flying || age >= 800.0 {
+            if !self.show_hit_effects || !hit.flying || age >= 800.0 {
                 continue;
             }
             let offset = hit_flight_offset(age, layout.row_height);
@@ -324,6 +343,61 @@ mod tests {
     use super::*;
     use crate::domain::models::TaikoHitObject;
     use crate::render::geometry::OutputFormat;
+
+    #[test]
+    fn hit_effects_and_key_overlay_are_independent_and_format_specific() {
+        let objects = prepare_hit_objects(
+            &[TaikoHitObject {
+                start_time: 1000,
+                end_time: 1000,
+                hit_type: 1,
+                ..Default::default()
+            }],
+            &MultiplierLookup {
+                points: build_multiplier_points(&[], 1.0),
+            },
+            &[],
+            1.0,
+        );
+        for format in [OutputFormat::Gif, OutputFormat::Mp4] {
+            let layout = build_video_animation_layout(1000.0, format);
+            for (effects, keys) in [(false, false), (false, true), (true, false), (true, true)] {
+                let mut config = crate::config::CoreConfig::default();
+                config.render.taiko.gif.style.SHOW_HIT_EFFECTS = if format == OutputFormat::Gif {
+                    effects
+                } else {
+                    !effects
+                };
+                config.render.taiko.gif.style.SHOW_KEY_OVERLAY = if format == OutputFormat::Gif {
+                    keys
+                } else {
+                    !keys
+                };
+                config.render.taiko.mp4.style.SHOW_HIT_EFFECTS = if format == OutputFormat::Mp4 {
+                    effects
+                } else {
+                    !effects
+                };
+                config.render.taiko.mp4.style.SHOW_KEY_OVERLAY = if format == OutputFormat::Mp4 {
+                    keys
+                } else {
+                    !keys
+                };
+                let autoplay = crate::config::with_config(std::sync::Arc::new(config), || {
+                    Autoplay::new(&objects, &layout)
+                });
+                let sprites = autoplay.sprites(&layout, 0, 1040, &mut RenderCache::default());
+                assert_eq!(sprites.len(), usize::from(effects) + usize::from(keys));
+                let mut scene = FrameSceneBuilder::new(
+                    layout.image_width as u32,
+                    layout.image_height as u32,
+                    1040,
+                );
+                autoplay.draw_scene(&mut scene, &layout, 1040);
+                assert_eq!(scene.finish().commands.len(), sprites.len());
+            }
+        }
+    }
 
     #[test]
     fn events_follow_game_hands_strong_hits_rolls_and_swell_keys() {

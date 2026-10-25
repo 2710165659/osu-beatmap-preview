@@ -236,9 +236,7 @@ fn prepare_taiko_segment_gif_frames(
     let origins: Vec<_> = (0..segment_timings.len())
         .map(|index| gif_frame_origin(index, &layout))
         .collect();
-    let autoplay = mods
-        .is_some_and(|mods| mods.autoplay)
-        .then(|| super::autoplay::Autoplay::new(&prepared_hit_objects, &layout));
+    let autoplay = super::autoplay::Autoplay::new(&prepared_hit_objects, &layout);
     let frame_count = pyround(segment_duration_ms * fps / 1000.0).max(1) as usize;
 
     let segment_snapshot_times: Vec<Vec<i64>> = segment_timings
@@ -291,15 +289,13 @@ fn prepare_taiko_segment_gif_frames(
                     snapshot_time,
                     &mut cache.borrow_mut(),
                 );
-                if let Some(autoplay) = &autoplay {
-                    autoplay.draw(
-                        &mut frame,
-                        &layout,
-                        0,
-                        snapshot_time,
-                        &mut cache.borrow_mut(),
-                    );
-                }
+                autoplay.draw(
+                    &mut frame,
+                    &layout,
+                    0,
+                    snapshot_time,
+                    &mut cache.borrow_mut(),
+                );
             });
             if let Some(timeline) = &flashlight {
                 taiko_flashlight(timeline, snapshot_time, &layout, 0).apply(
@@ -1742,10 +1738,7 @@ mod tests {
                 let times: Vec<_> = (0..rows * columns)
                     .map(|index| 1000 + index as i64 * 100)
                     .collect();
-                let mods = ModSettings {
-                    autoplay: true,
-                    ..ModSettings::new()
-                };
+                let mods = ModSettings::new();
                 let frames = prepare_taiko_gif_frames(
                     &beatmap,
                     Some(&mods),

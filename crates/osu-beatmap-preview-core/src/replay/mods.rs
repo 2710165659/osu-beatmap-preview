@@ -48,7 +48,6 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             | (1 << 8)
             | (1 << 9)
             | (1 << 10)
-            | (1 << 11)
             | (1 << 12)
             | (1 << 13)
             | (1 << 29);
@@ -67,7 +66,6 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             (8, "HT"),
             (9, "NC"),
             (10, "FL"),
-            (11, "AT"),
             (12, "SO"),
             (13, "AP"),
         ]
@@ -92,7 +90,6 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             "EZ" | "HR"
                 | "HD"
                 | "FL"
-                | "AT"
                 | "DA"
                 | "TC"
                 | "CL"
@@ -299,6 +296,7 @@ mod tests {
             );
         }
         for mods in [
+            json!([{"acronym":"AT"}]),
             json!([{"acronym":"HR"},{"acronym":"EZ"}]),
             json!([{"acronym":"HD"},{"acronym":"TC"}]),
             json!([{"acronym":"DT"},{"acronym":"NC"}]),
@@ -330,7 +328,6 @@ mod tests {
                 1.004,
             ),
             (json!([{"acronym":"TC"}]), 1.02),
-            (json!([{"acronym":"AT"}]), 1.0),
             (json!([{"acronym":"RX"}]), 0.1),
             (json!([{"acronym":"AP"}]), 0.1),
             (json!([{"acronym":"SO"}]), 0.95),
@@ -384,8 +381,10 @@ mod tests {
         replay.metadata = document(json!([{"acronym":"HT"}])).metadata;
         assert!(decode(&replay).unwrap().settings.half_time);
         replay.metadata = None;
-        replay.header.mods_bits |= 1;
-        assert!(decode(&replay).is_err());
+        for unsupported_bit in [1, 1 << 11] {
+            replay.header.mods_bits = unsupported_bit;
+            assert!(decode(&replay).is_err());
+        }
     }
 
     fn document(mods: serde_json::Value) -> ReplayDocument {
