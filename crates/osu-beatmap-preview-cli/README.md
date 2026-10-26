@@ -120,7 +120,7 @@ osu-beatmap-preview-cli --type=osr --user="玩家名" --mode=osu --include-fails
 
 ### 输出与兼容性
 
-- **PNG/GIF**：只使用 `.osu` 与 `.osr`，不读取或下载 OSZ，不加载音频、背景、视频或故事板。PNG 使用 `render.standard.png` 的快照网格、选段、标签和缩放配置，每格显示对应时刻的回放与 HUD；GIF 默认 2×2 同时播放不同片段，使用 `render.standard.gif` 配置。
+- **PNG/GIF**：只使用 `.osu` 与 `.osr`，不读取或下载 OSZ，不加载音频、背景、视频或故事板。PNG 支持 Standard，使用 `render.standard.png` 的快照网格、选段、标签和缩放配置；GIF 支持 Standard 与 Taiko，默认 2×2 同时播放不同片段，分别使用 `render.standard.gif`、`render.taiko.gif` 配置，每格显示对应时刻的回放与 HUD。
 - **MP4**：使用完整 OSZ 加载音乐、背景与音效，画面与音频开关使用 `render.standard.mp4` 配置。缺少资源时自动查谱下载。
 - **谱面匹配**：按回放记录的原始 `.osu` 字节 MD5 校验；MP4 同时提供外部谱面与媒体包时，两份谱面都必须匹配。
 - **Mod**：使用回放文件中的 Mod，不接受 `--convert` 或 `--mod`。

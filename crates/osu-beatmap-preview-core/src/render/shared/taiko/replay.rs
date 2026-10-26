@@ -1,4 +1,4 @@
-//! Taiko 回放共享绘制计划；CPU 视频与 WebGPU 使用真实输入、判定和相同布局。
+//! Taiko 回放共享绘制计划；GIF、CPU 视频与 WebGPU 复用真实输入和判定。
 use super::feedback;
 use crate::render::shared::replay::{
     feedback::FeedbackVisuals,
@@ -59,6 +59,16 @@ impl ReplayRenderPlan {
         font: Option<ArgonFont>,
         dimensions: Option<(u32, u32)>,
     ) -> Result<Self> {
+        Self::with_format(prepared, gameplay, font, dimensions, OutputFormat::Mp4)
+    }
+
+    pub fn with_format(
+        prepared: Arc<PreparedTaiko>,
+        gameplay: Arc<GameplayTimeline>,
+        font: Option<ArgonFont>,
+        dimensions: Option<(u32, u32)>,
+        format: OutputFormat,
+    ) -> Result<Self> {
         let beatmap = &prepared.beatmap;
         let mods = &prepared.mods.settings;
         let points = effective_timing_points(beatmap, Some(mods));
@@ -82,18 +92,13 @@ impl ReplayRenderPlan {
                 object.swell_required_hits = required;
             }
         }
-        let lines = prepare_measure_lines(
-            &sources,
-            &points,
-            &lookup,
-            crate::config::current()
-                .render
-                .taiko
-                .mp4
-                .style
-                .SHOW_MEASURE_LINES,
-        );
-        let mut layout = build_video_animation_layout(compute_time_range(), OutputFormat::Mp4);
+        let config = crate::config::current();
+        let show_measure_lines = match format {
+            OutputFormat::Gif => config.render.taiko.gif.style.SHOW_MEASURE_LINES,
+            _ => config.render.taiko.mp4.style.SHOW_MEASURE_LINES,
+        };
+        let lines = prepare_measure_lines(&sources, &points, &lookup, show_measure_lines);
+        let mut layout = build_video_animation_layout(compute_time_range(), format);
         if let Some((width, height)) = dimensions {
             let dx = (i64::from(width) - layout.image_width) / 2;
             let dy = taiko_playfield_top(height) - layout.content.y;

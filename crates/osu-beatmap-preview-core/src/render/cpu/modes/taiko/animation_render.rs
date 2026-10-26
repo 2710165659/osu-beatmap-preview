@@ -528,7 +528,7 @@ fn gif_unit_size(layout: &AnimationLayout) -> (i64, i64) {
     )
 }
 
-fn gif_canvas_size(layout: &AnimationLayout) -> (i64, i64) {
+pub fn gif_canvas_size(layout: &AnimationLayout) -> (i64, i64) {
     let config = crate::config::current();
     let structure = &config.render.taiko.gif.structure;
     let sizing = taiko_constants::gif::sizing();
@@ -545,7 +545,7 @@ fn gif_canvas_size(layout: &AnimationLayout) -> (i64, i64) {
     )
 }
 
-fn gif_frame_origin(index: usize, layout: &AnimationLayout) -> (i64, i64) {
+pub fn gif_frame_origin(index: usize, layout: &AnimationLayout) -> (i64, i64) {
     let columns = crate::config::current()
         .render
         .taiko
@@ -1603,7 +1603,7 @@ fn draw_span_tail(
     target.sprite_clipped(tail, join_x, y, clip_left, clip_right, 1.0);
 }
 
-fn draw_time_label(
+pub fn draw_time_label(
     image: &mut Img,
     start_time: i64,
     duration_ms: i64,

@@ -64,7 +64,8 @@ fn render_with_config(
         .checked_mul(config.structure.IMAGES_PER_ROW)
         .filter(|&cells| cells > 0)
         .ok_or_else(|| PreviewError::render("回放 GIF 网格行列数必须为正数且不能溢出"))?;
-    let frame_count = checked_frame_count(duration_ms, fps, speed, cells)?;
+    let frame_count =
+        crate::export::replay::time_plan::checked_gif_frame_count(duration_ms, fps, speed, cells)?;
     let duration = py_round(duration_ms * speed);
     let requested = match &plan.selected_times {
         Some(times) => PreviewTimeSelection::Resolved(times.clone()),
@@ -200,51 +201,9 @@ fn render_with_config(
     )
 }
 
-fn checked_frame_count(duration_ms: f64, fps: f64, speed: f64, cells: usize) -> Result<usize> {
-    let count = (duration_ms * fps / 1000.0).round().max(1.0);
-    // 先检查帧数与采样总量，再分配网格时间表；片段时长与普通 GIF 一样指输出时长。
-    if !duration_ms.is_finite()
-        || duration_ms <= 0.0
-        || !fps.is_finite()
-        || !(1.0..=60.0).contains(&fps)
-        || !speed.is_finite()
-        || speed <= 0.0
-        || !(duration_ms * speed).is_finite()
-        || duration_ms * speed >= i64::MAX as f64
-        || !count.is_finite()
-        || count > 1_000_000.0
-        || cells == 0
-        || (count as usize)
-            .checked_mul(cells)
-            .is_none_or(|total| total > 1_000_000)
-    {
-        return Err(PreviewError::render(
-            "回放 GIF 片段时长、帧率或总采样帧数超出范围",
-        ));
-    }
-    Ok(count as usize)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn output_duration_is_independent_of_replay_speed_and_checks_limits() {
-        for speed in [0.75, 1.0, 1.5] {
-            assert_eq!(checked_frame_count(5000.0, 15.0, speed, 4).unwrap(), 75);
-        }
-        for (duration, fps, speed, cells) in [
-            (f64::NAN, 15.0, 1.0, 4),
-            (0.0, 15.0, 1.0, 4),
-            (5000.0, 0.0, 1.0, 4),
-            (5000.0, 15.0, f64::INFINITY, 4),
-            (5000.0, 15.0, 1.0, usize::MAX),
-            (5000.0, 15.0, 1.0, 0),
-        ] {
-            assert!(checked_frame_count(duration, fps, speed, cells).is_err());
-        }
-    }
 
     #[test]
     fn real_replay_renders_four_simultaneous_cells_and_rejects_excess_time_points() {

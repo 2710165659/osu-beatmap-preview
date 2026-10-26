@@ -1,4 +1,4 @@
-//! MP4 回放选段计划独立于规则时间线；检查总帧数后再分配显示采样点。
+//! 回放导出的采样计划与帧数限制独立于规则时间线。
 use crate::application::output_plan::RenderPlan;
 use osu_beatmap_preview_core::{processing::validation::TimePoint, Beatmap, PreviewError, Result};
 
@@ -117,6 +117,36 @@ fn build_with(
     })
 }
 
+pub(crate) fn checked_gif_frame_count(
+    duration_ms: f64,
+    fps: f64,
+    speed: f64,
+    cells: usize,
+) -> Result<usize> {
+    let count = (duration_ms * fps / 1000.0).round().max(1.0);
+    // 先检查帧数与采样总量，再分配网格时间表；片段时长与普通 GIF 一样指输出时长。
+    if !duration_ms.is_finite()
+        || duration_ms <= 0.0
+        || !fps.is_finite()
+        || !(1.0..=60.0).contains(&fps)
+        || !speed.is_finite()
+        || speed <= 0.0
+        || !(duration_ms * speed).is_finite()
+        || duration_ms * speed >= i64::MAX as f64
+        || !count.is_finite()
+        || count > 1_000_000.0
+        || cells == 0
+        || (count as usize)
+            .checked_mul(cells)
+            .is_none_or(|total| total > 1_000_000)
+    {
+        return Err(PreviewError::render(
+            "回放 GIF 片段时长、帧率或总采样帧数超出范围",
+        ));
+    }
+    Ok(count as usize)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +167,23 @@ mod tests {
             no_cache: true,
         }
     }
+    #[test]
+    fn output_duration_is_independent_of_replay_speed_and_checks_limits() {
+        for speed in [0.75, 1.0, 1.5] {
+            assert_eq!(checked_gif_frame_count(5000.0, 15.0, speed, 4).unwrap(), 75);
+        }
+        for (duration, fps, speed, cells) in [
+            (f64::NAN, 15.0, 1.0, 4),
+            (0.0, 15.0, 1.0, 4),
+            (5000.0, 0.0, 1.0, 4),
+            (5000.0, 15.0, f64::INFINITY, 4),
+            (5000.0, 15.0, 1.0, usize::MAX),
+            (5000.0, 15.0, 1.0, 0),
+        ] {
+            assert!(checked_gif_frame_count(duration, fps, speed, cells).is_err());
+        }
+    }
+
     #[test]
     fn mp4_rejects_multiple_segments() {
         let points = vec![TimePoint::Seconds(3.0), TimePoint::Seconds(1.0)];

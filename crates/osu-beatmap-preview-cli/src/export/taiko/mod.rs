@@ -24,6 +24,17 @@ pub(crate) fn render_taiko_gif(
     deadline: &osu_beatmap_preview_core::support::timeout::RequestDeadline,
 ) -> osu_beatmap_preview_core::Result<()> {
     let frames = animation_render::prepare_taiko_gif_frames(beatmap, mods, options, fps, deadline)?;
+    // HD/FL 也复用稳定调色板；逐帧重新量化会让未变化的轨道和标签随音符明暗闪烁。
+    super::save_animation_frames(
+        frames,
+        output_path,
+        deadline,
+        &gif_fixed_colors(),
+        mods.is_some_and(|mods| mods.hidden || mods.flashlight),
+    )
+}
+
+fn gif_fixed_colors() -> Vec<[u8; 3]> {
     let mut fixed_colors = super::gif_time_label_colors(
         taiko_constants::gif::style::SHOW_TIME_LABEL,
         taiko_constants::gif::style::IMAGE_BACKGROUND,
@@ -56,14 +67,7 @@ pub(crate) fn render_taiko_gif(
         ]
         .map(|[r, g, b, _]| [r, g, b]),
     );
-    // HD/FL 也复用稳定调色板；逐帧重新量化会让未变化的轨道和标签随音符明暗闪烁。
-    super::save_animation_frames(
-        frames,
-        output_path,
-        deadline,
-        &fixed_colors,
-        mods.is_some_and(|mods| mods.hidden || mods.flashlight),
-    )
+    fixed_colors
 }
 
 #[cfg(test)]

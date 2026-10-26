@@ -1,4 +1,7 @@
-//! Taiko 回放 MP4；物件和最终 HUD 共用实时预览的绘制计划。
+//! Taiko 回放 GIF 与 MP4；物件和最终 HUD 共用实时预览的绘制计划。
+mod gif;
+pub(crate) use gif::render_gif;
+
 use crate::{
     application::output_plan::RenderPlan,
     export::{

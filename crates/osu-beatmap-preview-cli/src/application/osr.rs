@@ -72,9 +72,9 @@ fn execute_inner(
     let t_source = Instant::now();
     let mut source = source_osr::load(&request, &cache_root, &deadline)?;
     let is_taiko = source.document.header.ruleset_id == 1;
-    if is_taiko && format != "mp4" {
+    if is_taiko && format == "png" {
         return Err(PreviewError::new(
-            "Taiko replay preview currently supports MP4 only; PNG/GIF are not supported",
+            "Taiko replay preview supports GIF/MP4; PNG is not supported",
         ));
     }
     logging::record_stage("load_replay_ms", t_source.elapsed().as_secs_f64() * 1000.0);
@@ -152,25 +152,31 @@ fn execute_inner(
         // 失败也记录已经花费的渲染时间；错误事件和汇总统一交由外层写入。
         let rendered = (|| {
             if plan.format != OutputFormat::Mp4 {
-                let PreparedReplay::Standard(prepared) = prepared.as_ref() else {
-                    return Err(PreviewError::new("Taiko replay supports MP4 only"));
-                };
                 // PNG/GIF 在启动音频/背景任务之前分流，只依赖 OSU 和 OSR。
                 osu_beatmap_preview_core::config::with_config(
                     crate::config::core_config(),
-                    || {
-                        let render = match plan.format {
-                            OutputFormat::Png => crate::export::standard::osr::render_png,
-                            _ => crate::export::standard::osr::render_gif,
-                        };
-                        render(
-                            &source.beatmap,
-                            &prepared,
-                            &gameplay,
+                    || match prepared.as_ref() {
+                        PreparedReplay::Standard(prepared) => {
+                            let render = match plan.format {
+                                OutputFormat::Png => crate::export::standard::osr::render_png,
+                                _ => crate::export::standard::osr::render_gif,
+                            };
+                            render(
+                                &source.beatmap,
+                                prepared,
+                                &gameplay,
+                                &plan,
+                                &path,
+                                &deadline,
+                            )
+                        }
+                        PreparedReplay::Taiko(prepared) => crate::export::taiko::osr::render_gif(
+                            Arc::clone(prepared),
+                            Arc::clone(&gameplay),
                             &plan,
                             &path,
                             &deadline,
-                        )
+                        ),
                     },
                 )?;
             } else {
@@ -257,6 +263,80 @@ mod tests {
     use super::*;
     use crate::application::request::{RenderRequest, ReplaySource, RequestKind};
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn taiko_replay_gif_exports_without_archive_and_reuses_selected_segments() {
+        let _guard = logging::test_guard();
+        let root = std::env::temp_dir().join(format!(
+            "osu-preview-taiko-replay-gif-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut request = replay_request(&root);
+        // 使用同一份原始 Standard 谱面，覆盖 Taiko 回放自动转谱及原始 MD5 绑定。
+        let mut bytes =
+            include_bytes!("../../../osu-beatmap-preview-web/test/fixtures/replay-classic.osr")
+                .to_vec();
+        bytes[0] = 1;
+        let replay = root.join("taiko.osr");
+        std::fs::write(&replay, bytes).unwrap();
+        request.kind = RequestKind::Osr {
+            source: ReplaySource::File(replay.to_string_lossy().into()),
+        };
+        request.source.osu_file = Some(
+            Path::new(request.source.osu_file.as_ref().unwrap())
+                .with_file_name("replay-classic.osu")
+                .to_string_lossy()
+                .into(),
+        );
+        request.source.osz_file = Some(root.join("missing.osz").to_string_lossy().into());
+        request.view.time_points = [0.0, 0.1, 0.2, 0.3]
+            .into_iter()
+            .map(osu_beatmap_preview_core::processing::validation::TimePoint::Seconds)
+            .collect();
+        let result = execute(request.clone()).unwrap();
+        assert_eq!(result["replay-info"]["rulesetId"], 1);
+        assert_eq!(result["replay-info"]["cache-hit"], false);
+        let path = PathBuf::from(result["preview-img"].as_str().unwrap());
+        assert_eq!(path.extension().unwrap(), "gif");
+        assert!(path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("taiko_"));
+        let mut decoder = gif::DecodeOptions::new()
+            .read_info(std::io::Cursor::new(std::fs::read(&path).unwrap()))
+            .unwrap();
+        let layout = crate::export::taiko::animation_render::build_video_animation_layout(
+            crate::export::taiko::animation_render::compute_time_range(),
+            crate::export::geometry::OutputFormat::Gif,
+        );
+        let (width, height) = crate::export::taiko::animation_render::gif_canvas_size(&layout);
+        assert_eq!(
+            (i64::from(decoder.width()), i64::from(decoder.height())),
+            (width, height)
+        );
+        assert!(decoder.read_next_frame().unwrap().is_some());
+        assert!(decoder.read_next_frame().unwrap().is_none());
+        let cached = execute(request.clone()).unwrap();
+        assert_eq!(cached["replay-info"]["cache-hit"], true);
+        assert_eq!(cached["preview-img"], result["preview-img"]);
+        request.output.format = Some("png".into());
+        assert!(execute(request)
+            .unwrap_err()
+            .to_string()
+            .contains("PNG is not supported"));
+        let root = root.canonicalize().unwrap();
+        assert_eq!(
+            root.parent().unwrap(),
+            std::env::temp_dir().canonicalize().unwrap()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn replay_png_exports_snapshots_without_media_and_reuses_cache() {
