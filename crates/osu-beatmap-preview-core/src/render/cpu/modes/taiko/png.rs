@@ -62,7 +62,7 @@ fn png_row_chart_left(_layout: &TaikoPngLayout, _row_index: i64) -> i64 {
     taiko_png_sizing.PAGE_MARGIN_LEFT + taiko_png_sizing.ROW_INNER_PADDING_X
 }
 
-// ─── 行背景（已预渲染为 track_bg，逐行 alpha_composite） ───
+// ─── 行背景由场景入口按实际行宽绘制 ───
 
 // ─── 节拍线绘制 ───
 
@@ -510,29 +510,25 @@ pub fn render_taiko_png_scene(
         taiko_constants::png::style::IMAGE_BACKGROUND,
     );
 
-    // 预渲染轨道背景条，每一行都相同。
-    let track_bg = {
-        let mut bg = Img::new(
-            layout.content_width as u32,
-            taiko_png_sizing.ROW_HEIGHT as u32,
-            [0, 0, 0, 0],
-        );
+    // 使用同一滚动坐标绘制每行实际宽度，短行不再铺满背景；尺寸已按 PNG 的倍率缩放。
+    for row_index in 0..layout.row_count {
+        let start = layout.row_start_positions[row_index as usize];
+        let end = layout
+            .row_start_positions
+            .get(row_index as usize + 1)
+            .copied()
+            .unwrap_or(mapper.end_position());
+        let width = (end - start).ceil().max(1.0) as i64 + taiko_png_sizing.ROW_INNER_PADDING_X * 2;
         draw_track_background(
-            &mut bg,
-            0,
-            0,
-            layout.content_width,
+            &mut image,
+            taiko_png_sizing.PAGE_MARGIN_LEFT,
+            png_row_top(row_index),
+            width,
             taiko_png_sizing.ROW_HEIGHT,
             taiko_constants::png::style::TRACK_BACKGROUND_COLOR,
             taiko_constants::png::style::TRACK_EDGE_COLOR,
             crate::render::geometry::scale_stroke_px(1.0, render_scale),
         );
-        bg
-    };
-
-    for row_index in 0..layout.row_count {
-        let row_top = png_row_top(row_index);
-        image.alpha_composite(&track_bg, taiko_png_sizing.PAGE_MARGIN_LEFT, row_top);
     }
 
     let mut last_label_time: Option<i64> = None;
