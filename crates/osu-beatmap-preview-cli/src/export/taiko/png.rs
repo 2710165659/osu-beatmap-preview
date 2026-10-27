@@ -109,7 +109,13 @@ pub(crate) fn render_taiko_grid(
         first_note_time,
         time_axis.to_display(chart_start_time),
     );
-    let mut layout = build_png_layout(mapper.end_position(), &timing_lines, chart_start_time);
+    let beat_positions = png_beat_positions(&redline_sections, &mapper);
+    let mut layout = build_png_layout(
+        mapper.end_position(),
+        &timing_lines,
+        &beat_positions,
+        chart_start_time,
+    );
     layout.overall_difficulty = effective_overall_difficulty(beatmap, mods);
     let sv_changes = build_sv_changes(&timing_points, effective_chart_end_time, &mapper);
     deadline.check()?;
@@ -140,29 +146,96 @@ fn window_hit_objects(hit_objects: &mut Vec<TaikoHitObject>, window: PngWindow) 
     }
 }
 
-/// 按完整小节装入目标行宽；超宽的单个小节独占一行，不压缩音符或截断小节。
+/// 常规每行四个完整小节；长拍号提前换行，单小节超宽时按拍线续行。
+/// 全部换行沿用原始坐标，不缩放行内音符。
 fn compute_row_start_positions(
     measure_positions: &[f64],
     chart_width: f64,
     target_width: f64,
+    beat_positions: &[f64],
 ) -> Vec<f64> {
     let mut starts = vec![0.0];
     let mut previous = 0.0;
-    for position in measure_positions
+    let mut count = 0;
+    let mut continuing_long_measure = false;
+    for end in measure_positions
         .iter()
         .copied()
         .chain(std::iter::once(chart_width))
     {
-        if !position.is_finite() || position <= previous || position > chart_width {
+        if !end.is_finite() || end <= previous || end > chart_width {
             continue;
         }
-        let start = *starts.last().unwrap();
-        if position - start > target_width && previous > start {
-            starts.push(previous);
+        if target_width.is_finite() && target_width > 0.0 && end - previous > target_width {
+            // 普通小节后单独开始续行；相邻长小节或红线切段不强制清空剩余行宽。
+            if !continuing_long_measure && previous > *starts.last().unwrap() {
+                starts.push(previous);
+            }
+            let mut start = *starts.last().unwrap();
+            // 连续累加拍长会有微小浮点误差，不能因此漏掉恰好位于行尾的拍线。
+            let tolerance = target_width * 1e-9;
+            while end - start > target_width + tolerance {
+                let limit = start + target_width;
+                let index =
+                    beat_positions.partition_point(|&position| position <= limit + tolerance);
+                let next = index
+                    .checked_sub(1)
+                    .map(|i| beat_positions[i])
+                    .filter(|&position| position.is_finite() && position > start)
+                    // 单拍也超宽或没有合法拍线时按行宽续行。
+                    .unwrap_or(limit);
+                starts.push(next);
+                start = next;
+            }
+            continuing_long_measure = true;
+            count = 0;
+        } else {
+            if continuing_long_measure {
+                count = 1;
+                continuing_long_measure = false;
+            }
+            // 长拍号即使单小节未超宽，多个相邻小节也不能一起撑宽整图。
+            let start = *starts.last().unwrap();
+            if target_width.is_finite()
+                && target_width > 0.0
+                && end - start > target_width + target_width * 1e-9
+                && previous > start
+            {
+                starts.push(previous);
+                count = 0;
+            }
+            count += 1;
+            if count == 4 {
+                if end < chart_width {
+                    starts.push(end);
+                }
+                count = 0;
+            }
         }
-        previous = position;
+        previous = end;
     }
     starts
+}
+
+/// 单独生成换行拍线，避免将激昂/SV 标记误当拍线，也不受绘制用的最小拍线间距影响。
+fn png_beat_positions(sections: &[RedlineSection], mapper: &ScrollPositionMapper) -> Vec<f64> {
+    let mut positions = Vec::new();
+    for section in sections {
+        if !section.beat_length.is_finite() || section.beat_length <= 0.0 {
+            continue;
+        }
+        let first = ((-section.start_time as f64 / section.beat_length).ceil()).max(0.0) as i64;
+        let last =
+            ((section.end_time - section.start_time) as f64 / section.beat_length).floor() as i64;
+        for beat in first..=last {
+            let position =
+                mapper.position_at(section.start_time as f64 + beat as f64 * section.beat_length);
+            if positions.last().is_none_or(|&previous| position > previous) {
+                positions.push(position);
+            }
+        }
+    }
+    positions
 }
 
 /// 用四小节分组宽度的上四分位数作为目标，避免少数长拍号撑宽整图。
@@ -194,6 +267,7 @@ fn typical_row_width(measure_positions: &[f64], chart_width: f64) -> f64 {
 fn build_png_layout(
     chart_width: f64,
     timing_lines: &[TimingLine],
+    beat_positions: &[f64],
     chart_start_time: i64,
 ) -> TaikoPngLayout {
     let taiko_png_sizing = taiko_constants::png::sizing();
@@ -203,11 +277,15 @@ fn build_png_layout(
         .map(|l| l.position)
         .collect();
     let target_width = typical_row_width(&measure_positions, chart_width);
-    let row_start_positions =
-        compute_row_start_positions(&measure_positions, chart_width, target_width);
+    let row_start_positions = compute_row_start_positions(
+        &measure_positions,
+        chart_width,
+        target_width,
+        beat_positions,
+    );
     let row_count = row_start_positions.len() as i64;
 
-    // 超宽单小节保持完整，画布按实际最长行分配，不能按目标宽度裁剪。
+    // 超长小节已按拍线续行，画布按实际最长行分配，不压缩音符间距。
     let mut used_row_width = 0.0f64;
     for (i, &start) in row_start_positions.iter().enumerate() {
         let end = if i + 1 < row_start_positions.len() {
@@ -258,30 +336,33 @@ mod tests {
         let width = typical_row_width(&measures, 950.0);
         assert_eq!(width, 400.0);
         assert_eq!(
-            compute_row_start_positions(&measures, 950.0, width),
+            compute_row_start_positions(&measures, 950.0, width, &[]),
             vec![0.0, 400.0, 800.0]
         );
         assert_eq!(
-            compute_row_start_positions(&measures, 800.0, width),
+            compute_row_start_positions(&measures, 800.0, width, &[]),
             vec![0.0, 400.0]
         );
     }
 
     #[test]
-    fn adaptive_rows_preserve_boundaries_at_every_scale() {
+    fn variable_width_measures_keep_four_per_row_at_every_scale() {
         let measures = [0.0, 100.0, 100.0, 250.0, 400.0, 700.0, 800.0];
         for scale in [0.5, 1.0, 2.0] {
             let scaled: Vec<_> = measures.iter().map(|p| p * scale).collect();
             assert_eq!(
-                compute_row_start_positions(&scaled, 900.0 * scale, 400.0 * scale),
-                vec![0.0, 400.0 * scale, 800.0 * scale]
+                compute_row_start_positions(&scaled, 900.0 * scale, 800.0 * scale, &[]),
+                vec![0.0, 700.0 * scale]
             );
         }
         assert_eq!(
-            compute_row_start_positions(&[0.0, 600.0, 700.0], 800.0, 400.0),
-            vec![0.0, 600.0]
+            compute_row_start_positions(&[0.0, 600.0, 700.0], 800.0, 400.0, &[0.0, 300.0, 600.0]),
+            vec![0.0, 300.0, 700.0]
         );
-        assert_eq!(compute_row_start_positions(&[], 100.0, 400.0), vec![0.0]);
+        assert_eq!(
+            compute_row_start_positions(&[], 100.0, 400.0, &[]),
+            vec![0.0]
+        );
     }
 
     #[test]
@@ -290,7 +371,49 @@ mod tests {
         measures.extend([2000.0, 2400.0, 2800.0, 3200.0]);
         assert_eq!(typical_row_width(&measures, 3200.0), 400.0);
     }
+    #[test]
+    fn long_measure_keeps_beat_on_row_edge_despite_roundoff() {
+        let beats: Vec<_> = (0..=64).map(|beat| beat as f64 * (1.0 + 1e-12)).collect();
+        let starts = compute_row_start_positions(&[0.0], 64.0, 16.0, &beats);
+        assert_eq!(starts.len(), 4);
+        for (index, start) in starts.iter().enumerate() {
+            assert!((start - index as f64 * 16.0).abs() < 1e-8);
+        }
+    }
 
+    #[test]
+    fn long_measure_continues_across_redline_without_short_row() {
+        // 对应末尾同 BPM 红线：30 拍后重新起算小节，但续行仍应填满 16 拍。
+        let beats: Vec<_> = (0..=62).map(|beat| beat as f64).collect();
+        assert_eq!(
+            compute_row_start_positions(&[0.0, 30.0], 62.0, 16.0, &beats),
+            vec![0.0, 16.0, 32.0, 48.0]
+        );
+    }
+
+    #[test]
+    fn adjacent_long_measures_do_not_expand_every_row() {
+        assert_eq!(
+            compute_row_start_positions(&[0.0, 400.0, 800.0, 1200.0], 1200.0, 400.0, &[]),
+            vec![0.0, 400.0, 800.0]
+        );
+    }
+
+    #[test]
+    fn oversized_measure_does_not_expand_every_row() {
+        let beats: Vec<_> = (0..=288).map(|i| i as f64 * 25.0).collect();
+        let starts = compute_row_start_positions(&[0.0, 400.0, 6800.0], 7200.0, 400.0, &beats);
+        assert!(starts.iter().all(|start| beats.contains(start)));
+        for pair in starts
+            .iter()
+            .copied()
+            .chain(std::iter::once(7200.0))
+            .collect::<Vec<_>>()
+            .windows(2)
+        {
+            assert!(pair[1] - pair[0] <= 400.0, "oversized row: {pair:?}");
+        }
+    }
     fn taiko_object(start_time: i64, end_time: i64) -> TaikoHitObject {
         TaikoHitObject {
             start_time,
