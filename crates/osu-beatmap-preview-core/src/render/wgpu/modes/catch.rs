@@ -6,9 +6,10 @@ use crate::domain::mods::ModSettings;
 use crate::render::cpu::modes::catch::animation::{
     build_video_animation_layout, object_alpha, AnimationLayout, CatchFlashlight,
 };
-use crate::render::cpu::modes::catch::drawing::object_diameter;
+use crate::render::cpu::modes::catch::caught::CatcherDisplay;
+use crate::render::cpu::modes::catch::drawing::{draw_catch_object_scene, object_diameter};
 use crate::render::cpu::modes::catch::objects::{
-    build_catch_render_objects, effective_difficulty, ObjType, RenderObject,
+    build_catch_render_objects, effective_difficulty, RenderObject,
 };
 use crate::render::geometry::{GameMode, OutputFormat};
 use crate::render::scene::{FrameSceneBuilder, SceneRect};
@@ -42,6 +43,9 @@ pub fn prepare_realtime(
             catcher.as_ref().unwrap().clone(),
         )
     });
+    let catcher = catcher
+        .filter(|_| show_catcher)
+        .map(|path| CatcherDisplay::new(&render_objects, path, difficulty.cs));
     // 与 MP4 导出用同一套画布布局：物件层就是 16:9 画布本身，
     // 否则 FL 遮罩只盖住 playfield，合成阶段补出的背景不会被压暗。
     let layout = build_video_animation_layout(difficulty.cs, difficulty.ar, OutputFormat::Mp4)
@@ -60,7 +64,7 @@ pub fn prepare_realtime(
                 absolute_time_ms,
                 &layout,
                 flashlight.as_ref(),
-                catcher.as_deref().filter(|_| show_catcher),
+                catcher.as_ref(),
             ))
         },
     ))
@@ -72,7 +76,7 @@ fn render_scene(
     absolute_time_ms: i64,
     layout: &AnimationLayout,
     flashlight: Option<&CatchFlashlight>,
-    catcher: Option<&crate::render::cpu::modes::catch::catcher::CatcherPath>,
+    catcher: Option<&CatcherDisplay>,
 ) -> crate::render::scene::FrameScene {
     let mut scene = FrameSceneBuilder::new(
         layout.frame_width as u32,
@@ -104,6 +108,9 @@ fn render_scene(
         layout.judgement_line_color,
     );
 
+    if let Some(catcher) = catcher {
+        catcher.draw_scene(&mut scene, absolute_time_ms, layout);
+    }
     let fall_window = (layout.frame_height as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
     let lo = start_times.partition_point(|&time| time > absolute_time_ms + fall_window);
     let hi = start_times.partition_point(|&time| time >= absolute_time_ms - 2000);
@@ -112,6 +119,9 @@ fn render_scene(
         .as_ref()
         .is_some_and(|timeline| timeline.is_active_at(absolute_time_ms));
     for object in &render_objects[lo..hi] {
+        if catcher.is_some_and(|catcher| catcher.has_caught(object, absolute_time_ms)) {
+            continue;
+        }
         draw_object_scene(
             &mut scene,
             object,
@@ -120,9 +130,6 @@ fn render_scene(
             layout,
             kiai_active,
         );
-    }
-    if let Some(catcher) = catcher {
-        catcher.draw_scene(&mut scene, absolute_time_ms, layout);
     }
     if let Some(flashlight) = flashlight {
         flashlight.at(absolute_time_ms, layout).draw_scene(
@@ -148,42 +155,17 @@ fn draw_object_scene(
 ) {
     let local_time = object.start_time - absolute_time_ms;
     let center = [
-        (layout.playfield_left + object.x * layout.playfield_scale) as f32,
-        (judgement_y - local_time as f64 * layout.pixels_per_ms) as f32,
+        layout.playfield_left + object.x * layout.playfield_scale,
+        judgement_y - local_time as f64 * layout.pixels_per_ms,
     ];
     let diameter = object_diameter(
         layout.object_scale,
         layout.playfield_scale,
         object.scale_factor,
-    ) as f32;
-    if center[1] + diameter / 2.0 < 0.0 || center[1] - diameter / 2.0 > judgement_y as f32 {
+    );
+    if center[1] + diameter / 2.0 < 0.0 || center[1] - diameter / 2.0 > judgement_y {
         return;
     }
     let alpha = object_alpha(object, absolute_time_ms, layout.time_preempt, kiai_active);
-    if alpha == 0 {
-        return;
-    }
-    let radius = diameter / 2.0;
-    let color = [object.color[0], object.color[1], object.color[2], alpha];
-    match object.object_type {
-        ObjType::Fruit | ObjType::Droplet | ObjType::TinyDroplet => {
-            if object.hyper_dash {
-                let hyper = crate::config::current().skin.HYPER_DASH;
-                scene.ring(
-                    center,
-                    radius * 1.6,
-                    radius * 0.6,
-                    [hyper[0], hyper[1], hyper[2], alpha],
-                );
-            }
-            // 半透明时本体止于白色边框内沿，避免边框区域重复混合透明度。
-            scene.circle(
-                center,
-                if alpha < 255 { radius * 0.8 } else { radius },
-                color,
-            );
-            scene.ring(center, radius, radius * 0.2, [255, 255, 255, alpha]);
-        }
-        ObjType::Banana => scene.ring(center, radius, radius * 0.2, color),
-    }
+    draw_catch_object_scene(scene, object, center, diameter, alpha);
 }

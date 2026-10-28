@@ -400,6 +400,7 @@ mod tests {
             scale_factor: BANANA_SCALE,
             event_time: Some(time as f64),
             hyper_dash: false,
+            last_in_combo: false,
             hidden: false,
             edge: false,
             banana_shower_id: None,

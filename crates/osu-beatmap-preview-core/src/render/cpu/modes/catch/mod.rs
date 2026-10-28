@@ -2,6 +2,7 @@
 
 pub mod animation;
 pub mod catcher;
+pub mod caught;
 pub mod constants;
 pub mod drawing;
 pub mod objects;

@@ -48,6 +48,8 @@ pub struct RenderObject {
     pub scale_factor: f64,
     pub event_time: Option<f64>,
     pub hyper_dash: bool,
+    /// 当前 Combo 的最后一个展开物件；香蕉雨末颗即使漏接也会清盘。
+    pub last_in_combo: bool,
     /// 动画按每个展开物件的判定时刻应用 HD；水滴与香蕉也必须继承。
     pub hidden: bool,
     /// 接近 hyperdash 极限、需要引导线提示的大跨度移动。
@@ -172,12 +174,18 @@ pub fn build_catch_render_objects(
     let mut color_index: usize = 0;
     let mut seen_first_combo_object = false;
 
-    for hit_object in hit_objects.iter() {
+    for (index, hit_object) in hit_objects.iter().enumerate() {
+        let last_in_combo = hit_objects
+            .get(index + 1)
+            .is_some_and(|next| next.hit_type & 8 == 0 && next.new_combo);
         if hit_object.hit_type & 8 != 0 {
             // 香蕉雨：颜色由香蕉自身随机决定，不影响 combo 颜色推进
             let shower_id = enable_banana_routes.then_some(banana_shower_ranges.len());
             let range =
                 build_banana_shower_objects(hit_object, shower_id, &mut rng, &mut render_objects);
+            if let Some(last) = render_objects[range.clone()].last_mut() {
+                last.last_in_combo = true;
+            }
             if enable_banana_routes && !range.is_empty() {
                 banana_shower_ranges.push(range);
             }
@@ -195,6 +203,7 @@ pub fn build_catch_render_objects(
         let combo_color = combo_colors[color_index];
 
         if hit_object.hit_type & 2 != 0 {
+            let first_nested = render_objects.len();
             last_position = Some(stable_slider_end_x(hit_object));
             last_start_time = hit_object.start_time as f64;
             build_juice_stream_objects(
@@ -207,6 +216,9 @@ pub fn build_catch_render_objects(
                 &mut rng,
                 &mut render_objects,
             )?;
+            if let Some(last) = render_objects[first_nested..].last_mut() {
+                last.last_in_combo = last_in_combo;
+            }
             continue;
         }
         let mut fruit = build_fruit_object(
@@ -215,6 +227,7 @@ pub fn build_catch_render_objects(
             combo_color,
             None,
         );
+        fruit.last_in_combo = last_in_combo;
         if hard_rock_offsets {
             apply_hard_rock_fruit_offset(
                 &mut fruit,
@@ -256,6 +269,7 @@ pub fn build_fruit_object(
         scale_factor: 1.0,
         event_time,
         hyper_dash: false,
+        last_in_combo: false,
         hidden: false,
         edge: false,
         banana_shower_id: None,
@@ -304,6 +318,7 @@ fn build_banana_shower_objects(
             scale_factor: crate::render::cpu::modes::catch::constants::BANANA_SCALE,
             event_time: Some(current_time as f64),
             hyper_dash: false,
+            last_in_combo: false,
             hidden: false,
             edge: false,
             banana_shower_id: shower_id,
@@ -365,6 +380,7 @@ fn build_juice_stream_objects(
                     scale_factor: crate::render::cpu::modes::catch::constants::DROPLET_SCALE,
                     event_time: Some(event.time),
                     hyper_dash: false,
+                    last_in_combo: false,
                     hidden: false,
                     edge: false,
                     banana_shower_id: None,
@@ -626,6 +642,7 @@ fn build_tiny_droplets_between(
             scale_factor: crate::render::cpu::modes::catch::constants::TINY_DROPLET_SCALE,
             event_time: Some(time),
             hyper_dash: false,
+            last_in_combo: false,
             hidden: false,
             edge: false,
             banana_shower_id: None,
@@ -765,10 +782,58 @@ mod tests {
             scale_factor: 1.0,
             event_time: Some(time as f64),
             hyper_dash: false,
+            last_in_combo: false,
             hidden: false,
             edge: false,
             banana_shower_id: None,
             banana_route_x: None,
+        }
+    }
+
+    #[test]
+    fn combo_ends_follow_flags_stream_tails_and_banana_showers() {
+        let beatmap = crate::parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:2\n[Difficulty]\nCircleSize:5\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[Colours]\nCombo1:255,0,0\nCombo2:255,0,0\n[HitObjects]\n256,192,1000,1,0\n256,192,2000,2,0,L|356:192,1,100\n256,192,3000,5,0\n256,192,4000,8,0,4500\n256,192,5000,1,0\n",
+        ).unwrap();
+        let objects = build_catch_render_objects(
+            &beatmap,
+            beatmap.hit_objects.as_catch().unwrap(),
+            None,
+            &effective_difficulty(&beatmap, None),
+            false,
+        )
+        .unwrap();
+        let ends: Vec<_> = objects
+            .iter()
+            .filter(|object| object.last_in_combo)
+            .map(|object| (object.object_type, object.event_time_or_start()))
+            .collect();
+        assert_eq!(
+            ends,
+            vec![(ObjType::Fruit, 2500.0), (ObjType::Banana, 4500.0)]
+        );
+        assert!(objects
+            .iter()
+            .any(|object| object.object_type == ObjType::TinyDroplet));
+        assert!(!objects.first().unwrap().last_in_combo);
+        assert!(!objects.last().unwrap().last_in_combo);
+        let mut same_objects = beatmap.clone();
+        if let crate::domain::models::HitObjects::Catch(objects) = &mut same_objects.hit_objects {
+            for object in objects {
+                object.new_combo = false;
+            }
+        }
+        let same_objects = build_catch_render_objects(
+            &same_objects,
+            same_objects.hit_objects.as_catch().unwrap(),
+            None,
+            &effective_difficulty(&same_objects, None),
+            false,
+        )
+        .unwrap();
+        assert_eq!(objects.len(), same_objects.len());
+        for (a, b) in objects.iter().zip(&same_objects) {
+            assert_eq!((a.x, a.event_time, a.color), (b.x, b.event_time, b.color));
         }
     }
 

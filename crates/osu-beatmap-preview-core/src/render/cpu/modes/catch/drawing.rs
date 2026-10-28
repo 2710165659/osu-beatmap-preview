@@ -4,6 +4,7 @@
 //! 内边框的实心圆，hyperdash 使用彩色外环，香蕉使用空心圆环。
 
 use crate::render::canvas::Img;
+use crate::render::scene::FrameSceneBuilder;
 
 use super::objects::{ObjType, RenderObject};
 
@@ -80,6 +81,43 @@ pub(crate) fn draw_catch_object_with_alpha(
 /// 应用难度、物件种类及游戏区域缩放后的物件直径。
 pub fn object_diameter(object_scale: f64, playfield_scale: f64, scale_factor: f64) -> f64 {
     super::constants::OBJECT_RADIUS * 2.0 * object_scale * scale_factor * playfield_scale
+}
+
+/// 下落、盘上与散出物件共用同一套场景几何和透明度规则。
+pub(crate) fn draw_catch_object_scene(
+    scene: &mut FrameSceneBuilder,
+    object: &RenderObject,
+    position: [f64; 2],
+    diameter: f64,
+    alpha: u8,
+) {
+    if alpha == 0 {
+        return;
+    }
+    let center = position.map(|value| value as f32);
+    let radius = diameter as f32 / 2.0;
+    let color = [object.color[0], object.color[1], object.color[2], alpha];
+    match object.object_type {
+        ObjType::Fruit | ObjType::Droplet | ObjType::TinyDroplet => {
+            if object.hyper_dash {
+                let hyper = crate::config::current().skin.HYPER_DASH;
+                scene.ring(
+                    center,
+                    radius * 1.6,
+                    radius * 0.6,
+                    [hyper[0], hyper[1], hyper[2], alpha],
+                );
+            }
+            // 半透明时本体止于白色边框内沿，避免边框区域重复混合透明度。
+            scene.circle(
+                center,
+                if alpha < 255 { radius * 0.8 } else { radius },
+                color,
+            );
+            scene.ring(center, radius, radius * 0.2, [255, 255, 255, alpha]);
+        }
+        ObjType::Banana => scene.ring(center, radius, radius * 0.2, color),
+    }
 }
 
 #[cfg(test)]

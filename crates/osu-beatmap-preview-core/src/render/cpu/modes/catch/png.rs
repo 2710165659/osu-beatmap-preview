@@ -589,6 +589,7 @@ mod tests {
             scale_factor: 1.0,
             event_time: Some(time as f64),
             hyper_dash: false,
+            last_in_combo: false,
             hidden: false,
             edge: true,
             banana_shower_id: None,

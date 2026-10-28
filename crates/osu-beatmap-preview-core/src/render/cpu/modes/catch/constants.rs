@@ -16,6 +16,7 @@ pub mod rules {
 pub mod sizing {
     pub const PLAYFIELD_DISPLAY_WIDTH: i64 = 260;
     pub const BANANA_ROUTE_LINE_WIDTH: f64 = 4.0;
+    pub const CATCHER_PLATE_HEIGHT: f64 = 18.0;
 }
 
 pub mod style {

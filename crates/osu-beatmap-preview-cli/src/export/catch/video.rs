@@ -20,6 +20,7 @@ use std::path::Path;
 
 use super::animation::{build_video_animation_layout, render_animation_frame, CatchFlashlight};
 use super::objects::{build_catch_render_objects, effective_difficulty};
+use osu_beatmap_preview_core::render::cpu::modes::catch::caught::CatcherDisplay;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_catch_video(
@@ -59,6 +60,9 @@ pub(crate) fn render_catch_video(
             catcher.as_ref().unwrap().clone(),
         )
     });
+    let catcher = catcher
+        .filter(|_| show_catcher)
+        .map(|path| CatcherDisplay::new(&render_objects, path, difficulty.cs));
 
     let speed = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     // 音乐在输出域的重采样/时间伸缩倍率：DT/HT 保调，NC/DC 固定 1.5 / 0.75 音高。
@@ -99,12 +103,8 @@ pub(crate) fn render_catch_video(
             snapshot_time,
             &layout,
             frame_background.as_ref(),
+            catcher.as_ref(),
         );
-        if show_catcher {
-            if let Some(catcher) = &catcher {
-                catcher.draw_cpu(&mut frame, snapshot_time, &layout);
-            }
-        }
         if let Some(flashlight) = &flashlight {
             flashlight.at(snapshot_time, &layout).apply(
                 &mut frame,

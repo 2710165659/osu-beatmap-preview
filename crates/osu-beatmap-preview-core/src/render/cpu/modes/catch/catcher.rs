@@ -7,7 +7,8 @@ use super::route::{plan_banana_route, BananaRouteAnchor};
 use crate::render::canvas::Img;
 use crate::render::scene::{FrameSceneBuilder, SceneRect};
 
-const PLATE_COLOR: [u8; 3] = [0x4b, 0x9b, 0xe6];
+const PLATE_COLOR: [u8; 3] = [0xff, 0xa7, 0x86];
+const PLATE_BORDER_COLOR: [u8; 3] = [0xbb, 0x48, 0x63];
 
 #[derive(Clone, Copy, Debug)]
 struct Keyframe {
@@ -37,7 +38,7 @@ impl CatcherPath {
         self.position_at_f64(time as f64)
     }
 
-    fn position_at_f64(&self, time: f64) -> f64 {
+    pub(super) fn position_at_f64(&self, time: f64) -> f64 {
         let index = self.keys.partition_point(|key| key.time <= time);
         if index == 0 {
             return PLAYFIELD_WIDTH / 2.0;
@@ -181,11 +182,12 @@ impl CatcherPath {
 
     pub fn draw_cpu(&self, frame: &mut Img, time: i64, layout: &AnimationLayout) {
         self.plates(time, layout, |rect, color, additive| {
+            // 共用边界取整，避免小数倍率下相邻边框与填充之间出现缝隙。
+            let x = rect.x.round() as i64;
+            let y = rect.y.round() as i64;
+            let width = (rect.x + rect.width).round() as i64 - x;
+            let height = (rect.y + rect.height).round() as i64 - y;
             if additive {
-                let x = rect.x.round() as i64;
-                let y = rect.y.round() as i64;
-                let width = rect.width.round().max(1.0) as i64;
-                let height = rect.height.round().max(1.0) as i64;
                 // lazer 残影使用 SrcAlpha / One 加色，本体仍使用普通透明合成。
                 for py in y.max(0)..(y + height).min(frame.h as i64) {
                     for px in x.max(0)..(x + width).min(frame.w as i64) {
@@ -200,13 +202,7 @@ impl CatcherPath {
                 }
                 return;
             }
-            frame.fill_rect_size(
-                rect.x.round() as i64,
-                rect.y.round() as i64,
-                rect.width.round().max(1.0) as i64,
-                rect.height.round().max(1.0) as i64,
-                color,
-            )
+            frame.fill_rect_size(x, y, width, height, color)
         });
     }
 
@@ -244,43 +240,48 @@ fn plate_geometry(
     mut draw: impl FnMut(SceneRect, [u8; 4]),
 ) {
     let scale = layout.playfield_scale;
-    let width = CATCHER_BASE_SIZE * (layout.object_scale * 2.0).abs() * scale;
+    let size_scale = (layout.object_scale * 2.0).abs() * scale;
+    let width = CATCHER_BASE_SIZE * size_scale;
+    let height = CATCHER_PLATE_HEIGHT * size_scale;
+    let border = 3.0 * size_scale;
     let center = layout.playfield_left + x * scale;
-    let y = layout.playfield_top + STABLE_CATCHER_Y * scale;
-    // 深色外沿分离判定线和拖尾；由逐行收窄的浅碗代替三块白色台阶。
-    let outline = [25, 35, 48, color[3]];
-    let shade = |factor: f64| {
-        [
-            (color[0] as f64 * factor).round() as u8,
-            (color[1] as f64 * factor).round() as u8,
-            (color[2] as f64 * factor).round() as u8,
-            color[3],
-        ]
-    };
-    for row in 0..16 {
-        let depth = row as f64 / 15.0;
-        let fraction = (1.0 - depth * depth * 0.45).sqrt();
-        let row_width = width * fraction;
+    let left = center - width / 2.0;
+    let top = layout.playfield_top + STABLE_CATCHER_Y * scale - height / 2.0;
+    let outline = [
+        PLATE_BORDER_COLOR[0],
+        PLATE_BORDER_COLOR[1],
+        PLATE_BORDER_COLOR[2],
+        color[3],
+    ];
+    // 边框与填充不重叠，Dash 加色残影也只会叠加一次。
+    for (x, y, width, height, color) in [
+        (left, top, width, border, outline),
+        (left, top + height - border, width, border, outline),
+        (left, top + border, border, height - 2.0 * border, outline),
+        (
+            left + width - border,
+            top + border,
+            border,
+            height - 2.0 * border,
+            outline,
+        ),
+        (
+            left + border,
+            top + border,
+            width - 2.0 * border,
+            height - 2.0 * border,
+            color,
+        ),
+    ] {
         draw(
             SceneRect {
-                x: (center - row_width / 2.0 - scale) as f32,
-                y: (y + row as f64 * scale) as f32,
-                width: (row_width + 2.0 * scale) as f32,
-                height: scale as f32,
+                x: x as f32,
+                y: y as f32,
+                width: width as f32,
+                height: height as f32,
             },
-            outline,
+            color,
         );
-        if row > 0 && row < 15 {
-            draw(
-                SceneRect {
-                    x: (center - row_width / 2.0 + scale) as f32,
-                    y: (y + row as f64 * scale) as f32,
-                    width: (row_width - 2.0 * scale).max(scale) as f32,
-                    height: scale as f32,
-                },
-                shade(if row <= 3 { 1.0 } else { 0.72 + depth * 0.13 }),
-            );
-        }
     }
 }
 
@@ -674,7 +675,7 @@ mod tests {
                         matches!(command, crate::render::scene::DrawCommand::Rectangle { .. })
                     })
                     .count();
-                assert_eq!(rectangles, if show_catcher { 32 } else { 2 });
+                assert_eq!(rectangles, if show_catcher { 7 } else { 2 });
                 let layout =
                     build_video_animation_layout(difficulty.cs, difficulty.ar, OutputFormat::Mp4);
                 let center =
@@ -688,21 +689,55 @@ mod tests {
     fn geometry_scales_with_the_current_output_and_cs() {
         use super::super::animation::build_animation_layout;
         use crate::render::geometry::OutputFormat;
-        let base = build_animation_layout(5.0, 5.0, OutputFormat::Gif);
-        let mut scaled = build_animation_layout(5.0, 5.0, OutputFormat::Gif);
-        scaled.playfield_scale *= 2.0;
-        scaled.playfield_left *= 2.0;
-        scaled.playfield_top *= 2.0;
-        scaled.render_scale *= 2.0;
-        let mut a = Vec::new();
-        let mut b = Vec::new();
-        plate_geometry(256.0, &base, [255; 4], |rect, _| a.push(rect));
-        plate_geometry(256.0, &scaled, [255; 4], |rect, _| b.push(rect));
-        for (a, b) in a.iter().zip(b.iter()) {
-            assert_eq!(a.x * 2.0, b.x);
-            assert_eq!(a.y * 2.0, b.y);
-            assert_eq!(a.width * 2.0, b.width);
-            assert_eq!(a.height * 2.0, b.height);
+        for (format, cs, factor) in [
+            (OutputFormat::Gif, 5.0, 0.75),
+            (OutputFormat::Mp4, 2.0, 1.25),
+            (OutputFormat::Gif, 8.0, 2.0),
+        ] {
+            let base = build_animation_layout(cs, 5.0, format);
+            let mut scaled = build_animation_layout(cs, 5.0, format);
+            scaled.playfield_scale *= factor;
+            scaled.playfield_left *= factor;
+            scaled.playfield_top *= factor;
+            scaled.render_scale *= factor;
+            let color = [PLATE_COLOR[0], PLATE_COLOR[1], PLATE_COLOR[2], 128];
+            let mut a = Vec::new();
+            let mut b = Vec::new();
+            plate_geometry(256.0, &base, color, |rect, color| a.push((rect, color)));
+            plate_geometry(256.0, &scaled, color, |rect, color| b.push((rect, color)));
+            assert_eq!(a.len(), 5);
+            assert_eq!(a.len(), b.len());
+            let (top, bottom) = (a[0].0, a[1].0);
+            let judgement_y = base.playfield_top + STABLE_CATCHER_Y * base.playfield_scale;
+            assert!(((top.y + bottom.y + bottom.height) as f64 / 2.0 - judgement_y).abs() < 1e-4);
+            assert!(
+                (top.width as f64
+                    - CATCHER_BASE_SIZE * base.object_scale.abs() * 2.0 * base.playfield_scale)
+                    .abs()
+                    < 1e-4
+            );
+            let size_scale = base.object_scale.abs() * 2.0 * base.playfield_scale;
+            assert!((top.height as f64 - 3.0 * size_scale).abs() < 1e-4);
+            assert!(
+                ((bottom.y + bottom.height - top.y) as f64 - CATCHER_PLATE_HEIGHT * size_scale)
+                    .abs()
+                    < 1e-4
+            );
+            for (_, color) in &a[..4] {
+                assert_eq!(*color, [0xbb, 0x48, 0x63, 128]);
+            }
+            assert_eq!(a[4].1, [0xff, 0xa7, 0x86, 128]);
+            for ((a, color_a), (b, color_b)) in a.iter().zip(b.iter()) {
+                assert_eq!(color_a, color_b);
+                for (a, b) in [
+                    (a.x, b.x),
+                    (a.y, b.y),
+                    (a.width, b.width),
+                    (a.height, b.height),
+                ] {
+                    assert!((a as f64 * factor - b as f64).abs() < 1e-4);
+                }
+            }
         }
     }
 
@@ -716,7 +751,7 @@ mod tests {
             FrameSceneBuilder::new(layout.frame_width as u32, layout.frame_height as u32, 1000);
         path.draw_scene(&mut scene, 1000, &layout);
         let scene = scene.finish();
-        assert_eq!(scene.commands.len(), 30);
+        assert_eq!(scene.commands.len(), 5);
         let mut image = Img::new(
             layout.frame_width as u32,
             layout.frame_height as u32,
@@ -729,8 +764,8 @@ mod tests {
                 expected.fill_rect_size(
                     rect.x.round() as i64,
                     rect.y.round() as i64,
-                    rect.width.round().max(1.0) as i64,
-                    rect.height.round().max(1.0) as i64,
+                    (rect.x + rect.width).round() as i64 - rect.x.round() as i64,
+                    (rect.y + rect.height).round() as i64 - rect.y.round() as i64,
                     *color,
                 );
             } else {

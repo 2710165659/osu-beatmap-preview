@@ -14,6 +14,7 @@ use crate::render::canvas::Img;
 use crate::render::cpu::AnimationFrames;
 use crate::render::text::{draw_text, text_size};
 
+use super::caught::CatcherDisplay;
 use super::drawing::{draw_catch_object_with_alpha, object_diameter};
 use super::objects::{build_catch_render_objects, effective_difficulty, ObjType, RenderObject};
 use crate::render::visibility::{Flashlight, FlashlightKind, KiaiTimeline, VisibilityTimeline};
@@ -296,6 +297,9 @@ fn prepare_catch_segment_gif_frames(
             catcher.as_ref().unwrap().clone(),
         )
     });
+    let catcher = catcher
+        .filter(|_| show_catcher)
+        .map(|path| CatcherDisplay::new(&render_objects, path, difficulty.cs));
 
     let speed_multiplier = mods.map(|m| m.speed_multiplier).unwrap_or(1.0);
     let segment_duration_ms = duration_seconds
@@ -360,13 +364,14 @@ fn prepare_catch_segment_gif_frames(
         for (segment_index, segment_timing) in segment_timings.iter().enumerate() {
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
             let (frame_x, frame_y) = frame_origin(segment_index, &layout);
-            let mut frame =
-                render_animation_frame(&render_objects, &start_times, snapshot_time, &layout, None);
-            if show_catcher {
-                if let Some(catcher) = &catcher {
-                    catcher.draw_cpu(&mut frame, snapshot_time, &layout);
-                }
-            }
+            let mut frame = render_animation_frame(
+                &render_objects,
+                &start_times,
+                snapshot_time,
+                &layout,
+                None,
+                catcher.as_ref(),
+            );
             if let Some(flashlight) = &flashlight {
                 flashlight.at(snapshot_time, &layout).apply(
                     &mut frame,
@@ -398,13 +403,14 @@ fn prepare_catch_segment_gif_frames(
     Ok(AnimationFrames::with_frame_rate(frame_count, fps, render))
 }
 
-/// 渲染单段单帧：背景 + 判定线 + 接手 + 可见的下落对象。
+/// 渲染单段单帧：背景、判定线、接盘与接取效果，再叠加下落物件。
 pub fn render_animation_frame(
     render_objects: &[RenderObject],
     start_times_desc: &[i64],
     snapshot_time: i64,
     layout: &AnimationLayout,
     background: Option<&Img>,
+    catcher: Option<&CatcherDisplay>,
 ) -> Img {
     let mut frame = match background {
         Some(background) => background.clone(),
@@ -455,6 +461,10 @@ pub fn render_animation_frame(
         layout.judgement_line_color,
     );
 
+    if let Some(catcher) = catcher {
+        catcher.draw_cpu(&mut frame, snapshot_time, layout);
+    }
+
     // 可见时间窗：对象在 [snapshot, snapshot + 下落时间窗 + 余量] 内才可能出现在帧中。
     // 下落时间窗按内容框高度计算，与画布补边无关。
     let fall_window_ms = (layout.content.height as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
@@ -467,6 +477,9 @@ pub fn render_animation_frame(
         .as_ref()
         .is_some_and(|timeline| timeline.is_active_at(snapshot_time));
     for catch_object in &render_objects[lo..hi] {
+        if catcher.is_some_and(|catcher| catcher.has_caught(catch_object, snapshot_time)) {
+            continue;
+        }
         draw_gif_object(
             &mut frame,
             catch_object,
@@ -950,12 +963,14 @@ mod tests {
             scale_factor: 1.0,
             event_time: None,
             hyper_dash: true,
+            last_in_combo: false,
             hidden: false,
             edge: false,
             banana_shower_id: None,
             banana_route_x: None,
         }];
-        let frame = render_animation_frame(&objects, &[start_time], start_time, &layout, None);
+        let frame =
+            render_animation_frame(&objects, &[start_time], start_time, &layout, None, None);
 
         let centre_x = layout.playfield_left;
         let radius = object_diameter(layout.object_scale, layout.playfield_scale, 1.0) / 2.0;
