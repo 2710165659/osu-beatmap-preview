@@ -617,7 +617,7 @@ mod tests {
     }
 
     #[test]
-    fn flashlight_preserves_the_path_without_drawing_the_plate() {
+    fn catcher_config_controls_the_plate_independently_of_flashlight() {
         use super::super::animation::build_video_animation_layout;
         use super::super::objects::{build_catch_render_objects, effective_difficulty};
         use crate::domain::mods::ModSettings;
@@ -629,7 +629,9 @@ mod tests {
             [(false, false, 1.0), (true, false, 1.5), (false, true, 0.75)]
         {
             let mut reference = None;
-            for flashlight in [false, true] {
+            for (show_catcher, flashlight) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
                 let mods = ModSettings {
                     flashlight,
                     easy,
@@ -657,7 +659,13 @@ mod tests {
                 } else {
                     reference = Some(positions);
                 }
-                let source = crate::render::wgpu::prepare_catch(&beatmap, Some(&mods)).unwrap();
+                let mut config = crate::config::CoreConfig::default();
+                config.render.catch.mp4.style.SHOW_CATCHER = show_catcher;
+                config.render.catch.mp4.SCALE = 0.75;
+                config.render.catch.gif.style.SHOW_CATCHER = !show_catcher;
+                let source = crate::config::with_config(std::sync::Arc::new(config), || {
+                    crate::render::wgpu::prepare_catch(&beatmap, Some(&mods)).unwrap()
+                });
                 let scene = source.render(1000).unwrap();
                 let rectangles = scene
                     .commands
@@ -666,7 +674,7 @@ mod tests {
                         matches!(command, crate::render::scene::DrawCommand::Rectangle { .. })
                     })
                     .count();
-                assert_eq!(rectangles, 2);
+                assert_eq!(rectangles, if show_catcher { 32 } else { 2 });
                 let layout =
                     build_video_animation_layout(difficulty.cs, difficulty.ar, OutputFormat::Mp4);
                 let center =

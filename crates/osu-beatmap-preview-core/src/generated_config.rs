@@ -225,6 +225,7 @@ pub struct RenderCatchGifStructureConfig {
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderCatchGifStyleConfig {
+    pub SHOW_CATCHER: bool,
     pub DURATION_MS: f64,
     pub FPS: f64,
 }
@@ -242,6 +243,7 @@ pub struct RenderCatchGifConfig {
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderCatchMp4StyleConfig {
+    pub SHOW_CATCHER: bool,
     pub ENABLE_BACKGROUND_IMAGE: bool,
     pub ENABLE_BACKGROUND_VIDEO: bool,
     pub ENABLE_STORYBOARD: bool,

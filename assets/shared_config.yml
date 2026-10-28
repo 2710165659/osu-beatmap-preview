@@ -103,11 +103,13 @@ render:
         ROW_COUNT: 2 # 动画画面的网格行数
         IMAGES_PER_ROW: 2 # 动画画面每行包含的游玩区域数
       style:
+        SHOW_CATCHER: false # 是否显示自动接盘
         DURATION_MS: 5000.0 # 每个动画片段覆盖的谱面时长
         FPS: 15.0 # GIF 帧率
     mp4:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
       style:
+        SHOW_CATCHER: false # 是否显示自动接盘
         ENABLE_BACKGROUND_IMAGE: true # 是否启用谱面背景图
         ENABLE_BACKGROUND_VIDEO: false # 是否启用谱面背景视频
         ENABLE_STORYBOARD: false # 是否启用故事板

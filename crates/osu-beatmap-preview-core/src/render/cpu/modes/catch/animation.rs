@@ -282,7 +282,8 @@ fn prepare_catch_segment_gif_frames(
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects =
         build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
-    let catcher = mods.filter(|m| m.flashlight).map(|_| {
+    let show_catcher = crate::config::current().render.catch.gif.style.SHOW_CATCHER;
+    let catcher = (show_catcher || mods.is_some_and(|m| m.flashlight)).then(|| {
         std::sync::Arc::new(super::catcher::build_catcher_path(
             &render_objects,
             difficulty.cs,
@@ -361,6 +362,11 @@ fn prepare_catch_segment_gif_frames(
             let (frame_x, frame_y) = frame_origin(segment_index, &layout);
             let mut frame =
                 render_animation_frame(&render_objects, &start_times, snapshot_time, &layout, None);
+            if show_catcher {
+                if let Some(catcher) = &catcher {
+                    catcher.draw_cpu(&mut frame, snapshot_time, &layout);
+                }
+            }
             if let Some(flashlight) = &flashlight {
                 flashlight.at(snapshot_time, &layout).apply(
                     &mut frame,
@@ -620,6 +626,45 @@ mod tests {
         }
         object.hidden = false;
         assert_eq!(object_alpha(&object, object.start_time, 1200.0, false), 255);
+    }
+
+    #[test]
+    fn gif_catcher_uses_its_own_config_and_output_scale() {
+        let beatmap = crate::parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:2\n[Difficulty]\nCircleSize:5\nApproachRate:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n256,192,1000,1,0\n",
+        ).unwrap();
+        for scale in [0.75, 1.25] {
+            let mut frames = Vec::new();
+            for enabled in [false, true] {
+                let mut config = crate::config::CoreConfig::default();
+                config.render.catch.gif.SCALE = scale;
+                config.render.catch.gif.structure.ROW_COUNT = 1;
+                config.render.catch.gif.structure.IMAGES_PER_ROW = 1;
+                config.render.catch.gif.style.SHOW_CATCHER = enabled;
+                config.render.catch.mp4.style.SHOW_CATCHER = !enabled;
+                let animation = crate::config::with_config(std::sync::Arc::new(config), || {
+                    prepare_catch_gif_frames(
+                        &beatmap,
+                        None,
+                        GifRenderOptions::Segments {
+                            times_ms: Some(vec![1000]),
+                            duration_seconds: Some(0.1),
+                            time_axis: TimeAxis::new(0),
+                        },
+                        Some(10),
+                        &RequestDeadline::new(
+                            std::time::Instant::now(),
+                            "gif",
+                            std::time::Duration::from_secs(30),
+                        ),
+                    )
+                    .unwrap()
+                });
+                frames.push(animation.render(0));
+            }
+            assert_eq!((frames[0].w, frames[0].h), (frames[1].w, frames[1].h));
+            assert_ne!(frames[0].data, frames[1].data);
+        }
     }
 
     #[test]

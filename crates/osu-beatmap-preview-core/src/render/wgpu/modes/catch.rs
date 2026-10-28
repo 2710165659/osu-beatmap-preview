@@ -26,7 +26,8 @@ pub fn prepare_realtime(
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects =
         build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
-    let catcher = mods.filter(|m| m.flashlight).map(|_| {
+    let show_catcher = crate::config::current().render.catch.mp4.style.SHOW_CATCHER;
+    let catcher = (show_catcher || mods.is_some_and(|m| m.flashlight)).then(|| {
         std::sync::Arc::new(
             crate::render::cpu::modes::catch::catcher::build_catcher_path(
                 &render_objects,
@@ -59,6 +60,7 @@ pub fn prepare_realtime(
                 absolute_time_ms,
                 &layout,
                 flashlight.as_ref(),
+                catcher.as_deref().filter(|_| show_catcher),
             ))
         },
     ))
@@ -70,6 +72,7 @@ fn render_scene(
     absolute_time_ms: i64,
     layout: &AnimationLayout,
     flashlight: Option<&CatchFlashlight>,
+    catcher: Option<&crate::render::cpu::modes::catch::catcher::CatcherPath>,
 ) -> crate::render::scene::FrameScene {
     let mut scene = FrameSceneBuilder::new(
         layout.frame_width as u32,
@@ -117,6 +120,9 @@ fn render_scene(
             layout,
             kiai_active,
         );
+    }
+    if let Some(catcher) = catcher {
+        catcher.draw_scene(&mut scene, absolute_time_ms, layout);
     }
     if let Some(flashlight) = flashlight {
         flashlight.at(absolute_time_ms, layout).draw_scene(

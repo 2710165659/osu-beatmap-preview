@@ -20,6 +20,7 @@ import {
   setFps,
   setHitsoundVolume,
   setResolution,
+  setShowCatcher,
   setShowCursor,
   setShowFps,
   setSheetOpen,
@@ -133,6 +134,16 @@ const chipClass = (active) => (active
               @click="setShowCursor(!state.showCursor)"
             >
               光标
+            </button>
+            <button
+              v-if="state.modeKey === 'catch' && !state.replayActive"
+              type="button"
+              class="rounded-md border px-2.5 py-1 text-xs transition"
+              :class="chipClass(state.showCatcher)"
+              :aria-pressed="state.showCatcher"
+              @click="setShowCatcher(!state.showCatcher)"
+            >
+              自动接盘
             </button>
           </div>
         </div>

@@ -194,6 +194,8 @@ export const state = reactive({
   showFps: true,
   /** 普通 Standard 预览是否显示自动光标，默认关闭。 */
   showCursor: false,
+  /** 普通 Catch 预览是否显示自动接盘，默认关闭。 */
+  showCatcher: false,
   /**
    * 打击音音量百分比（0–100）。
    *
@@ -1041,6 +1043,7 @@ export async function loadPreview() {
       beatmapHitsound: state.hitsoundBeatmap,
       storyboard: state.storyboard,
       showCursor: state.showCursor,
+      showCatcher: state.showCatcher,
     });
     if (token !== loadToken) {
       createdSession.free();
@@ -1414,6 +1417,19 @@ export function setShowCursor(value) {
     render();
   } catch (error) {
     logPlay(`光标切换失败：${errorText(error)}`);
+  }
+}
+
+/** 自动接盘只改变普通 Catch 预览的画面，不影响音频与播放位置。 */
+export function setShowCatcher(value) {
+  if (state.modeKey !== 'catch' || state.replayActive) return;
+  const enabled = Boolean(value);
+  try {
+    session?.setShowCatcher(enabled);
+    state.showCatcher = enabled;
+    render();
+  } catch (error) {
+    logPlay(`接盘切换失败：${errorText(error)}`);
   }
 }
 

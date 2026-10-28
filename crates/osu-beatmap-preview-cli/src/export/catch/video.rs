@@ -43,7 +43,8 @@ pub(crate) fn render_catch_video(
     let difficulty = effective_difficulty(beatmap, mods);
     let mut render_objects =
         build_catch_render_objects(beatmap, hit_objects, mods, &difficulty, false)?;
-    let catcher = mods.filter(|m| m.flashlight).map(|_| {
+    let show_catcher = crate::config::current().render.catch.mp4.style.SHOW_CATCHER;
+    let catcher = (show_catcher || mods.is_some_and(|m| m.flashlight)).then(|| {
         std::sync::Arc::new(
             osu_beatmap_preview_core::render::cpu::modes::catch::catcher::build_catcher_path(
                 &render_objects,
@@ -99,6 +100,11 @@ pub(crate) fn render_catch_video(
             &layout,
             frame_background.as_ref(),
         );
+        if show_catcher {
+            if let Some(catcher) = &catcher {
+                catcher.draw_cpu(&mut frame, snapshot_time, &layout);
+            }
+        }
         if let Some(flashlight) = &flashlight {
             flashlight.at(snapshot_time, &layout).apply(
                 &mut frame,

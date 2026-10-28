@@ -729,6 +729,32 @@ impl RealtimeSession {
         Ok(())
     }
 
+    /// 仅重建 Catch 的接盘显示配置与帧源，保持播放时钟和音频不变。
+    pub fn set_show_catcher(&mut self, enabled: bool) -> Result<()> {
+        #[cfg(feature = "replay")]
+        if self.osr.is_some() {
+            return Err(PreviewError::new("OSR 回放接盘由回放数据控制"));
+        }
+        let style = &self.options.core_config.render.catch.mp4.style;
+        if style.SHOW_CATCHER == enabled {
+            return Ok(());
+        }
+        let mut config = (*self.options.core_config).clone();
+        config.render.catch.mp4.style.SHOW_CATCHER = enabled;
+        let config = Arc::new(config);
+        if self.mode_as_i32() == 2 {
+            self.source = prepare_source(
+                &self.beatmap,
+                2,
+                &self.settings,
+                TimeAxis::new(self.timeline.first_object_ms),
+                &config,
+            )?;
+        }
+        self.options.core_config = config;
+        Ok(())
+    }
+
     pub fn set_background(&mut self, background: ImageData) -> Result<()> {
         let image = background_image(&background)?;
         self.resources.background = Some(background);
@@ -1655,6 +1681,51 @@ mod tests {
         let without_cursor = session.scene_at_absolute(0).unwrap().commands.len();
         session.set_show_cursor(true).unwrap();
         assert!(session.scene_at_absolute(0).unwrap().commands.len() > without_cursor);
+    }
+
+    #[test]
+    fn catcher_toggle_preserves_playback_and_survives_mods_and_resize() {
+        let beatmap = crate::parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:2\n[Difficulty]\nCircleSize:5\nApproachRate:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n0,192,1000,1,0\n512,192,2000,1,0\n",
+        ).unwrap();
+        let mut session =
+            RealtimeSession::from_bundle(ResourceBundle::new(beatmap), test_options()).unwrap();
+        session.seek(100.0, 0.0);
+        session.play(100.0);
+        let hidden = session.scene_at_absolute(1000).unwrap().commands.len();
+        let epoch = session.audio_epoch();
+        assert!(
+            !session
+                .options()
+                .core_config
+                .render
+                .catch
+                .mp4
+                .style
+                .SHOW_CATCHER
+        );
+        session.set_show_catcher(true).unwrap();
+        assert!(session.scene_at_absolute(1000).unwrap().commands.len() > hidden);
+        assert_eq!(session.audio_epoch(), epoch);
+        assert_eq!(session.clock_ms(200.0), 100.0);
+        session
+            .set_mods(vec!["HR".into(), "FL".into()], 200.0)
+            .unwrap();
+        session.set_render_size(854, 480).unwrap();
+        assert!(
+            session
+                .options()
+                .core_config
+                .render
+                .catch
+                .mp4
+                .style
+                .SHOW_CATCHER
+        );
+        session.set_show_catcher(false).unwrap();
+        let hidden = session.scene_at_absolute(1000).unwrap().commands.len();
+        session.set_show_catcher(true).unwrap();
+        assert!(session.scene_at_absolute(1000).unwrap().commands.len() > hidden);
     }
 
     /// 背景暗化运行时可调并夹紧到 0～1；背景/视频/故事板三层共用这一系数。
