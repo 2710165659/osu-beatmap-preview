@@ -31,7 +31,7 @@ pub fn select_replay(document: &ReplayDocument) -> Result<ReplayPolicy> {
     match document.header.ruleset_id {
         0 => select(document).map(ReplayPolicy::Standard),
         1 => {
-            super::mods::decode(document)?;
+            let mods = super::mods::decode(document)?;
             if document.frames.is_empty()
                 || document
                     .frames
@@ -48,11 +48,7 @@ pub fn select_replay(document: &ReplayDocument) -> Result<ReplayPolicy> {
                 ));
             }
             Ok(ReplayPolicy::Taiko(TaikoPolicy {
-                classic: document.header.version < 30_000_000
-                    || document
-                        .metadata
-                        .as_ref()
-                        .is_some_and(|m| m.mods.iter().any(|m| m.acronym == "CL")),
+                classic: mods.settings.classic,
             }))
         }
         mode => Err(PreviewError::new(format!(

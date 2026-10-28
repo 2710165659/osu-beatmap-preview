@@ -146,6 +146,37 @@ fn parses_all_official_sample_containers() {
 }
 
 #[test]
+fn stable_taiko_osr_implicitly_uses_classic_through_replay_preparation() {
+    use crate::replay::{
+        compatibility::{ReplayPolicy, TaikoPolicy},
+        preparation::PreparedReplay,
+    };
+
+    let beatmap = crate::parse_beatmap_bytes(b"osu file format v14\n[General]\nMode:1\n[Difficulty]\nOverallDifficulty:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n0,0,1000,1,0\n0,0,2000,1,8\n0,0,3000,1,0\n0,0,4000,1,8\n").unwrap();
+    for version in [20070916, 20121008, 20140721, 20200101] {
+        let mut bytes = fixture_version("0|256|-500|0,1000|0|0|1,1|0|0|0,999|0|0|2,1|0|0|0,999|0|0|4,1|0|0|0,999|0|0|8,200|0|0|0,", version, None);
+        bytes[0] = 1;
+        let document = std::sync::Arc::new(parse_osr(&bytes).unwrap());
+        let prepared = PreparedReplay::prepare(&beatmap, &document).unwrap();
+        assert!(prepared.mods().settings.classic);
+        let timeline = prepared.compile(document).unwrap();
+        assert_eq!(
+            timeline.policy,
+            ReplayPolicy::Taiko(TaikoPolicy { classic: true })
+        );
+        let state = timeline.state_at(f64::INFINITY);
+        assert_eq!(state.statistics["great"], 4);
+        assert_eq!(state.max_combo, 4);
+        assert_eq!(state.accuracy, Some(1.0));
+        assert_eq!(state.score, 1_000_000);
+        assert_eq!(
+            state.status,
+            crate::gameplay::state::ReplayStatus::Completed
+        );
+    }
+}
+
+#[test]
 fn reads_legacy_online_id_widths_and_optional_lazer_metadata() {
     for version in [
         20070916, 20121008, 20140721, 20200101, 30_000_000, 30_000_001, 30_000_019, 40_000_000,

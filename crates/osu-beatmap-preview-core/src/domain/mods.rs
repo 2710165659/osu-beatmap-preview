@@ -21,7 +21,7 @@ pub struct ModSettings {
     pub hidden: bool,
     pub flashlight: bool,
     pub traceable: bool,
-    /// 仅 Standard 实时预览支持；回放另行选择 Classic 判定策略。
+    /// Standard/Taiko 实时预览支持；回放另行选择各模式的兼容策略。
     pub classic: bool,
     pub relax: bool,
     pub spun_out: bool,
@@ -516,7 +516,7 @@ fn mod_support_steps(mode: i32) -> [&'static [&'static str]; 3] {
         1 => [
             &["EZ", "HR", "SW"],
             &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
-            &[],
+            &["CL"],
         ],
         2 => [&["EZ", "HR"], &["HD", "FL", "DT", "HT", "NC", "DC"], &[]],
         3 => [
@@ -658,7 +658,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         daycore: settings.daycore,
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
-        classic: settings.classic && mode == 0,
+        classic: settings.classic && matches!(mode, 0 | 1),
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
     };
@@ -840,7 +840,7 @@ mod tests {
 
     #[test]
     fn standard_realtime_mods_are_rejected_by_all_cli_formats_and_other_modes() {
-        for code in ["CL", "RX", "SO", "AP", "AL", "SG"] {
+        for code in ["RX", "SO", "AP", "AL", "SG"] {
             let settings = parse_mods(&[code.into()]).unwrap();
             assert!(settings.has_any_mod());
             for mode in 0..=3 {
@@ -871,16 +871,19 @@ mod tests {
     }
 
     #[test]
-    fn classic_is_only_available_to_standard_realtime_preview() {
+    fn classic_is_available_to_standard_and_taiko_realtime_preview() {
         let settings = super::parse_mods(&["CL".into()]).unwrap();
         for mode in 0..=3 {
             for format in ["png", "gif", "mp4"] {
                 assert!(!super::validate_mods(&settings, Some(mode), Some(format)).is_empty());
             }
-            assert_eq!(super::mods_for_mode(&settings, mode).classic, mode == 0);
+            assert_eq!(
+                super::mods_for_mode(&settings, mode).classic,
+                matches!(mode, 0 | 1)
+            );
             assert_eq!(
                 validate_mods_for_level(&settings, mode, ModSupportLevel::Realtime).is_empty(),
-                mode == 0
+                matches!(mode, 0 | 1)
             );
         }
     }

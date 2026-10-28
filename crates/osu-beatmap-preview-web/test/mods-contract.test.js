@@ -37,7 +37,7 @@ async function loadModule() {
 /** 累计 PNG、GIF/MP4 和实时预览三列能力；MR 从 PNG 起支持。 */
 const EXPECTED = {
   standard: ['EZ', 'HR', 'HD', 'FL', 'DA', 'TC', 'MR', 'DT', 'HT', 'NC', 'DC', 'CL', 'RX', 'SO', 'AP', 'AL', 'SG'],
-  taiko: ['EZ', 'HR', 'SW', 'HD', 'FL', 'CS', 'DT', 'HT', 'NC', 'DC'],
+  taiko: ['EZ', 'HR', 'SW', 'HD', 'FL', 'CS', 'DT', 'HT', 'NC', 'DC', 'CL'],
   catch: ['EZ', 'HR', 'HD', 'FL', 'DT', 'HT', 'NC', 'DC'],
   mania: [
     '1K', '2K', '3K', '4K', '5K', '6K', '7K', '8K', '9K', '10K',

@@ -178,7 +178,8 @@ fn score_multiplier(s: &ModSettings) -> f64 {
     if s.cs_override {
         value *= 0.9;
     }
-    // 当前 TaikoScoreProcessor 的无成绩上下文计算：SW、CL 不改变倍率。
+    // 对照当前 TaikoScoreProcessor：CL 不改变判定或重播倍率。
+    // 0.96 仅供旧成绩迁移使用，不能按 OSR 录制版本套入当前重播；SW 同样无倍率。
     value
 }
 
@@ -211,6 +212,7 @@ pub fn decode_mods(document: &ReplayDocument) -> Result<ReplayMods> {
         })
         .collect()
     };
+    // 与 LegacyScoreDecoder 一致：stable 回放隐式携带本模式的 CL。
     if document.header.version < 30_000_000 && !mods.iter().any(|m| m.acronym == "CL") {
         mods.push(ReplayMod {
             acronym: "CL".into(),

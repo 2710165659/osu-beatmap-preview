@@ -50,19 +50,23 @@ test('真实 WASM 接受旧 HR/HD/NC 组合，并以 lazer 扩展覆盖旧位掩
   assert.ok(wasm.replayInfo(lazer).checksum);
 });
 
-test('真实 WASM 接受 stable 自动 CL 和 tachyon 显式 CL，不限制分数版本', async (t) => {
+test('真实 WASM 的 Standard/Taiko 接受 stable 自动 CL 和 tachyon 显式 CL，不限制分数版本', async (t) => {
   const wasm = await moduleOrSkip(t);
   if (!wasm) return;
   const map = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-classic.osu')));
   for (const [file, expectedVersion] of [['replay-classic.osr', 20200101], ['replay-classic-lazer.osr', 30000019]]) {
-    const replay = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures', file)));
-    const info = wasm.replayInfo(replay);
-    assert.equal(info.version, expectedVersion);
-    assert.equal(wasm.beatmapInfo(map, { checksum: info.checksum }).beatmapId, 43);
-    // 新的分数版本仍沿用同一容器：不要求先更新客户端或分数版本白名单。
-    if (expectedVersion > 30000000) {
-      new DataView(replay.buffer).setInt32(1, 40000000, true);
-      assert.equal(wasm.replayInfo(replay).version, 40000000);
+    for (const ruleset of [0, 1]) {
+      const replay = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures', file)));
+      replay[0] = ruleset;
+      const info = wasm.replayInfo(replay);
+      assert.equal(info.rulesetId, ruleset);
+      assert.equal(info.version, expectedVersion);
+      assert.equal(wasm.beatmapInfo(map, { checksum: info.checksum }).beatmapId, 43);
+      // 新的分数版本仍沿用同一容器：不要求先更新客户端或分数版本白名单。
+      if (expectedVersion > 30000000) {
+        new DataView(replay.buffer).setInt32(1, 40000000, true);
+        assert.equal(wasm.replayInfo(replay).version, 40000000);
+      }
     }
   }
 });
