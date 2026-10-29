@@ -72,9 +72,9 @@ fn execute_inner(
     let t_source = Instant::now();
     let mut source = source_osr::load(&request, &cache_root, &deadline)?;
     let is_taiko = source.document.header.ruleset_id == 1;
-    if is_taiko && format == "png" {
+    if matches!(source.document.header.ruleset_id, 1 | 2) && format == "png" {
         return Err(PreviewError::new(
-            "Taiko replay preview supports GIF/MP4; PNG is not supported",
+            "Taiko/Catch replay preview supports GIF/MP4; PNG is not supported",
         ));
     }
     logging::record_stage("load_replay_ms", t_source.elapsed().as_secs_f64() * 1000.0);
@@ -97,8 +97,10 @@ fn execute_inner(
         t_prepare.elapsed().as_secs_f64() * 1000.0,
     );
     let prepared = prepared?;
-    if let PreparedReplay::Taiko(p) = prepared.as_ref() {
-        source.beatmap = p.beatmap.clone();
+    match prepared.as_ref() {
+        PreparedReplay::Taiko(p) => source.beatmap = p.beatmap.clone(),
+        PreparedReplay::Catch(p) => source.beatmap = p.beatmap.clone(),
+        _ => (),
     }
     rec.target_mode = Some(i32::from(source.document.header.ruleset_id));
     rec.mods = Some(prepared.mods().settings.tokens.join(","));
@@ -144,7 +146,11 @@ fn execute_inner(
             Some(&rec.bid),
             &format!(
                 "type=osr fmt={format} target={} replay={} output_cache=miss output={}",
-                if is_taiko { "taiko" } else { "standard" },
+                match source.document.header.ruleset_id {
+                    1 => "taiko",
+                    2 => "catch",
+                    _ => "standard",
+                },
                 source.identity,
                 path.display()
             ),
@@ -170,6 +176,13 @@ fn execute_inner(
                                 &deadline,
                             )
                         }
+                        PreparedReplay::Catch(prepared) => crate::export::catch::osr::render_gif(
+                            Arc::clone(prepared),
+                            Arc::clone(&gameplay),
+                            &plan,
+                            &path,
+                            &deadline,
+                        ),
                         PreparedReplay::Taiko(prepared) => crate::export::taiko::osr::render_gif(
                             Arc::clone(prepared),
                             Arc::clone(&gameplay),
@@ -188,7 +201,9 @@ fn execute_inner(
                     cache_dir: cache_root.join("osz-download-cache"),
                     no_cache: plan.no_cache,
                     deadline: deadline.clone(),
-                    mode: if is_taiko {
+                    mode: if source.document.header.ruleset_id == 2 {
+                        crate::export::geometry::GameMode::Catch
+                    } else if is_taiko {
                         crate::export::geometry::GameMode::Taiko
                     } else {
                         crate::export::geometry::GameMode::Standard
@@ -205,8 +220,18 @@ fn execute_inner(
                     || match prepared.as_ref() {
                         PreparedReplay::Standard(prepared) => crate::export::standard::osr::render(
                             &source.beatmap,
-                            &prepared,
+                            prepared,
                             &gameplay,
+                            &plan,
+                            &path,
+                            background,
+                            storyboard,
+                            audio,
+                            &deadline,
+                        ),
+                        PreparedReplay::Catch(prepared) => crate::export::catch::osr::render(
+                            Arc::clone(prepared),
+                            Arc::clone(&gameplay),
                             &plan,
                             &path,
                             background,
@@ -263,6 +288,126 @@ mod tests {
     use super::*;
     use crate::application::request::{RenderRequest, ReplaySource, RequestKind};
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn catch_replay_exports_independent_gif_cells_and_mp4_with_audio() {
+        use std::io::Write;
+        let _guard = logging::test_guard();
+        let root = std::env::temp_dir().join(format!(
+            "osu-preview-catch-replay-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut request = replay_request(&root);
+        let fixtures =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../osu-beatmap-preview-web/test/fixtures");
+        request.kind = RequestKind::Osr {
+            source: ReplaySource::File(fixtures.join("replay-catch.osr").to_string_lossy().into()),
+        };
+        request.source.osu_file = Some(fixtures.join("replay-catch.osu").to_string_lossy().into());
+        request.source.osz_file = Some(root.join("missing.osz").to_string_lossy().into());
+        request.view.time_points = [0.0, 0.4, 1.4, 2.7]
+            .into_iter()
+            .map(osu_beatmap_preview_core::processing::validation::TimePoint::Seconds)
+            .collect();
+        let result = execute(request.clone()).unwrap();
+        assert_eq!(result["replay-info"]["rulesetId"], 2);
+        let output = PathBuf::from(result["preview-img"].as_str().unwrap());
+        let mut options = gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::RGBA);
+        let mut decoder = options
+            .read_info(std::io::Cursor::new(std::fs::read(&output).unwrap()))
+            .unwrap();
+        let layout = crate::export::catch::animation::build_animation_layout(
+            5.0,
+            5.0,
+            crate::export::geometry::OutputFormat::Gif,
+        );
+        assert_eq!(
+            (decoder.width() as i64, decoder.height() as i64),
+            (layout.canvas_width, layout.canvas_height)
+        );
+        let frame = decoder.read_next_frame().unwrap().unwrap();
+        let image = image::RgbaImage::from_raw(
+            frame.width.into(),
+            frame.height.into(),
+            frame.buffer.to_vec(),
+        )
+        .unwrap();
+        let crop = |i| {
+            let (x, y) = crate::export::catch::animation::frame_origin(i, &layout);
+            image::imageops::crop_imm(
+                &image,
+                x as u32,
+                y as u32,
+                layout.frame_width as u32,
+                layout.frame_height as u32,
+            )
+            .to_image()
+        };
+        assert_ne!(crop(0), crop(1));
+        assert_eq!(
+            execute(request.clone()).unwrap()["replay-info"]["cache-hit"],
+            true
+        );
+        request.output.format = Some("png".into());
+        assert!(execute(request.clone())
+            .unwrap_err()
+            .to_string()
+            .contains("PNG is not supported"));
+        // 短 WAV 与原始 OSU 组成离线谱面包，实际经过 H.264/AAC 编码和 MP4 封装。
+        let archive = root.join("catch.osz");
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+        zip.start_file("map.osu", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(&std::fs::read(fixtures.join("replay-catch.osu")).unwrap())
+            .unwrap();
+        zip.start_file("audio.wav", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        let data_len = 48_000_u32 * 2;
+        zip.write_all(b"RIFF").unwrap();
+        zip.write_all(&(36 + data_len).to_le_bytes()).unwrap();
+        zip.write_all(b"WAVEfmt ").unwrap();
+        zip.write_all(&16_u32.to_le_bytes()).unwrap();
+        zip.write_all(&1_u16.to_le_bytes()).unwrap();
+        zip.write_all(&1_u16.to_le_bytes()).unwrap();
+        zip.write_all(&48_000_u32.to_le_bytes()).unwrap();
+        zip.write_all(&96_000_u32.to_le_bytes()).unwrap();
+        zip.write_all(&2_u16.to_le_bytes()).unwrap();
+        zip.write_all(&16_u16.to_le_bytes()).unwrap();
+        zip.write_all(b"data").unwrap();
+        zip.write_all(&data_len.to_le_bytes()).unwrap();
+        zip.write_all(&vec![0; data_len as usize]).unwrap();
+        zip.finish().unwrap();
+        request.source.osz_file = Some(archive.to_string_lossy().into());
+        request.output.format = Some("mp4".into());
+        request.output.fps = Some(10);
+        request.view.duration_seconds = Some(0.2);
+        request.view.time_points =
+            vec![osu_beatmap_preview_core::processing::validation::TimePoint::Seconds(0.0)];
+        let result = execute(request).unwrap();
+        let bytes = std::fs::read(result["preview-img"].as_str().unwrap()).unwrap();
+        let reader =
+            mp4::Mp4Reader::read_header(std::io::Cursor::new(&bytes), bytes.len() as u64).unwrap();
+        assert!(reader
+            .tracks()
+            .values()
+            .any(|track| matches!(track.track_type(), Ok(mp4::TrackType::Video))));
+        assert!(reader
+            .tracks()
+            .values()
+            .any(|track| matches!(track.track_type(), Ok(mp4::TrackType::Audio))));
+        let root = root.canonicalize().unwrap();
+        assert_eq!(
+            root.parent().unwrap(),
+            std::env::temp_dir().canonicalize().unwrap()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn taiko_replay_gif_exports_without_archive_and_reuses_selected_segments() {

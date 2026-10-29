@@ -44,9 +44,11 @@ pub(super) fn load(
     let replay_bytes = read_limited(&osr_path, 64 * 1024 * 1024)?;
     let document = Arc::new(parse_osr(&replay_bytes)?);
     compatibility::select_replay(&document)?;
-    if document.header.ruleset_id == 1 && request.output.format.as_deref() == Some("png") {
+    if matches!(document.header.ruleset_id, 1 | 2)
+        && request.output.format.as_deref() == Some("png")
+    {
         return Err(PreviewError::new(
-            "Taiko replay preview supports GIF/MP4; PNG is not supported",
+            "Taiko/Catch replay preview supports GIF/MP4; PNG is not supported",
         ));
     }
     let checksum = &document.header.beatmap_md5;

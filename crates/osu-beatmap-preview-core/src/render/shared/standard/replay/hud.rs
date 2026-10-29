@@ -30,16 +30,7 @@ pub(super) fn draw(
         total,
     );
     draw_input(
-        image,
-        context,
-        gameplay,
-        visuals,
-        time,
-        width,
-        height,
-        |v| (v * scale).round() as i64,
-        scale,
-        [252, 97, 143, 255],
+        image, context, gameplay, visuals, time, width, height, scale,
     );
 }
 
@@ -52,38 +43,27 @@ fn draw_input(
     time: f64,
     width: i64,
     height: i64,
-    px: impl Fn(f64) -> i64,
     scale: f64,
-    pink: [u8; 4],
 ) {
     let Some(input) = gameplay.input_at(time) else {
         return;
     };
-    let text = |value: &str| hud::hud_text(&visuals.hud, value, 18.0, [255; 4], scale);
-    for (i, (bit, name)) in [(1, "M1"), (2, "M2"), (4, "K1"), (8, "K2")]
-        .iter()
-        .enumerate()
-    {
-        let x = width - px(43.0);
-        let y = height / 2 + px(i as f64 * 31.0 - 62.0);
-        image.fill_rect_size(
-            x,
-            y,
-            px(34.0),
-            px(26.0),
-            if input.keys & bit != 0 {
-                pink
-            } else {
-                [27, 23, 39, 205]
-            },
-        );
-        let label = text(name);
-        image.shared_sprite(
-            &label,
-            x + (px(34.0) - label.w as i64) / 2,
-            y + (px(26.0) - label.h as i64) / 2,
-        );
-    }
+    hud::draw_keys(
+        image,
+        &visuals.hud,
+        HudLayout {
+            width,
+            height,
+            scale,
+            time_axis: context.time_axis,
+        },
+        &[
+            (input.keys & 1 != 0, "M1"),
+            (input.keys & 2 != 0, "M2"),
+            (input.keys & 4 != 0, "K1"),
+            (input.keys & 8 != 0, "K2"),
+        ],
+    );
     draw_cursor(image, context, visuals, input, time);
 }
 

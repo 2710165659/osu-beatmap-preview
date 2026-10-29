@@ -1,4 +1,4 @@
-//! 自动接取后的堆叠与清盘时间轴；按绝对时间查询，供 CPU 与 WGPU 共用。
+//! 自动预览与回放接取后的堆叠与清盘时间轴；按绝对时间查询，供 CPU 与 WGPU 共用。
 
 use std::sync::Arc;
 
@@ -53,7 +53,10 @@ impl CatcherDisplay {
         };
         let mut ordered: Vec<_> = objects
             .iter()
-            .filter(|object| object.event_time_or_start().is_finite())
+            .filter(|object| {
+                object.event_time_or_start().is_finite()
+                    && display.path.active_at(object.event_time_or_start())
+            })
             .collect();
         ordered.sort_by(|a, b| a.event_time_or_start().total_cmp(&b.event_time_or_start()));
         // 仅用于视觉避让，不能消耗谱面展开所用的随机序列。
@@ -117,8 +120,9 @@ impl CatcherDisplay {
     }
 
     fn catches(&self, object: &RenderObject) -> bool {
-        (object_x(object) - self.path.position_at_f64(object.event_time_or_start())).abs()
-            <= self.half_catch_width
+        self.path.active_at(object.event_time_or_start())
+            && (object_x(object) - self.path.position_at_f64(object.event_time_or_start())).abs()
+                <= self.half_catch_width
     }
 
     /// 被接住的下落物件由盘上或散出副本接替，避免判定线处重复绘制。

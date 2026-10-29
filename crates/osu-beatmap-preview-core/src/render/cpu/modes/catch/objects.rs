@@ -42,6 +42,7 @@ pub fn object_order(t: ObjType) -> i64 {
 #[derive(Clone)]
 pub struct RenderObject {
     pub object_type: ObjType,
+    pub source_id: usize,
     pub x: f64,
     pub start_time: i64,
     pub color: [u8; 3],
@@ -178,6 +179,7 @@ pub fn build_catch_render_objects(
         let last_in_combo = hit_objects
             .get(index + 1)
             .is_some_and(|next| next.hit_type & 8 == 0 && next.new_combo);
+        let first_nested = render_objects.len();
         if hit_object.hit_type & 8 != 0 {
             // 香蕉雨：颜色由香蕉自身随机决定，不影响 combo 颜色推进
             let shower_id = enable_banana_routes.then_some(banana_shower_ranges.len());
@@ -188,6 +190,9 @@ pub fn build_catch_render_objects(
             }
             if enable_banana_routes && !range.is_empty() {
                 banana_shower_ranges.push(range);
+            }
+            for object in &mut render_objects[first_nested..] {
+                object.source_id = index;
             }
             continue;
         }
@@ -219,6 +224,9 @@ pub fn build_catch_render_objects(
             if let Some(last) = render_objects[first_nested..].last_mut() {
                 last.last_in_combo = last_in_combo;
             }
+            for object in &mut render_objects[first_nested..] {
+                object.source_id = index;
+            }
             continue;
         }
         let mut fruit = build_fruit_object(
@@ -228,6 +236,7 @@ pub fn build_catch_render_objects(
             None,
         );
         fruit.last_in_combo = last_in_combo;
+        fruit.source_id = index;
         if hard_rock_offsets {
             apply_hard_rock_fruit_offset(
                 &mut fruit,
@@ -262,6 +271,7 @@ pub fn build_fruit_object(
     event_time: Option<f64>,
 ) -> RenderObject {
     RenderObject {
+        source_id: 0,
         object_type: ObjType::Fruit,
         x,
         start_time,
@@ -311,6 +321,7 @@ fn build_banana_shower_objects(
         rng.next();
 
         out.push(RenderObject {
+            source_id: 0,
             object_type: ObjType::Banana,
             x,
             start_time: rhe(current_time as f64),
@@ -373,6 +384,7 @@ fn build_juice_stream_objects(
             EventType::Tick => {
                 let st = rhe(event.time);
                 nested_objects.push(RenderObject {
+                    source_id: 0,
                     object_type: ObjType::Droplet,
                     x,
                     start_time: st,
@@ -635,6 +647,7 @@ fn build_tiny_droplets_between(
         let x = path_position_at(path, progress).0;
         let time = prev.time + offset;
         out.push(RenderObject {
+            source_id: 0,
             object_type: ObjType::TinyDroplet,
             x,
             start_time: rhe(time),
@@ -775,6 +788,7 @@ mod tests {
 
     fn fruit(x: f64, time: i64) -> RenderObject {
         RenderObject {
+            source_id: 0,
             object_type: ObjType::Fruit,
             x,
             start_time: time,

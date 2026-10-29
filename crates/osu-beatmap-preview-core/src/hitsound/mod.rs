@@ -10,6 +10,8 @@
 
 mod assets;
 mod catch;
+#[cfg(feature = "replay")]
+mod catch_replay;
 mod common;
 mod mania;
 mod mixer;

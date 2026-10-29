@@ -30,8 +30,8 @@ impl Default for ReplayMods {
 }
 
 pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
-    if document.header.ruleset_id == 1 {
-        return super::preparation::taiko::decode_mods(document);
+    if matches!(document.header.ruleset_id, 1 | 2) {
+        return decode_nonstandard(document, i32::from(document.header.ruleset_id));
     }
     let mut result = ReplayMods::default();
     let mut tokens = Vec::new();
@@ -190,6 +190,93 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
     result.settings = parse_mods(&tokens).map_err(|e| unsupported(e.to_string()))?;
     result.settings.mirror_reflection = reflection;
     let errors = validate_mods_for_level(&result.settings, 0, ModSupportLevel::Realtime);
+    if !errors.is_empty() {
+        return Err(unsupported(errors.join("; ")));
+    }
+    Ok(result)
+}
+
+// Catch 与 Taiko 的 CL 均无可配置字段；共享严格的字段与旧位掩码解码。
+fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods> {
+    let mut result = ReplayMods::default();
+    let mut mods = if let Some(metadata) = &document.metadata {
+        metadata.mods.clone()
+    } else {
+        let bits = document.header.mods_bits;
+        let supported =
+            (1 << 1) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 29);
+        if bits & !supported != 0 {
+            return Err(unsupported(format!("legacy Mods 0x{bits:08x}")));
+        }
+        [
+            (1, "EZ"),
+            (3, "HD"),
+            (4, "HR"),
+            (6, "DT"),
+            (8, "HT"),
+            (9, "NC"),
+            (10, "FL"),
+        ]
+        .into_iter()
+        .filter(|&(bit, _)| bits & (1 << bit) != 0 && !(bit == 6 && bits & (1 << 9) != 0))
+        .map(|(_, acronym)| ReplayMod {
+            acronym: acronym.into(),
+            settings: Default::default(),
+            extra: Default::default(),
+        })
+        .collect()
+    };
+    // 与 LegacyScoreDecoder 一致：stable 回放隐式携带本模式的 CL。
+    if document.header.version < 30_000_000 && !mods.iter().any(|m| m.acronym == "CL") {
+        mods.push(ReplayMod {
+            acronym: "CL".into(),
+            settings: Default::default(),
+            extra: Default::default(),
+        });
+    }
+    let mut tokens = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for modifier in mods {
+        let code = modifier.acronym.as_str();
+        if !seen.insert(code.to_owned()) {
+            return Err(unsupported(format!("duplicate Mod {code}")));
+        }
+        if !matches!(
+            code,
+            "EZ" | "HR" | "HD" | "FL" | "CS" | "SW" | "DT" | "HT" | "NC" | "DC" | "CL"
+        ) {
+            return Err(unsupported(format!("Mod {code}")));
+        }
+        if mode == 2 && matches!(code, "SW" | "CS") {
+            return Err(unsupported(format!("Catch Mod {code}")));
+        }
+        let mut token = code.to_owned();
+        if !modifier.extra.is_empty() {
+            return Err(unsupported(format!("{code} extra settings")));
+        }
+        for (name, value) in &modifier.settings {
+            match (code, name.as_str()) {
+                ("DT" | "HT" | "NC" | "DC", "speed_change") => {
+                    let rate = value
+                        .as_f64()
+                        .filter(|v| v.is_finite())
+                        .ok_or_else(|| unsupported(format!("{code} setting {name}")))?;
+                    token = format!("{code}{rate}");
+                }
+                ("DT" | "HT", "adjust_pitch") => {
+                    result.adjust_pitch = value
+                        .as_bool()
+                        .ok_or_else(|| unsupported(format!("{code} setting {name}")))?
+                }
+                ("FL", "size_multiplier") if value.as_f64() == Some(1.0) => (),
+                ("FL", "combo_based_size") if value.as_bool() == Some(true) => (),
+                _ => return Err(unsupported(format!("{code} setting {name}"))),
+            }
+        }
+        tokens.push(token);
+    }
+    result.settings = parse_mods(&tokens).map_err(|e| unsupported(e.to_string()))?;
+    let errors = validate_mods_for_level(&result.settings, mode, ModSupportLevel::Realtime);
     if !errors.is_empty() {
         return Err(unsupported(errors.join("; ")));
     }

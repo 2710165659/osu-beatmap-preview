@@ -61,7 +61,11 @@ pub(super) fn validate(
                 state.rank.clone().unwrap_or_default()
             );
         }
-        let recorded_accuracy = accuracy(&metadata.statistics, &metadata.maximum_statistics);
+        let recorded_accuracy = accuracy(
+            &metadata.statistics,
+            &metadata.maximum_statistics,
+            document.header.ruleset_id,
+        );
         if recorded_accuracy
             .zip(state.accuracy)
             .is_some_and(|(a, b)| (a - b).abs() > 1e-12)
@@ -70,17 +74,48 @@ pub(super) fn validate(
         }
     } else {
         // stable 的头部没有 tick 细分统计，也使用历史总分；只比较可对应的主判定。
-        let names = ["great", "ok", "meh", "miss"];
-        let indexes = [0, 1, 2, 5];
-        let recorded = names
-            .into_iter()
-            .zip(indexes)
+        let (recorded, calculated) = if document.header.ruleset_id == 2 {
+            // stable Catch 的 Miss 合并水果和大水滴，Katu 记录小水滴漏接。
+            let recorded = [
+                ("great", 0),
+                ("large_tick_hit", 1),
+                ("small_tick_hit", 2),
+                ("small_tick_miss", 4),
+                ("miss", 5),
+            ]
             .map(|(name, i)| (name.to_owned(), u32::from(document.header.counts[i])))
+            .into_iter()
             .collect();
-        let calculated = names
+            let mut calculated: BTreeMap<_, _> = [
+                "great",
+                "large_tick_hit",
+                "small_tick_hit",
+                "small_tick_miss",
+                "miss",
+            ]
             .into_iter()
             .map(|name| (name.to_owned(), *state.statistics.get(name).unwrap_or(&0)))
             .collect();
+            *calculated.get_mut("miss").unwrap() += state
+                .statistics
+                .get("large_tick_miss")
+                .copied()
+                .unwrap_or(0);
+            (recorded, calculated)
+        } else {
+            let names = ["great", "ok", "meh", "miss"];
+            let indexes = [0, 1, 2, 5];
+            let recorded = names
+                .into_iter()
+                .zip(indexes)
+                .map(|(name, i)| (name.to_owned(), u32::from(document.header.counts[i])))
+                .collect();
+            let calculated = names
+                .into_iter()
+                .map(|name| (name.to_owned(), *state.statistics.get(name).unwrap_or(&0)))
+                .collect();
+            (recorded, calculated)
+        };
         compare!("statistics", normalized(&recorded), normalized(&calculated));
     }
     compare!("score", u64::from(document.header.total_score), state.score);
@@ -97,7 +132,11 @@ pub(super) fn validate(
     }
 }
 
-fn accuracy(statistics: &BTreeMap<String, u32>, maximums: &BTreeMap<String, u32>) -> Option<f64> {
+fn accuracy(
+    statistics: &BTreeMap<String, u32>,
+    maximums: &BTreeMap<String, u32>,
+    ruleset: u8,
+) -> Option<f64> {
     let value = |map: &BTreeMap<String, u32>| {
         [
             HitResult::Great,
@@ -108,7 +147,10 @@ fn accuracy(statistics: &BTreeMap<String, u32>, maximums: &BTreeMap<String, u32>
             HitResult::SliderTailHit,
         ]
         .into_iter()
-        .map(|result| u64::from(result.value()) * u64::from(*map.get(result.name()).unwrap_or(&0)))
+        .map(|result| {
+            u64::from(if ruleset == 2 { 1 } else { result.value() })
+                * u64::from(*map.get(result.name()).unwrap_or(&0))
+        })
         .sum::<u64>()
     };
     let maximum = value(maximums);
@@ -127,7 +169,7 @@ mod tests {
             ("small_bonus".into(), 100),
         ]);
         let maximum = BTreeMap::from([("great".into(), 2), ("slider_tail_hit".into(), 1)]);
-        assert_eq!(accuracy(&statistics, &maximum), Some(0.6));
+        assert_eq!(accuracy(&statistics, &maximum, 0), Some(0.6));
     }
 
     #[test]
@@ -148,7 +190,7 @@ mod tests {
         recorded.score = u64::from(document.header.total_score);
         recorded.max_combo = u32::from(document.header.max_combo);
         recorded.statistics = document.metadata.as_ref().unwrap().statistics.clone();
-        recorded.accuracy = accuracy(&recorded.statistics, &maximums);
+        recorded.accuracy = accuracy(&recorded.statistics, &maximums, 0);
         assert!(validate(&reverse, &recorded, &maximums).unwrap().is_some());
         let mut document = document;
         document.header.total_score = state.score as u32;
@@ -200,7 +242,7 @@ mod tests {
         };
         state.statistics.insert("slider_tail_hit".into(), 103);
         state.statistics.insert("ignore_miss".into(), 2);
-        state.accuracy = accuracy(&state.statistics, &maximums);
+        state.accuracy = accuracy(&state.statistics, &maximums, 0);
         let document = ReplayDocument {
             header: ReplayHeader {
                 ruleset_id: 0,

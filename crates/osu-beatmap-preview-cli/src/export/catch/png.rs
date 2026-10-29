@@ -326,6 +326,7 @@ mod tests {
 
     fn fruit(time: i64) -> RenderObject {
         RenderObject {
+            source_id: 0,
             object_type: ObjType::Fruit,
             x: 0.0,
             start_time: time,
@@ -335,6 +336,7 @@ mod tests {
             scale_factor: 1.0,
             event_time: Some(time as f64),
             hyper_dash: false,
+            last_in_combo: false,
             hidden: false,
             edge: false,
             banana_shower_id: None,

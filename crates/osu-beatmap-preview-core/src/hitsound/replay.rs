@@ -11,6 +11,7 @@ pub fn build_timeline(
     match prepared {
         PreparedReplay::Standard(p) => osr::build_timeline(beatmap, p, gameplay, library),
         PreparedReplay::Taiko(p) => super::taiko_replay::build_timeline(p, gameplay, library),
+        PreparedReplay::Catch(p) => super::catch_replay::build_timeline(p, gameplay, library),
     }
 }
 pub fn referenced_names(
@@ -21,5 +22,6 @@ pub fn referenced_names(
     match prepared {
         PreparedReplay::Standard(p) => osr::referenced_names(beatmap, p, gameplay),
         PreparedReplay::Taiko(p) => super::taiko_replay::referenced_names(p, gameplay),
+        PreparedReplay::Catch(p) => super::catch_replay::referenced_names(p, gameplay),
     }
 }

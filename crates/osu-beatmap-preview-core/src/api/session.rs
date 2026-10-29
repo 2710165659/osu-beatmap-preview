@@ -201,8 +201,10 @@ mod osr {
                 .ok_or_else(|| PreviewError::new("回放缺少谱面"))?;
             let prepared = PreparedReplay::prepare(beatmap, &document)?;
             let gameplay = Arc::new(prepared.compile(document)?);
-            if let PreparedReplay::Taiko(p) = &prepared {
-                bundle.beatmap = Some(p.beatmap.clone());
+            match &prepared {
+                PreparedReplay::Taiko(p) => bundle.beatmap = Some(p.beatmap.clone()),
+                PreparedReplay::Catch(p) => bundle.beatmap = Some(p.beatmap.clone()),
+                _ => (),
             }
             let mut session = Self::from_bundle(bundle, options)?;
             let first = prepared.first();
@@ -239,6 +241,7 @@ mod osr {
                     crate::render::geometry::OutputFormat::Mp4,
                 )
                 .frame_height,
+                    PreparedReplay::Catch(p) => crate::render::cpu::modes::catch::animation::build_video_animation_layout(p.cs,p.ar,crate::render::geometry::OutputFormat::Mp4).frame_height,
                     PreparedReplay::Taiko(_) => crate::render::cpu::modes::taiko::animation_render::build_video_animation_layout(crate::render::cpu::modes::taiko::animation_render::compute_time_range(),crate::render::geometry::OutputFormat::Mp4).image_height,
                 }
             });
@@ -247,6 +250,7 @@ mod osr {
             match &osr.prepared {
                 PreparedReplay::Standard(_) => cfg.render.standard.mp4.SCALE *= scale,
                 PreparedReplay::Taiko(_) => cfg.render.taiko.mp4.SCALE *= scale,
+                PreparedReplay::Catch(_) => cfg.render.catch.mp4.SCALE *= scale,
             }
             let config = Arc::new(cfg);
             self.source = config::with_config(Arc::clone(&config), || match &osr.prepared {
@@ -257,6 +261,14 @@ mod osr {
                         Arc::clone(&osr.gameplay),
                         osr.font.as_ref().map(|f| (**f).clone()),
                         self.options.render.dimensions(),
+                    )
+                }
+                PreparedReplay::Catch(prepared) => {
+                    crate::render::wgpu::modes::catch::prepare_replay(
+                        Arc::clone(prepared),
+                        Arc::clone(&osr.gameplay),
+                        osr.font.as_ref().map(|f| (**f).clone()),
+                        Some(self.options.render.dimensions()),
                     )
                 }
                 PreparedReplay::Taiko(prepared) => {
@@ -394,6 +406,44 @@ mod osr {
                 session.seek(200.0, 500.0);
                 assert_eq!(session.replay_timeline().unwrap().state_at(1500.0), &state);
             }
+        }
+
+        #[test]
+        fn catch_replay_seek_resize_and_audio_keep_independent_judgements() {
+            let beatmap = crate::parse_beatmap_bytes(include_bytes!(
+                "../../../osu-beatmap-preview-web/test/fixtures/replay-catch.osu"
+            ))
+            .unwrap();
+            let document = crate::replay::parse_osr(include_bytes!(
+                "../../../osu-beatmap-preview-web/test/fixtures/replay-catch.osr"
+            ))
+            .unwrap();
+            let mut session = RealtimeSession::from_replay_bundle(
+                ResourceBundle::new(beatmap),
+                RealtimeOptions::default(),
+                Arc::new(document),
+                None,
+            )
+            .unwrap();
+            assert_eq!(session.mode_as_i32(), 2);
+            let expected = session.scene_at_absolute(2400).unwrap();
+            let state = session.replay_timeline().unwrap().state_at(2400.0).clone();
+            session.play(0.0);
+            session.pull_audio(500.0, 4096);
+            session.seek(500.0, 1000.0);
+            session.set_render_size(854, 480).unwrap();
+            assert_eq!(session.scene_at_absolute(2400).unwrap().size.height, 480);
+            session.set_render_size(1280, 720).unwrap();
+            assert_eq!(
+                format!("{:?}", session.scene_at_absolute(2400).unwrap().commands),
+                format!("{:?}", expected.commands)
+            );
+            assert_eq!(&state, session.replay_timeline().unwrap().state_at(2400.0));
+            assert!(session
+                .hitsound_required_names()
+                .iter()
+                .any(|n| n.contains("slidertick")));
+            assert!(session.set_show_catcher(false).is_err());
         }
 
         fn session(fail: bool) -> RealtimeSession {

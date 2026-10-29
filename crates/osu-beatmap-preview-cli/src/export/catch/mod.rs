@@ -6,6 +6,7 @@ use osu_beatmap_preview_core::render::cpu::modes::catch::constants as catch_cons
 pub(crate) use osu_beatmap_preview_core::render::cpu::modes::catch::{
     animation, constants, objects,
 };
+pub(crate) mod osr;
 mod png;
 mod video;
 

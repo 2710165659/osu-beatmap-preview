@@ -240,10 +240,7 @@ fn latest_forwards_explicit_mode_and_fails_without_changing_ruleset() {
     )
     .unwrap();
     assert_eq!(result.ruleset_id, 2);
-    assert!(validate(&result)
-        .unwrap_err()
-        .to_string()
-        .contains("只支持 Standard 和 Taiko"));
+    assert!(validate(&result).is_ok());
     handle.join().unwrap();
 }
 

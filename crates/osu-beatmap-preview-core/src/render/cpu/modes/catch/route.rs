@@ -393,6 +393,7 @@ mod tests {
 
     fn banana(x: f64, time: i64) -> RenderObject {
         RenderObject {
+            source_id: 0,
             object_type: ObjType::Banana,
             x,
             start_time: time,

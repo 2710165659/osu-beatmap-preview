@@ -1,8 +1,8 @@
 //! Taiko 回放准备：先转换谱面，再应用 Mod，生成与输出尺寸无关的节点。
 use crate::domain::models::{Beatmap, TaikoHitObject};
-use crate::domain::mods::{parse_mods, validate_mods, ModSettings};
+use crate::domain::mods::ModSettings;
 use crate::domain::rulesets::taiko::gameplay::{self, DrumRollTick};
-use crate::replay::{compatibility, model::ReplayMod, mods::ReplayMods, ReplayDocument};
+use crate::replay::{compatibility, mods::ReplayMods, ReplayDocument};
 use crate::support::error::{PreviewError, Result};
 
 #[derive(Debug, Clone)]
@@ -57,7 +57,7 @@ pub fn prepare_replay(beatmap: &Beatmap, document: &ReplayDocument) -> Result<Pr
         return Err(unsupported("Taiko preparation requires ruleset 1"));
     }
     compatibility::validate_replay_beatmap(beatmap, document)?;
-    let mods = decode_mods(document)?;
+    let mods = crate::replay::mods::decode(document)?;
     let beatmap = if beatmap.mode() == 0 {
         crate::domain::rulesets::taiko::taiko_convert(beatmap, 1, None)?
     } else {
@@ -181,89 +181,6 @@ fn score_multiplier(s: &ModSettings) -> f64 {
     // 对照当前 TaikoScoreProcessor：CL 不改变判定或重播倍率。
     // 0.96 仅供旧成绩迁移使用，不能按 OSR 录制版本套入当前重播；SW 同样无倍率。
     value
-}
-
-pub fn decode_mods(document: &ReplayDocument) -> Result<ReplayMods> {
-    let mut result = ReplayMods::default();
-    let mut mods = if let Some(metadata) = &document.metadata {
-        metadata.mods.clone()
-    } else {
-        let bits = document.header.mods_bits;
-        let supported =
-            (1 << 1) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 29);
-        if bits & !supported != 0 {
-            return Err(unsupported(format!("legacy Taiko Mods 0x{bits:08x}")));
-        }
-        [
-            (1, "EZ"),
-            (3, "HD"),
-            (4, "HR"),
-            (6, "DT"),
-            (8, "HT"),
-            (9, "NC"),
-            (10, "FL"),
-        ]
-        .into_iter()
-        .filter(|&(bit, _)| bits & (1 << bit) != 0 && !(bit == 6 && bits & (1 << 9) != 0))
-        .map(|(_, acronym)| ReplayMod {
-            acronym: acronym.into(),
-            settings: Default::default(),
-            extra: Default::default(),
-        })
-        .collect()
-    };
-    // 与 LegacyScoreDecoder 一致：stable 回放隐式携带本模式的 CL。
-    if document.header.version < 30_000_000 && !mods.iter().any(|m| m.acronym == "CL") {
-        mods.push(ReplayMod {
-            acronym: "CL".into(),
-            settings: Default::default(),
-            extra: Default::default(),
-        });
-    }
-    let mut tokens = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for modifier in mods {
-        let code = modifier.acronym.as_str();
-        if !seen.insert(code.to_owned()) {
-            return Err(unsupported(format!("duplicate Mod {code}")));
-        }
-        if !matches!(
-            code,
-            "EZ" | "HR" | "HD" | "FL" | "CS" | "SW" | "DT" | "HT" | "NC" | "DC" | "CL"
-        ) {
-            return Err(unsupported(format!("Mod {code}")));
-        }
-        let mut token = code.to_owned();
-        if !modifier.extra.is_empty() {
-            return Err(unsupported(format!("{code} extra settings")));
-        }
-        for (name, value) in &modifier.settings {
-            match (code, name.as_str()) {
-                ("DT" | "HT" | "NC" | "DC", "speed_change") => {
-                    let rate = value
-                        .as_f64()
-                        .filter(|v| v.is_finite())
-                        .ok_or_else(|| unsupported(format!("{code} setting {name}")))?;
-                    token = format!("{code}{rate}");
-                }
-                ("DT" | "HT", "adjust_pitch") => {
-                    result.adjust_pitch = value
-                        .as_bool()
-                        .ok_or_else(|| unsupported(format!("{code} setting {name}")))?
-                }
-                ("FL", "size_multiplier") if value.as_f64() == Some(1.0) => (),
-                ("FL", "combo_based_size") if value.as_bool() == Some(true) => (),
-                _ => return Err(unsupported(format!("{code} setting {name}"))),
-            }
-        }
-        tokens.push(token);
-    }
-    result.settings = parse_mods(&tokens).map_err(|e| unsupported(e.to_string()))?;
-    let errors = validate_mods(&result.settings, Some(1), None);
-    if !errors.is_empty() {
-        return Err(unsupported(errors.join("; ")));
-    }
-    Ok(result)
 }
 
 fn unsupported(reason: impl std::fmt::Display) -> PreviewError {

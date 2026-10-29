@@ -21,7 +21,7 @@ pub struct ModSettings {
     pub hidden: bool,
     pub flashlight: bool,
     pub traceable: bool,
-    /// Standard/Taiko 实时预览支持；回放另行选择各模式的兼容策略。
+    /// Standard/Taiko/Catch 实时预览支持；回放另行选择各模式的兼容策略。
     pub classic: bool,
     pub relax: bool,
     pub spun_out: bool,
@@ -518,7 +518,11 @@ fn mod_support_steps(mode: i32) -> [&'static [&'static str]; 3] {
             &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
             &["CL"],
         ],
-        2 => [&["EZ", "HR"], &["HD", "FL", "DT", "HT", "NC", "DC"], &[]],
+        2 => [
+            &["EZ", "HR"],
+            &["HD", "FL", "DT", "HT", "NC", "DC"],
+            &["CL"],
+        ],
         3 => [
             &["K", "DS", "IN", "HO", "MR"],
             &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
@@ -658,7 +662,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         daycore: settings.daycore,
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
-        classic: settings.classic && matches!(mode, 0 | 1),
+        classic: settings.classic && matches!(mode, 0..=2),
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
     };
@@ -871,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn classic_is_available_to_standard_and_taiko_realtime_preview() {
+    fn classic_is_available_to_standard_taiko_and_catch_realtime_preview() {
         let settings = super::parse_mods(&["CL".into()]).unwrap();
         for mode in 0..=3 {
             for format in ["png", "gif", "mp4"] {
@@ -879,11 +883,11 @@ mod tests {
             }
             assert_eq!(
                 super::mods_for_mode(&settings, mode).classic,
-                matches!(mode, 0 | 1)
+                matches!(mode, 0..=2)
             );
             assert_eq!(
                 validate_mods_for_level(&settings, mode, ModSupportLevel::Realtime).is_empty(),
-                matches!(mode, 0 | 1)
+                matches!(mode, 0..=2)
             );
         }
     }

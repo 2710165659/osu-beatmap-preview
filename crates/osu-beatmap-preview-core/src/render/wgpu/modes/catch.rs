@@ -15,6 +15,27 @@ use crate::render::geometry::{GameMode, OutputFormat};
 use crate::render::scene::{FrameSceneBuilder, SceneRect};
 use crate::render::wgpu::RealtimeFrameSource;
 
+#[cfg(feature = "replay")]
+pub fn prepare_replay(
+    prepared: std::sync::Arc<crate::replay::preparation::catch::PreparedCatch>,
+    gameplay: std::sync::Arc<crate::gameplay::timeline::GameplayTimeline>,
+    font: Option<crate::render::shared::replay::font::ArgonFont>,
+    dimensions: Option<(u32, u32)>,
+) -> Result<RealtimeFrameSource> {
+    let plan =
+        crate::render::shared::catch::ReplayRenderPlan::new(prepared, gameplay, font, dimensions)?;
+    Ok(RealtimeFrameSource::new(GameMode::Catch, move |time| {
+        let mut scene = FrameSceneBuilder::new(
+            plan.layout.frame_width as u32,
+            plan.layout.frame_height as u32,
+            time,
+        );
+        plan.draw_scene(&mut scene, time);
+        plan.draw_scene_overlay(&mut scene, time);
+        Ok(scene.finish())
+    }))
+}
+
 /// 将 Catch 物件排序和难度换算固定到会话加载阶段。
 pub fn prepare_realtime(
     beatmap: &Beatmap,
@@ -83,6 +104,27 @@ fn render_scene(
         layout.frame_height as u32,
         absolute_time_ms,
     );
+    draw_scene(
+        &mut scene,
+        render_objects,
+        start_times,
+        absolute_time_ms,
+        layout,
+        flashlight,
+        catcher,
+    );
+    scene.finish()
+}
+
+pub(crate) fn draw_scene(
+    scene: &mut FrameSceneBuilder,
+    render_objects: &[RenderObject],
+    start_times: &[i64],
+    absolute_time_ms: i64,
+    layout: &AnimationLayout,
+    flashlight: Option<&CatchFlashlight>,
+    catcher: Option<&CatcherDisplay>,
+) {
     // 背景由固定画布合成阶段提供，透明占位保持空帧也有稳定命令序列。
     scene.rectangle(
         SceneRect {
@@ -109,7 +151,7 @@ fn render_scene(
     );
 
     if let Some(catcher) = catcher {
-        catcher.draw_scene(&mut scene, absolute_time_ms, layout);
+        catcher.draw_scene(scene, absolute_time_ms, layout);
     }
     let fall_window = (layout.frame_height as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
     let lo = start_times.partition_point(|&time| time > absolute_time_ms + fall_window);
@@ -123,7 +165,7 @@ fn render_scene(
             continue;
         }
         draw_object_scene(
-            &mut scene,
+            scene,
             object,
             absolute_time_ms,
             judgement_y,
@@ -133,7 +175,7 @@ fn render_scene(
     }
     if let Some(flashlight) = flashlight {
         flashlight.at(absolute_time_ms, layout).draw_scene(
-            &mut scene,
+            scene,
             crate::render::geometry::PixelRect {
                 x: 0,
                 y: 0,
@@ -142,7 +184,6 @@ fn render_scene(
             },
         );
     }
-    scene.finish()
 }
 
 fn draw_object_scene(

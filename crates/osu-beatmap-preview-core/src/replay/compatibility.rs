@@ -1,4 +1,4 @@
-//! 按回放内容选择 Standard/Taiko 规则，不用客户端名称或分数版本建立白名单。
+//! 按回放内容选择 Standard/Taiko/Catch 规则，不用客户端名称或分数版本建立白名单。
 
 use super::ReplayDocument;
 use crate::model::Beatmap;
@@ -8,6 +8,7 @@ use crate::support::error::{PreviewError, Result};
 pub enum ReplayPolicy {
     Standard(StandardPolicy),
     Taiko(TaikoPolicy),
+    Catch(CatchPolicy),
 }
 
 impl Default for ReplayPolicy {
@@ -24,6 +25,11 @@ impl From<StandardPolicy> for ReplayPolicy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TaikoPolicy {
+    pub classic: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CatchPolicy {
     pub classic: bool,
 }
 
@@ -51,8 +57,16 @@ pub fn select_replay(document: &ReplayDocument) -> Result<ReplayPolicy> {
                 classic: mods.settings.classic,
             }))
         }
+        2 => {
+            let mods = super::mods::decode(document)?;
+            if document.frames.is_empty() || document.frames.windows(2).any(|w| w[1].time_ms < w[0].time_ms)
+                || document.frames.iter().any(|f| f.cursor.iter().any(|p| !p.is_finite()) || f.keys > 1) {
+                return Err(PreviewError::parse("InvalidReplay: invalid Catch input frames"));
+            }
+            Ok(ReplayPolicy::Catch(CatchPolicy { classic: mods.settings.classic }))
+        }
         mode => Err(PreviewError::new(format!(
-            "UnsupportedReplayVariant: mode {mode}; only Standard and Taiko replays are supported"
+            "UnsupportedReplayVariant: mode {mode}; only Standard, Taiko and Catch replays are supported"
         ))),
     }
 }
@@ -61,6 +75,7 @@ pub fn validate_replay_beatmap(beatmap: &Beatmap, document: &ReplayDocument) -> 
     match document.header.ruleset_id {
         0 => validate_beatmap(beatmap),
         1 if matches!(beatmap.mode(), 0 | 1) => Ok(()),
+        2 if matches!(beatmap.mode(), 0 | 2) => Ok(()),
         _ => Err(PreviewError::new(
             "UnsupportedReplayVariant: beatmap mode does not match replay",
         )),

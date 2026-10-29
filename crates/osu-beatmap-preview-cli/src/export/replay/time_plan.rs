@@ -22,10 +22,10 @@ pub(crate) fn build(
         last,
         beatmap.audio_lead_in_ms(),
         beatmap.general.get_f64("PreviewTime"),
-        if plan.target_mode == 1 {
-            config.render.taiko.mp4.style.FPS as u32
-        } else {
-            config.render.standard.mp4.style.FPS as u32
+        match plan.target_mode {
+            1 => config.render.taiko.mp4.style.FPS as u32,
+            2 => config.render.catch.mp4.style.FPS as u32,
+            _ => config.render.standard.mp4.style.FPS as u32,
         },
         config.advance.video.VIDEO_END_PADDING_MS,
     )

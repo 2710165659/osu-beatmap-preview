@@ -93,16 +93,21 @@ pub(crate) fn draw(
     let state = gameplay.state_at(time);
     let pink = [252, 97, 143, 255];
     draw_health(image, visuals.health.at(time), scale);
-    draw_hit_error_meter(
-        image,
-        gameplay,
-        visuals,
-        time,
-        width,
-        height,
-        px,
-        visuals.windows[2],
-    );
+    if !matches!(
+        gameplay.policy,
+        crate::replay::compatibility::ReplayPolicy::Catch(_)
+    ) {
+        draw_hit_error_meter(
+            image,
+            gameplay,
+            visuals,
+            time,
+            width,
+            height,
+            px,
+            visuals.windows[2],
+        );
+    }
     draw_score(image, state, visuals, width, px, scale);
     draw_summary(image, state, visuals, width, px, scale);
     draw_combo(image, state.combo, visuals, height, px, scale);
@@ -555,6 +560,37 @@ pub(crate) fn hud_text(
         || shared_text_sprite(value, scaled_bitmap_font_height(size as u32, scale), color),
         |font| font.sprite_arc(value, size * scale, 0.0, [color[0], color[1], color[2]]),
     )
+}
+
+/// 各模式共用右侧居中的按键面板；按键语义由模式转换后传入。
+pub(crate) fn draw_keys(
+    target: &mut impl OverlayCanvas,
+    visuals: &HudVisuals,
+    layout: HudLayout,
+    keys: &[(bool, &str)],
+) {
+    let px = |value: f64| (value * layout.scale).round() as i64;
+    for (i, &(active, name)) in keys.iter().enumerate() {
+        let x = layout.width - px(43.0);
+        let y = layout.height / 2 + px(i as f64 * 31.0 - keys.len() as f64 * 15.5);
+        target.fill_rect_size(
+            x,
+            y,
+            px(34.0),
+            px(26.0),
+            if active {
+                [252, 97, 143, 255]
+            } else {
+                [27, 23, 39, 205]
+            },
+        );
+        let label = hud_text(visuals, name, 18.0, [255; 4], layout.scale);
+        target.shared_sprite(
+            &label,
+            x + (px(34.0) - label.w as i64) / 2,
+            y + (px(26.0) - label.h as i64) / 2,
+        );
+    }
 }
 
 #[cfg(test)]

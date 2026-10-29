@@ -309,10 +309,13 @@ impl Img {
     // ─── 绘图原语 ───
 
     pub fn fill_rect(&mut self, x0: i64, y0: i64, x1: i64, y1: i64, color: Rgba) {
-        let xa = x0.max(0) as u32;
-        let ya = y0.max(0) as u32;
-        let xb = (x1 + 1).clamp(0, self.w as i64) as u32;
-        let yb = (y1 + 1).clamp(0, self.h as i64) as u32;
+        let xa = x0.clamp(0, self.w as i64) as u32;
+        let ya = y0.clamp(0, self.h as i64) as u32;
+        let xb = x1.saturating_add(1).clamp(0, self.w as i64) as u32;
+        let yb = y1.saturating_add(1).clamp(0, self.h as i64) as u32;
+        if xa >= xb || ya >= yb {
+            return;
+        }
         if color[3] == 255 {
             for y in ya..yb {
                 let i = self.idx(xa, y);
@@ -877,6 +880,28 @@ mod tests {
         image.set_rect_size(0, 0, 3, -1, [255, 0, 0, 255]);
 
         assert!(image.data.chunks_exact(4).all(|pixel| pixel == background));
+    }
+
+    #[test]
+    fn fill_rect_clips_offscreen_and_reversed_bounds() {
+        let background = [1, 2, 3, 255];
+        for alpha in [128, 255] {
+            let mut image = Img::new(4, 4, background);
+            let color = [255, 0, 0, alpha];
+            for (x0, y0, x1, y1) in [
+                (5, 0, 8, 3),
+                (-8, 0, -5, 3),
+                (0, 5, 3, 8),
+                (0, -8, 3, -5),
+                (3, 0, 1, 3),
+            ] {
+                image.fill_rect(x0, y0, x1, y1, color);
+            }
+            assert!(image.data.chunks_exact(4).all(|pixel| pixel == background));
+            image.fill_rect(3, 3, i64::MAX, i64::MAX, color);
+            assert_ne!(image.get(3, 3), background);
+            assert_eq!(image.get(2, 3), background);
+        }
     }
     #[test]
     fn tiled_polyline_matches_pixel_distance_union() {

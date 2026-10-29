@@ -210,7 +210,7 @@ pub fn build_video_animation_layout(
 }
 
 /// 第 segment_index 段在画布上的左上角。
-fn frame_origin(segment_index: usize, layout: &AnimationLayout) -> (i64, i64) {
+pub fn frame_origin(segment_index: usize, layout: &AnimationLayout) -> (i64, i64) {
     let catch_gif_sizing = catch_constants::gif::sizing();
     let row_index = segment_index as i64
         / crate::config::current()
@@ -557,7 +557,7 @@ pub(crate) fn object_alpha(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_gif_time_label(
+pub fn draw_gif_time_label(
     canvas: &mut Img,
     start_time: i64,
     duration_ms: i64,
@@ -956,6 +956,7 @@ mod tests {
             build_video_animation_layout(4.0, 5.0, crate::render::geometry::OutputFormat::Mp4);
         let start_time = 5_000;
         let objects = vec![RenderObject {
+            source_id: 0,
             object_type: ObjType::Fruit,
             x: 0.0,
             start_time,

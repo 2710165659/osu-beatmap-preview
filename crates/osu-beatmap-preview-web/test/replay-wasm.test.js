@@ -98,3 +98,17 @@ test('真实 WASM 双文件覆盖文本并校验包内 BeatmapID 与两份 MD5',
   assert.throws(() => wasm.beatmapInfo(archive, { osuBytes: external, checksum: externalChecksum }), /BeatmapMismatch/);
   assert.throws(() => wasm.beatmapInfo(archive, { osuBytes: [] }), /Uint8Array/);
 });
+
+test('真实 WASM 解析原生 Catch 回放和 Mod，保持原始谱面绑定', async (t) => {
+  const wasm = await moduleOrSkip(t);
+  if (!wasm) return;
+  const replay = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-catch.osr')));
+  const map = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-catch.osu')));
+  const info = wasm.replayInfo(replay);
+  assert.equal(info.rulesetId, 2);
+  assert.equal(wasm.beatmapInfo(map, { checksum: info.checksum }).beatmapId, 44);
+  new DataView(replay.buffer).setUint32(modOffset(replay), (1 << 3) | (1 << 6) | (1 << 9), true);
+  assert.equal(wasm.replayInfo(replay).rulesetId, 2);
+  new DataView(replay.buffer).setUint32(modOffset(replay), 1 << 20, true);
+  assert.throws(() => wasm.replayInfo(replay), /UnsupportedReplayVariant/);
+});

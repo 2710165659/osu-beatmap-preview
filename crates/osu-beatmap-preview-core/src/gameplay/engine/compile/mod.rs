@@ -13,6 +13,8 @@ mod objects;
 mod schedule;
 pub(crate) mod taiko;
 pub use taiko::compile_taiko;
+mod catch;
+pub use catch::compile_catch;
 
 pub fn compile_standard(
     prepared: &PreparedStandard,

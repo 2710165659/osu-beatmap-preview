@@ -52,7 +52,7 @@ test('近期扫描有上限，缺失不回退到最高分', async () => {
 test('拒绝错误成绩身份、其它模式和无回放，不替换成其它成绩', async () => {
   for (const [value, pattern] of [
     [score(11), /成绩 ID 不符/],
-    [score(10, { ruleset_id: 2 }), /Standard 和 Taiko/],
+    [score(10, { ruleset_id: 3 }), /Standard、Taiko 和 Catch/],
     [score(10, { has_replay: false }), /没有可下载回放/],
     [score(10, { beatmap_id: 9 }), /谱面信息/],
   ]) await assert.rejects(selectReplayScore({ get: async () => value }, { scoreId: '10' }), pattern);
@@ -71,10 +71,8 @@ test('最近游玩省略模式和谱面，默认排除失败，只查询最近�
 
 test('最近游玩传递官方模式和失败开关，不改选不兼容或无回放成绩', async () => {
   for (const [mode, extra, pattern] of [
-    ['fruits', { ruleset_id: 2 }, /Standard/],
     ['osu', { has_replay: false }, /没有可下载回放/],
     ['mania', { ruleset_id: 3 }, /Standard/],
-    ['taiko', { ruleset_id: 2 }, /Standard 和 Taiko/],
   ]) {
     const calls = [];
     await assert.rejects(selectReplayScore({ get: async (path) => {
@@ -103,4 +101,15 @@ test('玩家加谱面未指定模式时按原谱查询，显式模式可定位�
     } }, replayQuery(new URLSearchParams(`user=x&bid=2${params}`))), /Standard/);
     assert.deepEqual(calls, [...(params ? [] : ['beatmaps/2']), `users/@x/${mode}`, `beatmaps/2/scores/users/7?mode=${mode}&legacy_only=0`]);
   }
+});
+
+test('Catch 成绩可按成绩 ID 或 fruits 最近游玩定位', async () => {
+  const value = score(10, { ruleset_id: 2 });
+  assert.equal((await selectReplayScore({ get: async () => value }, { scoreId: '10' })).scoreId, '10');
+  const calls = [];
+  const result = await selectReplayScore({ get: async (p) => {
+    calls.push(p); return p === 'users/@x/fruits' ? { id: 7 } : [value];
+  } }, replayQuery(new URLSearchParams('user=x&mode=fruits&includeFails=1')));
+  assert.equal(result.scoreId, '10');
+  assert.deepEqual(calls, ['users/@x/fruits', 'users/7/scores/recent?mode=fruits&include_fails=1&legacy_only=0&limit=1&offset=0']);
 });
