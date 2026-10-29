@@ -4,6 +4,25 @@
 
 ---
 
+## [1.5.3] - 2026.10.29
+
+### Added
+
+- Taiko 回放预览支持 `CL`（Classic），并支持 GIF 导出。
+- Catch 回放预览支持 GIF、MP4 与 Web 实时预览。
+
+### Changed
+
+- 将 `AT` 的显示效果改为独立配置：Standard 自动光标、Catch 自动接盘默认关闭，Taiko 击打按键与 Note 击飞效果默认开启。
+- 更新 Catch 接盘样式，增加 Note 堆叠与随 Combo 散开效果。
+- Taiko PNG 按完整小节自适应排版，每行保持四小节，超长小节连续拆分显示（#9）。
+
+### Contributors
+
+- `yaowan233`（#9）。
+
+---
+
 ## [1.5.2] - 2026.10.24
 
 ### Added
