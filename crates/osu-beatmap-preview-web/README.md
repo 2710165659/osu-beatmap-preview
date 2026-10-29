@@ -41,7 +41,7 @@ node backend/server.js
 
 支持四模式原生谱面，以及 Standard 转 Taiko、Catch、Mania。播放页可切换 Mod、跳转进度，调整倍速（0.1–3 倍）、音乐与打击音音量、480P/720P/1080P 分辨率和 30/60/120 FPS。
 
-音乐音量默认 50%，打击音默认开启、音量 100%，背景默认暗化 70%；背景视频、故事板、谱面打击音和帧率显示在页面中默认开启。Standard 普通预览可在「画面 → 其他」切换光标，默认关闭。普通谱面预览的 Mod 选项采用 [CLI 文档](../osu-beatmap-preview-cli/README.md#mod-支持)中 PNG 与 GIF/MP4 的累积支持范围。
+音乐音量默认 50%，打击音默认开启、音量 100%，背景默认暗化 70%；背景视频、故事板、谱面打击音和帧率显示在页面中默认开启。「画面 → 其他」可切换 Standard 的光标和 Catch 的自动接盘，均默认关闭。普通谱面预览的 Mod 选项采用 [CLI 文档](../osu-beatmap-preview-cli/README.md#mod-支持)中 PNG 与 GIF/MP4 的累积支持范围。
 
 ## 回放预览
 

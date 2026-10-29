@@ -805,6 +805,36 @@ impl RealtimeSession {
         Ok(())
     }
 
+    /// 仅重建 Mania 的击打闪光配置与帧源，保持播放时钟和音频不变。
+    pub fn set_show_hit_flash(&mut self, enabled: bool) -> Result<()> {
+        if self
+            .options
+            .core_config
+            .render
+            .mania
+            .mp4
+            .style
+            .SHOW_HIT_FLASH
+            == enabled
+        {
+            return Ok(());
+        }
+        let mut config = (*self.options.core_config).clone();
+        config.render.mania.mp4.style.SHOW_HIT_FLASH = enabled;
+        let config = Arc::new(config);
+        if self.mode_as_i32() == 3 {
+            self.source = prepare_source(
+                &self.beatmap,
+                3,
+                &self.settings,
+                TimeAxis::new(self.timeline.first_object_ms),
+                &config,
+            )?;
+        }
+        self.options.core_config = config;
+        Ok(())
+    }
+
     pub fn set_background(&mut self, background: ImageData) -> Result<()> {
         let image = background_image(&background)?;
         self.resources.background = Some(background);
@@ -1776,6 +1806,79 @@ mod tests {
         let hidden = session.scene_at_absolute(1000).unwrap().commands.len();
         session.set_show_catcher(true).unwrap();
         assert!(session.scene_at_absolute(1000).unwrap().commands.len() > hidden);
+    }
+
+    #[test]
+    fn hit_flash_toggle_preserves_playback_and_survives_mods_and_resize() {
+        let beatmap = crate::parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n64,192,1000,1,0\n192,192,2000,1,0\n",
+        ).unwrap();
+        let mut options = test_options();
+        Arc::make_mut(&mut options.core_config)
+            .render
+            .mania
+            .gif
+            .style
+            .SHOW_HIT_FLASH = true;
+        Arc::make_mut(&mut options.core_config)
+            .render
+            .mania
+            .mp4
+            .style
+            .SHOW_HIT_FLASH = false;
+        let mut session =
+            RealtimeSession::from_bundle(ResourceBundle::new(beatmap), options).unwrap();
+        session.seek(100.0, 0.0);
+        session.play(100.0);
+        let hidden = session.scene_at_absolute(1000).unwrap().commands.len();
+        let epoch = session.audio_epoch();
+        assert!(
+            !session
+                .options()
+                .core_config
+                .render
+                .mania
+                .mp4
+                .style
+                .SHOW_HIT_FLASH
+        );
+        session.set_show_hit_flash(true).unwrap();
+        assert_eq!(
+            session.scene_at_absolute(1000).unwrap().commands.len(),
+            hidden + 1
+        );
+        assert_eq!(
+            session.scene_at_absolute(999).unwrap().commands.len(),
+            hidden
+        );
+        assert_eq!(session.audio_epoch(), epoch);
+        assert_eq!(session.clock_ms(200.0), 100.0);
+        session
+            .set_mods(vec!["MR".into(), "DT".into()], 200.0)
+            .unwrap();
+        session.set_render_size(854, 480).unwrap();
+        assert!(
+            session
+                .options()
+                .core_config
+                .render
+                .mania
+                .mp4
+                .style
+                .SHOW_HIT_FLASH
+        );
+        session.set_show_hit_flash(false).unwrap();
+        let hidden = session.scene_at_absolute(1000).unwrap().commands.len();
+        let after_fade = session.scene_at_absolute(1320).unwrap().commands.len();
+        session.set_show_hit_flash(true).unwrap();
+        assert_eq!(
+            session.scene_at_absolute(1000).unwrap().commands.len(),
+            hidden + 1
+        );
+        assert_eq!(
+            session.scene_at_absolute(1320).unwrap().commands.len(),
+            after_fade
+        );
     }
 
     /// 背景暗化运行时可调并夹紧到 0～1；背景/视频/故事板三层共用这一系数。

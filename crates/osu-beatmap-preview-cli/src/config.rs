@@ -1117,13 +1117,16 @@ render:
     }
 
     #[test]
-    fn mania_sv_label_switches_are_typed_and_independent() {
+    fn mania_animation_switches_are_typed_and_independent() {
+        let defaults = load_snapshot(None).unwrap();
+        assert!(!defaults.render.mania.gif.style.SHOW_HIT_FLASH);
+        assert!(!defaults.render.mania.mp4.style.SHOW_HIT_FLASH);
         let configured = load_snapshot(Some(
             r#"{
                 "render": {
                     "mania": {
                         "png": {"style": {"SHOW_SV_LABEL": false}},
-                        "gif": {"style": {"SHOW_SV_LABEL": false}},
+                        "gif": {"style": {"SHOW_SV_LABEL": false, "SHOW_HIT_FLASH": true}},
                         "mp4": {"style": {"SHOW_SV_LABEL": false}}
                     }
                 }
@@ -1133,6 +1136,8 @@ render:
         assert!(!configured.render.mania.png.style.SHOW_SV_LABEL);
         assert!(!configured.render.mania.gif.style.SHOW_SV_LABEL);
         assert!(!configured.render.mania.mp4.style.SHOW_SV_LABEL);
+        assert!(configured.render.mania.gif.style.SHOW_HIT_FLASH);
+        assert!(!configured.render.mania.mp4.style.SHOW_HIT_FLASH);
     }
 
     #[test]

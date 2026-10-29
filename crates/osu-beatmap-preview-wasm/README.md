@@ -73,6 +73,8 @@ Web 页面构建必须在 WASM 生成后执行，才能将 `public/pkg/` 复制�
 | `hitsoundEnabled`、`hitsoundVolume` | 打击音开关与音量，默认 true、100 |
 | `beatmapHitsound` | 优先使用谱面自带音效，默认 true，影响创建时的样本装载 |
 | `storyboard` | 初始故事板开关，默认 false |
+| `showCursor` | 普通 Standard 预览的自动光标，默认 false |
+| `showCatcher` | 普通 Catch 预览的自动接盘，默认 false |
 
 WASM 会话的背景视频和故事板默认关闭，Web 页面自行启用。音乐、背景和样本在创建阶段解码，背景视频按需解码；大包会增加初始化时间和内存占用。
 
@@ -169,11 +171,13 @@ const state = session.replayState();
 | `setHitsoundEnabled(bool)` | 开关打击音 |
 | `setBeatmapHitsound(bool)` | 切换谱面自带音效，重新装载样本与时间轴 |
 
-### Mod 与背景
+### Mod 与画面
 
 | 方法 | 说明 |
 | --- | --- |
 | `set_mods(mods)` | 普通预览热切换 Mod，重建相关资源；回放拒绝调用 |
+| `setShowCursor(bool)` | 切换普通 Standard 预览的自动光标，保持播放位置与音频不变；回放不支持 |
+| `setShowCatcher(bool)` | 切换普通 Catch 预览的自动接盘，保持播放位置与音频不变；回放不支持 |
 | `setBackgroundDim(pct)` | 背景图、视频和故事板共用的暗化，0–100，默认 70 |
 | `hasBackgroundVideo()`、`setBackgroundVideo(bool)` | 查询可用视频与切换播放 |
 | `hasStoryboard()`、`setStoryboard(bool)` | 查询可绘制故事板与切换显示，Overlay 层可覆盖物件 |

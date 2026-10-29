@@ -19,6 +19,7 @@ use super::{
     format_sv_label, is_native_mania, mania_objects, resolve_key_count,
 };
 
+use super::hit_flash::HitFlashes;
 use super::skin::load_mania_skin_config;
 
 pub struct AnimationLayout {
@@ -191,6 +192,13 @@ pub fn prepare_mania_gif_frames(
         crate::render::geometry::OutputFormat::Gif,
     );
     let native_mania = is_native_mania(beatmap);
+    let hit_flashes = crate::config::current()
+        .render
+        .mania
+        .gif
+        .style
+        .SHOW_HIT_FLASH
+        .then(|| HitFlashes::new(&hit_objects, &palette, &layout));
     // CS 是恒定滚动：保留 33 速时间窗口，但跳过 SV 倍率。
     let scroll_map = build_scroll_map(beatmap, &original_objects, cs_mode, native_mania);
     // time_range 是 33 速下从判定线到顶部可见的谱面时间跨度。
@@ -349,6 +357,9 @@ pub fn prepare_mania_gif_frames(
                     &layout,
                     pixels_per_scroll_unit,
                 );
+            }
+            if let Some(flashes) = &hit_flashes {
+                flashes.draw(&mut canvas, snapshot_time, seg_left, &layout);
             }
             if let Some(timeline) = &visibility {
                 let rect = crate::render::geometry::PixelRect {

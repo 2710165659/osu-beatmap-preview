@@ -741,6 +741,14 @@ fn blend_into(dst: &mut [u8], src: Rgba) {
         dst.copy_from_slice(&src);
         return;
     }
+    if da == 255 {
+        // 不透明背景的输出 alpha 恒为 255，可约去通用公式中的公因子，
+        // 避免每个通道做动态除法；整数舍入与通用 src-over 公式完全相同。
+        for c in 0..3 {
+            dst[c] = ((src[c] as u32 * sa + dst[c] as u32 * (255 - sa) + 127) / 255) as u8;
+        }
+        return;
+    }
     let out_a = sa * 255 + da * (255 - sa); // scaled by 255
     for c in 0..3 {
         let sc = src[c] as u32;
@@ -845,6 +853,27 @@ fn resample_axis(src: &Img, new_size: u32, horizontal: bool) -> Img {
 #[cfg(test)]
 mod tests {
     use super::Img;
+
+    #[test]
+    fn opaque_blending_matches_general_src_over_rounding() {
+        for alpha in 0..=255u32 {
+            for source in 0..=255u32 {
+                for destination in 0..=255u32 {
+                    let mut pixel = [destination as u8; 4];
+                    pixel[3] = 255;
+                    super::blend_into(
+                        &mut pixel,
+                        [source as u8, source as u8, source as u8, alpha as u8],
+                    );
+                    let out_a = alpha * 255 + 255 * (255 - alpha);
+                    let expected =
+                        ((source * alpha * 255 + destination * 255 * (255 - alpha) + out_a / 2)
+                            / out_a) as u8;
+                    assert_eq!(pixel, [expected, expected, expected, 255]);
+                }
+            }
+        }
+    }
 
     #[test]
     fn size_rectangles_draw_exact_half_open_dimensions() {

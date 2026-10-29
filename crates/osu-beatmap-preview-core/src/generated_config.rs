@@ -326,6 +326,7 @@ pub struct RenderManiaGifStyleConfig {
     pub FPS: i64,
     pub SCROLL_SPEED: f64,
     pub SHOW_SV_LABEL: bool,
+    pub SHOW_HIT_FLASH: bool,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -350,6 +351,7 @@ pub struct RenderManiaMp4StyleConfig {
     pub ENABLE_BEATMAP_HITSOUND: bool,
     pub HITSOUND_VOLUME: i64,
     pub SHOW_SV_LABEL: bool,
+    pub SHOW_HIT_FLASH: bool,
     pub LANE_DARKEN_ALPHA: f64,
 }
 

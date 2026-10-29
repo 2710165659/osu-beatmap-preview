@@ -3,6 +3,7 @@
 
 pub mod animation;
 pub mod constants;
+pub mod hit_flash;
 pub mod png;
 pub mod skin;
 pub mod utils;
