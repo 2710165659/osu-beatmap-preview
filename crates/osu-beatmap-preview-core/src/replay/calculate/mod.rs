@@ -2,3 +2,5 @@
 pub(crate) mod catch;
 pub mod standard;
 pub mod taiko;
+
+pub(crate) mod mania;

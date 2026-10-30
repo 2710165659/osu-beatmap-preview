@@ -52,7 +52,7 @@ test('近期扫描有上限，缺失不回退到最高分', async () => {
 test('拒绝错误成绩身份、其它模式和无回放，不替换成其它成绩', async () => {
   for (const [value, pattern] of [
     [score(11), /成绩 ID 不符/],
-    [score(10, { ruleset_id: 3 }), /Standard、Taiko 和 Catch/],
+    [score(10, { ruleset_id: 4 }), /Standard、Taiko、Catch 和 Mania/],
     [score(10, { has_replay: false }), /没有可下载回放/],
     [score(10, { beatmap_id: 9 }), /谱面信息/],
   ]) await assert.rejects(selectReplayScore({ get: async () => value }, { scoreId: '10' }), pattern);
@@ -72,7 +72,7 @@ test('最近游玩省略模式和谱面，默认排除失败，只查询最近�
 test('最近游玩传递官方模式和失败开关，不改选不兼容或无回放成绩', async () => {
   for (const [mode, extra, pattern] of [
     ['osu', { has_replay: false }, /没有可下载回放/],
-    ['mania', { ruleset_id: 3 }, /Standard/],
+    ['mania', { ruleset_id: 3, has_replay: false }, /没有可下载回放/],
   ]) {
     const calls = [];
     await assert.rejects(selectReplayScore({ get: async (path) => {
@@ -91,14 +91,15 @@ test('最近游玩没有记录或返回错误玩家时明确报错', async () =>
 
 
 test('玩家加谱面未指定模式时按原谱查询，显式模式可定位转谱成绩', async () => {
-  for (const [mode, params] of [['mania', '&mode=mania']]) {
+  for (const [mode, params] of [['mania', '&mode=mania'], ['mania', '']]) {
     const calls = [];
-    await assert.rejects(selectReplayScore({ get: async (path) => {
+    const result = await selectReplayScore({ get: async (path) => {
       calls.push(path);
       if (path === 'beatmaps/2') return { id: 2, mode: 'mania' };
       if (path === `users/@x/${mode}`) return { id: 7 };
       return { score: score(10, { ruleset_id: 3 }) };
-    } }, replayQuery(new URLSearchParams(`user=x&bid=2${params}`))), /Standard/);
+    } }, replayQuery(new URLSearchParams(`user=x&bid=2${params}`)));
+    assert.equal(result.scoreId, '10');
     assert.deepEqual(calls, [...(params ? [] : ['beatmaps/2']), `users/@x/${mode}`, `beatmaps/2/scores/users/7?mode=${mode}&legacy_only=0`]);
   }
 });

@@ -259,3 +259,6 @@ fn maximum_statistics(
 
 #[cfg(test)]
 mod tests;
+
+mod mania;
+pub use mania::compile_mania;

@@ -30,7 +30,7 @@ impl Default for ReplayMods {
 }
 
 pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
-    if matches!(document.header.ruleset_id, 1 | 2) {
+    if matches!(document.header.ruleset_id, 1..=3) {
         return decode_nonstandard(document, i32::from(document.header.ruleset_id));
     }
     let mut result = ReplayMods::default();
@@ -196,15 +196,39 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
     Ok(result)
 }
 
-// Catch 与 Taiko 的 CL 均无可配置字段；共享严格的字段与旧位掩码解码。
+// 非 Standard 模式共享严格的字段与旧位掩码解码。
 fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods> {
     let mut result = ReplayMods::default();
     let mut mods = if let Some(metadata) = &document.metadata {
         metadata.mods.clone()
     } else {
         let bits = document.header.mods_bits;
-        let supported =
-            (1 << 1) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 29);
+        // Mania 键数标记保留原谱面布局；MR 只改变列，不改变录制输入位。
+        let mania_bits = if mode == 3 {
+            (1 << 0)
+                | (1 << 15)
+                | (1 << 16)
+                | (1 << 17)
+                | (1 << 18)
+                | (1 << 19)
+                | (1 << 24)
+                | (1 << 25)
+                | (1 << 26)
+                | (1 << 27)
+                | (1 << 28)
+                | (1 << 30)
+        } else {
+            0
+        };
+        let supported = mania_bits
+            | (1 << 1)
+            | (1 << 3)
+            | (1 << 4)
+            | (1 << 6)
+            | (1 << 8)
+            | (1 << 9)
+            | (1 << 10)
+            | (1 << 29);
         if bits & !supported != 0 {
             return Err(unsupported(format!("legacy Mods 0x{bits:08x}")));
         }
@@ -216,6 +240,17 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
             (8, "HT"),
             (9, "NC"),
             (10, "FL"),
+            (30, "MR"),
+            (15, "4K"),
+            (16, "5K"),
+            (17, "6K"),
+            (18, "7K"),
+            (19, "8K"),
+            (24, "9K"),
+            (25, "DS"),
+            (26, "1K"),
+            (27, "3K"),
+            (28, "2K"),
         ]
         .into_iter()
         .filter(|&(bit, _)| bits & (1 << bit) != 0 && !(bit == 6 && bits & (1 << 9) != 0))
@@ -241,13 +276,39 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
         if !seen.insert(code.to_owned()) {
             return Err(unsupported(format!("duplicate Mod {code}")));
         }
+        if mode == 3 && matches!(code, "NF" | "SV2") {
+            if !modifier.settings.is_empty() || !modifier.extra.is_empty() {
+                return Err(unsupported(format!("{code} settings")));
+            }
+            continue;
+        }
+        let key_mod = matches!(
+            code,
+            "1K" | "2K" | "3K" | "4K" | "5K" | "6K" | "7K" | "8K" | "9K" | "10K" | "DS"
+        );
         if !matches!(
             code,
-            "EZ" | "HR" | "HD" | "FL" | "CS" | "SW" | "DT" | "HT" | "NC" | "DC" | "CL"
-        ) {
+            "EZ" | "HR"
+                | "HD"
+                | "FL"
+                | "CS"
+                | "SW"
+                | "DT"
+                | "HT"
+                | "NC"
+                | "DC"
+                | "CL"
+                | "MR"
+                | "HO"
+                | "IN"
+        ) && !(mode == 3 && key_mod)
+        {
             return Err(unsupported(format!("Mod {code}")));
         }
-        if mode == 2 && matches!(code, "SW" | "CS") {
+        if (mode == 2 && matches!(code, "SW" | "CS" | "MR" | "HO" | "IN"))
+            || (mode == 1 && matches!(code, "MR" | "HO" | "IN"))
+            || (mode == 3 && code == "SW")
+        {
             return Err(unsupported(format!("Catch Mod {code}")));
         }
         let mut token = code.to_owned();
@@ -276,7 +337,15 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
         tokens.push(token);
     }
     result.settings = parse_mods(&tokens).map_err(|e| unsupported(e.to_string()))?;
-    let errors = validate_mods_for_level(&result.settings, mode, ModSupportLevel::Realtime);
+    if mode == 3 && result.settings.mania_key_mods.len() > 1 {
+        return Err(unsupported("multiple Mania key mods"));
+    }
+    let mut validation_settings = result.settings.clone();
+    if mode == 3 {
+        validation_settings.easy = false;
+        validation_settings.hard_rock = false;
+    }
+    let errors = validate_mods_for_level(&validation_settings, mode, ModSupportLevel::Realtime);
     if !errors.is_empty() {
         return Err(unsupported(errors.join("; ")));
     }

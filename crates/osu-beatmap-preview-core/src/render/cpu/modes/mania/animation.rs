@@ -1010,6 +1010,29 @@ struct PreLabel {
     note: Option<Box<PreLabel>>,
 }
 
+/// 将完整帧的时间标签绘制在格外，普通 GIF 与回放 GIF 共用相同布局。
+pub fn draw_time_label(
+    canvas: &mut Img,
+    timing: &crate::domain::shared::time_selection::PreviewSegmentTiming,
+    duration_ms: i64,
+    origin: (i64, i64),
+    layout: &AnimationLayout,
+    time_axis: TimeAxis,
+) {
+    let label = build_pre_label(
+        timing,
+        duration_ms,
+        layout,
+        origin.0,
+        origin.1 + layout.image_height + mania_constants::gif::sizing().TIME_LABEL_TOP_GAP,
+        time_axis,
+    );
+    canvas.alpha_composite(&label.sprite, label.x, label.y);
+    if let Some(note) = label.note {
+        canvas.alpha_composite(&note.sprite, note.x, note.y);
+    }
+}
+
 fn build_pre_label(
     timing: &crate::domain::shared::time_selection::PreviewSegmentTiming,
     duration_ms: i64,

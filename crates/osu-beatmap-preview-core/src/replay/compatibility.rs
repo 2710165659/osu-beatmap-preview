@@ -1,4 +1,4 @@
-//! 按回放内容选择 Standard/Taiko/Catch 规则，不用客户端名称或分数版本建立白名单。
+//! 按回放内容选择 四模式规则，不用客户端名称或分数版本建立白名单。
 
 use super::ReplayDocument;
 use crate::model::Beatmap;
@@ -9,6 +9,7 @@ pub enum ReplayPolicy {
     Standard(StandardPolicy),
     Taiko(TaikoPolicy),
     Catch(CatchPolicy),
+    Mania(ManiaPolicy),
 }
 
 impl Default for ReplayPolicy {
@@ -31,6 +32,12 @@ pub struct TaikoPolicy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CatchPolicy {
     pub classic: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ManiaPolicy {
+    pub classic: bool,
+    pub score_v2: bool,
 }
 
 pub fn select_replay(document: &ReplayDocument) -> Result<ReplayPolicy> {
@@ -65,8 +72,22 @@ pub fn select_replay(document: &ReplayDocument) -> Result<ReplayPolicy> {
             }
             Ok(ReplayPolicy::Catch(CatchPolicy { classic: mods.settings.classic }))
         }
+        3 => {
+            let mods = super::mods::decode(document)?;
+            if document.frames.is_empty()
+                || document.frames.windows(2).any(|w| w[1].time_ms < w[0].time_ms)
+                || document.frames.iter().any(|f| !f.cursor[0].is_finite()
+                    || f.cursor[0] < 0.0 || f.cursor[0] > 262143.0 || f.cursor[0].fract() != 0.0)
+            {
+                return Err(PreviewError::parse("InvalidReplay: invalid Mania column mask"));
+            }
+            Ok(ReplayPolicy::Mania(ManiaPolicy {
+                classic: mods.settings.classic,
+                score_v2: document.metadata.as_ref().map_or(document.header.mods_bits & (1 << 29) != 0, |metadata| metadata.mods.iter().any(|modifier| modifier.acronym == "SV2")),
+            }))
+        }
         mode => Err(PreviewError::new(format!(
-            "UnsupportedReplayVariant: mode {mode}; only Standard, Taiko and Catch replays are supported"
+            "UnsupportedReplayVariant: mode {mode}; only Standard, Taiko, Catch and Mania replays are supported"
         ))),
     }
 }
@@ -76,6 +97,7 @@ pub fn validate_replay_beatmap(beatmap: &Beatmap, document: &ReplayDocument) -> 
         0 => validate_beatmap(beatmap),
         1 if matches!(beatmap.mode(), 0 | 1) => Ok(()),
         2 if matches!(beatmap.mode(), 0 | 2) => Ok(()),
+        3 if matches!(beatmap.mode(), 0 | 3) => Ok(()),
         _ => Err(PreviewError::new(
             "UnsupportedReplayVariant: beatmap mode does not match replay",
         )),

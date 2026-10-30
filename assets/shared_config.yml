@@ -173,76 +173,112 @@ skin:
       COLUMN_WIDTHS: [68] # 1 键各列宽度
       COLUMN_LINE_WIDTHS: [0, 0] # 左边界、右边界线宽度
       HIT_POSITION: 473 # 判定线位置（480 高坐标系）
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_2:
       COLUMN_WIDTHS: [68, 68] # 各列宽度
       COLUMN_LINE_WIDTHS: [0, 0, 0]
       HIT_POSITION: 473 # 判定线位置（480 高坐标系）
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_3:
       COLUMN_WIDTHS: [68, 68, 68] # 各列宽度
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0]
       HIT_POSITION: 473 # 判定线位置（480 高坐标系）
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_4:
       COLUMN_WIDTHS: [68, 68, 68, 68] # 各列宽度
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0]
       HIT_POSITION: 473 # 判定线位置（480 高坐标系）
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_5:
       COLUMN_WIDTHS: [60, 60, 60, 60, 60]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_6:
       COLUMN_WIDTHS: [55, 55, 55, 55, 55, 55]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_7:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_8:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_9:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_10:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_11:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_12:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_13:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_14:
       COLUMN_WIDTHS: [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_15:
       COLUMN_WIDTHS:
         [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_16:
       COLUMN_WIDTHS:
         [53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53, 53]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_17:
       COLUMN_WIDTHS:
         [48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48]
       COLUMN_LINE_WIDTHS: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）
     KEYS_18:
       COLUMN_WIDTHS:
         [48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48]
       COLUMN_LINE_WIDTHS:
         [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0]
       HIT_POSITION: 460
+      COMBO_POSITION: 140 # 连击中心的纵向位置（480 高坐标系）
+      SCORE_POSITION: 180 # 判定中心的纵向位置（480 高坐标系）

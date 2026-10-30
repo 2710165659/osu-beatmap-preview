@@ -120,10 +120,11 @@ osu-beatmap-preview-cli --type=osr --user="玩家名" --mode=osu --include-fails
 
 ### 输出与兼容性
 
-- **PNG/GIF**：只使用 `.osu` 与 `.osr`，不读取或下载 OSZ，不加载音频、背景、视频或故事板。PNG 支持 Standard，使用 `render.standard.png` 的快照网格、选段、标签和缩放配置；GIF 支持 Standard 与 Taiko，默认 2×2 同时播放不同片段，分别使用 `render.standard.gif`、`render.taiko.gif` 配置，每格显示对应时刻的回放与 HUD。
+- **PNG/GIF**：只使用 `.osu` 与 `.osr`，不读取或下载 OSZ，不加载音频、背景、视频或故事板。PNG 支持 Standard，使用 `render.standard.png` 的快照网格、选段、标签和缩放配置；GIF 支持四模式，默认 2×2 同时播放不同片段，使用 `render.<模式>.gif` 配置，每格显示对应时刻的回放与 HUD。
 - **MP4**：使用完整 OSZ 加载音乐、背景与音效，画面与音频开关使用 `render.standard.mp4` 配置。缺少资源时自动查谱下载。
 - **谱面匹配**：按回放记录的原始 `.osu` 字节 MD5 校验；MP4 同时提供外部谱面与媒体包时，两份谱面都必须匹配。
 - **Mod**：使用回放文件中的 Mod，不接受 `--convert` 或 `--mod`。
+- **布局**：Mania 不显示右侧按键面板，连击与判定位置使用 `skin.MANIA.KEYS_N` 的 `COMBO_POSITION`、`SCORE_POSITION`（480 高坐标系）；判定字形由代码绘制。
 - **兼容性**：支持 stable、lazer、tachyon 回放；成绩按当前游戏规则重算，可能与历史记录不同。
 - **提前结束**：输入提前结束时显示失败，冻结成绩与光标，清空按键并停止玩家音效；MP4 中背景、谱面和音乐继续播放。
 
@@ -148,7 +149,7 @@ download:
 | Taiko PNG | 按游玩顺序排成多行，显示节拍线、BPM 与 SV |
 | Catch PNG | 按谱面进度排成多列 |
 | Mania PNG | 按键道绘制，长谱自动分列，显示 BPM 与 SV |
-| GIF | Standard/Catch 为 2×2 网格，Taiko 为 4 行，Mania 为 4 列 |
+| GIF | 四模式均为 2×2 网格，每格独立播放不同片段 |
 | MP4 | 四模式单画面视频，H.264 + AAC，支持 MP3、OGG、WAV 音源 |
 
 数值时间点使用游戏时间：转谱后目标模式的首个可玩物件为 `0:00`，不是音轨绝对时间。`preview` 使用谱面 `PreviewTime`，无效时回退到首个物件。
@@ -178,7 +179,7 @@ Windows 自动尝试 NVENC 或 AMF，失败时回退 CPU OpenH264；其他平台
 | Standard | Easy、Hard-Rock、Hidden、Flashlight、Difficulty-Adjust、Traceable、Mirror | Double-Time、Half-Time、Nightcore、Daycore | Classic、Relax、Spun-Out、Autopilot、Alternate、Single-Tap |
 | Taiko | Easy、Hard-Rock、Swap | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | Classic |
 | Catch | Easy、Hard-Rock | Hidden、Flashlight、Double-Time、Half-Time、Nightcore、Daycore | Classic |
-| Mania | One-Key 至 Ten-Keys、Dual-Stages、Invert、Hold-Off、Mirror | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | 无新增 |
+| Mania | One-Key 至 Ten-Keys、Dual-Stages、Invert、Hold-Off、Mirror | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | Classic |
 
 CLI 普通导出不支持“实时预览新增”列的 Mod；回放导出使用回放文件中的 Mod。
 

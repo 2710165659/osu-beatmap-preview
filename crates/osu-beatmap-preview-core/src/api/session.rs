@@ -204,6 +204,7 @@ mod osr {
             match &prepared {
                 PreparedReplay::Taiko(p) => bundle.beatmap = Some(p.beatmap.clone()),
                 PreparedReplay::Catch(p) => bundle.beatmap = Some(p.beatmap.clone()),
+                PreparedReplay::Mania(p) => bundle.beatmap = Some(p.beatmap.clone()),
                 _ => (),
             }
             let mut session = Self::from_bundle(bundle, options)?;
@@ -243,6 +244,8 @@ mod osr {
                 .frame_height,
                     PreparedReplay::Catch(p) => crate::render::cpu::modes::catch::animation::build_video_animation_layout(p.cs,p.ar,crate::render::geometry::OutputFormat::Mp4).frame_height,
                     PreparedReplay::Taiko(_) => crate::render::cpu::modes::taiko::animation_render::build_video_animation_layout(crate::render::cpu::modes::taiko::animation_render::compute_time_range(),crate::render::geometry::OutputFormat::Mp4).image_height,
+                    PreparedReplay::Mania(p) => crate::render::cpu::modes::mania::animation::build_video_layout(
+                        &crate::render::cpu::modes::mania::skin::load_mania_skin_config(p.keys,crate::render::geometry::OutputFormat::Mp4),crate::render::geometry::OutputFormat::Mp4).image_height,
                 }
             });
             // 分辨率切换重新计算当前格式 SCALE，物件与 HUD 在目标像素尺寸直接绘制。
@@ -251,6 +254,7 @@ mod osr {
                 PreparedReplay::Standard(_) => cfg.render.standard.mp4.SCALE *= scale,
                 PreparedReplay::Taiko(_) => cfg.render.taiko.mp4.SCALE *= scale,
                 PreparedReplay::Catch(_) => cfg.render.catch.mp4.SCALE *= scale,
+                PreparedReplay::Mania(_) => cfg.render.mania.mp4.SCALE *= scale,
             }
             let config = Arc::new(cfg);
             self.source = config::with_config(Arc::clone(&config), || match &osr.prepared {
@@ -269,6 +273,14 @@ mod osr {
                         Arc::clone(&osr.gameplay),
                         osr.font.as_ref().map(|f| (**f).clone()),
                         Some(self.options.render.dimensions()),
+                    )
+                }
+                PreparedReplay::Mania(prepared) => {
+                    crate::render::wgpu::modes::mania::prepare_replay(
+                        Arc::clone(prepared),
+                        Arc::clone(&osr.gameplay),
+                        osr.font.as_ref().map(|f| (**f).clone()),
+                        self.options.render.dimensions(),
                     )
                 }
                 PreparedReplay::Taiko(prepared) => {
@@ -406,6 +418,46 @@ mod osr {
                 session.seek(200.0, 500.0);
                 assert_eq!(session.replay_timeline().unwrap().state_at(1500.0), &state);
             }
+        }
+
+        #[test]
+        fn mania_replay_seek_and_resolution_changes_keep_recorded_inputs() {
+            let (prepared, document) = crate::replay::preparation::mania::tests::fixture(
+                "64,192,1000,128,0,2000:0:0:0:0:\n192,192,2500,1,0",
+                &[(0, 0), (1000, 1), (2000, 0), (2530, 2), (2800, 0)],
+            );
+            let mut session = RealtimeSession::from_replay_bundle(
+                ResourceBundle::new(prepared.beatmap),
+                RealtimeOptions::default(),
+                document,
+                None,
+            )
+            .unwrap();
+            assert_eq!(session.mode_as_i32(), 3);
+            let before = session.scene_at_absolute(1500).unwrap();
+            let state = session.replay_timeline().unwrap().state_at(2700.0).clone();
+            let track_height = |scene: &crate::render::scene::FrameScene| {
+                scene.resources.values().map(|r| r.h).max().unwrap()
+            };
+            let initial_height = track_height(&before);
+            session.seek(0.0, 1200.0);
+            session.set_render_size(854, 480).unwrap();
+            let smaller = session.scene_at_absolute(1500).unwrap();
+            assert_eq!(smaller.size.height, 480);
+            assert!(track_height(&smaller) < initial_height);
+            session
+                .set_render_size(before.size.width, before.size.height)
+                .unwrap();
+            let restored = session.scene_at_absolute(1500).unwrap();
+            assert_eq!(
+                format!("{:?}", restored.commands),
+                format!("{:?}", before.commands)
+            );
+            assert_eq!(session.replay_timeline().unwrap().state_at(2700.0), &state);
+            assert!(session
+                .hitsound_required_names()
+                .iter()
+                .any(|name| name.contains("hitnormal")));
         }
 
         #[test]

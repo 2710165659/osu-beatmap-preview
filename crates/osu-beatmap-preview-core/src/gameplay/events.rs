@@ -4,6 +4,8 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HitResult {
+    Perfect,
+    Good,
     Great,
     Ok,
     Meh,
@@ -21,6 +23,8 @@ pub enum HitResult {
 impl HitResult {
     pub fn value(self) -> u32 {
         match self {
+            Self::Perfect => 305,
+            Self::Good => 200,
             Self::Great => 300,
             Self::Ok => 100,
             Self::Meh => 50,
@@ -40,6 +44,8 @@ impl HitResult {
     }
     pub fn name(self) -> &'static str {
         match self {
+            Self::Perfect => "perfect",
+            Self::Good => "good",
             Self::Great => "great",
             Self::Ok => "ok",
             Self::Meh => "meh",

@@ -526,7 +526,7 @@ fn mod_support_steps(mode: i32) -> [&'static [&'static str]; 3] {
         3 => [
             &["K", "DS", "IN", "HO", "MR"],
             &["HD", "FL", "CS", "DT", "HT", "NC", "DC"],
-            &[],
+            &["CL"],
         ],
         _ => [&[], &[], &[]],
     }
@@ -662,7 +662,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
         daycore: settings.daycore,
         hidden: settings.hidden && (0..=3).contains(&mode),
         flashlight: settings.flashlight && (0..=3).contains(&mode),
-        classic: settings.classic && matches!(mode, 0..=2),
+        classic: settings.classic && (0..=3).contains(&mode),
         tokens: settings.tokens.clone(),
         ..ModSettings::new()
     };
@@ -875,19 +875,17 @@ mod tests {
     }
 
     #[test]
-    fn classic_is_available_to_standard_taiko_and_catch_realtime_preview() {
+    fn classic_is_available_to_all_rulesets_in_realtime_preview() {
         let settings = super::parse_mods(&["CL".into()]).unwrap();
         for mode in 0..=3 {
             for format in ["png", "gif", "mp4"] {
                 assert!(!super::validate_mods(&settings, Some(mode), Some(format)).is_empty());
             }
-            assert_eq!(
-                super::mods_for_mode(&settings, mode).classic,
-                matches!(mode, 0..=2)
-            );
-            assert_eq!(
-                validate_mods_for_level(&settings, mode, ModSupportLevel::Realtime).is_empty(),
-                matches!(mode, 0..=2)
+            assert!(super::mods_for_mode(&settings, mode).classic);
+            assert!(validate_mods_for_level(&settings, mode, ModSupportLevel::Realtime).is_empty());
+            assert!(
+                super::supported_mod_tokens_for_level(mode, ModSupportLevel::Realtime)
+                    .contains(&"CL".to_owned())
             );
         }
     }

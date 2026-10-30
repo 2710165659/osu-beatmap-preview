@@ -121,7 +121,7 @@ impl HitFlashes {
     }
 }
 
-fn flash_sprite(width: u32, above: i64, below: i64, color: Rgba) -> Img {
+pub(crate) fn flash_sprite(width: u32, above: i64, below: i64, color: Rgba) -> Img {
     let mut sprite = Img::new(width, (above + below + 1) as u32, [0; 4]);
     for y in 0..sprite.h {
         let distance = y as f64 - above as f64;

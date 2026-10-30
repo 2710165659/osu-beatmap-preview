@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 pub(crate) struct HudVisuals {
     pub font: Option<super::font::ArgonFont>,
+    pub combo_center: Option<[i64; 2]>,
+    pub hit_error_bottom: f64,
     pub hit_error_axis: Arc<Img>,
     health: HealthAnimation,
     windows: [f64; 3],
@@ -25,6 +27,8 @@ impl HudVisuals {
         windows: [f64; 3],
     ) -> Self {
         Self {
+            combo_center: None,
+            hit_error_bottom: HIT_ERROR_BOTTOM,
             font,
             hit_error_axis: build_hit_error_axis(scale, windows),
             health: HealthAnimation::new(gameplay),
@@ -358,8 +362,10 @@ fn tick_shape(age: f64) -> (f64, f64) {
 
 fn tick_colour(result: HitResult, alpha: f64) -> [u8; 4] {
     let base = match result {
-        HitResult::Great | HitResult::SliderTailHit => HIT_ERROR_GREAT,
-        HitResult::Ok | HitResult::LargeTickHit | HitResult::SmallTickHit => HIT_ERROR_OK,
+        HitResult::Perfect | HitResult::Great | HitResult::SliderTailHit => HIT_ERROR_GREAT,
+        HitResult::Good | HitResult::Ok | HitResult::LargeTickHit | HitResult::SmallTickHit => {
+            HIT_ERROR_OK
+        }
         HitResult::Meh => HIT_ERROR_MEH,
         HitResult::Miss | HitResult::LargeTickMiss | HitResult::SmallTickMiss => HIT_ERROR_MISS,
         _ => [200, 200, 200],
@@ -384,7 +390,7 @@ fn draw_hit_error_meter(
     max_window: f64,
 ) {
     let axis = &visuals.hit_error_axis;
-    let axis_y = height as f64 - px(HIT_ERROR_BOTTOM) as f64;
+    let axis_y = height as f64 - px(visuals.hit_error_bottom) as f64;
     image.shared_sprite(
         axis,
         width / 2 - axis.w as i64 / 2,
@@ -491,8 +497,15 @@ fn draw_combo(
     px: impl Fn(f64) -> i64,
     scale: f64,
 ) {
-    let combo = hud_text(visuals, &format!("{}x", combo_value), 36.0, [255; 4], scale);
-    image.shared_sprite(&combo, px(12.0), height - combo.h as i64 - px(8.0));
+    if let Some([x, y]) = visuals.combo_center {
+        if combo_value > 0 {
+            let combo = hud_text(visuals, &combo_value.to_string(), 38.0, [255; 4], scale);
+            image.shared_sprite(&combo, x - combo.w as i64 / 2, y - combo.h as i64 / 2);
+        }
+    } else {
+        let combo = hud_text(visuals, &format!("{}x", combo_value), 36.0, [255; 4], scale);
+        image.shared_sprite(&combo, px(12.0), height - combo.h as i64 - px(8.0));
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

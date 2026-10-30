@@ -135,9 +135,9 @@ fn validate(score: &Score) -> Result<()> {
     {
         return Err(PreviewError::download("官方成绩响应缺少有效谱面信息"));
     }
-    if !matches!(score.ruleset_id, 0..=2) {
+    if !matches!(score.ruleset_id, 0..=3) {
         return Err(PreviewError::download(
-            "只支持 Standard、Taiko 和 Catch 成绩",
+            "只支持 Standard、Taiko、Catch 和 Mania 成绩",
         ));
     }
     if !score.has_replay {

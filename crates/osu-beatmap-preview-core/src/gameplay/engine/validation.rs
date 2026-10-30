@@ -102,6 +102,18 @@ pub(super) fn validate(
                 .copied()
                 .unwrap_or(0);
             (recorded, calculated)
+        } else if document.header.ruleset_id == 3 {
+            let names = ["great", "ok", "meh", "perfect", "good", "miss"];
+            let recorded = names
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| (name.to_owned(), u32::from(document.header.counts[i])))
+                .collect();
+            let calculated = names
+                .into_iter()
+                .map(|name| (name.to_owned(), *state.statistics.get(name).unwrap_or(&0)))
+                .collect();
+            (recorded, calculated)
         } else {
             let names = ["great", "ok", "meh", "miss"];
             let indexes = [0, 1, 2, 5];
@@ -139,7 +151,9 @@ fn accuracy(
 ) -> Option<f64> {
     let value = |map: &BTreeMap<String, u32>| {
         [
+            HitResult::Perfect,
             HitResult::Great,
+            HitResult::Good,
             HitResult::Ok,
             HitResult::Meh,
             HitResult::LargeTickHit,

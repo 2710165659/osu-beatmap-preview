@@ -72,9 +72,9 @@ fn execute_inner(
     let t_source = Instant::now();
     let mut source = source_osr::load(&request, &cache_root, &deadline)?;
     let is_taiko = source.document.header.ruleset_id == 1;
-    if matches!(source.document.header.ruleset_id, 1 | 2) && format == "png" {
+    if matches!(source.document.header.ruleset_id, 1..=3) && format == "png" {
         return Err(PreviewError::new(
-            "Taiko/Catch replay preview supports GIF/MP4; PNG is not supported",
+            "Taiko/Catch/Mania replay preview supports GIF/MP4; PNG is not supported",
         ));
     }
     logging::record_stage("load_replay_ms", t_source.elapsed().as_secs_f64() * 1000.0);
@@ -100,6 +100,7 @@ fn execute_inner(
     match prepared.as_ref() {
         PreparedReplay::Taiko(p) => source.beatmap = p.beatmap.clone(),
         PreparedReplay::Catch(p) => source.beatmap = p.beatmap.clone(),
+        PreparedReplay::Mania(p) => source.beatmap = p.beatmap.clone(),
         _ => (),
     }
     rec.target_mode = Some(i32::from(source.document.header.ruleset_id));
@@ -149,6 +150,7 @@ fn execute_inner(
                 match source.document.header.ruleset_id {
                     1 => "taiko",
                     2 => "catch",
+                    3 => "mania",
                     _ => "standard",
                 },
                 source.identity,
@@ -183,6 +185,13 @@ fn execute_inner(
                             &path,
                             &deadline,
                         ),
+                        PreparedReplay::Mania(prepared) => crate::export::mania::osr::render_gif(
+                            Arc::clone(prepared),
+                            Arc::clone(&gameplay),
+                            &plan,
+                            &path,
+                            &deadline,
+                        ),
                         PreparedReplay::Taiko(prepared) => crate::export::taiko::osr::render_gif(
                             Arc::clone(prepared),
                             Arc::clone(&gameplay),
@@ -203,6 +212,8 @@ fn execute_inner(
                     deadline: deadline.clone(),
                     mode: if source.document.header.ruleset_id == 2 {
                         crate::export::geometry::GameMode::Catch
+                    } else if source.document.header.ruleset_id == 3 {
+                        crate::export::geometry::GameMode::Mania
                     } else if is_taiko {
                         crate::export::geometry::GameMode::Taiko
                     } else {
@@ -230,6 +241,16 @@ fn execute_inner(
                             &deadline,
                         ),
                         PreparedReplay::Catch(prepared) => crate::export::catch::osr::render(
+                            Arc::clone(prepared),
+                            Arc::clone(&gameplay),
+                            &plan,
+                            &path,
+                            background,
+                            storyboard,
+                            audio,
+                            &deadline,
+                        ),
+                        PreparedReplay::Mania(prepared) => crate::export::mania::osr::render(
                             Arc::clone(prepared),
                             Arc::clone(&gameplay),
                             &plan,

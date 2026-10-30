@@ -6,6 +6,7 @@ use osu_beatmap_preview_core::render::cpu::modes::mania::constants as mania_cons
 pub(crate) use osu_beatmap_preview_core::render::cpu::modes::mania::{
     animation, constants, skin, utils,
 };
+pub(crate) mod osr;
 mod png;
 mod video;
 

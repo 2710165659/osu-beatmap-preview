@@ -9,6 +9,10 @@ use crate::render::cpu::modes::mania::constants as mania_constants;
 pub struct ManiaSkinConfig {
     /// 判定线距底部的逻辑距离（768 高坐标系）。
     pub hit_position: f64,
+    /// 连击中心的纵向位置（480 高坐标系）。
+    pub combo_position: i64,
+    /// 判定中心的纵向位置（480 高坐标系）。
+    pub score_position: i64,
     /// 每列宽度（像素）。
     pub column_widths: Vec<i64>,
     /// 列分隔线宽度（keys + 1 个：最左、列间、最右）。
@@ -87,6 +91,8 @@ where
 
     ManiaSkinConfig {
         hit_position: parse_hit_position(block.hit_position()),
+        combo_position: block.combo_position(),
+        score_position: block.score_position(),
         column_widths,
         column_line_widths,
     }
@@ -95,6 +101,8 @@ where
 /// 对生成的 `SkinMANIAKEYS_NConfig` 结构体提供统一视图。
 trait ManiaSkinBlock {
     fn hit_position(&self) -> i64;
+    fn combo_position(&self) -> i64;
+    fn score_position(&self) -> i64;
     fn column_widths(&self) -> &[i64];
     fn column_line_widths(&self) -> &[i64];
 }
@@ -104,6 +112,8 @@ macro_rules! impl_mania_skin_block {
         $(
             impl ManiaSkinBlock for crate::config::$name {
                 fn hit_position(&self) -> i64 { self.HIT_POSITION }
+                fn combo_position(&self) -> i64 { self.COMBO_POSITION }
+                fn score_position(&self) -> i64 { self.SCORE_POSITION }
                 fn column_widths(&self) -> &[i64] { &self.COLUMN_WIDTHS }
                 fn column_line_widths(&self) -> &[i64] { &self.COLUMN_LINE_WIDTHS }
             }
@@ -156,6 +166,8 @@ fn default_skin_config(keys: i32, fallback: SkinFallback) -> ManiaSkinConfig {
     let keys = keys.max(0) as usize;
     ManiaSkinConfig {
         hit_position: fallback.hit_position,
+        combo_position: 140,
+        score_position: 180,
         column_widths: vec![fallback.lane_width; keys],
         column_line_widths: vec![0; keys + 1],
     }

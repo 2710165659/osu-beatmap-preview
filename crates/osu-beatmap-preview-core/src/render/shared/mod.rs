@@ -12,3 +12,6 @@ pub mod taiko;
 
 #[cfg(feature = "replay")]
 pub mod catch;
+
+#[cfg(feature = "replay")]
+pub mod mania;

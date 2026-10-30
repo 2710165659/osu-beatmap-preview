@@ -22,6 +22,27 @@ use crate::render::scene::{FrameSceneBuilder, SceneRect};
 use crate::render::text::render_text_sprite;
 use crate::render::wgpu::RealtimeFrameSource;
 
+#[cfg(feature = "replay")]
+pub fn prepare_replay(
+    prepared: Arc<crate::replay::preparation::mania::PreparedMania>,
+    gameplay: Arc<crate::gameplay::timeline::GameplayTimeline>,
+    font: Option<crate::render::shared::replay::font::ArgonFont>,
+    dimensions: (u32, u32),
+) -> Result<RealtimeFrameSource> {
+    let plan = crate::render::shared::mania::replay::ReplayRenderPlan::new(
+        prepared,
+        gameplay,
+        font,
+        Some(dimensions),
+    )?;
+    Ok(RealtimeFrameSource::new(GameMode::Mania, move |time| {
+        let mut scene = FrameSceneBuilder::new(dimensions.0, dimensions.1, time);
+        plan.draw_scene(&mut scene, time);
+        plan.draw_scene_overlay(&mut scene, time);
+        Ok(scene.finish())
+    }))
+}
+
 /// 为 Mania 会话预计算 SV 距离轴和物件位置，seek 时只做二分裁剪与绘制。
 pub fn prepare_realtime(
     beatmap: &Beatmap,
