@@ -468,8 +468,18 @@ pub fn build_layout(
         unit_width,
     ) = if output_format == crate::render::geometry::OutputFormat::Gif {
         let mania_gif_sizing = mania_constants::gif::sizing();
-        let unit_width =
-            mania_gif_sizing.INFO_MARGIN_LEFT + segment_width + mania_gif_sizing.INFO_MARGIN_RIGHT;
+        let info_left = if crate::config::current()
+            .render
+            .mania
+            .gif
+            .style
+            .SHOW_SV_LABEL
+        {
+            mania_gif_sizing.INFO_MARGIN_LEFT
+        } else {
+            0
+        };
+        let unit_width = info_left + segment_width + mania_gif_sizing.INFO_MARGIN_RIGHT;
         // 底部信息区只属于时间标签；关闭标签时不能留下空白。
         let info_bottom = if show_time_label {
             mania_gif_sizing.INFO_MARGIN_BOTTOM
@@ -491,10 +501,10 @@ pub fn build_layout(
                 + mania_gif_sizing.INFO_MARGIN_TOP
                 + playfield_height
                 + label_height,
-            mania_gif_sizing.PAGE_MARGIN_LEFT + mania_gif_sizing.INFO_MARGIN_LEFT,
+            mania_gif_sizing.PAGE_MARGIN_LEFT + info_left,
             mania_gif_sizing.PAGE_MARGIN_TOP + mania_gif_sizing.INFO_MARGIN_TOP,
             unit_width + mania_gif_sizing.GRID_GAP,
-            mania_gif_sizing.INFO_MARGIN_LEFT,
+            info_left,
             mania_gif_sizing.SV_TEXT_FONT_SIZE,
             mania_constants::gif::style::SV_TEXT_COLOR,
             unit_width,
@@ -1328,6 +1338,42 @@ mod tests {
         assert_eq!(with_alpha([0, 0, 0, 255], 1.0), [0, 0, 0, 255]);
         assert_eq!(with_alpha([0, 0, 0, 255], -1.0), [0, 0, 0, 0]);
         assert_eq!(with_alpha([0, 0, 0, 255], 2.0), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn gif_sv_labels_only_reserve_space_when_enabled() {
+        use crate::config::{with_config, CoreConfig};
+        use crate::render::geometry::OutputFormat;
+        use std::sync::Arc;
+
+        for scale in [0.5, 1.0, 1.5] {
+            for segment_count in [1, 4] {
+                let layout_for = |show_sv_label| {
+                    let mut config = CoreConfig::default();
+                    config.render.mania.gif.SCALE = scale;
+                    config.render.mania.gif.style.SHOW_SV_LABEL = show_sv_label;
+                    with_config(Arc::new(config), || {
+                        let skin = load_mania_skin_config(4, OutputFormat::Gif);
+                        build_layout(&skin, segment_count, true, OutputFormat::Gif)
+                    })
+                };
+                let hidden = layout_for(false);
+                let shown = layout_for(true);
+                let margin = shown.sv_info_margin_left;
+                assert!(margin > 0);
+                assert_eq!(hidden.sv_info_margin_left, 0);
+                assert_eq!(
+                    shown.image_width - hidden.image_width,
+                    segment_count * margin
+                );
+                assert_eq!(shown.playfield_left - hidden.playfield_left, margin);
+                assert_eq!(shown.segment_stride - hidden.segment_stride, margin);
+                assert_eq!(shown.content.x, hidden.content.x);
+                assert_eq!(shown.content.width - hidden.content.width, margin);
+                assert_eq!(shown.image_height, hidden.image_height);
+                assert_eq!(shown.column_widths, hidden.column_widths);
+            }
+        }
     }
 
     #[test]

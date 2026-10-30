@@ -144,7 +144,7 @@ render:
         DURATION_MS: 10000 # 每个动画片段覆盖的谱面时长
         FPS: 15 # GIF 帧率
         SCROLL_SPEED: 33.0 # 滚动速度基准值，越大则画面内可见的时间范围越短
-        SHOW_SV_LABEL: true # 是否显示 SV 标签
+        SHOW_SV_LABEL: false # 是否显示 SV 标签
         SHOW_HIT_FLASH: true # 音符到达判定线时是否显示对应轨道的击打闪光
     mp4:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
