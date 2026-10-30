@@ -147,7 +147,7 @@ mod tests {
     use super::*;
     use crate::config::{with_config, CoreConfig};
     use crate::render::cpu::modes::mania::animation::{
-        build_layout, build_video_layout, prepare_mania_gif_frames, segment_left,
+        build_layout, build_video_layout, gif_frame_origin, prepare_mania_gif_frames,
     };
     use crate::render::cpu::modes::mania::{lane_palette, skin::load_mania_skin_config};
     use crate::render::geometry::OutputFormat;
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn flashes_follow_lane_hits_and_fade_without_seek_state() {
         let skin = load_mania_skin_config(4, OutputFormat::Gif);
-        let layout = build_layout(&skin, 1, false, OutputFormat::Gif);
+        let layout = build_layout(&skin, OutputFormat::Gif);
         let objects = [
             (0, 1100, 1100),
             (1, 1200, 1300),
@@ -212,7 +212,7 @@ mod tests {
                     for keys in [1, 4, 7, 18] {
                         let skin = load_mania_skin_config(keys, format);
                         let layout = if format == OutputFormat::Gif {
-                            build_layout(&skin, 2, false, format)
+                            build_layout(&skin, format)
                         } else {
                             build_video_layout(&skin, format)
                         };
@@ -230,8 +230,8 @@ mod tests {
                             layout.image_height as u32,
                             [0; 4],
                         );
-                        for segment in 0..layout.segment_count {
-                            let left = segment_left(segment, &layout);
+                        {
+                            let left = layout.playfield_left;
                             flashes.draw(&mut canvas, 1000, left, &layout);
                             let mut scene = FrameSceneBuilder::new(canvas.w, canvas.h, 1000);
                             flashes.draw_scene(&mut scene, 1000, left, &layout);
@@ -293,14 +293,16 @@ mod tests {
         let hidden = render(false);
         let shown = render(true);
         let skin = load_mania_skin_config(4, OutputFormat::Gif);
-        let layout = build_layout(&skin, 2, true, OutputFormat::Gif);
+        let layout = build_layout(&skin, OutputFormat::Gif);
         for frame in [18, 10, 0, 2, 2] {
             let hidden = hidden.render(frame);
             let shown = shown.render(frame);
-            let y = layout.playfield_top + layout.hit_position_y;
             for segment in 0..2 {
+                let (origin_x, origin_y) = gif_frame_origin(segment as usize, &layout, true);
+                let y = origin_y + layout.playfield_top + layout.hit_position_y;
                 for lane in 0..2 {
-                    let x = segment_left(segment, &layout)
+                    let x = origin_x
+                        + layout.playfield_left
                         + layout.left_panel_width
                         + layout.column_left_offsets[lane]
                         + layout.column_widths[lane] / 2;

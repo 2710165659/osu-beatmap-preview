@@ -68,7 +68,7 @@ pub fn scale_stroke_px(value: f64, scale: f64) -> i64 {
     scale_px(value, scale).max(1)
 }
 
-/// Standard 内容框与太鼓 GIF 单格使用相同尺寸，各自应用当前格式的倍率。
+/// Standard 内容框与 Taiko、Mania GIF 单格使用相同尺寸，各自应用当前格式的倍率。
 pub fn preview_frame_size(scale: f64) -> (i64, i64) {
     (
         scale_px(PREVIEW_FRAME_WIDTH, scale),

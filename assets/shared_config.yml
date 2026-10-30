@@ -139,7 +139,8 @@ render:
     gif:
       SCALE: 1.0 # 输出缩放倍率，在绘制前作用于全部像素尺寸
       structure:
-        IMAGES_PER_ROW: 4 # 动画画面每行包含的游玩区域数
+        ROW_COUNT: 2 # 动画画面的网格行数
+        IMAGES_PER_ROW: 2 # 动画画面每行包含的游玩区域数
       style:
         DURATION_MS: 10000 # 每个动画片段覆盖的谱面时长
         FPS: 15 # GIF 帧率

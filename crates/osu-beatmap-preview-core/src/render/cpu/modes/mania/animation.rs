@@ -1,4 +1,4 @@
-//! osu!mania GIF 渲染器：多段或单画面下落式音符预览。
+//! osu!mania 动画渲染器：网格 GIF 与单画面视频的下落式音符预览。
 //! 移植自 beatmap_preview/mania/gif_renderer.py。
 
 use crate::render::cpu::modes::mania::constants as mania_constants;
@@ -23,7 +23,6 @@ use super::hit_flash::HitFlashes;
 use super::skin::load_mania_skin_config;
 
 pub struct AnimationLayout {
-    pub segment_count: i64,
     pub segment_width: i64,
     pub playfield_height: i64,
     pub lane_area_width: i64,
@@ -36,7 +35,6 @@ pub struct AnimationLayout {
     pub column_widths: Vec<i64>,
     pub playfield_left: i64,
     pub playfield_top: i64,
-    pub segment_stride: i64,
     pub left_panel_width: i64,
     pub note_side_padding: i64,
     pub sv_info_margin_left: i64,
@@ -44,7 +42,7 @@ pub struct AnimationLayout {
     pub sv_font_size: u32,
     pub sv_text_color: Rgba,
     pub render_scale: f64,
-    /// 第 0 段的内容框（多段 GIF 布局只用于文档与断言；MP4 只有一段）。
+    /// 单帧内的舞台内容框；GIF 拼格在完整帧绘制后进行。
     /// 视频物件层的帧就是最终画布，底色只填这块区域，物件允许溢出到画布边缘。
     pub content: crate::render::geometry::PixelRect,
     pub lane_background: Rgba,
@@ -155,6 +153,8 @@ pub fn prepare_mania_gif_frames(
         .unwrap_or(crate::config::current().render.mania.gif.style.FPS as f64);
     let (times_ms, duration_seconds, time_axis) = options.into_parts();
     let (segment_timings, segment_duration, frame_count, show_time_label, time_axis) = {
+        let config = crate::config::current();
+        let gif_config = &config.render.mania.gif;
         let segment_duration_ms = duration_seconds
             .map(|seconds| seconds * 1000.0)
             .unwrap_or(crate::config::current().render.mania.gif.style.DURATION_MS as f64);
@@ -166,12 +166,12 @@ pub fn prepare_mania_gif_frames(
         let segment_timings = times_ms.choose(
             beatmap,
             spans,
-            crate::config::current()
-                .render
-                .mania
-                .gif
+            gif_config
                 .structure
-                .IMAGES_PER_ROW as usize,
+                .ROW_COUNT
+                .checked_mul(gif_config.structure.IMAGES_PER_ROW)
+                .filter(|&count| count > 0)
+                .ok_or_else(|| PreviewError::render("preview segment capacity must be positive"))?,
             gameplay_segment_duration,
         )?;
         let frame_count = round_half_even(segment_duration_ms * fps / 1000.0).max(1);
@@ -185,12 +185,7 @@ pub fn prepare_mania_gif_frames(
     };
 
     let skin_config = load_mania_skin_config(key_count, crate::render::geometry::OutputFormat::Gif);
-    let layout = build_layout(
-        &skin_config,
-        segment_timings.len() as i64,
-        show_time_label,
-        crate::render::geometry::OutputFormat::Gif,
-    );
+    let layout = build_layout(&skin_config, crate::render::geometry::OutputFormat::Gif);
     let native_mania = is_native_mania(beatmap);
     let hit_flashes = crate::config::current()
         .render
@@ -264,34 +259,36 @@ pub fn prepare_mania_gif_frames(
         .map(|(&start, &end)| (end - start).max(0.0))
         .fold(0.0_f64, f64::max);
 
-    // 静态背景（段分隔线、列/轨道背景、判定线）只预渲染一次并逐帧克隆，
-    // 避免 150 帧内重复绘制约 600 次相同像素。
+    let (canvas_width, canvas_height) = gif_canvas_size(&layout, show_time_label);
+    if !(1..=i64::from(u16::MAX)).contains(&canvas_width)
+        || !(1..=i64::from(u16::MAX)).contains(&canvas_height)
+    {
+        return Err(PreviewError::render("Mania GIF 画布尺寸超出格式范围"));
+    }
+    let origins: Vec<_> = (0..segment_timings.len())
+        .map(|index| gif_frame_origin(index, &layout, show_time_label))
+        .collect();
     let static_bg = {
-        let mut bg = Img::new(
+        let mut frame = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
             mania_constants::gif::style::IMAGE_BACKGROUND,
         );
-        draw_segment_separators(&mut bg, &layout);
-        for segment_index in 0..layout.segment_count {
-            draw_segment_background(&mut bg, segment_left(segment_index, &layout), &layout);
-        }
-        bg
+        draw_segment_background(&mut frame, layout.playfield_left, &layout);
+        frame
     };
 
     // 每段的时间标签（及 "Preview Time" 提示）只预渲染一次为精灵图。
     // 段内文字恒定，可避免每段 150 次 format!、text_size、draw_text 调用；
     // 每帧只需合成预构建精灵图。
-    let label_y = layout.playfield_top
-        + layout.playfield_height
-        + mania_constants::gif::sizing().TIME_LABEL_TOP_GAP;
+    let label_y = layout.image_height + mania_constants::gif::sizing().TIME_LABEL_TOP_GAP;
     let pre_labels: Vec<PreLabel> = if show_time_label {
         segment_timings
             .iter()
             .enumerate()
             .map(|(si, st)| {
-                let seg_left = segment_left(si as i64, &layout);
-                build_pre_label(st, segment_duration, &layout, seg_left, label_y, time_axis)
+                let (x, y) = origins[si];
+                build_pre_label(st, segment_duration, &layout, x, y + label_y, time_axis)
             })
             .collect()
     } else {
@@ -314,17 +311,21 @@ pub fn prepare_mania_gif_frames(
         })
         .collect();
 
+    // 每格独立绘制完整帧，遮罩和叠加层不会跨格；后续回放可复用同一拼格入口。
     let render_frame = move |frame_index: usize| -> Img {
-        let mut canvas = static_bg.clone();
-        // HD 对整个音符层统一减 alpha，避免相交长按或头部叠加时重复淡化。
-        let mut notes = hidden.then(|| Img::new(canvas.w, canvas.h, [0, 0, 0, 0]));
-
-        for (segment_index, _segment_timing) in segment_timings.iter().enumerate() {
-            let seg_left = segment_left(segment_index as i64, &layout);
+        let mut canvas = Img::new(
+            canvas_width as u32,
+            canvas_height as u32,
+            mania_constants::gif::style::IMAGE_BACKGROUND,
+        );
+        for (segment_index, _) in segment_timings.iter().enumerate() {
+            let mut frame = static_bg.clone();
+            let mut notes = hidden.then(|| Img::new(frame.w, frame.h, [0, 0, 0, 0]));
+            let seg_left = layout.playfield_left;
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
             let snapshot_pos = scroll_map.position_at(snapshot_time as f64);
             draw_gif_sv_indicators_fast(
-                &mut canvas,
+                &mut frame,
                 &sv_sprites,
                 seg_left,
                 snapshot_pos,
@@ -346,7 +347,7 @@ pub fn prepare_mania_gif_frames(
                     break;
                 }
                 draw_gif_hit_object(
-                    notes.as_mut().unwrap_or(&mut canvas),
+                    notes.as_mut().unwrap_or(&mut frame),
                     &hit_objects[idx],
                     &palette,
                     &hold_colors,
@@ -359,7 +360,7 @@ pub fn prepare_mania_gif_frames(
                 );
             }
             if let Some(flashes) = &hit_flashes {
-                flashes.draw(&mut canvas, snapshot_time, seg_left, &layout);
+                flashes.draw(&mut frame, snapshot_time, seg_left, &layout);
             }
             if let Some(timeline) = &visibility {
                 let rect = crate::render::geometry::PixelRect {
@@ -371,11 +372,25 @@ pub fn prepare_mania_gif_frames(
                 if let Some(notes) = &mut notes {
                     mania_hidden(timeline, snapshot_time, &layout).apply(notes, rect);
                 }
-                if flashlight {
-                    mania_flashlight(timeline, snapshot_time, &layout, seg_left)
-                        .apply(&mut canvas, rect);
+            }
+            if let Some(notes) = notes {
+                frame.alpha_composite(&notes, 0, 0);
+            }
+            if flashlight {
+                if let Some(timeline) = &visibility {
+                    mania_flashlight(timeline, snapshot_time, &layout, seg_left).apply(
+                        &mut frame,
+                        crate::render::geometry::PixelRect {
+                            x: 0,
+                            y: 0,
+                            width: layout.image_width,
+                            height: layout.image_height,
+                        },
+                    );
                 }
             }
+            let (x, y) = origins[segment_index];
+            canvas.alpha_composite(&frame, x, y);
             if show_time_label {
                 // 贴入预渲染时间标签精灵图，避免每帧调用 format!/text_size。
                 let pl = &pre_labels[segment_index];
@@ -384,9 +399,6 @@ pub fn prepare_mania_gif_frames(
                     canvas.alpha_composite(&note.sprite, note.x, note.y);
                 }
             }
-        }
-        if let Some(notes) = notes {
-            canvas.alpha_composite(&notes, 0, 0);
         }
         canvas
     };
@@ -400,8 +412,6 @@ pub fn prepare_mania_gif_frames(
 
 pub fn build_layout(
     skin_config: &super::skin::ManiaSkinConfig,
-    segment_count: i64,
-    show_time_label: bool,
     output_format: crate::render::geometry::OutputFormat,
 ) -> AnimationLayout {
     let render_scale = crate::render::geometry::output_scale(
@@ -461,13 +471,12 @@ pub fn build_layout(
         image_height,
         playfield_left,
         playfield_top,
-        segment_stride,
         sv_info_margin_left,
         sv_font_size,
         sv_text_color,
         unit_width,
     ) = if output_format == crate::render::geometry::OutputFormat::Gif {
-        let mania_gif_sizing = mania_constants::gif::sizing();
+        let sizing = mania_constants::gif::sizing();
         let info_left = if crate::config::current()
             .render
             .mania
@@ -475,54 +484,38 @@ pub fn build_layout(
             .style
             .SHOW_SV_LABEL
         {
-            mania_gif_sizing.INFO_MARGIN_LEFT
+            sizing.INFO_MARGIN_LEFT
         } else {
             0
         };
-        let unit_width = info_left + segment_width + mania_gif_sizing.INFO_MARGIN_RIGHT;
-        // 底部信息区只属于时间标签；关闭标签时不能留下空白。
-        let info_bottom = if show_time_label {
-            mania_gif_sizing.INFO_MARGIN_BOTTOM
-        } else {
-            0
-        };
-        let label_height = if show_time_label {
-            mania_gif_sizing.TIME_LABEL_TOP_GAP + info_bottom
-        } else {
-            0
-        };
+        let unit_width = info_left + segment_width + sizing.INFO_MARGIN_RIGHT;
+        let (frame_width, frame_height) =
+            crate::render::geometry::preview_frame_size(crate::render::geometry::output_scale(
+                crate::render::geometry::GameMode::Mania,
+                output_format,
+            ));
+        // 宽键数皮肤保留原始轨道尺寸；完整帧至少容纳舞台，不在绘制后拉伸。
+        let frame_width = frame_width.max(unit_width);
         (
-            mania_gif_sizing.PAGE_MARGIN_LEFT
-                + mania_gif_sizing.PAGE_MARGIN_RIGHT
-                + segment_count * unit_width
-                + (segment_count - 1) * mania_gif_sizing.GRID_GAP,
-            mania_gif_sizing.PAGE_MARGIN_TOP
-                + mania_gif_sizing.PAGE_MARGIN_BOTTOM
-                + mania_gif_sizing.INFO_MARGIN_TOP
-                + playfield_height
-                + label_height,
-            mania_gif_sizing.PAGE_MARGIN_LEFT + info_left,
-            mania_gif_sizing.PAGE_MARGIN_TOP + mania_gif_sizing.INFO_MARGIN_TOP,
-            unit_width + mania_gif_sizing.GRID_GAP,
+            frame_width,
+            frame_height,
+            (frame_width - unit_width) / 2 + info_left,
+            0,
             info_left,
-            mania_gif_sizing.SV_TEXT_FONT_SIZE,
+            sizing.SV_TEXT_FONT_SIZE,
             mania_constants::gif::style::SV_TEXT_COLOR,
             unit_width,
         )
     } else {
-        // MP4 也保留与 GIF 相同的左右信息区，SV 标签才能位于轨道左侧，
-        // 且最右侧轨道不会覆盖右侧灰色边界。最终画布再由视频编码器补齐到 16:9。
-        let mania_mp4_sizing = mania_constants::mp4::sizing();
-        let unit_width =
-            mania_mp4_sizing.INFO_MARGIN_LEFT + segment_width + mania_mp4_sizing.INFO_MARGIN_RIGHT;
+        let sizing = mania_constants::mp4::sizing();
+        let unit_width = sizing.INFO_MARGIN_LEFT + segment_width + sizing.INFO_MARGIN_RIGHT;
         (
             unit_width,
             playfield_height,
-            mania_mp4_sizing.INFO_MARGIN_LEFT,
+            sizing.INFO_MARGIN_LEFT,
             0,
-            unit_width,
-            mania_mp4_sizing.INFO_MARGIN_LEFT,
-            mania_mp4_sizing.SV_TEXT_FONT_SIZE,
+            sizing.INFO_MARGIN_LEFT,
+            sizing.SV_TEXT_FONT_SIZE,
             mania_constants::mp4::style::SV_TEXT_COLOR,
             unit_width,
         )
@@ -551,7 +544,6 @@ pub fn build_layout(
             crate::render::geometry::OutputFormat::Png => unreachable!("PNG 不使用动画布局"),
         };
     AnimationLayout {
-        segment_count,
         segment_width,
         playfield_height,
         lane_area_width,
@@ -564,7 +556,6 @@ pub fn build_layout(
         column_widths,
         playfield_left,
         playfield_top,
-        segment_stride,
         left_panel_width,
         note_side_padding,
         sv_info_margin_left,
@@ -593,7 +584,7 @@ pub fn build_video_layout(
     skin_config: &super::skin::ManiaSkinConfig,
     output_format: crate::render::geometry::OutputFormat,
 ) -> AnimationLayout {
-    let layout = build_layout(skin_config, 1, false, output_format);
+    let layout = build_layout(skin_config, output_format);
     let content_width = layout.content.width;
     let content_height = layout.playfield_height;
     let canvas = crate::render::geometry::video_canvas(crate::render::geometry::PixelRect {
@@ -772,25 +763,52 @@ fn most_common_beat_length(timing_points: &[TimingPoint], hit_objects: &[ManiaHi
     most_common.min(max_beat_length).max(min_beat_length)
 }
 
-pub fn segment_left(segment_index: i64, layout: &AnimationLayout) -> i64 {
-    layout.playfield_left + segment_index * layout.segment_stride
+fn gif_unit_size(layout: &AnimationLayout, show_time_label: bool) -> (i64, i64) {
+    let sizing = mania_constants::gif::sizing();
+    let label_height = if show_time_label {
+        sizing.TIME_LABEL_TOP_GAP + sizing.INFO_MARGIN_BOTTOM
+    } else {
+        0
+    };
+    (layout.image_width, layout.image_height + label_height)
 }
 
-fn draw_segment_separators(canvas: &mut Img, layout: &AnimationLayout) {
-    let mania_gif_sizing = mania_constants::gif::sizing();
-    let playfield_top = layout.playfield_top;
-    for segment_index in 0..layout.segment_count - 1 {
-        let left_segment_right = segment_left(segment_index, layout) + layout.segment_width;
-        let separator_left =
-            left_segment_right + (mania_gif_sizing.GRID_GAP - mania_gif_sizing.SEPARATOR_WIDTH) / 2;
-        canvas.set_rect_size(
-            separator_left,
-            playfield_top,
-            mania_gif_sizing.SEPARATOR_WIDTH,
-            layout.playfield_height,
-            mania_constants::gif::style::SEPARATOR_BACKGROUND,
-        );
-    }
+/// 完整帧网格画布；保留配置容量，短谱不足的片段留空。
+pub fn gif_canvas_size(layout: &AnimationLayout, show_time_label: bool) -> (i64, i64) {
+    let config = crate::config::current();
+    let grid = &config.render.mania.gif.structure;
+    let sizing = mania_constants::gif::sizing();
+    let (width, height) = gif_unit_size(layout, show_time_label);
+    (
+        sizing.PAGE_MARGIN_LEFT
+            + sizing.PAGE_MARGIN_RIGHT
+            + grid.IMAGES_PER_ROW as i64 * width
+            + (grid.IMAGES_PER_ROW as i64 - 1) * sizing.GRID_GAP,
+        sizing.PAGE_MARGIN_TOP
+            + sizing.PAGE_MARGIN_BOTTOM
+            + grid.ROW_COUNT as i64 * height
+            + (grid.ROW_COUNT as i64 - 1) * sizing.GRID_GAP,
+    )
+}
+
+/// 单格完整帧的左上角；时间标签独立放在帧下方。
+pub fn gif_frame_origin(
+    index: usize,
+    layout: &AnimationLayout,
+    show_time_label: bool,
+) -> (i64, i64) {
+    let columns = crate::config::current()
+        .render
+        .mania
+        .gif
+        .structure
+        .IMAGES_PER_ROW;
+    let sizing = mania_constants::gif::sizing();
+    let (width, height) = gif_unit_size(layout, show_time_label);
+    (
+        sizing.PAGE_MARGIN_LEFT + (index % columns) as i64 * (width + sizing.GRID_GAP),
+        sizing.PAGE_MARGIN_TOP + (index / columns) as i64 * (height + sizing.GRID_GAP),
+    )
 }
 
 pub fn draw_segment_background(canvas: &mut Img, seg_left: i64, layout: &AnimationLayout) {
@@ -1020,7 +1038,7 @@ fn build_pre_label(
     };
     let (label_w, label_h) = text_size(&label, mania_gif_sizing.TIME_LABEL_FONT_SIZE);
     let sprite = render_text_sprite(&label, mania_gif_sizing.TIME_LABEL_FONT_SIZE, color);
-    let x = seg_left + (layout.segment_width - label_w as i64).div_euclid(2);
+    let x = seg_left + (layout.image_width - label_w as i64).div_euclid(2);
 
     let note = if timing.is_preview {
         let note_text = "Preview Time";
@@ -1030,7 +1048,7 @@ fn build_pre_label(
             mania_gif_sizing.TIME_LABEL_NOTE_FONT_SIZE,
             note_color,
         );
-        let note_x = seg_left + (layout.segment_width - note_w as i64).div_euclid(2);
+        let note_x = seg_left + (layout.image_width - note_w as i64).div_euclid(2);
         Some(Box::new(PreLabel {
             sprite: note_sprite,
             x: note_x,
@@ -1116,7 +1134,7 @@ mod tests {
     #[test]
     fn hidden_fades_hold_body_and_head_without_covering_judgement_line() {
         let skin = load_mania_skin_config(4, crate::render::geometry::OutputFormat::Gif);
-        let layout = build_layout(&skin, 1, false, crate::render::geometry::OutputFormat::Gif);
+        let layout = build_layout(&skin, crate::render::geometry::OutputFormat::Gif);
         let object = ManiaHitObject {
             lane: 0,
             start_time: 1000,
@@ -1126,7 +1144,7 @@ mod tests {
         };
         let palette = super::super::lane_palette(4);
         let holds: Vec<_> = palette.iter().map(|&color| darken(color, 0.5)).collect();
-        let left = segment_left(0, &layout);
+        let left = layout.playfield_left;
         let mut notes = Img::new(
             layout.image_width as u32,
             layout.image_height as u32,
@@ -1179,7 +1197,6 @@ mod tests {
 
     fn test_layout() -> AnimationLayout {
         AnimationLayout {
-            segment_count: 1,
             segment_width: 100,
             playfield_height: 768,
             lane_area_width: 80,
@@ -1192,7 +1209,6 @@ mod tests {
             column_widths: vec![80],
             playfield_left: 0,
             playfield_top: 20,
-            segment_stride: 100,
             left_panel_width: 12,
             note_side_padding: 2,
             sv_info_margin_left: 40,
@@ -1341,38 +1357,114 @@ mod tests {
     }
 
     #[test]
-    fn gif_sv_labels_only_reserve_space_when_enabled() {
+    fn gif_grid_keeps_independent_full_frames_at_each_segment_time() {
+        use crate::config::{with_config, CoreConfig};
+        use crate::render::geometry::{preview_frame_size, OutputFormat};
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+
+        let beatmap = crate::parse_beatmap_bytes(
+            b"osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n1200,-50,4,1,0,100,0,0\n[HitObjects]\n64,192,1000,1,0\n192,192,1500,128,0,2500:0:0:0:0:\n320,192,2000,1,0\n448,192,3000,1,0\n",
+        ).unwrap();
+        for (scale, rows, columns, mods) in [
+            (0.5, 2, 2, None),
+            (0.75, 1, 4, Some("HD")),
+            (0.5, 4, 1, Some("FL")),
+        ] {
+            let mut config = CoreConfig::default();
+            config.render.mania.gif.SCALE = scale;
+            config.render.mania.gif.structure.ROW_COUNT = rows;
+            config.render.mania.gif.structure.IMAGES_PER_ROW = columns;
+            config.render.mania.gif.style.SHOW_HIT_FLASH = true;
+            config.render.mania.mp4.SCALE = 2.0;
+            let mut settings = ModSettings::default();
+            settings.hidden = mods == Some("HD");
+            settings.flashlight = mods == Some("FL");
+            with_config(Arc::new(config.clone()), || {
+                let layout = build_layout(
+                    &load_mania_skin_config(4, OutputFormat::Gif),
+                    OutputFormat::Gif,
+                );
+                assert_eq!(
+                    (layout.image_width, layout.image_height),
+                    preview_frame_size(scale)
+                );
+                assert!(
+                    (layout.playfield_left * 2 + layout.segment_width - layout.image_width).abs()
+                        <= 1
+                );
+                let render = |times| {
+                    prepare_mania_gif_frames(
+                        &beatmap,
+                        Some(&settings),
+                        GifRenderOptions::ResolvedSegments {
+                            times_ms: times,
+                            duration_seconds: Some(0.2),
+                            time_axis: TimeAxis::new(1000),
+                        },
+                        Some(10),
+                        &RequestDeadline::new(Instant::now(), "gif", Duration::from_secs(30)),
+                    )
+                    .unwrap()
+                    .render(1)
+                };
+                let times = [900, 1400, 1900, 2900];
+                let grid = render(times.to_vec());
+                let mut single_config = config.clone();
+                single_config.render.mania.gif.structure.ROW_COUNT = 1;
+                single_config.render.mania.gif.structure.IMAGES_PER_ROW = 1;
+                let (width, height) = gif_unit_size(&layout, true);
+                for (index, time) in times.into_iter().enumerate() {
+                    let single =
+                        with_config(Arc::new(single_config.clone()), || render(vec![time]));
+                    let (x, y) = gif_frame_origin(index, &layout, true);
+                    let (single_x, single_y) = with_config(Arc::new(single_config.clone()), || {
+                        gif_frame_origin(0, &layout, true)
+                    });
+                    for row in 0..height as u32 {
+                        let grid_start = grid.idx(x as u32, y as u32 + row);
+                        let single_start = single.idx(single_x as u32, single_y as u32 + row);
+                        assert_eq!(
+                            &grid.data[grid_start..grid_start + width as usize * 4],
+                            &single.data[single_start..single_start + width as usize * 4],
+                            "scale={scale} cell={index} row={row} mods={mods:?}",
+                        );
+                    }
+                }
+                let (_, with_labels) = gif_canvas_size(&layout, true);
+                let (_, without_labels) = gif_canvas_size(&layout, false);
+                let sizing = mania_constants::gif::sizing();
+                assert_eq!(
+                    with_labels - without_labels,
+                    rows as i64 * (sizing.TIME_LABEL_TOP_GAP + sizing.INFO_MARGIN_BOTTOM)
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn gif_sv_labels_use_frame_space_without_expanding_canvas() {
         use crate::config::{with_config, CoreConfig};
         use crate::render::geometry::OutputFormat;
         use std::sync::Arc;
 
         for scale in [0.5, 1.0, 1.5] {
-            for segment_count in [1, 4] {
-                let layout_for = |show_sv_label| {
-                    let mut config = CoreConfig::default();
-                    config.render.mania.gif.SCALE = scale;
-                    config.render.mania.gif.style.SHOW_SV_LABEL = show_sv_label;
-                    with_config(Arc::new(config), || {
-                        let skin = load_mania_skin_config(4, OutputFormat::Gif);
-                        build_layout(&skin, segment_count, true, OutputFormat::Gif)
-                    })
-                };
-                let hidden = layout_for(false);
-                let shown = layout_for(true);
-                let margin = shown.sv_info_margin_left;
-                assert!(margin > 0);
-                assert_eq!(hidden.sv_info_margin_left, 0);
-                assert_eq!(
-                    shown.image_width - hidden.image_width,
-                    segment_count * margin
-                );
-                assert_eq!(shown.playfield_left - hidden.playfield_left, margin);
-                assert_eq!(shown.segment_stride - hidden.segment_stride, margin);
-                assert_eq!(shown.content.x, hidden.content.x);
-                assert_eq!(shown.content.width - hidden.content.width, margin);
-                assert_eq!(shown.image_height, hidden.image_height);
-                assert_eq!(shown.column_widths, hidden.column_widths);
-            }
+            let layout_for = |show_sv_label| {
+                let mut config = CoreConfig::default();
+                config.render.mania.gif.SCALE = scale;
+                config.render.mania.gif.style.SHOW_SV_LABEL = show_sv_label;
+                with_config(Arc::new(config), || {
+                    let skin = load_mania_skin_config(4, OutputFormat::Gif);
+                    build_layout(&skin, OutputFormat::Gif)
+                })
+            };
+            let hidden = layout_for(false);
+            let shown = layout_for(true);
+            assert!(shown.sv_info_margin_left > 0);
+            assert_eq!(hidden.sv_info_margin_left, 0);
+            assert_eq!(shown.image_width, hidden.image_width);
+            assert_eq!(shown.image_height, hidden.image_height);
+            assert_eq!(shown.column_widths, hidden.column_widths);
         }
     }
 
@@ -1387,8 +1479,7 @@ mod tests {
                         keys,
                         crate::render::geometry::OutputFormat::Mp4,
                     );
-                    let content =
-                        build_layout(&skin, 1, false, crate::render::geometry::OutputFormat::Mp4);
+                    let content = build_layout(&skin, crate::render::geometry::OutputFormat::Mp4);
                     let video =
                         build_video_layout(&skin, crate::render::geometry::OutputFormat::Mp4);
                     let canvas = crate::render::geometry::video_canvas(content.content);
@@ -1413,7 +1504,6 @@ mod tests {
                     assert_eq!(video.column_widths, content.column_widths);
                     assert_eq!(video.scroll_length, content.scroll_length);
                     assert_eq!(video.note_head_height, content.note_head_height);
-                    assert_eq!(video.segment_stride, content.segment_stride);
                 }
             });
         }

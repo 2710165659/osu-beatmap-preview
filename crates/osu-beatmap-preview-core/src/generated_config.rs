@@ -315,6 +315,7 @@ pub struct RenderManiaPngConfig {
 #[serde(deny_unknown_fields)]
 #[allow(dead_code, non_snake_case, non_camel_case_types)]
 pub struct RenderManiaGifStructureConfig {
+    pub ROW_COUNT: usize,
     pub IMAGES_PER_ROW: usize,
 }
 

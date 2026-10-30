@@ -64,22 +64,16 @@ function Get-ChartDurationSeconds {
 }
 
 # GIF 的「覆盖谱面时长」= 时间窗数 × 段长。时间窗数由该任务的网格结构决定：
-# std/taiko/catch 为 ROW_COUNT × IMAGES_PER_ROW，mania 为 IMAGES_PER_ROW；
+# 四模式均为 ROW_COUNT × IMAGES_PER_ROW；
 # 段长取该模式 gif 的 DURATION_MS（std/taiko/catch 5000ms，mania 10000ms）。
 function Get-GifCoveredSeconds {
     param([string]$ConfigMode, [hashtable]$Overrides)
 
     $rowCount = 2
     $imagesPerRow = 2
-    switch ($ConfigMode) {
-        "mania" { $rowCount = 1; $imagesPerRow = 4 }
-    }
     if ($Overrides.ContainsKey("ROW_COUNT")) { $rowCount = [int]$Overrides["ROW_COUNT"] }
     if ($Overrides.ContainsKey("IMAGES_PER_ROW")) { $imagesPerRow = [int]$Overrides["IMAGES_PER_ROW"] }
-    $windows = switch ($ConfigMode) {
-        "mania" { $imagesPerRow }
-        default { $rowCount * $imagesPerRow }
-    }
+    $windows = $rowCount * $imagesPerRow
     $segmentSeconds = if ($ConfigMode -eq "mania") { 10.0 } else { 5.0 }
     return [double]$windows * $segmentSeconds
 }
@@ -175,12 +169,8 @@ $modeSpecs = @(
 $tasks = New-Object System.Collections.Generic.List[object]
 foreach ($spec in $modeSpecs) {
     $oneByOne = @{}
-    if ($spec.name -eq "mania") {
-        $oneByOne.IMAGES_PER_ROW = 1
-    } else {
-        $oneByOne.ROW_COUNT = 1
-        $oneByOne.IMAGES_PER_ROW = 1
-    }
+    $oneByOne.ROW_COUNT = 1
+    $oneByOne.IMAGES_PER_ROW = 1
     $tasks.Add((New-ConfigTask `
         "$($spec.name)_gif_1x1" $spec.mode $spec.configMode $spec.bid "gif" `
         $oneByOne "1x1 单图"))

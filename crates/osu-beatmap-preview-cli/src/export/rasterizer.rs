@@ -388,7 +388,7 @@ mod tests {
         use osu_beatmap_preview_core::{
             domain::mods::{parse_mods, ModSettings},
             domain::parser::parse_beatmap_bytes,
-            render::cpu::modes::mania::animation::{build_video_layout, segment_left},
+            render::cpu::modes::mania::animation::build_video_layout,
             render::cpu::modes::mania::skin::load_mania_skin_config,
             render::geometry::OutputFormat,
             render::scene::DrawCommand,
@@ -402,7 +402,7 @@ mod tests {
             &load_mania_skin_config(4, OutputFormat::Mp4),
             OutputFormat::Mp4,
         );
-        let left = segment_left(0, &layout);
+        let left = layout.playfield_left;
         // 键道左侧面板与判定线都在 FL 可视带（playfield 纵向中点 ± 半径）之外。
         let panel = (
             (left + layout.left_panel_width / 2) as u32,

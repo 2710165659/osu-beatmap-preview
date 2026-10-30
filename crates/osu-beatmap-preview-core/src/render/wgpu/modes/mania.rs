@@ -9,7 +9,7 @@ use crate::domain::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::cpu::modes::mania::animation::{
     build_scroll_map, build_video_layout, compute_time_range, mania_flashlight, mania_hidden,
-    mania_visibility_timeline, segment_left, visible_pos_window,
+    mania_visibility_timeline, visible_pos_window,
 };
 use crate::render::cpu::modes::mania::hit_flash::HitFlashes;
 use crate::render::cpu::modes::mania::skin::load_mania_skin_config;
@@ -120,7 +120,7 @@ pub fn prepare_realtime(
         GameMode::Mania,
         move |absolute_time_ms| {
             let snapshot_pos = scroll_map.position_at(absolute_time_ms as f64);
-            let left = segment_left(0, &layout);
+            let left = layout.playfield_left;
             let mut scene = FrameSceneBuilder::new(
                 layout.image_width as u32,
                 layout.image_height as u32,
@@ -388,7 +388,7 @@ mod tests {
         for keys in [4, 7] {
             let skin = load_mania_skin_config(keys, OutputFormat::Mp4);
             let layout = build_video_layout(&skin, OutputFormat::Mp4);
-            let left = segment_left(0, &layout);
+            let left = layout.playfield_left;
             let palette = crate::render::cpu::modes::mania::lane_palette(keys);
             let holds: Vec<_> = palette.iter().map(|&color| darken(color, 0.5)).collect();
             let objects: Vec<_> = (0..keys as usize)
