@@ -54,19 +54,34 @@ pub(crate) fn draw_catch_object_with_alpha(
     diameter: f64,
     alpha: u8,
 ) {
+    draw_catch_object_clipped(image, object, [cx, cy], diameter, alpha, None);
+}
+
+/// 盘上物件的下半部分由接盘主体遮挡；散出和下落物件不受此裁剪。
+pub(crate) fn draw_catch_object_clipped(
+    image: &mut Img,
+    object: &RenderObject,
+    [cx, cy]: [f64; 2],
+    diameter: f64,
+    alpha: u8,
+    clip_bottom: Option<i64>,
+) {
     if alpha == 0 {
-        return;
-    }
-    if alpha == 255 {
-        draw_catch_object(image, object, cx, cy, diameter);
         return;
     }
     // hyperdash 外环的外半径是本体的 1.6 倍，再留出抗锯齿边缘。
     let radius = diameter / 2.0 * if object.hyper_dash { 1.6 } else { 1.0 };
+    if alpha == 255 && clip_bottom.is_none_or(|bottom| cy + radius + 1.0 <= bottom as f64) {
+        draw_catch_object(image, object, cx, cy, diameter);
+        return;
+    }
     let left = (cx - radius - 1.0).floor() as i64;
     let top = (cy - radius - 1.0).floor() as i64;
     let right = (cx + radius + 1.0).ceil() as i64;
-    let bottom = (cy + radius + 1.0).ceil() as i64;
+    let bottom = ((cy + radius + 1.0).ceil() as i64).min(clip_bottom.unwrap_or(i64::MAX));
+    if bottom <= top {
+        return;
+    }
     let mut sprite = Img::new((right - left) as u32, (bottom - top) as u32, [0, 0, 0, 0]);
     draw_catch_object(
         &mut sprite,

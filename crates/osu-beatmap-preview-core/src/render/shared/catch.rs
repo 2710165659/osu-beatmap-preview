@@ -126,7 +126,7 @@ impl ReplayRenderPlan {
         })
     }
     pub fn draw_frame(&self, image: &mut Img, time: i64) {
-        *image = animation::render_animation_frame(
+        *image = animation::render_object_frame(
             &self.objects,
             &self.times,
             time,
@@ -134,17 +134,20 @@ impl ReplayRenderPlan {
             Some(image),
             Some(&self.catcher),
         );
+        self.draw_misses(image, time);
+        self.catcher.draw_catcher_cpu(image, time, &self.layout);
     }
     pub fn draw_scene(&self, scene: &mut FrameSceneBuilder, time: i64) {
-        crate::render::wgpu::modes::catch::draw_scene(
+        crate::render::wgpu::modes::catch::draw_objects_scene(
             scene,
             &self.objects,
             &self.times,
             time,
             &self.layout,
-            None,
             Some(&self.catcher),
         );
+        self.draw_misses(scene, time);
+        self.catcher.draw_catcher_scene(scene, time, &self.layout);
     }
     pub fn draw_overlay(&self, image: &mut Img, time: i64) {
         self.overlay_to(image, time);
@@ -152,9 +155,8 @@ impl ReplayRenderPlan {
     pub fn draw_scene_overlay(&self, scene: &mut FrameSceneBuilder, time: i64) {
         self.overlay_to(scene, time);
     }
-    fn overlay_to(&self, target: &mut impl OverlayCanvas, time: i64) {
+    fn draw_misses(&self, target: &mut impl OverlayCanvas, time: i64) {
         let layout = &self.layout;
-        let scale = layout.render_scale;
         // 漏接物件继续下落并在 250ms 内淡出；按事件时刻计算，不依赖上一帧。
         let lo = self
             .misses
@@ -175,6 +177,10 @@ impl ReplayRenderPlan {
                 1.0 - age / 250.0,
             );
         }
+    }
+    fn overlay_to(&self, target: &mut impl OverlayCanvas, time: i64) {
+        let layout = &self.layout;
+        let scale = layout.render_scale;
         for event in self
             .gameplay
             .events_between(time as f64 - 800.0, time as f64)
@@ -314,6 +320,22 @@ mod tests {
                 )
                 .unwrap();
                 assert_eq!(plan.layout.render_scale, scale);
+                let (miss_time, _, miss_sprite) = plan.misses.first().unwrap();
+                let mut miss_scene = FrameSceneBuilder::new(
+                    plan.layout.frame_width as u32,
+                    plan.layout.frame_height as u32,
+                    miss_time.ceil() as i64,
+                );
+                plan.draw_scene(&mut miss_scene, miss_time.ceil() as i64);
+                let miss_scene = miss_scene.finish();
+                let plate_start = miss_scene.commands.len() - 5;
+                assert!(miss_scene.commands[plate_start..]
+                    .iter()
+                    .all(|command| matches!(command, DrawCommand::Rectangle { .. })));
+                assert!(miss_scene.commands[..plate_start].iter().any(|command| {
+                    matches!(command, DrawCommand::Sprite { resource, .. }
+                        if Arc::ptr_eq(&miss_scene.resources[resource], miss_sprite))
+                }));
                 let mut image = Img::new(
                     plan.layout.frame_width as u32,
                     plan.layout.frame_height as u32,

@@ -5,11 +5,11 @@ use std::{collections::HashMap, sync::Arc};
 use super::animation::AnimationLayout;
 use super::catcher::CatcherPath;
 use super::constants::*;
-use super::drawing::{draw_catch_object_scene, draw_catch_object_with_alpha, object_diameter};
+use super::drawing::{draw_catch_object_clipped, draw_catch_object_scene, object_diameter};
 use super::objects::{circle_scale, ObjType, RenderObject};
 use crate::domain::shared::legacy_random::LegacyRandom;
 use crate::render::canvas::Img;
-use crate::render::scene::FrameSceneBuilder;
+use crate::render::scene::{FrameSceneBuilder, SceneRect};
 
 const RELEASE_DURATION: f64 = 750.0;
 
@@ -169,7 +169,7 @@ impl CatcherDisplay {
         &self,
         time: i64,
         layout: &AnimationLayout,
-        mut draw: impl FnMut(&RenderObject, [f64; 2], f64, u8),
+        mut draw: impl FnMut(&RenderObject, [f64; 2], f64, u8, Option<i64>),
     ) {
         let time = time as f64;
         let scale = layout.playfield_scale;
@@ -177,23 +177,28 @@ impl CatcherDisplay {
             layout.playfield_left,
             layout.playfield_top + STABLE_CATCHER_Y * scale,
         ];
-        let mut emit = |note: &CaughtNote, center: f64, displacement: [f64; 2], alpha| {
-            let diameter =
-                object_diameter(layout.object_scale.abs(), scale, note.object.scale_factor) * 0.5;
-            let position = [
-                origin[0] + (center + note.offset[0] + displacement[0]) * scale,
-                // 游戏的 CaughtObject 原点在中心；容器只上移 5 个接盘局部像素。
-                origin[1]
-                    + (note.offset[1] + displacement[1] - 10.0 * layout.object_scale.abs()) * scale,
-            ];
-            draw(&note.object, position, diameter, alpha);
-        };
+        let mut emit =
+            |note: &CaughtNote, center: f64, displacement: [f64; 2], alpha, clip_bottom| {
+                let diameter =
+                    object_diameter(layout.object_scale.abs(), scale, note.object.scale_factor)
+                        * 0.5;
+                let position = [
+                    origin[0] + (center + note.offset[0] + displacement[0]) * scale,
+                    // 游戏的 CaughtObject 原点在中心；容器只上移 5 个接盘局部像素。
+                    origin[1]
+                        + (note.offset[1] + displacement[1] - 10.0 * layout.object_scale.abs())
+                            * scale,
+                ];
+                draw(&note.object, position, diameter, alpha, clip_bottom);
+            };
         let stack_index = self.stacks.partition_point(|stack| stack.since <= time) - 1;
         let stack = &self.stacks[stack_index];
         let count = stack.notes.partition_point(|note| note.time <= time);
         let center = self.path.position_at_f64(time);
+        // 游戏的接盘主体覆盖盘上果堆的下半部分；薄盘样式用判定线裁剪模拟该遮挡。
+        let clip_bottom = origin[1].round() as i64;
         for note in &stack.notes[..count] {
-            emit(note, center, [0.0; 2], 255);
+            emit(note, center, [0.0; 2], 255, Some(clip_bottom));
         }
         let lo = self
             .releases
@@ -221,7 +226,7 @@ impl CatcherDisplay {
                 } else {
                     0.0
                 };
-                emit(note, release.center, [horizontal, vertical], alpha);
+                emit(note, release.center, [horizontal, vertical], alpha, None);
             }
         }
     }
@@ -230,33 +235,79 @@ impl CatcherDisplay {
         &self,
         time: i64,
         layout: &AnimationLayout,
-        mut draw: impl FnMut(&RenderObject, [f64; 2], f64, u8),
+        mut draw: impl FnMut(&RenderObject, [f64; 2], f64, u8, Option<i64>),
     ) {
-        self.notes_at(time, layout, |object, position, diameter, alpha| {
-            // 长 Combo 的果堆可能超出画布；保留 hyperdash 外环和抗锯齿边缘。
-            let radius = diameter.abs() / 2.0 * if object.hyper_dash { 1.6 } else { 1.0 } + 2.0;
-            if position[0] + radius < 0.0
-                || position[0] - radius > layout.frame_width as f64
-                || position[1] + radius < 0.0
-                || position[1] - radius > layout.frame_height as f64
-            {
-                return;
-            }
-            draw(object, position, diameter, alpha);
-        });
+        self.notes_at(
+            time,
+            layout,
+            |object, position, diameter, alpha, clip_bottom| {
+                // 长 Combo 的果堆可能超出画布；保留 hyperdash 外环和抗锯齿边缘。
+                let radius = diameter.abs() / 2.0 * if object.hyper_dash { 1.6 } else { 1.0 } + 2.0;
+                if position[0] + radius < 0.0
+                    || position[0] - radius > layout.frame_width as f64
+                    || position[1] + radius < 0.0
+                    || position[1] - radius > layout.frame_height as f64
+                {
+                    return;
+                }
+                draw(object, position, diameter, alpha, clip_bottom);
+            },
+        );
     }
 
-    pub fn draw_cpu(&self, frame: &mut Img, time: i64, layout: &AnimationLayout) {
-        self.visible_notes_at(time, layout, |object, position, diameter, alpha| {
-            draw_catch_object_with_alpha(frame, object, position[0], position[1], diameter, alpha);
-        });
+    pub fn draw_notes_cpu(&self, frame: &mut Img, time: i64, layout: &AnimationLayout) {
+        self.visible_notes_at(
+            time,
+            layout,
+            |object, position, diameter, alpha, clip_bottom| {
+                draw_catch_object_clipped(frame, object, position, diameter, alpha, clip_bottom);
+            },
+        );
+    }
+
+    pub fn draw_notes_scene(
+        &self,
+        scene: &mut FrameSceneBuilder,
+        time: i64,
+        layout: &AnimationLayout,
+    ) {
+        let mut clipped = false;
+        self.visible_notes_at(
+            time,
+            layout,
+            |object, position, diameter, alpha, clip_bottom| {
+                if let Some(bottom) = clip_bottom {
+                    if !clipped {
+                        scene.push_clip(SceneRect {
+                            x: 0.0,
+                            y: 0.0,
+                            width: layout.frame_width as f32,
+                            height: bottom.clamp(0, layout.frame_height) as f32,
+                        });
+                        clipped = true;
+                    }
+                } else if clipped {
+                    scene.pop_clip();
+                    clipped = false;
+                }
+                draw_catch_object_scene(scene, object, position, diameter, alpha);
+            },
+        );
+        if clipped {
+            scene.pop_clip();
+        }
+    }
+
+    pub fn draw_catcher_cpu(&self, frame: &mut Img, time: i64, layout: &AnimationLayout) {
         self.path.draw_cpu(frame, time, layout);
     }
 
-    pub fn draw_scene(&self, scene: &mut FrameSceneBuilder, time: i64, layout: &AnimationLayout) {
-        self.visible_notes_at(time, layout, |object, position, diameter, alpha| {
-            draw_catch_object_scene(scene, object, position, diameter, alpha);
-        });
+    pub fn draw_catcher_scene(
+        &self,
+        scene: &mut FrameSceneBuilder,
+        time: i64,
+        layout: &AnimationLayout,
+    ) {
         self.path.draw_scene(scene, time, layout);
     }
 }
@@ -291,7 +342,7 @@ mod tests {
         layout.playfield_left *= scale;
         layout.playfield_top *= scale;
         let mut notes = Vec::new();
-        display.notes_at(time, &layout, |_, position, diameter, alpha| {
+        display.notes_at(time, &layout, |_, position, diameter, alpha, _| {
             notes.push((position, diameter, alpha));
         });
         notes
@@ -375,6 +426,26 @@ mod tests {
         assert!(top[1].0[1] < start[0].0[1]);
         assert!(top[1].2 < 255);
         assert_eq!(snapshot(&display, 1850, 1.0).len(), 1);
+        let layout = build_animation_layout(5.0, 5.0, OutputFormat::Gif);
+        let mut scene =
+            FrameSceneBuilder::new(layout.frame_width as u32, layout.frame_height as u32, 1350);
+        display.draw_notes_scene(&mut scene, 1350, &layout);
+        let scene = scene.finish();
+        let mut clipped = false;
+        let mut released = 0;
+        for command in scene.commands.iter() {
+            match command {
+                crate::render::scene::DrawCommand::PushClip(_) => clipped = true,
+                crate::render::scene::DrawCommand::PopClip => clipped = false,
+                crate::render::scene::DrawCommand::Circle { color, .. } if color[3] < 255 => {
+                    assert!(!clipped);
+                    released += 1;
+                }
+                _ => (),
+            }
+        }
+        assert_eq!(released, 2);
+        assert!(!clipped);
     }
 
     #[test]
@@ -483,23 +554,28 @@ mod tests {
                         layout.frame_height as u32,
                         [0; 4],
                     );
-                    display.notes_at(time, &layout, |object, position, diameter, alpha| {
-                        draw_catch_object_with_alpha(
-                            &mut expected,
-                            object,
-                            position[0],
-                            position[1],
-                            diameter,
-                            alpha,
-                        );
-                    });
+                    display.notes_at(
+                        time,
+                        &layout,
+                        |object, position, diameter, alpha, clip_bottom| {
+                            draw_catch_object_clipped(
+                                &mut expected,
+                                object,
+                                position,
+                                diameter,
+                                alpha,
+                                clip_bottom,
+                            );
+                        },
+                    );
                     display.path.draw_cpu(&mut expected, time, &layout);
                     let mut actual = Img::new(expected.w, expected.h, [0; 4]);
-                    display.draw_cpu(&mut actual, time, &layout);
+                    display.draw_notes_cpu(&mut actual, time, &layout);
+                    display.draw_catcher_cpu(&mut actual, time, &layout);
                     assert!(actual.data == expected.data, "scale={scale}, time={time}");
                     if time == 2022 {
                         let mut visible = 0;
-                        display.visible_notes_at(time, &layout, |_, _, _, _| visible += 1);
+                        display.visible_notes_at(time, &layout, |_, _, _, _, _| visible += 1);
                         assert!(visible > 0 && visible < 1023);
                     }
                 }

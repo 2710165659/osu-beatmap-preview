@@ -403,8 +403,31 @@ fn prepare_catch_segment_gif_frames(
     Ok(AnimationFrames::with_frame_rate(frame_count, fps, render))
 }
 
-/// 渲染单段单帧：背景、判定线、接盘与接取效果，再叠加下落物件。
+/// 渲染单段单帧：背景、判定线、接取效果、下落物件，最后叠加接盘主体。
 pub fn render_animation_frame(
+    render_objects: &[RenderObject],
+    start_times_desc: &[i64],
+    snapshot_time: i64,
+    layout: &AnimationLayout,
+    background: Option<&Img>,
+    catcher: Option<&CatcherDisplay>,
+) -> Img {
+    let mut frame = render_object_frame(
+        render_objects,
+        start_times_desc,
+        snapshot_time,
+        layout,
+        background,
+        catcher,
+    );
+    if let Some(catcher) = catcher {
+        catcher.draw_catcher_cpu(&mut frame, snapshot_time, layout);
+    }
+    frame
+}
+
+/// 物件层暂不绘制接盘主体，供回放插入漏接物件后再统一合成前景。
+pub(crate) fn render_object_frame(
     render_objects: &[RenderObject],
     start_times_desc: &[i64],
     snapshot_time: i64,
@@ -462,7 +485,7 @@ pub fn render_animation_frame(
     );
 
     if let Some(catcher) = catcher {
-        catcher.draw_cpu(&mut frame, snapshot_time, layout);
+        catcher.draw_notes_cpu(&mut frame, snapshot_time, layout);
     }
 
     // 可见时间窗：对象在 [snapshot, snapshot + 下落时间窗 + 余量] 内才可能出现在帧中。
@@ -615,6 +638,118 @@ mod tests {
     use super::*;
     use crate::render::cpu::modes::catch::drawing::object_diameter;
     use crate::render::cpu::modes::catch::objects::{ObjType, RenderObject};
+
+    #[test]
+    fn plate_covers_falling_notes_and_caught_notes_stay_above_it_on_cpu_and_gpu() {
+        use super::super::catcher::build_catcher_path;
+        use super::super::objects::build_fruit_object;
+        use crate::render::{
+            geometry::OutputFormat,
+            scene::{DrawCommand, FrameSceneBuilder},
+        };
+        use std::sync::Arc;
+
+        let mut config = crate::config::CoreConfig::default();
+        config.render.catch.gif.SCALE = 0.75;
+        config.render.catch.mp4.SCALE = 1.25;
+        crate::config::with_config(Arc::new(config), || {
+            let mut objects = [
+                build_fruit_object(256.0, 1100, [40, 150, 220], None),
+                build_fruit_object(256.0, 1000, [40, 150, 220], None),
+            ];
+            objects[1].event_time = Some(1000.5);
+            objects[1].hyper_dash = true;
+            let catcher =
+                CatcherDisplay::new(&objects, Arc::new(build_catcher_path(&objects, 5.0)), 5.0);
+            for format in [OutputFormat::Gif, OutputFormat::Mp4] {
+                let layout = if format == OutputFormat::Gif {
+                    build_animation_layout(5.0, 5.0, format)
+                } else {
+                    build_video_animation_layout(5.0, 5.0, format)
+                };
+                let background = Img::new(
+                    layout.frame_width as u32,
+                    layout.frame_height as u32,
+                    [10, 20, 30, 255],
+                );
+                let center_x = layout.playfield_left + 256.0 * layout.playfield_scale;
+                let judgement_y = layout.playfield_top
+                    + catch_constants::STABLE_CATCHER_Y * layout.playfield_scale;
+                let full_radius =
+                    object_diameter(layout.object_scale, layout.playfield_scale, 1.0) as f32 / 2.0;
+                for time in [999, 1000, 1001, 1050, 1100, 1150, 1050] {
+                    let image = render_animation_frame(
+                        &objects,
+                        &[1100, 1000],
+                        time,
+                        &layout,
+                        Some(&background),
+                        Some(&catcher),
+                    );
+                    assert_eq!(
+                        image.get(center_x.round() as u32, judgement_y.round() as u32),
+                        [0xff, 0xa7, 0x86, 255],
+                    );
+                    let mut scene = FrameSceneBuilder::new(image.w, image.h, time);
+                    crate::render::wgpu::modes::catch::draw_scene(
+                        &mut scene,
+                        &objects,
+                        &[1100, 1000],
+                        time,
+                        &layout,
+                        None,
+                        Some(&catcher),
+                    );
+                    let scene = scene.finish();
+                    assert!(scene.commands[scene.commands.len() - 5..]
+                        .iter()
+                        .all(|command| { matches!(command, DrawCommand::Rectangle { .. }) }));
+                    let mut clipped = false;
+                    let mut falling = 0;
+                    let mut caught = 0;
+                    for command in scene.commands.iter() {
+                        match command {
+                            DrawCommand::PushClip(rect) => {
+                                assert_eq!(rect.height, judgement_y.round() as f32);
+                                assert!(!clipped);
+                                clipped = true;
+                            }
+                            DrawCommand::PopClip => {
+                                assert!(clipped);
+                                clipped = false;
+                            }
+                            DrawCommand::Circle { radius, .. } if *radius == full_radius => {
+                                assert!(!clipped);
+                                falling += 1;
+                            }
+                            DrawCommand::Circle { radius, .. } => {
+                                assert_eq!(*radius, full_radius * 0.5);
+                                assert!(clipped);
+                                caught += 1;
+                            }
+                            _ => (),
+                        }
+                    }
+                    assert!(!clipped);
+                    let expected_caught = usize::from(time >= 1001) + usize::from(time >= 1100);
+                    assert_eq!((caught, falling), (expected_caught, 2 - expected_caught));
+                    if time >= 1100 {
+                        let below_plate = (judgement_y
+                            + catch_constants::CATCHER_PLATE_HEIGHT
+                                * layout.object_scale.abs()
+                                * layout.playfield_scale)
+                            .ceil() as u32
+                            + 2;
+                        for y in below_plate..below_plate + full_radius.ceil() as u32 {
+                            for x in 0..image.w {
+                                assert_eq!(image.get(x, y), background.get(x, y));
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     #[test]
     fn hidden_opacity_uses_preempt_fraction_for_every_object_kind() {

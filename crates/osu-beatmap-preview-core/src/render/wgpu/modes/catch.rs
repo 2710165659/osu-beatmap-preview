@@ -125,6 +125,39 @@ pub(crate) fn draw_scene(
     flashlight: Option<&CatchFlashlight>,
     catcher: Option<&CatcherDisplay>,
 ) {
+    draw_objects_scene(
+        scene,
+        render_objects,
+        start_times,
+        absolute_time_ms,
+        layout,
+        catcher,
+    );
+    // 与游戏的代理图层顺序一致：果堆和下落物件位于接盘主体后方。
+    if let Some(catcher) = catcher {
+        catcher.draw_catcher_scene(scene, absolute_time_ms, layout);
+    }
+    if let Some(flashlight) = flashlight {
+        flashlight.at(absolute_time_ms, layout).draw_scene(
+            scene,
+            crate::render::geometry::PixelRect {
+                x: 0,
+                y: 0,
+                width: layout.frame_width,
+                height: layout.frame_height,
+            },
+        );
+    }
+}
+
+pub(crate) fn draw_objects_scene(
+    scene: &mut FrameSceneBuilder,
+    render_objects: &[RenderObject],
+    start_times: &[i64],
+    absolute_time_ms: i64,
+    layout: &AnimationLayout,
+    catcher: Option<&CatcherDisplay>,
+) {
     // 背景由固定画布合成阶段提供，透明占位保持空帧也有稳定命令序列。
     scene.rectangle(
         SceneRect {
@@ -151,7 +184,7 @@ pub(crate) fn draw_scene(
     );
 
     if let Some(catcher) = catcher {
-        catcher.draw_scene(scene, absolute_time_ms, layout);
+        catcher.draw_notes_scene(scene, absolute_time_ms, layout);
     }
     let fall_window = (layout.frame_height as f64 / layout.pixels_per_ms).ceil() as i64 + 2000;
     let lo = start_times.partition_point(|&time| time > absolute_time_ms + fall_window);
@@ -171,17 +204,6 @@ pub(crate) fn draw_scene(
             judgement_y,
             layout,
             kiai_active,
-        );
-    }
-    if let Some(flashlight) = flashlight {
-        flashlight.at(absolute_time_ms, layout).draw_scene(
-            scene,
-            crate::render::geometry::PixelRect {
-                x: 0,
-                y: 0,
-                width: layout.frame_width,
-                height: layout.frame_height,
-            },
         );
     }
 }
