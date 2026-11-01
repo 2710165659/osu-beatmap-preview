@@ -324,7 +324,9 @@ impl CatcherPath {
     }
 
     pub fn draw_scene(&self, scene: &mut FrameSceneBuilder, time: i64, layout: &AnimationLayout) {
-        let white = std::sync::Arc::new(Img::new(1, 1, [255; 4]));
+        // 渲染器按 Arc 身份缓存纹理，拖尾必须跨帧复用同一张白色贴图。
+        static WHITE: std::sync::OnceLock<std::sync::Arc<Img>> = std::sync::OnceLock::new();
+        let white = WHITE.get_or_init(|| std::sync::Arc::new(Img::new(1, 1, [255; 4])));
         self.plates(time, layout, |rect, color, additive| {
             if additive {
                 scene.transformed_sprite(
@@ -876,5 +878,26 @@ mod tests {
             }
         }
         assert_eq!(image.data, expected.data);
+    }
+
+    #[test]
+    fn dash_trail_reuses_texture_across_frames_and_seeks() {
+        use super::super::animation::build_animation_layout;
+        use crate::render::geometry::OutputFormat;
+        let path = build_catcher_path(&[object(100.0, 1000), object(250.0, 1200)], 5.0);
+        let layout = build_animation_layout(5.0, 5.0, OutputFormat::Gif);
+        let mut previous = None;
+        for time in [1040, 1100, 1040] {
+            let mut scene =
+                FrameSceneBuilder::new(layout.frame_width as u32, layout.frame_height as u32, time);
+            path.draw_scene(&mut scene, time, &layout);
+            let scene = scene.finish();
+            assert_eq!(scene.resources.len(), 1);
+            let white = scene.resources.values().next().unwrap();
+            if let Some(previous) = &previous {
+                assert!(std::sync::Arc::ptr_eq(previous, white));
+            }
+            previous = Some(std::sync::Arc::clone(white));
+        }
     }
 }
