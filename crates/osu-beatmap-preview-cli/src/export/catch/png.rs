@@ -14,6 +14,9 @@ use osu_beatmap_preview_core::render::cpu::modes::catch::png::{
 };
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
+use osu_beatmap_preview_core::{
+    gameplay::timeline::GameplayTimeline, replay::preparation::catch::PreparedCatch,
+};
 use std::path::{Path, PathBuf};
 
 use super::objects::{build_catch_render_objects, effective_difficulty, RenderObject};
@@ -159,6 +162,7 @@ fn build_layout(
         object_scale,
         pixels_per_ms,
         chart_start_time,
+        state_panel_width: 0,
     })
 }
 
@@ -235,6 +239,44 @@ pub(crate) fn render_catch_grid(
     segment: Option<PngSegment>,
     deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
+    render_grid(
+        beatmap,
+        output_path,
+        mods,
+        time_axis,
+        segment,
+        deadline,
+        None,
+    )
+}
+
+pub(super) fn render_replay_grid(
+    prepared: &PreparedCatch,
+    gameplay: &GameplayTimeline,
+    output_path: &Path,
+    segment: Option<PngSegment>,
+    deadline: &RequestDeadline,
+) -> Result<PathBuf> {
+    render_grid(
+        &prepared.beatmap,
+        output_path,
+        Some(&prepared.mods.settings),
+        TimeAxis::new(prepared.first),
+        segment,
+        deadline,
+        Some((prepared, gameplay)),
+    )
+}
+
+fn render_grid(
+    beatmap: &Beatmap,
+    output_path: &Path,
+    mods: Option<&ModSettings>,
+    time_axis: TimeAxis,
+    segment: Option<PngSegment>,
+    deadline: &RequestDeadline,
+    replay: Option<(&PreparedCatch, &GameplayTimeline)>,
+) -> Result<PathBuf> {
     deadline.check()?;
     let hit_objects = match beatmap.hit_objects.as_catch() {
         Some(v) if !v.is_empty() => v,
@@ -257,6 +299,9 @@ pub(crate) fn render_catch_grid(
     )?;
     deadline.check()?;
     let chart_end_time = hit_objects.iter().map(|h| h.end_time).max().unwrap().max(1);
+    let chart_end_time = replay.map_or(chart_end_time, |(prepared, _)| {
+        chart_end_time.max(prepared.last_end.ceil() as i64)
+    });
 
     // 裁剪开头静音：若第一个音符在 5 秒之后，则从其前 1 秒开始，
     // 并对齐到红线节拍网格。
@@ -296,7 +341,23 @@ pub(crate) fn render_catch_grid(
         &timing_lines,
     )?;
 
-    let image = render_catch_png_scene(&layout, &render_objects, &timing_lines, time_axis);
+    let image = if let Some((prepared, gameplay)) = replay {
+        let mut layout = layout;
+        layout.state_panel_width =
+            osu_beatmap_preview_core::render::cpu::modes::catch::png::replay::state_panel_width();
+        layout.image_width += layout.column_count * layout.state_panel_width;
+        osu_beatmap_preview_core::render::cpu::modes::catch::png::replay::render_scene(
+            &layout,
+            &render_objects,
+            &timing_lines,
+            time_axis,
+            prepared,
+            gameplay,
+            window.end_ms,
+        )
+    } else {
+        render_catch_png_scene(&layout, &render_objects, &timing_lines, time_axis)
+    };
 
     save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())

@@ -10,6 +10,9 @@ use std::collections::BTreeMap;
 use super::drawing::draw_catch_object;
 use super::objects::{object_order, rhe, ObjType, RenderObject};
 
+#[cfg(feature = "replay")]
+pub mod replay;
+
 pub struct CatchPngLayout {
     pub column_count: i64,
     pub total_column_height: i64,
@@ -20,9 +23,10 @@ pub struct CatchPngLayout {
     pub object_scale: f64,
     pub pixels_per_ms: f64,
     pub chart_start_time: i64,
+    pub state_panel_width: i64,
 }
 
-fn column_left(column_index: i64) -> i64 {
+fn column_left(column_index: i64, layout: &CatchPngLayout) -> i64 {
     let catch_png_sizing = catch_constants::png::sizing();
     catch_png_sizing.PAGE_MARGIN_LEFT
         + catch_png_sizing.INFO_MARGIN_LEFT
@@ -30,11 +34,12 @@ fn column_left(column_index: i64) -> i64 {
             * (catch_png_sizing.INFO_MARGIN_LEFT
                 + catch_png_sizing.COLUMN_WIDTH
                 + catch_png_sizing.INFO_MARGIN_RIGHT
+                + layout.state_panel_width
                 + catch_png_sizing.COLUMN_GAP)
 }
 
-fn playfield_left(column_index: i64) -> i64 {
-    column_left(column_index)
+fn playfield_left(column_index: i64, layout: &CatchPngLayout) -> i64 {
+    column_left(column_index, layout)
         + catch_constants::png::sizing().LEFT_PANEL_WIDTH
         + playfield_side_padding()
 }
@@ -85,7 +90,7 @@ pub struct RedlineSection {
 /// 绘制单列的标尺面板、游玩区域底色与边框。
 fn draw_column_background(image: &mut Img, layout: &CatchPngLayout, column_index: i64) {
     let catch_png_sizing = catch_constants::png::sizing();
-    let column_left = column_left(column_index);
+    let column_left = column_left(column_index, layout);
     let chart_top = catch_png_sizing.PAGE_MARGIN_TOP + catch_png_sizing.INFO_MARGIN_TOP;
     let panel_width = catch_png_sizing.LEFT_PANEL_WIDTH;
     let side_padding = playfield_side_padding();
@@ -149,7 +154,7 @@ fn locate_time(time: i64, layout: &CatchPngLayout) -> (i64, i64) {
 fn draw_timing_line_png(image: &mut Img, timing_line: &TimingLine, layout: &CatchPngLayout) {
     let catch_png_sizing = catch_constants::png::sizing();
     let (column_index, y) = locate_time(timing_line.time, layout);
-    let left = playfield_left(column_index);
+    let left = playfield_left(column_index, layout);
     let right = left + layout.visible_playfield_width;
     let y = y.clamp(
         catch_png_sizing.PAGE_MARGIN_TOP + catch_png_sizing.INFO_MARGIN_TOP,
@@ -182,9 +187,41 @@ fn draw_timing_label_png(
     layout: &CatchPngLayout,
     time_axis: TimeAxis,
 ) {
+    let (label_x, label_y, _) = timing_label_position(timing_line, layout, time_axis);
+    let sizing = catch_constants::png::sizing();
+    let label = crate::render::text::format_seconds_tenths(
+        time_axis.to_display(timing_line.time + layout.chart_start_time),
+    );
+    draw_text(
+        image,
+        label_x,
+        label_y,
+        &label,
+        sizing.TIME_LABEL_FONT_SIZE,
+        catch_constants::png::style::TIME_LABEL_COLOR,
+    );
+    if let Some(bpm) = timing_line.bpm {
+        draw_text(
+            image,
+            label_x,
+            label_y
+                + text_size(&label, sizing.TIME_LABEL_FONT_SIZE).1 as i64
+                + sizing.BPM_LABEL_GAP,
+            &crate::render::timing::format_bpm(bpm),
+            sizing.TIME_LABEL_FONT_SIZE,
+            catch_constants::png::style::BPM_LABEL_COLOR,
+        );
+    }
+}
+
+fn timing_label_position(
+    timing_line: &TimingLine,
+    layout: &CatchPngLayout,
+    time_axis: TimeAxis,
+) -> (i64, i64, i64) {
     let catch_png_sizing = catch_constants::png::sizing();
     let (column_index, y) = locate_time(timing_line.time, layout);
-    let border_right = column_left(column_index) + catch_png_sizing.COLUMN_WIDTH;
+    let border_right = column_left(column_index, layout) + catch_png_sizing.COLUMN_WIDTH;
     let y = y.clamp(
         catch_png_sizing.PAGE_MARGIN_TOP + catch_png_sizing.INFO_MARGIN_TOP,
         catch_png_sizing.PAGE_MARGIN_TOP
@@ -216,32 +253,13 @@ fn draw_timing_label_png(
     let label_y = (label_y - bpm_height / 2)
         .max(chart_top)
         .min(chart_bottom - group_height);
-    draw_text(
-        image,
-        label_x,
-        label_y,
-        &label,
-        catch_png_sizing.TIME_LABEL_FONT_SIZE,
-        catch_constants::png::style::TIME_LABEL_COLOR,
-    );
-    if let Some(bpm_label) = bpm_label {
-        let (bpm_width, _) = text_size(&bpm_label, catch_png_sizing.TIME_LABEL_FONT_SIZE);
-        let bpm_x = (border_right + label_gap)
-            .min(layout.image_width - bpm_width as i64 - catch_png_sizing.PAGE_MARGIN_LEFT);
-        draw_text(
-            image,
-            bpm_x,
-            label_y + label_height as i64 + catch_png_sizing.BPM_LABEL_GAP,
-            &bpm_label,
-            catch_png_sizing.TIME_LABEL_FONT_SIZE,
-            catch_constants::png::style::BPM_LABEL_COLOR,
-        );
-    }
+    (label_x, label_y, group_height)
 }
 
 fn draw_catch_object_png(image: &mut Img, catch_object: &RenderObject, layout: &CatchPngLayout) {
     let (column_index, y) = locate_time(catch_object.start_time, layout);
-    let center_x = playfield_left(column_index) as f64 + catch_object.x * layout.playfield_scale;
+    let center_x =
+        playfield_left(column_index, layout) as f64 + catch_object.x * layout.playfield_scale;
     let center_y = y as f64;
     let diameter = super::drawing::object_diameter(
         layout.object_scale,
@@ -268,6 +286,7 @@ fn edge_guide_segments(
         next.x,
         layout,
     )
+    .collect()
 }
 
 fn time_axis_segments(
@@ -276,44 +295,39 @@ fn time_axis_segments(
     end_time: f64,
     end_x: f64,
     layout: &CatchPngLayout,
-) -> Vec<LineSegment> {
+) -> impl Iterator<Item = LineSegment> + '_ {
     let catch_png_sizing = catch_constants::png::sizing();
-    if end_time <= start_time || layout.pixels_per_ms <= 0.0 {
-        return Vec::new();
-    }
-
     let column_duration = layout.total_column_height as f64 / layout.pixels_per_ms;
-    let start_column = (start_time / column_duration).floor() as i64;
-    let end_column = (end_time / column_duration).floor() as i64;
+    let (start_column, end_column) = if end_time <= start_time || layout.pixels_per_ms <= 0.0 {
+        (1, 0)
+    } else {
+        (
+            ((start_time / column_duration).floor() as i64).max(0),
+            ((end_time / column_duration).floor() as i64).min(layout.column_count - 1),
+        )
+    };
     let chart_bottom = (catch_png_sizing.PAGE_MARGIN_TOP
         + catch_png_sizing.INFO_MARGIN_TOP
         + layout.total_column_height) as f64;
-    let mut segments = Vec::new();
-
-    for column in start_column..=end_column {
-        if !(0..layout.column_count).contains(&column) {
-            continue;
-        }
+    (start_column..=end_column).filter_map(move |column| {
         let column_start = column as f64 * column_duration;
         let column_end = (column + 1) as f64 * column_duration;
         let segment_start = start_time.max(column_start);
         let segment_end = end_time.min(column_end);
         if segment_end <= segment_start {
-            continue;
+            return None;
         }
 
         let point_at = |time: f64| {
             let progress = (time - start_time) / (end_time - start_time);
             let object_x = start_x + (end_x - start_x) * progress;
-            let x = playfield_left(column) as f64 + object_x * layout.playfield_scale;
+            let x = playfield_left(column, layout) as f64 + object_x * layout.playfield_scale;
             let local_height = (time - column_start) * layout.pixels_per_ms;
             let y = chart_bottom - local_height;
             (x, y)
         };
-        segments.push((point_at(segment_start), point_at(segment_end)));
-    }
-
-    segments
+        Some((point_at(segment_start), point_at(segment_end)))
+    })
 }
 
 /// 绘制动态规划实际采用的接盘中心轨迹；未接取的香蕉时刻也保留过渡位置。
@@ -415,7 +429,8 @@ fn draw_edge_combo_labels(
         let (label_width, label_height) =
             text_size(&label, catch_png_sizing.EDGE_COMBO_LABEL_FONT_SIZE);
         let (column_index, center_y) = locate_time(current.start_time, layout);
-        let center_x = playfield_left(column_index) as f64 + current.x * layout.playfield_scale;
+        let center_x =
+            playfield_left(column_index, layout) as f64 + current.x * layout.playfield_scale;
         let radius = super::drawing::object_diameter(
             layout.object_scale,
             layout.playfield_scale,
@@ -424,7 +439,7 @@ fn draw_edge_combo_labels(
         let left_x =
             rhe(center_x - radius - catch_png_sizing.EDGE_COMBO_LABEL_GAP - label_width as f64);
         let right_x = rhe(center_x + radius + catch_png_sizing.EDGE_COMBO_LABEL_GAP);
-        let min_x = playfield_left(column_index);
+        let min_x = playfield_left(column_index, layout);
         let max_x = min_x + layout.visible_playfield_width - label_width as i64;
         let prefer_left = next.x >= current.x;
         let label_x = if prefer_left && left_x >= min_x {
@@ -504,6 +519,17 @@ pub fn render_catch_png_scene(
     timing_lines: &[TimingLine],
     time_axis: TimeAxis,
 ) -> Img {
+    let mut image = render_background(layout, render_objects, timing_lines, time_axis);
+    draw_objects(&mut image, render_objects, layout);
+    image
+}
+
+fn render_background(
+    layout: &CatchPngLayout,
+    render_objects: &[RenderObject],
+    timing_lines: &[TimingLine],
+    time_axis: TimeAxis,
+) -> Img {
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
@@ -514,8 +540,29 @@ pub fn render_catch_png_scene(
         draw_column_background(&mut image, layout, column_index);
     }
 
+    for tl in visible_timing_labels(timing_lines) {
+        draw_timing_line_png(&mut image, &tl, layout);
+        if tl.show_label || tl.bpm.is_some() {
+            draw_timing_label_png(&mut image, &tl, layout, time_axis);
+        }
+    }
+
+    if crate::config::current()
+        .render
+        .catch
+        .png
+        .style
+        .SHOW_BANANA_ROUTE
+    {
+        draw_banana_routes(&mut image, render_objects, layout);
+    }
+    draw_edge_guides(&mut image, render_objects, layout);
+    image
+}
+
+fn visible_timing_labels(timing_lines: &[TimingLine]) -> impl Iterator<Item = TimingLine> + '_ {
     let mut last_label_time: Option<i64> = None;
-    for timing_line in timing_lines {
+    timing_lines.iter().map(move |timing_line| {
         let mut tl = *timing_line;
         if tl.show_label {
             if let Some(prev) = last_label_time {
@@ -534,32 +581,18 @@ pub fn render_catch_png_scene(
                 last_label_time = Some(tl.time);
             }
         }
-        draw_timing_line_png(&mut image, &tl, layout);
-        if tl.show_label || tl.bpm.is_some() {
-            draw_timing_label_png(&mut image, &tl, layout, time_axis);
-        }
-    }
+        tl
+    })
+}
 
-    if crate::config::current()
-        .render
-        .catch
-        .png
-        .style
-        .SHOW_BANANA_ROUTE
-    {
-        draw_banana_routes(&mut image, render_objects, layout);
-    }
-    draw_edge_guides(&mut image, render_objects, layout);
-
+fn draw_objects(image: &mut Img, render_objects: &[RenderObject], layout: &CatchPngLayout) {
     let mut sorted_objects: Vec<&RenderObject> = render_objects.iter().collect();
     sorted_objects.sort_by_key(|o| (-o.start_time, object_order(o.object_type)));
     for catch_object in sorted_objects {
-        draw_catch_object_png(&mut image, catch_object, layout);
+        draw_catch_object_png(image, catch_object, layout);
     }
 
-    draw_edge_combo_labels(&mut image, render_objects, layout);
-
-    image
+    draw_edge_combo_labels(image, render_objects, layout);
 }
 
 #[cfg(test)]
@@ -577,6 +610,7 @@ mod tests {
             object_scale: 0.5,
             pixels_per_ms: 1.0,
             chart_start_time: 0,
+            state_panel_width: 0,
         }
     }
 
@@ -637,7 +671,7 @@ mod tests {
 
         draw_edge_guides(&mut image, &[current, next], &layout);
 
-        let midpoint_x = playfield_left(0) + 50;
+        let midpoint_x = playfield_left(0, &layout) + 50;
         let chart_bottom = catch_constants::png::sizing().PAGE_MARGIN_TOP
             + catch_constants::png::sizing().INFO_MARGIN_TOP
             + layout.total_column_height;
@@ -657,8 +691,8 @@ mod tests {
 
         draw_banana_routes(&mut image, &[current, next], &layout);
 
-        let route_x = playfield_left(0) + 50;
-        let banana_midpoint_x = playfield_left(0) + 100;
+        let route_x = playfield_left(0, &layout) + 50;
+        let banana_midpoint_x = playfield_left(0, &layout) + 100;
         let chart_bottom = catch_constants::png::sizing().PAGE_MARGIN_TOP
             + catch_constants::png::sizing().INFO_MARGIN_TOP
             + layout.total_column_height;

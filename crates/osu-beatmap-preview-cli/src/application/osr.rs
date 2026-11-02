@@ -72,11 +72,6 @@ fn execute_inner(
     let t_source = Instant::now();
     let mut source = source_osr::load(&request, &cache_root, &deadline)?;
     let is_taiko = source.document.header.ruleset_id == 1;
-    if matches!(source.document.header.ruleset_id, 1..=3) && format == "png" {
-        return Err(PreviewError::new(
-            "Taiko/Catch/Mania replay preview supports GIF/MP4; PNG is not supported",
-        ));
-    }
     logging::record_stage("load_replay_ms", t_source.elapsed().as_secs_f64() * 1000.0);
     // 日志保留谱面 ID，回放身份单独记录；产物命名继续沿用原有规则。
     rec.bid = source
@@ -176,6 +171,11 @@ fn execute_inner(
                                 &plan,
                                 &path,
                                 &deadline,
+                            )
+                        }
+                        PreparedReplay::Catch(prepared) if plan.format == OutputFormat::Png => {
+                            crate::export::catch::osr::render_png(
+                                prepared, &gameplay, &plan, &path, &deadline,
                             )
                         }
                         PreparedReplay::Catch(prepared) => crate::export::catch::osr::render_gif(
@@ -376,10 +376,17 @@ mod tests {
             true
         );
         request.output.format = Some("png".into());
-        assert!(execute(request.clone())
-            .unwrap_err()
-            .to_string()
-            .contains("PNG is not supported"));
+        request.output.fps = None;
+        request.view.duration_seconds = None;
+        request.view.time_points.clear();
+        let png = execute(request.clone()).unwrap();
+        let image = image::open(png["preview-img"].as_str().unwrap()).unwrap();
+        assert!(image.width() > 0 && image.height() > 0);
+        assert_eq!(png["replay-info"]["state"], result["replay-info"]["state"]);
+        assert_eq!(
+            execute(request.clone()).unwrap()["replay-info"]["cache-hit"],
+            true
+        );
         // 短 WAV 与原始 OSU 组成离线谱面包，实际经过 H.264/AAC 编码和 MP4 封装。
         let archive = root.join("catch.osz");
         let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
