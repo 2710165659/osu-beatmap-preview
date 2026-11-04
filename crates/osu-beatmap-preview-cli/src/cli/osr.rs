@@ -46,11 +46,16 @@ impl Arguments {
         };
         let mode = match self.mode.as_deref() {
             None => None,
-            Some("osu") => Some(ReplayMode::Osu),
+            Some("osu" | "std" | "standard") => Some(ReplayMode::Osu),
             Some("taiko") => Some(ReplayMode::Taiko),
-            Some("fruits") => Some(ReplayMode::Fruits),
+            Some("fruits" | "fruit" | "ctb" | "catch") => Some(ReplayMode::Fruits),
             Some("mania") => Some(ReplayMode::Mania),
-            _ => return Err(CliError("--mode 必须为 osu、taiko、fruits 或 mania".into())),
+            _ => {
+                return Err(CliError(
+                    "--mode 必须为 osu（std、standard）、taiko、fruits（fruit、ctb、catch）或 mania"
+                        .into(),
+                ));
+            }
         };
         let source = if let Some(file) = self.file {
             ReplaySource::File(file)
@@ -88,7 +93,7 @@ mod tests {
             vec!["--score-id=1", "--bid=2"],
             vec!["--type=osr", "--user=a", "--bid=2", "--score-select=pp"],
             vec!["--type=osr", "--user-id=1", "--bid=2"],
-            vec!["--type=osr", "--user=a", "--mode=ctb"],
+            vec!["--type=osr", "--user=a", "--mode=invalid"],
             vec!["--type=osr", "--user=a", "--bid=0"],
             vec!["--type=osr", "--user=a", "--bid=2", "--include-fails"],
             vec!["--type=osr", "--score-id=1", "--mode=osu"],
@@ -148,8 +153,13 @@ mod tests {
         } if user == "123"));
         for (name, expected) in [
             ("osu", ReplayMode::Osu),
+            ("std", ReplayMode::Osu),
+            ("standard", ReplayMode::Osu),
             ("taiko", ReplayMode::Taiko),
             ("fruits", ReplayMode::Fruits),
+            ("fruit", ReplayMode::Fruits),
+            ("ctb", ReplayMode::Fruits),
+            ("catch", ReplayMode::Fruits),
             ("mania", ReplayMode::Mania),
         ] {
             let CliAction::Render(request) = parse_args([
