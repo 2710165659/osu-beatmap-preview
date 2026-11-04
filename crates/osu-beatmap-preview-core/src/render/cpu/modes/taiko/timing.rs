@@ -77,6 +77,16 @@ impl ScrollPositionMapper {
             + (segment.end_time - segment.start_time) as f64 * segment.pixels_per_ms
     }
 
+    /// 将静态图滚动坐标还原为谱面时间，与 position_at 使用相同分段和边界。
+    pub fn time_at(&self, position: f64) -> f64 {
+        let position = position.clamp(0.0, self.end_position());
+        let index = self
+            .segments
+            .partition_point(|s| s.start_position <= position);
+        let segment = &self.segments[index.saturating_sub(1)];
+        segment.start_time as f64 + (position - segment.start_position) / segment.pixels_per_ms
+    }
+
     pub fn position_at(&self, time: f64) -> f64 {
         let last_end = self.segments.last().unwrap().end_time as f64;
         let clamped_time = time.min(last_end).max(0.0);
@@ -741,7 +751,10 @@ mod tests {
                 for time in [0.0, 250.0, 2_000.0, 4_000.0, 7_750.0, 8_000.0] {
                     let normalized = mapper.position_at(time) / scale;
                     assert!((normalized - base_mapper.position_at(time)).abs() < 1e-9);
+                    assert!((mapper.time_at(mapper.position_at(time)) - time).abs() < 1e-9);
                 }
+                assert_eq!(mapper.time_at(-1.0), 0.0);
+                assert!((mapper.time_at(mapper.end_position() + 1.0) - 8_000.0).abs() < 1e-9);
             }
         }
     }

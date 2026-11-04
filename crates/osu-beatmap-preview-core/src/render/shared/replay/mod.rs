@@ -2,4 +2,5 @@
 pub(crate) mod feedback;
 pub mod font;
 pub(crate) mod hud;
+pub(crate) mod static_state;
 pub(crate) use super::draw as overlay;

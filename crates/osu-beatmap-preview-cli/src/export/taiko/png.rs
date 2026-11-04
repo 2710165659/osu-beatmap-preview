@@ -13,6 +13,9 @@ use osu_beatmap_preview_core::render::cpu::modes::taiko::png::{
 };
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
 use osu_beatmap_preview_core::support::timeout::RequestDeadline;
+use osu_beatmap_preview_core::{
+    gameplay::timeline::GameplayTimeline, replay::preparation::taiko::PreparedTaiko,
+};
 use std::path::{Path, PathBuf};
 
 use super::timing::*;
@@ -32,8 +35,50 @@ pub(crate) fn render_taiko_grid(
     segment: Option<PngSegment>,
     deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
+    render_grid(
+        beatmap,
+        output_path,
+        mods,
+        time_axis,
+        segment,
+        deadline,
+        None,
+    )
+}
+
+pub(super) fn render_replay_grid(
+    prepared: &PreparedTaiko,
+    gameplay: &GameplayTimeline,
+    output_path: &Path,
+    segment: Option<PngSegment>,
+    deadline: &RequestDeadline,
+) -> Result<PathBuf> {
+    render_grid(
+        &prepared.beatmap,
+        output_path,
+        Some(&prepared.mods.settings),
+        TimeAxis::new(prepared.objects[0].source.start_time),
+        segment,
+        deadline,
+        Some((prepared, gameplay)),
+    )
+}
+
+fn render_grid(
+    beatmap: &Beatmap,
+    output_path: &Path,
+    mods: Option<&ModSettings>,
+    time_axis: TimeAxis,
+    segment: Option<PngSegment>,
+    deadline: &RequestDeadline,
+    replay: Option<(&PreparedTaiko, &GameplayTimeline)>,
+) -> Result<PathBuf> {
     deadline.check()?;
-    let mut hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
+    // 回放准备已处理 SW，直接使用准备后的物件，避免再次交换鼓面与鼓边。
+    let mut hit_objects = match replay {
+        Some((prepared, _)) => prepared.objects.iter().map(|o| o.source.clone()).collect(),
+        None => apply_taiko_object_mods(taiko_hit_objects(beatmap), mods),
+    };
     if hit_objects.is_empty() {
         return Err(PreviewError::render("taiko beatmap has no hit objects"));
     }
@@ -116,18 +161,35 @@ pub(crate) fn render_taiko_grid(
         &beat_positions,
         chart_start_time,
     );
-    layout.overall_difficulty = effective_overall_difficulty(beatmap, mods);
+    layout.overall_difficulty = replay.map_or_else(
+        || effective_overall_difficulty(beatmap, mods),
+        |(prepared, _)| prepared.od,
+    );
     let sv_changes = build_sv_changes(&timing_points, effective_chart_end_time, &mapper);
     deadline.check()?;
 
-    let image = render_taiko_png_scene(
-        &layout,
-        &hit_objects,
-        &mapper,
-        &timing_lines,
-        &sv_changes,
-        time_axis,
-    );
+    let image = if let Some((prepared, gameplay)) = replay {
+        osu_beatmap_preview_core::render::cpu::modes::taiko::png::replay::render_scene(
+            &layout,
+            &hit_objects,
+            &mapper,
+            &timing_lines,
+            &sv_changes,
+            time_axis,
+            prepared,
+            gameplay,
+            window.end_ms,
+        )
+    } else {
+        render_taiko_png_scene(
+            &layout,
+            &hit_objects,
+            &mapper,
+            &timing_lines,
+            &sv_changes,
+            time_axis,
+        )
+    };
 
     image::save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())

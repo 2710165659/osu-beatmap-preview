@@ -1,4 +1,5 @@
 //! osu!taiko PNG 场景绘制：根据 CLI 传入的布局计划把静态谱面绘制成图像。
+pub mod replay;
 
 use crate::render::cpu::modes::taiko::constants as taiko_constants;
 
@@ -499,6 +500,21 @@ pub fn render_taiko_png_scene(
     sv_changes: &[SvChange],
     time_axis: TimeAxis,
 ) -> Img {
+    let mut image = render_background(layout, mapper, timing_lines, sv_changes, time_axis);
+    let mut cache = RenderCache::default();
+    for hit_object in hit_objects.iter().rev() {
+        draw_hit_object(&mut image, hit_object, mapper, layout, &mut cache);
+    }
+    image
+}
+
+fn render_background(
+    layout: &TaikoPngLayout,
+    mapper: &ScrollPositionMapper,
+    timing_lines: &[TimingLine],
+    sv_changes: &[SvChange],
+    time_axis: TimeAxis,
+) -> Img {
     let taiko_png_sizing = taiko_constants::png::sizing();
     let render_scale = crate::render::geometry::output_scale(
         crate::render::geometry::GameMode::Taiko,
@@ -555,12 +571,6 @@ pub fn render_taiko_png_scene(
     }
 
     draw_sv_indicators(&mut image, sv_changes, layout);
-
-    let mut cache = RenderCache::default();
-    for hit_object in hit_objects.iter().rev() {
-        draw_hit_object(&mut image, hit_object, mapper, layout, &mut cache);
-    }
-
     image
 }
 

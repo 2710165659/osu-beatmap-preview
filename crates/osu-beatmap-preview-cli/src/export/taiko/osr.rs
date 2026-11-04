@@ -1,4 +1,4 @@
-//! Taiko 回放 GIF 与 MP4；物件和最终 HUD 共用实时预览的绘制计划。
+//! Taiko 回放导出：PNG 使用分行时间轴，GIF 与 MP4 共用实时预览绘制计划。
 mod gif;
 pub(crate) use gif::render_gif;
 
@@ -16,6 +16,29 @@ use osu_beatmap_preview_core::{
     support::timeout::RequestDeadline, Result,
 };
 use std::{path::Path, sync::Arc};
+
+pub(crate) fn render_png(
+    prepared: &PreparedTaiko,
+    gameplay: &GameplayTimeline,
+    plan: &RenderPlan,
+    path: &Path,
+    deadline: &RequestDeadline,
+) -> Result<()> {
+    let time_axis = TimeAxis::new(prepared.objects[0].source.start_time);
+    let times = crate::application::legacy::resolve_time_points(
+        &prepared.beatmap,
+        time_axis,
+        &plan.time_points,
+    )?;
+    let segment = match (times.as_deref(), plan.duration_seconds) {
+        (Some([start, ..]), Some(duration)) => {
+            Some(crate::export::segment::PngSegment::new(*start, duration)?)
+        }
+        _ => None,
+    };
+    super::png::render_replay_grid(prepared, gameplay, path, segment, deadline)?;
+    Ok(())
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render(

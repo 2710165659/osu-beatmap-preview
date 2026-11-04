@@ -192,6 +192,11 @@ fn execute_inner(
                             &path,
                             &deadline,
                         ),
+                        PreparedReplay::Taiko(prepared) if plan.format == OutputFormat::Png => {
+                            crate::export::taiko::osr::render_png(
+                                prepared, &gameplay, &plan, &path, &deadline,
+                            )
+                        }
                         PreparedReplay::Taiko(prepared) => crate::export::taiko::osr::render_gif(
                             Arc::clone(prepared),
                             Arc::clone(&gameplay),
@@ -438,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn taiko_replay_gif_exports_without_archive_and_reuses_selected_segments() {
+    fn taiko_replay_png_and_gif_export_without_archive_and_reuse_cache() {
         let _guard = logging::test_guard();
         let root = std::env::temp_dir().join(format!(
             "osu-preview-taiko-replay-gif-{}-{}",
@@ -499,10 +504,23 @@ mod tests {
         assert_eq!(cached["replay-info"]["cache-hit"], true);
         assert_eq!(cached["preview-img"], result["preview-img"]);
         request.output.format = Some("png".into());
-        assert!(execute(request)
-            .unwrap_err()
-            .to_string()
-            .contains("PNG is not supported"));
+        request.view.time_points.truncate(1);
+        request.view.duration_seconds = Some(0.2);
+        request.output.fps = None;
+        let result = execute(request.clone()).unwrap();
+        let path = PathBuf::from(result["preview-img"].as_str().unwrap());
+        assert_eq!(path.extension().unwrap(), "png");
+        let image = image::open(&path).unwrap().into_rgba8();
+        assert!(image.width() > 0 && image.height() > 0);
+        assert_eq!(result["replay-info"]["cache-hit"], false);
+        let cached = execute(request.clone()).unwrap();
+        assert_eq!(cached["replay-info"]["cache-hit"], true);
+        assert_eq!(cached["preview-img"], result["preview-img"]);
+        request.view.time_points.clear();
+        request.view.duration_seconds = None;
+        let full = execute(request).unwrap();
+        assert_ne!(full["preview-img"], result["preview-img"]);
+        assert_eq!(full["replay-info"]["state"], result["replay-info"]["state"]);
         let root = root.canonicalize().unwrap();
         assert_eq!(
             root.parent().unwrap(),
