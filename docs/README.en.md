@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="../crates/osu-beatmap-preview-web/public/logo.svg" alt="osu! Beatmap Preview" width="112" height="112">
+
 # osu! Beatmap Preview
 
 [![Release](https://img.shields.io/github/v/release/2710165659/osu-beatmap-preview?color=FF6600)](https://github.com/2710165659/osu-beatmap-preview/releases)

@@ -41,9 +41,7 @@ function removeFile(kind) {
   <section class="min-h-0 flex-1 overflow-auto">
     <div class="mx-auto w-full max-w-[720px] px-5 pt-[9vh] pb-10 sm:px-7">
       <div class="mb-9 flex items-center gap-3.5">
-        <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-[#ff5f45] text-[22px] font-extrabold text-white">
-          o!
-        </span>
+        <img src="/logo.svg" alt="osu! Beatmap Preview" width="48" height="48" class="h-12 w-12 shrink-0">
         <div>
           <small class="text-[10px] tracking-[.16em] text-[#ff5f45]">LOCAL RENDER ENGINE</small>
           <h1 class="m-0 text-[26px] leading-tight font-bold text-white">{{ replayRequested ? '回放预览' : '谱面预览' }}</h1>
