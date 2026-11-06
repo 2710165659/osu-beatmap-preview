@@ -1,5 +1,5 @@
 //! osu!catch 渲染对象展开：水果、果汁流、香蕉雨、HR 偏移和 hyperdash。
-//! RNG 调用顺序严格匹配 Python/stable。
+//! 随机偏移及 RNG 调用顺序保留 osu!stable 的兼容行为。
 
 use crate::domain::errors::{PreviewError, Result};
 use crate::domain::models::{Beatmap, CatchHitObject, TimingPoint};
@@ -158,7 +158,7 @@ pub fn build_catch_render_objects(
     let mut banana_shower_ranges = Vec::new();
     let mut rng = LegacyRandom::new(crate::render::cpu::modes::catch::constants::RNG_SEED as u32);
     let hard_rock_offsets = mods.is_some_and(|m| m.hard_rock);
-    let mut last_position: Option<f64> = None;
+    let mut last_position: Option<f32> = None;
     let mut last_start_time = 0.0f64;
 
     // 谱面自带 [Colours] 优先；其次统一 skin 配置；最后 lazer 默认配色
@@ -209,7 +209,7 @@ pub fn build_catch_render_objects(
 
         if hit_object.hit_type & 2 != 0 {
             let first_nested = render_objects.len();
-            last_position = Some(stable_slider_end_x(hit_object));
+            last_position = Some(stable_slider_end_x(hit_object) as f32);
             last_start_time = hit_object.start_time as f64;
             build_juice_stream_objects(
                 hit_object,
@@ -415,9 +415,7 @@ fn build_juice_stream_objects(
     for mut obj in nested_objects {
         match obj.object_type {
             ObjType::TinyDroplet => {
-                // Python：offset = rng.next(-20, 20)。
-                // 等价于：int(-20 + rng.next_double() * 40)。
-                let offset = (-20.0 + rng.next_double() * 40.0) as i32 as f64;
+                let offset = f64::from(rng.next_range(-20, 20));
                 let shifted_x = obj.x + offset;
                 // 原 max/min 链在 NaN 时回退到下界，显式保留该行为。
                 obj.x = if shifted_x.is_nan() {
@@ -667,31 +665,65 @@ fn build_tiny_droplets_between(
 
 fn apply_hard_rock_fruit_offset(
     fruit: &mut RenderObject,
-    last_position: &mut Option<f64>,
+    last_position: &mut Option<f32>,
     last_start_time: &mut f64,
     rng: &mut LegacyRandom,
 ) {
-    let time_diff = fruit.start_time as f64 - *last_start_time;
-    if time_diff < 500.0 && last_position.is_some() {
-        let offset = if time_diff < 250.0 { 22.0 } else { 0.0 };
-        fruit.x = apply_offset(fruit.x, offset);
-    } else {
-        fruit.x = apply_random_offset(fruit.x, 20.0, rng);
+    // 按 CatchBeatmapProcessor 保留 stable 的单精度坐标及整数时间差。
+    let mut position = fruit.x as f32;
+    let start_time = fruit.start_time as f64;
+    let Some(previous) = last_position.filter(|&x| x != 0.0) else {
+        *last_position = Some(position);
+        *last_start_time = start_time;
+        return;
+    };
+    let position_diff = position - previous;
+    let time_diff = (start_time - *last_start_time) as i32;
+    if time_diff > 1000 {
+        *last_position = Some(position);
+        *last_start_time = start_time;
+        return;
     }
-    *last_position = Some(fruit.x);
-    *last_start_time = fruit.start_time as f64;
+    if position_diff == 0.0 {
+        fruit.x = f64::from(apply_random_offset(
+            position,
+            f64::from(time_diff) / 4.0,
+            rng,
+        ));
+        // stable 在同位置分支不更新历史位置与时间，后续随机范围依赖这一点。
+        return;
+    }
+    if position_diff.abs() < (time_diff / 3) as f32 {
+        position = apply_offset(position, position_diff);
+    }
+    fruit.x = f64::from(position);
+    *last_position = Some(position);
+    *last_start_time = start_time;
 }
 
-fn apply_random_offset(position: f64, max_offset: f64, rng: &mut LegacyRandom) -> f64 {
-    let offset = rng.next_double() * max_offset * 2.0 - max_offset;
-    (position + offset).clamp(
-        0.0,
-        crate::render::cpu::modes::catch::constants::PLAYFIELD_WIDTH,
-    )
+fn apply_random_offset(position: f32, max_offset: f64, rng: &mut LegacyRandom) -> f32 {
+    let right = rng.next_bool();
+    let amount = ((rng.next_double() * max_offset.max(0.0)) as i32).min(20) as f32;
+    if right {
+        if position + amount <= PLAYFIELD_WIDTH as f32 {
+            position + amount
+        } else {
+            position - amount
+        }
+    } else if position - amount >= 0.0 {
+        position - amount
+    } else {
+        position + amount
+    }
 }
 
-fn apply_offset(position: f64, amount: f64) -> f64 {
-    (position + amount).min(crate::render::cpu::modes::catch::constants::PLAYFIELD_WIDTH)
+fn apply_offset(position: f32, amount: f32) -> f32 {
+    let shifted = position + amount;
+    if (amount > 0.0 && shifted < PLAYFIELD_WIDTH as f32) || (amount <= 0.0 && shifted > 0.0) {
+        shifted
+    } else {
+        position
+    }
 }
 
 fn apply_hyper_dash(render_objects: &mut [RenderObject], circle_size: f64) {
@@ -900,5 +932,67 @@ mod tests {
 
         assert!(!fruits[0].hyper_dash);
         assert!(fruits[0].edge);
+    }
+
+    #[test]
+    fn hard_rock_retains_stable_history_and_random_sequence() {
+        // 同位置随机不更新历史；长间隔和零坐标分别触发 stable 的历史重置。
+        let mut rng = LegacyRandom::new(1337);
+        let mut last_position = None;
+        let mut last_start_time = 0.0;
+        for (x, time, expected_x, expected_last, expected_time) in [
+            (256.0, 1000, 256.0, 256.0, 1000.0),
+            (256.0, 1101, 250.0, 256.0, 1000.0),
+            (256.0, 1202, 236.0, 256.0, 1000.0),
+            (260.0, 1303, 264.0, 264.0, 1303.0),
+            (64.0, 2500, 64.0, 64.0, 2500.0),
+            (0.0, 2600, 0.0, 0.0, 2600.0),
+            (32.0, 2700, 32.0, 32.0, 2700.0),
+        ] {
+            let mut object = fruit(x, time);
+            apply_hard_rock_fruit_offset(
+                &mut object,
+                &mut last_position,
+                &mut last_start_time,
+                &mut rng,
+            );
+            assert_eq!(object.x, expected_x);
+            assert_eq!(last_position, Some(expected_last));
+            assert_eq!(last_start_time, expected_time);
+        }
+    }
+
+    #[test]
+    fn hard_rock_direction_integer_threshold_and_edges_match_game() {
+        for (previous, x, time, expected) in [
+            (448.0, 352.0, 311, 256.0),
+            (160.0, 256.0, 311, 352.0),
+            (64.0, 256.0, 827, 448.0),
+            (448.0, 256.0, 827, 64.0),
+            (100.0, 101.0, 5, 101.0),
+            (100.0, 101.0, 6, 102.0),
+            (32.0, 16.0, 100, 16.0),
+            (480.0, 496.0, 100, 496.0),
+            (100.0, 120.0, 1000, 140.0),
+            (100.0, 120.0, 1001, 120.0),
+        ] {
+            let mut object = fruit(x, time);
+            apply_hard_rock_fruit_offset(
+                &mut object,
+                &mut Some(previous),
+                &mut 0.0,
+                &mut LegacyRandom::new(1337),
+            );
+            assert_eq!(
+                object.x, expected,
+                "previous={previous}, x={x}, time={time}"
+            );
+        }
+        for (x, expected) in [(1.0, 21.0), (511.0, 491.0), (256.0, 236.0)] {
+            assert_eq!(
+                apply_random_offset(x, 250.0, &mut LegacyRandom::new(1337)),
+                expected
+            );
+        }
     }
 }

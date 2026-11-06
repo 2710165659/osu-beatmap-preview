@@ -172,7 +172,7 @@ Windows 自动尝试 NVENC 或 AMF，失败时回退 CPU OpenH264；其他平台
 
 ## Mod 支持
 
-下表按 **PNG → GIF/MP4 → 实时预览** 累积支持，后两列只列新增 Mod。
+普通谱面预览按下表的 **PNG → GIF/MP4 → 实时预览** 累积支持，后两列只列新增 Mod。
 
 | 模式 | PNG | GIF / MP4（新增） | 实时预览（新增） |
 | --- | --- | --- | --- |
@@ -181,7 +181,11 @@ Windows 自动尝试 NVENC 或 AMF，失败时回退 CPU OpenH264；其他平台
 | Catch | Easy、Hard-Rock | Hidden、Flashlight、Double-Time、Half-Time、Nightcore、Daycore | Classic |
 | Mania | One-Key 至 Ten-Keys、Dual-Stages、Invert、Hold-Off、Mirror | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | Classic |
 
-CLI 普通导出不支持“实时预览新增”列的 Mod；回放导出使用回放文件中的 Mod。
+CLI 普通导出不支持“实时预览新增”列的 Mod。
+
+回放预览使用回放文件中的 Mod，不接受 `--mod` 或 `--convert`。PNG、GIF、MP4 均按实时预览的累积支持范围检查回放 Mod，并使用相同的判定与成绩规则，不按输出格式降档；不支持的 Mod、设置或组合会报错。
+
+回放 PNG 允许携带 DT、HT、NC、DC，仍按原谱面时间轴排版，不因倍速压缩或拉长。Standard PNG 保留快照时刻的 HD、FL、TC 等可见性效果；Taiko、Catch PNG 使用静态时间轴，不显示 HD、FL 的动态隐藏或遮罩。Mania 回放仅支持 GIF、MP4。回放 GIF、MP4 按 Mod 倍速播放并显示相应动态效果；GIF 无音频，MP4 同时应用对应的音频速度与音高规则。其他输出限制见[回放说明](#输出与兼容性)。
 
 ### 全名与缩写对照
 

@@ -6,6 +6,8 @@ pub struct LegacyRandom {
     y: u32,
     z: u32,
     w: u32,
+    bit_buffer: u32,
+    bit_index: u8,
 }
 
 impl LegacyRandom {
@@ -15,6 +17,8 @@ impl LegacyRandom {
             y: 842502087,
             z: 3579807591,
             w: 273326509,
+            bit_buffer: 0,
+            bit_index: 32,
         }
     }
 
@@ -26,6 +30,18 @@ impl LegacyRandom {
         self.z = self.w;
         self.w = self.w ^ (self.w >> 19) ^ t ^ (t >> 8);
         self.w
+    }
+
+    /// 与 osu! LegacyRandom.NextBool 一致，每 32 次调用才消耗一个随机整数。
+    pub fn next_bool(&mut self) -> bool {
+        if self.bit_index == 32 {
+            self.bit_buffer = self.next_uint();
+            self.bit_index = 1;
+        } else {
+            self.bit_buffer >>= 1;
+            self.bit_index += 1;
+        }
+        self.bit_buffer & 1 != 0
     }
 
     /// [lower, upper) 区间整数。
@@ -67,4 +83,21 @@ fn stateless_next_ulong(seed: i64, series: i64) -> u64 {
 /// 无状态随机：[0, max_value) 区间整数（用于香蕉颜色选择）。
 pub fn stateless_next_int(max_value: u64, seed: i64, series: i64) -> u64 {
     stateless_next_ulong(seed, series) % max_value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cached_bools_preserve_interleaved_random_sequence() {
+        // 期望值取自游戏 LegacyRandom，覆盖缓存耗尽前后夹杂其他随机调用的情况。
+        let mut rng = LegacyRandom::new(1337);
+        assert!(!rng.next_bool());
+        assert_eq!(rng.next_double(), 0.23940219543874264);
+        let bits = (0..31).fold(0, |bits, i| bits | (u32::from(rng.next_bool()) << i));
+        assert_eq!(bits, 137470888);
+        assert!(!rng.next_bool());
+        assert_eq!(rng.next_uint(), 4075547577);
+    }
 }
