@@ -4,6 +4,23 @@
 
 ---
 
+## [1.5.6] - 2026.11.07
+
+### Added
+
+- Taiko、Mania 回放新增 PNG 时间轴导出，显示真实按键、分级判定与成绩快照，四模式均支持 PNG/GIF/MP4 回放导出。
+
+### Changed
+
+- 回放查询的 `--mode` 支持 `std`、`standard`、`fruit`、`ctb`、`catch` 别名。
+- README 与 Web 页面使用统一的项目 Logo。
+
+### Fixed
+
+- 修复 Catch 在 HR 下的物件随机偏移与游戏不一致，导致回放判定错误的问题。
+
+---
+
 ## [1.5.5] - 2026.11.03
 
 ### Added
