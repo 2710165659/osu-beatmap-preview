@@ -90,3 +90,81 @@ pub(crate) fn draw_badge(
         },
     );
 }
+
+pub(crate) struct StateSampling {
+    pub min_interval_ms: f64,
+    pub max_per_column: usize,
+    pub max_total: usize,
+    pub min_accuracy_change: f64,
+}
+
+impl Default for StateSampling {
+    fn default() -> Self {
+        Self {
+            min_interval_ms: 5000.0,
+            max_per_column: 4,
+            max_total: 24,
+            min_accuracy_change: 0.001,
+        }
+    }
+}
+
+/// 按状态变化随机稀疏采样，优先保留失败、结算和评级变化。
+pub(crate) fn select_states(
+    gameplay: &crate::gameplay::timeline::GameplayTimeline,
+    start: f64,
+    end: f64,
+    seed: u32,
+    scale: f64,
+    locate: impl Fn(f64) -> (i64, i64),
+    sampling: StateSampling,
+) -> Vec<(f64, &GameplayState)> {
+    use crate::domain::shared::legacy_random::LegacyRandom;
+    let mut random = LegacyRandom::new(seed);
+    let mut previous = &gameplay.initial;
+    let mut candidates = Vec::new();
+    for (time, state) in &gameplay.checkpoints {
+        let status_changed = state.status != previous.status;
+        let rank_changed = state.rank != previous.rank || status_changed;
+        let accuracy_changed = (state.accuracy.unwrap_or(1.0) - previous.accuracy.unwrap_or(1.0))
+            .abs()
+            >= sampling.min_accuracy_change;
+        if rank_changed || accuracy_changed {
+            previous = state;
+            if *time >= start && *time <= end {
+                let priority = if status_changed {
+                    0
+                } else if rank_changed {
+                    1
+                } else {
+                    2
+                };
+                candidates.push((priority, random.next_uint(), *time));
+            }
+        }
+    }
+    // 结算与失败优先，其次评级变化；同级随机抽样，同时限制时间和图上的间距。
+    candidates.sort_by_key(|c| (c.0, c.1));
+    let mut selected: Vec<(f64, &GameplayState)> = Vec::new();
+    for (_, _, time) in candidates {
+        let (column, y) = locate(time);
+        let in_column = selected
+            .iter()
+            .filter(|(at, _)| locate(*at).0 == column)
+            .count();
+        if in_column >= sampling.max_per_column || selected.len() >= sampling.max_total {
+            continue;
+        }
+        if selected.iter().any(|(at, _)| {
+            let (other_column, other_y) = locate(*at);
+            (time - at).abs() < sampling.min_interval_ms
+                || (column == other_column && ((y - other_y).abs() as f64) < 56.0 * scale)
+        }) {
+            continue;
+        }
+        // 同刻结算快照以最终状态为准。
+        selected.push((time, gameplay.state_at(time)));
+    }
+    selected.sort_by(|a, b| a.0.total_cmp(&b.0));
+    selected
+}

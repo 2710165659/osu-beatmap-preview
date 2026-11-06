@@ -10,6 +10,9 @@ use crate::render::text::{draw_text, text_size};
 
 use super::{darken, format_sv_label};
 
+#[cfg(feature = "replay")]
+pub mod replay;
+
 #[derive(Clone)]
 pub struct TimingLine {
     pub time: i64,
@@ -31,6 +34,7 @@ pub struct ManiaPngLayout {
     pub image_width: i64,
     pub image_height: i64,
     pub chart_start_time: i64,
+    pub state_panel_width: i64,
 }
 
 fn png_column_left(column_index: i64, layout: &ManiaPngLayout) -> i64 {
@@ -41,7 +45,8 @@ fn png_column_left(column_index: i64, layout: &ManiaPngLayout) -> i64 {
             * (mania_png_sizing.INFO_MARGIN_LEFT
                 + layout.column_width
                 + mania_png_sizing.INFO_MARGIN_RIGHT
-                + mania_png_sizing.COLUMN_GAP)
+                + mania_png_sizing.COLUMN_GAP
+                + layout.state_panel_width)
 }
 
 fn png_chart_top() -> i64 {
@@ -333,6 +338,22 @@ pub fn render_mania_png_scene(
     sv_changes: &[(i64, f64)],
     time_axis: TimeAxis,
 ) -> Img {
+    let mut image = render_background(layout, key_count, timing_lines, sv_changes, time_axis);
+
+    for hit_object in hit_objects {
+        draw_png_hit_object(&mut image, hit_object, palette, layout);
+    }
+
+    image
+}
+
+fn render_background(
+    layout: &ManiaPngLayout,
+    key_count: i32,
+    timing_lines: &[TimingLine],
+    sv_changes: &[(i64, f64)],
+    time_axis: TimeAxis,
+) -> Img {
     let mut image = Img::new(
         layout.image_width as u32,
         layout.image_height as u32,
@@ -368,10 +389,6 @@ pub fn render_mania_png_scene(
 
     for sv_change in sv_changes {
         draw_sv_indicator(&mut image, *sv_change, layout);
-    }
-
-    for hit_object in hit_objects {
-        draw_png_hit_object(&mut image, hit_object, palette, layout);
     }
 
     image

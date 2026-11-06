@@ -185,6 +185,11 @@ fn execute_inner(
                             &path,
                             &deadline,
                         ),
+                        PreparedReplay::Mania(prepared) if plan.format == OutputFormat::Png => {
+                            crate::export::mania::osr::render_png(
+                                prepared, &gameplay, &plan, &path, &deadline,
+                            )
+                        }
                         PreparedReplay::Mania(prepared) => crate::export::mania::osr::render_gif(
                             Arc::clone(prepared),
                             Arc::clone(&gameplay),

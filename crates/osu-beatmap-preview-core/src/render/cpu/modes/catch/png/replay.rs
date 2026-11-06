@@ -2,7 +2,6 @@
 
 use super::*;
 use crate::{
-    domain::shared::legacy_random::LegacyRandom,
     gameplay::{
         events::{EventKind, GameplayEvent, HitResult},
         state::GameplayState,
@@ -365,55 +364,15 @@ fn select_states<'a>(
     end: f64,
     seed: u32,
 ) -> Vec<(f64, &'a GameplayState)> {
-    let mut random = LegacyRandom::new(seed);
-    let mut previous = &gameplay.initial;
-    let mut candidates = Vec::new();
-    for (time, state) in &gameplay.checkpoints {
-        let status_changed = state.status != previous.status;
-        let rank_changed = state.rank != previous.rank || status_changed;
-        let accuracy_changed =
-            (state.accuracy.unwrap_or(1.0) - previous.accuracy.unwrap_or(1.0)).abs() >= 0.001;
-        if rank_changed || accuracy_changed {
-            previous = state;
-            if *time >= layout.chart_start_time as f64 && *time <= end {
-                let priority = if status_changed {
-                    0
-                } else if rank_changed {
-                    1
-                } else {
-                    2
-                };
-                candidates.push((priority, random.next_uint(), *time));
-            }
-        }
-    }
-    // 结算与失败优先，其次评级变化；同级随机抽样，同时限制时间和图上的间距。
-    candidates.sort_by_key(|c| (c.0, c.1));
-    let mut selected: Vec<(f64, &GameplayState)> = Vec::new();
-    for (_, _, time) in candidates {
-        let (column, y) = locate_time(rhe(time - layout.chart_start_time as f64), layout);
-        let in_column = selected
-            .iter()
-            .filter(|(at, _)| {
-                locate_time(rhe(*at - layout.chart_start_time as f64), layout).0 == column
-            })
-            .count();
-        if in_column >= 4 || selected.len() >= 24 {
-            continue;
-        }
-        if selected.iter().any(|(at, _)| {
-            let (other_column, other_y) =
-                locate_time(rhe(*at - layout.chart_start_time as f64), layout);
-            (time - at).abs() < 5000.0
-                || (column == other_column && ((y - other_y).abs() as f64) < 56.0 * scale())
-        }) {
-            continue;
-        }
-        // 同刻结算快照以最终状态为准。
-        selected.push((time, gameplay.state_at(time)));
-    }
-    selected.sort_by(|a, b| a.0.total_cmp(&b.0));
-    selected
+    crate::render::shared::replay::static_state::select_states(
+        gameplay,
+        layout.chart_start_time as f64,
+        end,
+        seed,
+        scale(),
+        |time| locate_time(rhe(time - layout.chart_start_time as f64), layout),
+        Default::default(),
+    )
 }
 
 fn state_font() -> u32 {

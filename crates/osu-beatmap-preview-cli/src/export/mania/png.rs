@@ -29,21 +29,68 @@ pub(crate) fn render_mania_grid(
     segment: Option<PngSegment>,
     deadline: &RequestDeadline,
 ) -> Result<PathBuf> {
+    render_grid(
+        beatmap,
+        output_path,
+        mods,
+        time_axis,
+        segment,
+        deadline,
+        None,
+    )
+}
+
+pub(crate) fn render_replay_grid(
+    prepared: &osu_beatmap_preview_core::replay::preparation::mania::PreparedMania,
+    gameplay: &osu_beatmap_preview_core::gameplay::timeline::GameplayTimeline,
+    output_path: &Path,
+    segment: Option<PngSegment>,
+    deadline: &RequestDeadline,
+) -> Result<PathBuf> {
+    render_grid(
+        &prepared.beatmap,
+        output_path,
+        Some(&prepared.mods.settings),
+        TimeAxis::new(prepared.objects[0].start_time),
+        segment,
+        deadline,
+        Some((prepared, gameplay)),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_grid(
+    beatmap: &Beatmap,
+    output_path: &Path,
+    mods: Option<&ModSettings>,
+    time_axis: TimeAxis,
+    segment: Option<PngSegment>,
+    deadline: &RequestDeadline,
+    replay: Option<(
+        &osu_beatmap_preview_core::replay::preparation::mania::PreparedMania,
+        &osu_beatmap_preview_core::gameplay::timeline::GameplayTimeline,
+    )>,
+) -> Result<PathBuf> {
     deadline.check()?;
     // 键数直接来自谱面 CS（模组不会改变原生 mania 轨道数）。
     let key_count = resolve_key_count(beatmap)?;
     let palette = super::lane_palette(key_count);
 
-    let mut hit_objects = mania_objects(beatmap);
-    if mods.is_some_and(|m| m.inverse) {
-        hit_objects = apply_inverse_mod(&hit_objects, &beatmap.timing_points);
-    }
-    if mods.is_some_and(|m| m.hold_off) {
-        hit_objects = apply_hold_off_mod(&hit_objects);
-    }
-    if mods.is_some_and(|m| m.mirror) {
-        apply_mirror_mod(&mut hit_objects, key_count);
-    }
+    let mut hit_objects = if let Some((prepared, _)) = replay {
+        prepared.objects.clone()
+    } else {
+        let mut objects = mania_objects(beatmap);
+        if mods.is_some_and(|m| m.inverse) {
+            objects = apply_inverse_mod(&objects, &beatmap.timing_points);
+        }
+        if mods.is_some_and(|m| m.hold_off) {
+            objects = apply_hold_off_mod(&objects);
+        }
+        if mods.is_some_and(|m| m.mirror) {
+            apply_mirror_mod(&mut objects, key_count);
+        }
+        objects
+    };
 
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     let native_mania = is_native_mania(beatmap);
@@ -64,8 +111,11 @@ pub(crate) fn render_mania_grid(
         0
     };
 
-    // 整谱范围以最后一个物件结尾；底部留白只是布局样式，不参与选段。
+    // 回放范围覆盖最终成绩；底部留白只是布局样式，不参与选段。
     let chart_content_end = hit_objects.iter().map(|ho| ho.end_time).max().unwrap_or(0);
+    let chart_content_end = replay.map_or(chart_content_end, |(_, gameplay)| {
+        chart_content_end.max(gameplay.settlement_time.ceil() as i64)
+    });
     // 区间段（--time-points + --duration-time）：窗口规则与 MP4 一致（见 resolve_png_window）。
     let window = resolve_png_window(chart_start_time, chart_content_end, segment)?;
     let chart_start_time = window.start_ms;
@@ -113,7 +163,7 @@ pub(crate) fn render_mania_grid(
     } else {
         build_sv_changes(&timing_points_for_render, chart_end_time)
     };
-    let layout = build_png_layout(
+    let mut layout = build_png_layout(
         key_count,
         beatmap_duration,
         chart_end_time,
@@ -121,16 +171,36 @@ pub(crate) fn render_mania_grid(
     )?;
     deadline.check()?;
 
-    let image = render_mania_png_scene(
-        &layout,
-        key_count,
-        &palette,
-        &hit_objects,
-        &timing_lines,
-        &sv_changes,
-        time_axis,
-    );
-
+    if replay.is_some() {
+        osu_beatmap_preview_core::render::cpu::modes::mania::png::replay::reserve_state_panel(
+            &mut layout,
+            &timing_lines,
+            time_axis,
+        );
+    }
+    let image = if let Some((prepared, gameplay)) = replay {
+        osu_beatmap_preview_core::render::cpu::modes::mania::png::replay::render_scene(
+            &layout,
+            &palette,
+            &hit_objects,
+            &timing_lines,
+            &sv_changes,
+            time_axis,
+            prepared,
+            gameplay,
+            window.end_ms,
+        )
+    } else {
+        render_mania_png_scene(
+            &layout,
+            key_count,
+            &palette,
+            &hit_objects,
+            &timing_lines,
+            &sv_changes,
+            time_axis,
+        )
+    };
     save_png(&image, output_path, deadline)?;
     Ok(output_path.to_path_buf())
 }
@@ -215,6 +285,7 @@ fn build_png_layout(
         image_width,
         image_height,
         chart_start_time,
+        state_panel_width: 0,
     })
 }
 
