@@ -9,6 +9,7 @@ use crate::{
     render::{
         geometry::{output_scale, scale_px, GameMode, OutputFormat},
         shared::replay::{
+            colors,
             hud::display_rank,
             static_state::{badge_width, draw_badge, rank_color},
         },
@@ -17,10 +18,10 @@ use crate::{
     replay::preparation::taiko::{PreparedObject, PreparedTaiko, TaikoObjectKind},
 };
 
-const MISS: [u8; 4] = [255, 48, 85, 255];
-const OK: [u8; 4] = [255, 166, 48, 255];
-const MISS_BAND: [u8; 4] = [255, 24, 60, 72];
-const OK_BAND: [u8; 4] = [255, 142, 24, 72];
+const MISS: [u8; 4] = colors::hit_result(HitResult::Miss);
+const OK: [u8; 4] = colors::hit_result(HitResult::Ok);
+const MISS_BAND: [u8; 4] = colors::with_alpha(MISS, 72);
+const OK_BAND: [u8; 4] = colors::with_alpha(OK, 72);
 const INPUT_COLORS: [[u8; 4]; 2] = [[164, 30, 34, 255], [27, 83, 158, 255]];
 
 struct ReplayLayout<'a> {
@@ -103,10 +104,10 @@ pub fn render_scene(
     for object in hit_objects.iter().rev() {
         draw_hit_object(&mut base, object, mapper, chart, &mut cache);
     }
-    draw_inputs(&mut base, &layout, mapper, &gameplay.taiko_inputs, end);
     draw_judgements(
         &mut base, &layout, mapper, prepared, gameplay, end, result_end,
     );
+    draw_inputs(&mut base, &layout, mapper, &gameplay.taiko_inputs, end);
 
     let mut image = Img::new(
         chart.image_width as u32,
@@ -164,11 +165,12 @@ fn draw_bands(
     ) {
         let flag = match event.result {
             HitResult::Ok => 2,
+            HitResult::IgnoreMiss => 4,
             result if !result.is_hit() => 1,
             _ => continue,
         };
         let (row, x) = layout.locate(mapper, time);
-        let radius = if matches!(object.kind, TaikoObjectKind::Hit) {
+        let radius = if matches!(object.kind, TaikoObjectKind::Hit) && event.node_id.is_none() {
             note_diameter(layout.chart, object) / 2 + layout.px(4.0)
         } else {
             layout.px(6.0)
@@ -188,7 +190,11 @@ fn draw_bands(
             .iter()
             .enumerate()
         {
-            for (mask, color) in [(1, MISS_BAND), (2, OK_BAND)] {
+            for (mask, color) in [
+                (1, MISS_BAND),
+                (2, OK_BAND),
+                (4, colors::with_alpha(colors::BLUE, 72)),
+            ] {
                 if flag & mask != 0 {
                     image.fill_rect_size(x as i64, png_row_top(row), 1, height, color);
                 }
@@ -266,11 +272,11 @@ fn draw_judgements(
         end,
         result_end,
     ) {
-        if event.result != HitResult::Ok && event.result.is_hit() {
+        if !matches!(event.result, HitResult::Ok | HitResult::Miss) {
             continue;
         }
         let (row, x) = layout.locate(mapper, time);
-        let diameter = if matches!(object.kind, TaikoObjectKind::Hit) {
+        let diameter = if matches!(object.kind, TaikoObjectKind::Hit) && event.node_id.is_none() {
             note_diameter(layout.chart, object) as f64
         } else {
             layout.px(12.0).max(3) as f64
@@ -294,7 +300,7 @@ fn draw_note_judgement(
 ) {
     let color = match result {
         HitResult::Ok => OK,
-        result if !result.is_hit() => MISS,
+        HitResult::Miss => MISS,
         _ => return,
     };
     let [x, y] = center;
@@ -307,26 +313,13 @@ fn draw_note_judgement(
         (diameter * NOTE_RING_THICKNESS_RATIO).max(1.0),
         color,
     );
-    let cross = radius * 0.38;
-    for sign in [-1.0, 1.0] {
-        image.draw_line(
-            x - cross,
-            y - cross * sign,
-            x + cross,
-            y + cross * sign,
-            (2.0 * scale).max(1.0),
-            color,
-        );
-    }
 }
 
 fn judgement_time(object: &PreparedObject, event: &GameplayEvent) -> Option<f64> {
     // sample_time 用于音效选样，滚奏超时事件也可能保存条头时间，不能用它定位静态节点。
     match &object.kind {
-        TaikoObjectKind::Hit => event
-            .node_id
-            .is_none()
-            .then_some(object.source.start_time as f64),
+        // 大饼的第二次击打是独立奖励节点，漏判必须与主体判定分别显示。
+        TaikoObjectKind::Hit => Some(object.source.start_time as f64),
         TaikoObjectKind::DrumRoll { ticks, .. } => {
             if event.maximum != HitResult::SmallBonus {
                 return None;
@@ -461,6 +454,10 @@ mod tests {
                     );
                     let fill = image.get((center * 0.5) as u32, center as u32);
                     assert_eq!(fill, [color[0], color[1], color[2], 255]);
+                    assert_eq!(
+                        image.get(center as u32, center as u32),
+                        base.get(center as u32, center as u32)
+                    );
                     assert_eq!(image.get(edge as u32 + 1, center as u32), ring);
                     if result == HitResult::Great {
                         assert_eq!(image.data, base.data);
@@ -561,7 +558,7 @@ mod tests {
         }
     }
     #[test]
-    fn bonus_markers_use_node_times_and_do_not_duplicate_strong_hits() {
+    fn bonus_markers_use_node_times_and_keep_strong_hit_bonus_separate() {
         let mut object = PreparedObject {
             source: TaikoHitObject {
                 start_time: 1_000,
@@ -602,6 +599,10 @@ mod tests {
         object.kind = TaikoObjectKind::Hit;
         assert_eq!(judgement_time(&object, &event), Some(1_000.0));
         event.node_id = Some(0);
-        assert_eq!(judgement_time(&object, &event), None);
+        assert_eq!(judgement_time(&object, &event), Some(1_000.0));
+        event.result = HitResult::IgnoreMiss;
+        let mut marker = Img::new(24, 24, [0; 4]);
+        draw_note_judgement(&mut marker, [12.0, 12.0], 12.0, 1.0, event.result);
+        assert!(marker.data.iter().all(|&value| value == 0));
     }
 }

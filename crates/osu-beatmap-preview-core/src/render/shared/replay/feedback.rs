@@ -1,4 +1,5 @@
 //! 回放判定文字与粒子资源；判定位置由具体模式提供。
+use super::colors;
 use super::{font::ArgonFont, overlay::OverlayCanvas};
 use crate::{
     gameplay::events::HitResult,
@@ -16,10 +17,10 @@ pub(crate) struct FeedbackVisuals {
 }
 
 const COLORS: [[u8; 3]; 4] = [
-    [102, 204, 255],
-    [136, 179, 0],
-    [255, 204, 34],
-    [237, 17, 33],
+    colors::rgb(colors::hit_result(HitResult::Great)),
+    colors::rgb(colors::hit_result(HitResult::Ok)),
+    colors::rgb(colors::hit_result(HitResult::Meh)),
+    colors::rgb(colors::hit_result(HitResult::Miss)),
 ];
 
 impl FeedbackVisuals {
@@ -63,7 +64,12 @@ impl FeedbackVisuals {
             let side = (radius * 2.0).ceil() as u32 + 2;
             let center = f64::from(side) / 2.0;
             let mut piece = Img::new(side, side, [0; 4]);
-            let color = if i == 0 { [128; 3] } else { COLORS[3] };
+            let result = if i == 0 {
+                HitResult::SmallTickMiss
+            } else {
+                HitResult::LargeTickMiss
+            };
+            let color = colors::rgb(colors::hit_result(result));
             crate::render::cpu::modes::standard::slider::fill_circle_gradient_aa(
                 &mut piece, center, center, radius, color, color,
             );

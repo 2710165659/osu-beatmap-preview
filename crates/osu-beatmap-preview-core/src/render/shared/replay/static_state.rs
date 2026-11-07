@@ -12,18 +12,7 @@ use crate::{
 const WHITE: [u8; 4] = [255, 255, 255, 255];
 const MARKER_BACKGROUND: [u8; 4] = [20, 8, 14, 255];
 
-// 与 osu.Game/Graphics/OsuColour.ForRank 一致，评级字母继续复用共享 HUD 的 SS／失败 F 映射。
-pub(crate) fn rank_color(rank: &str) -> [u8; 4] {
-    match rank {
-        "SS" => [222, 49, 174, 255],
-        "S" => [2, 181, 195, 255],
-        "A" => [136, 218, 32, 255],
-        "B" => [227, 177, 48, 255],
-        "C" => [255, 142, 93, 255],
-        "D" => [255, 90, 90, 255],
-        _ => [63, 63, 63, 255],
-    }
-}
+pub(crate) use super::colors::rank as rank_color;
 
 fn draw_state_text(image: &mut Img, x: i64, y: i64, label: &str, font: u32, color: [u8; 4]) {
     // 完整字形只缩放一次，保留小数倍率下的笔画空隙；快照数量有上限，不为整图分配文字图层。

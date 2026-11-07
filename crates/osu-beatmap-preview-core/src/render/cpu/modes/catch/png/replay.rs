@@ -7,19 +7,21 @@ use crate::{
         state::GameplayState,
         timeline::GameplayTimeline,
     },
-    render::geometry::{output_scale, GameMode, OutputFormat},
+    render::{
+        geometry::{output_scale, GameMode, OutputFormat},
+        shared::replay::colors,
+    },
     replay::preparation::catch::PreparedCatch,
 };
 
 const PATH_COLOR: [u8; 4] = [252, 97, 143, 230];
-const DROPLET_COLOR: [u8; 4] = [255, 166, 48, 255];
-const MISS_BAND_COLOR: [u8; 4] = [255, 24, 60, 72];
-const DROPLET_BAND_COLOR: [u8; 4] = [255, 142, 24, 72];
+const DROPLET_COLOR: [u8; 4] = colors::BLUE;
+const MISS_BAND_COLOR: [u8; 4] = colors::with_alpha(MISS_COLOR, 72);
+const DROPLET_BAND_COLOR: [u8; 4] = colors::with_alpha(DROPLET_COLOR, 72);
 const STATE_FONT_SIZE: u32 = 24;
 const STATE_PADDING: f64 = 6.0;
-const MISS_COLOR: [u8; 4] = [255, 48, 85, 255];
-const BANANA_HIT_COLOR: [u8; 4] = [120, 255, 170, 255];
-const WHITE: [u8; 4] = [255, 255, 255, 255];
+const MISS_COLOR: [u8; 4] = colors::hit_result(HitResult::Miss);
+const BANANA_HIT_COLOR: [u8; 4] = colors::hit_result(HitResult::LargeBonus);
 const MARKER_BACKGROUND: [u8; 4] = [20, 8, 14, 255];
 pub fn render_scene(
     layout: &CatchPngLayout,
@@ -38,7 +40,6 @@ pub fn render_scene(
         gameplay,
         chart_end_time as f64,
     );
-    draw_path(&mut image, layout, gameplay, chart_end_time as f64);
     draw_objects(&mut image, render_objects, layout);
     let mut seed = 1337_u32.to_le_bytes();
     let _ = getrandom::getrandom(&mut seed);
@@ -49,8 +50,16 @@ pub fn render_scene(
         u32::from_le_bytes(seed),
     );
     draw_states(&mut image, layout, &labels);
-    // 判定标记最后绘制，成绩卡片和原物件均不能盖住漏接叉号或香蕉接取标识。
+    // 判定边框叠在原物件之上，真实接盘轨迹与范围线最后绘制。
     draw_judgements(
+        &mut image,
+        layout,
+        prepared,
+        gameplay,
+        chart_end_time as f64,
+    );
+    draw_path(&mut image, layout, gameplay, chart_end_time as f64);
+    draw_miss_plates(
         &mut image,
         layout,
         prepared,
@@ -211,22 +220,6 @@ fn draw_miss_bands(
     }
 }
 
-fn draw_miss_marker(image: &mut Img, x: f64, y: f64, radius: f64) {
-    image.fill_circle_aa(x, y, radius + 2.0 * scale(), MARKER_BACKGROUND);
-    image.stroke_circle_aa(x, y, radius, (3.0 * scale()).max(1.0), MISS_COLOR);
-    let arm = radius * 0.48;
-    for direction in [-1.0, 1.0] {
-        image.draw_line(
-            x - arm,
-            y - arm * direction,
-            x + arm,
-            y + arm * direction,
-            (3.0 * scale()).max(1.0),
-            WHITE,
-        );
-    }
-}
-
 fn draw_banana_hit(
     image: &mut Img,
     object: &RenderObject,
@@ -239,45 +232,13 @@ fn draw_banana_hit(
         layout.playfield_scale,
         object.scale_factor,
     ) / 2.0;
-    // 填实原空心香蕉的内部并加白色勾，外圈仍保留推荐路线的原始颜色。
+    // 仅填充空心香蕉的中心，保留原有外圈。
     image.fill_circle_aa(x, y, radius * 0.72, BANANA_HIT_COLOR);
-    let points = [
-        (x - radius * 0.42, y),
-        (x - radius * 0.08, y + radius * 0.30),
-        (x + radius * 0.42, y - radius * 0.35),
-    ];
-    for (width, color) in [(3.5, MARKER_BACKGROUND), (1.8, WHITE)] {
-        for pair in points.windows(2) {
-            image.draw_line(
-                pair[0].0,
-                pair[0].1,
-                pair[1].0,
-                pair[1].1,
-                (width * scale()).max(1.0),
-                color,
-            );
-        }
-    }
 }
 
-fn draw_droplet_drop(image: &mut Img, x: f64, y: f64, radius: f64) {
-    let radius = rhe((radius * 0.78).max(7.0 * scale()));
-    let border = rhe(2.0 * scale()).max(1);
-    for (size, color) in [
-        (radius + border, MARKER_BACKGROUND),
-        (radius, DROPLET_COLOR),
-    ] {
-        for dy in -size..=size {
-            let half_width = size - dy.abs();
-            image.fill_rect_size(
-                rhe(x) - half_width,
-                rhe(y) + dy,
-                half_width * 2 + 1,
-                1,
-                color,
-            );
-        }
-    }
+fn draw_note_judgement(image: &mut Img, x: f64, y: f64, radius: f64, color: [u8; 4]) {
+    // 覆盖原物件的白色内边框，保留圆形主体与填充颜色。
+    image.stroke_circle_aa(x, y, radius, radius * 0.2, color);
 }
 
 fn draw_judgements(
@@ -314,13 +275,27 @@ fn draw_judgements(
         if event.result.is_hit() {
             continue;
         }
-        if object.object_type == ObjType::TinyDroplet {
-            draw_droplet_drop(image, x, y as f64, miss_radius(object, layout));
-            continue;
-        }
-        let radius = miss_radius(object, layout);
-        draw_miss_marker(image, x, y as f64, radius);
+        let radius = super::super::drawing::object_diameter(
+            layout.object_scale,
+            layout.playfield_scale,
+            object.scale_factor,
+        ) / 2.0;
+        let color = if object.object_type == ObjType::TinyDroplet {
+            DROPLET_COLOR
+        } else {
+            colors::hit_result(event.result)
+        };
+        draw_note_judgement(image, x, y as f64, radius, color);
     }
+}
+
+fn draw_miss_plates(
+    image: &mut Img,
+    layout: &CatchPngLayout,
+    prepared: &PreparedCatch,
+    gameplay: &GameplayTimeline,
+    end: f64,
+) {
     // 盘子统一在最上层绘制，远距离 Miss 也保留；相邻判定不能覆盖前一个盘子。
     for event in visible_events(gameplay, layout.chart_start_time, end) {
         if event.kind != EventKind::Judgement
@@ -343,7 +318,7 @@ fn draw_judgements(
             )
         });
         if let Some((x0, x1)) = plate_range {
-            // 接盘范围线最后画，压在音符和漏接标记上，便于比较实际差距。
+            // 接盘范围线最后画，压在音符和判定边框上，便于比较实际差距。
             for (width, color) in [(7.0, MARKER_BACKGROUND), (4.0, PATH_COLOR)] {
                 image.draw_line(
                     left + x0 * layout.playfield_scale,
@@ -512,7 +487,7 @@ mod tests {
     }
 
     #[test]
-    fn misses_droplet_drops_and_banana_hits_keep_separate_markers() {
+    fn judgement_borders_preserve_centers_banana_fill_and_miss_plates() {
         let (mut prepared, mut gameplay) = fixture();
         let layout = layout();
         let mut event = gameplay.events[0].clone();
@@ -541,6 +516,7 @@ mod tests {
             gameplay.events = vec![event.clone()];
             let mut image = blank(&layout);
             draw_judgements(&mut image, &layout, &prepared, &gameplay, 7000.0);
+            draw_miss_plates(&mut image, &layout, &prepared, &gameplay, 7000.0);
             let (column, y) = locate_time(1100, &layout);
             let plate_x =
                 rhe(playfield_left(column, &layout) as f64 + near * layout.playfield_scale);
@@ -556,13 +532,18 @@ mod tests {
                 gameplay.events[0].result = HitResult::LargeBonus;
                 let mut image = blank(&layout);
                 draw_judgements(&mut image, &layout, &prepared, &gameplay, 7000.0);
+                draw_miss_plates(&mut image, &layout, &prepared, &gameplay, 7000.0);
                 let banana_x =
                     rhe(playfield_left(column, &layout) as f64 + 256.0 * layout.playfield_scale);
                 assert!(image
                     .data
                     .chunks_exact(4)
                     .any(|pixel| pixel == BANANA_HIT_COLOR));
-                assert!(image.data.chunks_exact(4).any(|pixel| pixel == WHITE));
+                assert!(!image
+                    .data
+                    .chunks_exact(4)
+                    .any(|pixel| pixel == MARKER_BACKGROUND));
+                assert!(!image.data.chunks_exact(4).any(|pixel| pixel == [255; 4]));
                 assert_ne!(image.get(banana_x as u32, y as u32), [0; 4]);
                 assert_eq!(image.get(plate_x as u32, y as u32), [0; 4]);
             } else if kind == ObjType::TinyDroplet {
@@ -574,13 +555,18 @@ mod tests {
                 );
                 assert_eq!(image.get(plate_x as u32, y as u32), DROPLET_BAND_COLOR);
                 draw_judgements(&mut image, &layout, &prepared, &gameplay, 7000.0);
+                draw_miss_plates(&mut image, &layout, &prepared, &gameplay, 7000.0);
                 let object_x =
                     rhe(playfield_left(column, &layout) as f64 + 256.0 * layout.playfield_scale);
-                assert_eq!(image.get(object_x as u32, y as u32), DROPLET_COLOR);
-                let mut note = Img::new(80, 80, [123, 45, 67, 255]);
-                draw_droplet_drop(&mut note, 40.0, 40.0, 16.0);
-                assert_eq!(note.get(40, 40), DROPLET_COLOR);
-                assert_eq!(note.get(48, 48), [123, 45, 67, 255]);
+                assert_eq!(image.get(object_x as u32, y as u32), DROPLET_BAND_COLOR);
+                for scale in [0.75, 1.25] {
+                    let mut note = Img::new(80, 80, [123, 45, 67, 255]);
+                    let radius = 16.0 * scale;
+                    draw_note_judgement(&mut note, 40.0, 40.0, radius, DROPLET_COLOR);
+                    assert_eq!(note.get(40, 40), [123, 45, 67, 255]);
+                    assert_eq!(note.get((40.0 + radius * 0.9) as u32, 40), DROPLET_COLOR);
+                    assert_eq!(note.get((40.0 + radius) as u32 + 2, 40), [123, 45, 67, 255]);
+                }
             } else {
                 // 远距离漏接仍画盘子；缺少判定位置时从回放帧补出位置。
                 for position in [Some([0.0, 0.0]), None] {
@@ -592,10 +578,11 @@ mod tests {
                         MISS_COLOR
                     );
                     draw_judgements(&mut image, &layout, &prepared, &gameplay, 7000.0);
+                    draw_miss_plates(&mut image, &layout, &prepared, &gameplay, 7000.0);
                     let object_x = rhe(
                         playfield_left(column, &layout) as f64 + 256.0 * layout.playfield_scale
                     );
-                    assert_eq!(image.get(object_x as u32, y as u32), WHITE);
+                    assert_eq!(image.get(object_x as u32, y as u32), MISS_BAND_COLOR);
                     assert_eq!(
                         image.get((playfield_left(column, &layout) + 5) as u32, y as u32),
                         PATH_COLOR
@@ -621,9 +608,10 @@ mod tests {
         gameplay.events = vec![primary, secondary];
         let mut image = blank(&layout);
         draw_judgements(&mut image, &layout, &prepared, &gameplay, 7000.0);
+        draw_miss_plates(&mut image, &layout, &prepared, &gameplay, 7000.0);
         let (column, y) = locate_time(1100, &layout);
         let object_x = rhe(playfield_left(column, &layout) as f64 + 256.0 * layout.playfield_scale);
-        assert_eq!(image.get(object_x as u32, y as u32), WHITE);
+        assert_eq!(image.get(object_x as u32, y as u32), [0; 4]);
         let mut bands = blank(&layout);
         draw_miss_bands(&mut bands, &layout, &prepared, &gameplay, 7000.0);
         let x = playfield_left(column, &layout) as u32;

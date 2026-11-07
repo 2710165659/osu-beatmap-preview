@@ -8,7 +8,7 @@ use crate::{
     },
     render::{
         geometry::{output_scale, scale_px, GameMode, OutputFormat},
-        shared::replay::static_state,
+        shared::replay::{colors, static_state},
     },
     replay::preparation::mania::PreparedMania,
 };
@@ -53,14 +53,15 @@ fn lane_bounds(column: i64, lane: usize, layout: &ManiaPngLayout) -> (i64, i64) 
 }
 
 fn result_color(result: HitResult) -> Option<Rgba> {
-    Some(match result {
-        HitResult::Great => [255, 201, 35, 255],
-        HitResult::Good => [73, 188, 237, 255],
-        HitResult::Ok => [79, 236, 130, 255],
-        HitResult::Meh => [220, 218, 240, 255],
-        HitResult::Miss | HitResult::IgnoreMiss => [255, 48, 85, 255],
-        _ => return None,
-    })
+    match result {
+        HitResult::Great
+        | HitResult::Good
+        | HitResult::Ok
+        | HitResult::Meh
+        | HitResult::Miss
+        | HitResult::IgnoreMiss => Some(colors::hit_result(result)),
+        _ => None,
+    }
 }
 
 fn judgements<'a>(
@@ -130,7 +131,8 @@ fn draw_bands(
             HitResult::Good => 1,
             HitResult::Ok => 2,
             HitResult::Meh => 4,
-            HitResult::Miss | HitResult::IgnoreMiss => 8,
+            HitResult::Miss => 8,
+            HitResult::IgnoreMiss => 16,
             _ => continue,
         };
         let (column, y) = locate(time, layout);
@@ -157,6 +159,7 @@ fn draw_bands(
             // 与 Catch 一致，从 Miss 开始叠色；左侧实色条按相同顺序横向分区。
             let grades = [
                 (8, HitResult::Miss),
+                (16, HitResult::IgnoreMiss),
                 (4, HitResult::Meh),
                 (2, HitResult::Ok),
                 (1, HitResult::Good),
@@ -178,8 +181,7 @@ fn draw_bands(
                         color,
                     );
                     grade_index += 1;
-                    let mut background = color;
-                    background[3] = 72;
+                    let background = colors::with_alpha(color, 72);
                     image.fill_rect_size(
                         left,
                         top + from as i64,
@@ -565,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn judgement_bands_span_all_lanes_and_keep_yellow_300_on_note_only() {
+    fn judgement_bands_span_all_lanes_and_keep_great_on_note_only() {
         let mut config = crate::config::CoreConfig::default();
         config.render.mania.png.sizing.PIXELS_PER_MS = 0.1;
         crate::config::with_config(Arc::new(config), || {
@@ -594,6 +596,7 @@ mod tests {
                 HitResult::Ok,
                 HitResult::Meh,
                 HitResult::Miss,
+                HitResult::IgnoreMiss,
             ] {
                 gameplay.events = vec![
                     GameplayEvent {
