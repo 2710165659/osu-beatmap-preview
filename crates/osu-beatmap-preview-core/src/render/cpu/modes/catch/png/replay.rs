@@ -49,7 +49,7 @@ pub fn render_scene(
         chart_end_time as f64,
         u32::from_le_bytes(seed),
     );
-    draw_states(&mut image, layout, &labels);
+    draw_states(&mut image, layout, &labels, time_axis);
     // 判定边框叠在原物件之上，真实接盘轨迹与范围线最后绘制。
     draw_judgements(
         &mut image,
@@ -360,7 +360,12 @@ pub fn state_panel_width() -> i64 {
     i64::from(text_size("100.00%", font).0 + text_size("SS", font).0) + padding * 7
 }
 
-fn draw_states(image: &mut Img, layout: &CatchPngLayout, states: &[(f64, &GameplayState)]) {
+fn draw_states(
+    image: &mut Img,
+    layout: &CatchPngLayout,
+    states: &[(f64, &GameplayState)],
+    time_axis: TimeAxis,
+) {
     let sizing = catch_constants::png::sizing();
     let font = state_font();
     let padding = crate::render::geometry::scale_px(STATE_PADDING, scale()).max(1);
@@ -371,6 +376,17 @@ fn draw_states(image: &mut Img, layout: &CatchPngLayout, states: &[(f64, &Gamepl
         let label_y = (y - i64::from(font) / 2).clamp(
             top + padding,
             (top + layout.total_column_height - i64::from(font) - padding).max(top + padding),
+        );
+        draw_timing_label_png(
+            image,
+            &TimingLine {
+                time: rhe(*time) - layout.chart_start_time,
+                is_measure: false,
+                show_label: true,
+                bpm: None,
+            },
+            layout,
+            time_axis,
         );
         crate::render::shared::replay::static_state::draw_badge(
             image,
@@ -671,6 +687,7 @@ mod tests {
             config.render.catch.png.SCALE = png_scale;
             crate::config::with_config(Arc::new(config), || {
                 let mut panel_layout = self::layout();
+                let time_axis = TimeAxis::new(1000);
                 panel_layout.state_panel_width = state_panel_width();
                 panel_layout.image_width +=
                     panel_layout.column_count * panel_layout.state_panel_width;
@@ -678,7 +695,7 @@ mod tests {
                 let panel_x =
                     column_left(0, &panel_layout) + sizing.COLUMN_WIDTH + sizing.INFO_MARGIN_RIGHT;
                 let mut image = blank(&panel_layout);
-                draw_states(&mut image, &panel_layout, &[(2100.0, a[0].1)]);
+                draw_states(&mut image, &panel_layout, &[(2100.0, a[0].1)], time_axis);
                 assert!(state_font() > sizing.TIME_LABEL_FONT_SIZE);
                 let text_left = panel_x
                     + crate::render::geometry::scale_px(STATE_PADDING, png_scale).max(1) * 2;
@@ -691,6 +708,27 @@ mod tests {
                     .data
                     .chunks_exact(4)
                     .any(|pixel| pixel == rank_color("A")));
+                let mut expected = blank(&panel_layout);
+                let line = TimingLine {
+                    time: 1100,
+                    is_measure: false,
+                    show_label: true,
+                    bpm: None,
+                };
+                let (time_x, time_y, _) = timing_label_position(&line, &panel_layout, time_axis);
+                draw_text(
+                    &mut expected,
+                    time_x,
+                    time_y,
+                    "1.1s",
+                    sizing.TIME_LABEL_FONT_SIZE,
+                    catch_constants::png::style::TIME_LABEL_COLOR,
+                );
+                for y in 0..image.h {
+                    for x in 0..panel_x as u32 {
+                        assert_eq!(image.get(x, y), expected.get(x, y));
+                    }
+                }
                 assert!(image
                     .data
                     .chunks_exact(4)
@@ -698,7 +736,10 @@ mod tests {
                     .filter(|(_, pixel)| *pixel != [0; 4])
                     .all(|(i, _)| {
                         let x = (i % image.w as usize) as i64;
-                        x >= panel_x && x < panel_x + panel_layout.state_panel_width
+                        (x >= panel_x && x < panel_x + panel_layout.state_panel_width)
+                            || (x >= time_x
+                                && x < time_x
+                                    + i64::from(text_size("1.1s", sizing.TIME_LABEL_FONT_SIZE).0))
                     }));
             });
         }

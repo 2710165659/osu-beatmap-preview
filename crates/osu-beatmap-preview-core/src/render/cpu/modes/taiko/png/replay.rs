@@ -10,8 +10,7 @@ use crate::{
         geometry::{output_scale, scale_px, GameMode, OutputFormat},
         shared::replay::{
             colors,
-            hud::display_rank,
-            static_state::{badge_width, draw_badge, rank_color},
+            static_state::{badge_width, draw_badge},
         },
         text::scaled_bitmap_font_height,
     },
@@ -124,7 +123,7 @@ pub fn render_scene(
         }
     }
     drop(base);
-    draw_states(&mut image, &layout, mapper, gameplay, result_end);
+    draw_states(&mut image, &layout, mapper, gameplay, result_end, time_axis);
     image
 }
 
@@ -342,6 +341,7 @@ fn draw_states(
     mapper: &ScrollPositionMapper,
     gameplay: &GameplayTimeline,
     end: f64,
+    time_axis: TimeAxis,
 ) {
     let padding = layout.px(6.0).max(1);
     let font = scaled_bitmap_font_height(24, layout.scale);
@@ -405,17 +405,21 @@ fn draw_states(
             }) {
                 continue;
             }
-            let chart_bottom =
-                png_row_top(row) + taiko_constants::png::sizing().ROW_HEIGHT + row * layout.extra;
-            let strip_bottom = (top + layout.extra - layout.px(6.0)).min(image.h as i64);
-            let rank = display_rank(state.rank.as_deref(), state.status);
-            image.draw_line(
-                center as f64,
-                chart_bottom as f64,
-                center as f64,
-                strip_bottom as f64,
-                layout.px(1.0) as f64,
-                rank_color(rank),
+            draw_time_label(
+                image,
+                &TimingLine {
+                    time: pyround(time) - layout.chart.chart_start_time,
+                    position: mapper.position_at(time - start),
+                    is_measure: false,
+                    show_label: true,
+                    is_kiai: false,
+                    is_kiai_start: false,
+                    bpm: None,
+                },
+                center,
+                png_row_top(row) + row * layout.extra,
+                layout.chart,
+                time_axis,
             );
             draw_badge(image, x, top + padding, state, font, padding, layout.scale);
             occupied.push((x, x + width, time));
@@ -430,6 +434,85 @@ fn draw_states(
 mod tests {
     use super::*;
     use crate::domain::rulesets::taiko::gameplay::DrumRollTick;
+
+    #[test]
+    fn state_badges_include_display_time_without_chart_connector() {
+        let (prepared, document) = crate::replay::preparation::mania::tests::fixture(
+            "64,192,1200,1,0",
+            &[(0, 0), (1200, 1), (2000, 0)],
+        );
+        let gameplay = crate::gameplay::engine::compile_mania(&prepared, document).unwrap();
+        for scale in [0.75, 1.0, 1.25] {
+            let mut config = crate::config::CoreConfig::default();
+            config.render.taiko.png.SCALE = scale;
+            crate::config::with_config(std::sync::Arc::new(config), || {
+                let px = |value| scale_px(value, scale);
+                let sizing = taiko_constants::png::sizing();
+                let stride = sizing.ROW_HEIGHT + sizing.INFO_MARGIN_BOTTOM + sizing.ROW_GAP;
+                let chart = TaikoPngLayout {
+                    row_count: 1,
+                    max_row_width: px(800.0),
+                    content_width: px(866.0),
+                    image_width: px(900.0),
+                    image_height: stride + px(18.0),
+                    normal_note_diameter: px(48.0),
+                    big_note_diameter: px(74.0),
+                    row_start_positions: vec![0.0],
+                    chart_start_time: 1000,
+                    overall_difficulty: 5.0,
+                };
+                let mapper = ScrollPositionMapper::new(vec![ScrollSegment {
+                    start_time: 0,
+                    end_time: 4000,
+                    pixels_per_ms: 0.2 * scale,
+                    start_position: 0.0,
+                }]);
+                let layout = ReplayLayout::new(&chart);
+                let mut image = Img::new(
+                    chart.image_width as u32,
+                    (chart.image_height + layout.extra) as u32,
+                    [0; 4],
+                );
+                draw_states(
+                    &mut image,
+                    &layout,
+                    &mapper,
+                    &gameplay,
+                    2100.0,
+                    TimeAxis::new(1000),
+                );
+                let chart_bottom = png_row_top(0) + sizing.ROW_HEIGHT;
+                assert!((0..chart_bottom as u32)
+                    .all(|y| { (0..image.w).all(|x| image.get(x, y) == [0; 4]) }));
+                let label_width = i64::from(text_size("1.1s", sizing.TIME_LABEL_FONT_SIZE).0);
+                let center = png_row_chart_left(&chart, 0) + px(220.0);
+                let label_x = pyround(center as f64 - label_width as f64 / 2.0);
+                let label_y = chart_bottom + sizing.TIME_LABEL_TOP_GAP;
+                let mut expected = Img::new(image.w, image.h, [0; 4]);
+                draw_text(
+                    &mut expected,
+                    label_x,
+                    label_y,
+                    "1.1s",
+                    sizing.TIME_LABEL_FONT_SIZE,
+                    taiko_constants::png::style::RULER_TEXT_COLOR,
+                );
+                for y in chart_bottom as u32..layout.strip_end(0) as u32 {
+                    for x in 0..image.w {
+                        assert_eq!(image.get(x, y), expected.get(x, y));
+                    }
+                }
+                let font = scaled_bitmap_font_height(24, scale);
+                let padding = px(6.0).max(1);
+                let width = badge_width(gameplay.state_at(2100.0), font, padding);
+                let badge_x = (center - width / 2).max(sizing.PAGE_MARGIN_LEFT + padding);
+                assert_ne!(
+                    image.get(badge_x as u32, layout.strip_end(0) as u32),
+                    [0; 4]
+                );
+            });
+        }
+    }
 
     #[test]
     fn judgement_rings_keep_note_fill_and_great_keeps_original_sprite() {
