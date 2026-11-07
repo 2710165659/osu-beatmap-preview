@@ -3,7 +3,7 @@
 use osu_beatmap_preview_core::render::cpu::modes::mania::constants as mania_constants;
 
 use crate::export::segment::{resolve_png_window, PngSegment, PngWindow};
-use crate::media::image::save_png;
+use crate::media::image::{save_png, save_png_exact_colors};
 use osu_beatmap_preview_core::model::mods::ModSettings;
 use osu_beatmap_preview_core::model::{Beatmap, ManiaHitObject, TimingPoint};
 use osu_beatmap_preview_core::processing::parse::round_half_even;
@@ -201,7 +201,11 @@ fn render_grid(
             time_axis,
         )
     };
-    save_png(&image, output_path, deadline)?;
+    if replay.is_some() {
+        save_png_exact_colors(&image, output_path, deadline)?;
+    } else {
+        save_png(&image, output_path, deadline)?;
+    }
     Ok(output_path.to_path_buf())
 }
 

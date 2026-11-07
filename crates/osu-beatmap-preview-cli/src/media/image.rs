@@ -3,6 +3,7 @@
 //! 帧由 rayon 分块并行渲染，再按顺序编码以保持差分帧顺序。
 
 mod palette;
+mod png_palette;
 
 use crate::export::canvas::Img;
 use osu_beatmap_preview_core::support::error::{PreviewError, Result};
@@ -12,12 +13,73 @@ use rayon::prelude::*;
 use std::path::Path;
 
 pub fn save_png(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<()> {
+    let (palette, indexed) = quantize_png(image, deadline)?;
+    write_png(
+        image,
+        path,
+        &palette,
+        &indexed,
+        png::FilterType::Paeth,
+        deadline,
+    )
+}
+
+/// 为回放网格直接保留有限的原色，并利用相邻行重复内容压缩；颜色超限时沿用通用量化。
+pub fn save_png_exact_colors(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<()> {
+    match png_palette::exact_palette(image, deadline)? {
+        Some((palette, indexed)) => write_png(
+            image,
+            path,
+            &palette,
+            &indexed,
+            png::FilterType::Up,
+            deadline,
+        ),
+        None => save_png(image, path, deadline),
+    }
+}
+
+fn write_png(
+    image: &Img,
+    path: &Path,
+    palette: &[u8],
+    indexed: &[u8],
+    filter: png::FilterType,
+    deadline: &RequestDeadline,
+) -> Result<()> {
     deadline.check()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| PreviewError::render(format!("failed to create output dir: {e}")))?;
     }
 
+    // 写入同目录临时文件，PNG 完整编码后再原子替换最终路径，
+    // 确保中断渲染不会留下可被缓存误用的残缺文件。
+    crate::cache::with_atomic_output_deadline(path, "png.tmp", deadline, |tmp_path| {
+        let file = std::fs::File::create(tmp_path)
+            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
+        let writer = std::io::BufWriter::new(file);
+        let mut encoder = png::Encoder::new(writer, image.w, image.h);
+        encoder.set_color(png::ColorType::Indexed);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_palette(palette);
+        encoder.set_compression(png::Compression::Default);
+        encoder.set_filter(filter);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
+        writer
+            .write_image_data(indexed)
+            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
+        drop(writer); // flush buffered bytes before the temp file is renamed
+        deadline.check()?;
+        Ok(())
+    })
+}
+
+// 超过 256 种 RGB 颜色时沿用原有量化路径。
+fn quantize_png(image: &Img, deadline: &RequestDeadline) -> Result<(Vec<u8>, Vec<u8>)> {
+    deadline.check()?;
     // NeuQuant 每 16 个像素采样 1 个：PNG（尤其 mania 网格）以纯色区为主、调色板
     // 少于 256 色，激进采样几乎不影响质量，样本缓冲再缩小 4 倍并加快训练。
     let mut sample = Vec::with_capacity(((image.w * image.h / 16 + 1) * 4) as usize);
@@ -61,28 +123,7 @@ pub fn save_png(image: &Img, path: &Path, deadline: &RequestDeadline) -> Result<
         }
     }
 
-    // 写入同目录临时文件，PNG 完整编码后再原子替换最终路径，
-    // 确保中断渲染不会留下可被缓存误用的残缺文件。
-    crate::cache::with_atomic_output_deadline(path, "png.tmp", deadline, |tmp_path| {
-        let file = std::fs::File::create(tmp_path)
-            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
-        let writer = std::io::BufWriter::new(file);
-        let mut encoder = png::Encoder::new(writer, image.w, image.h);
-        encoder.set_color(png::ColorType::Indexed);
-        encoder.set_depth(png::BitDepth::Eight);
-        encoder.set_palette(&palette_rgb);
-        encoder.set_compression(png::Compression::Default);
-        encoder.set_filter(png::FilterType::Paeth);
-        let mut writer = encoder
-            .write_header()
-            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
-        writer
-            .write_image_data(&indexed)
-            .map_err(|e| PreviewError::render(format!("failed to write png: {e}")))?;
-        drop(writer); // flush buffered bytes before the temp file is renamed
-        deadline.check()?;
-        Ok(())
-    })
+    Ok((palette_rgb, indexed))
 }
 
 /// 为 PNG 预计算将 `>>3` 分桶 RGB 映射到调色板索引的 32³ 查找表。
