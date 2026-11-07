@@ -1,4 +1,5 @@
 //! osu!taiko PNG 场景绘制：根据 CLI 传入的布局计划把静态谱面绘制成图像。
+#[cfg(feature = "replay")]
 pub mod replay;
 
 use crate::render::cpu::modes::taiko::constants as taiko_constants;
