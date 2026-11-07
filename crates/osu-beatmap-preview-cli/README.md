@@ -51,7 +51,7 @@ osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osz-file=map.osz
 | `--score-id=<ID>` | 下载统一成绩 ID 的回放，需要 `--type=osr` |
 | `--user=<用户名>` | 查询玩家回放，需要 `--type=osr`；纯数字也按用户名查询 |
 | `--score-select=best\|recent` | 仅玩家查询：有 `--bid` 时默认 `best`，无 `--bid` 时默认 `recent` |
-| `--mode=osu\|taiko\|fruits\|mania` | 仅玩家查询；`osu` 别名为 `std`、`standard`，`fruits` 别名为 `fruit`、`ctb`、`catch`；指定谱面时省略默认 `osu`，无谱面时由官方使用玩家默认模式 |
+| `--mode=osu\|taiko\|fruits\|mania` | 仅玩家查询；`osu` 别名为 `std`、`standard`，`fruits` 别名为 `fruit`、`ctb`、`catch`；省略时，指定谱面则使用谱面原生模式，无谱面则由官方使用玩家默认模式 |
 | `--include-fails` | 最近成绩查询包含失败成绩；默认排除，指定谱面时需搭配 `--score-select=recent` |
 | `--convert=<模式>` | `standard` / `std`、`taiko`、`ctb`、`mania`；只有 Standard 可转其他模式，同模式视为无操作 |
 | `--fmt=png\|gif\|mp4` | 谱面默认 Standard 为 GIF、其他为 PNG；回放默认 MP4，支持 PNG/GIF/MP4 |

@@ -61,35 +61,89 @@ fn score(id: u64, date: &str) -> serde_json::Value {
 }
 
 #[test]
-fn best_resolves_numeric_username_as_name_and_checks_identity() {
-    let (base, handle) = mock(vec![
-        ("users/@%31%32%33/osu", serde_json::json!({"id":7})),
-        (
-            "beatmaps/2/scores/users/7?mode=osu&legacy_only=0",
-            serde_json::json!({"score":score(99,"2026-01-01T00:00:00Z")}),
-        ),
-    ]);
-    let deadline = RequestDeadline::new(Instant::now(), "test", Duration::from_secs(5));
-    let client = Client {
-        agent: ureq::agent(),
-        token: "test".into(),
-        deadline: &deadline,
-        base,
-    };
-    let result = select(
-        &client,
-        &ReplaySource::Player {
-            user: "123".into(),
-            selection: ScoreSelection::Best,
-            mode: None,
-            include_fails: false,
-        },
-        "2",
-    )
-    .unwrap();
-    assert_eq!(result.id, 99);
-    validate(&result).unwrap();
-    handle.join().unwrap();
+fn best_resolves_numeric_username_and_uses_map_mode_unless_explicit() {
+    for (native, explicit, selected, ruleset) in [
+        ("osu", None, "osu", 0),
+        ("taiko", None, "taiko", 1),
+        ("fruits", None, "fruits", 2),
+        ("mania", None, "mania", 3),
+        ("osu", Some(ReplayMode::Taiko), "taiko", 1),
+    ] {
+        let mut record = score(99, "2026-01-01T00:00:00Z");
+        record["ruleset_id"] = ruleset.into();
+        let mut replies = Vec::new();
+        if explicit.is_none() {
+            replies.push((
+                "beatmaps/2".into(),
+                serde_json::json!({"id":2,"mode":native})
+                    .to_string()
+                    .into_bytes(),
+            ));
+        }
+        replies.extend([
+            (
+                format!("users/@%31%32%33/{selected}"),
+                br#"{"id":7}"#.to_vec(),
+            ),
+            (
+                format!("beatmaps/2/scores/users/7?mode={selected}&legacy_only=0"),
+                serde_json::json!({"score":record}).to_string().into_bytes(),
+            ),
+        ]);
+        let (base, handle) = mock_bytes(replies);
+        let deadline = RequestDeadline::new(Instant::now(), "test", Duration::from_secs(5));
+        let client = Client {
+            agent: ureq::agent(),
+            token: "test".into(),
+            deadline: &deadline,
+            base,
+        };
+        let result = select(
+            &client,
+            &ReplaySource::Player {
+                user: "123".into(),
+                selection: ScoreSelection::Best,
+                mode: explicit,
+                include_fails: false,
+            },
+            "2",
+        )
+        .unwrap();
+        assert_eq!(result.id, 99);
+        assert_eq!(result.ruleset_id, ruleset as u8);
+        validate(&result).unwrap();
+        handle.join().unwrap();
+    }
+}
+
+#[test]
+fn player_map_rejects_mismatched_id_or_invalid_mode() {
+    for beatmap in [
+        serde_json::json!({"id":3,"mode":"osu"}),
+        serde_json::json!({"id":2,"mode":"unknown"}),
+        serde_json::json!({"id":2}),
+    ] {
+        let (base, handle) = mock(vec![("beatmaps/2", beatmap)]);
+        let deadline = RequestDeadline::new(Instant::now(), "test", Duration::from_secs(5));
+        let client = Client {
+            agent: ureq::agent(),
+            token: "test".into(),
+            deadline: &deadline,
+            base,
+        };
+        assert!(select(
+            &client,
+            &ReplaySource::Player {
+                user: "a".into(),
+                selection: ScoreSelection::Best,
+                mode: None,
+                include_fails: false,
+            },
+            "2",
+        )
+        .is_err());
+        handle.join().unwrap();
+    }
 }
 
 #[test]
@@ -137,18 +191,21 @@ fn recent_missing_map_is_an_error_without_best_fallback() {
 }
 
 #[test]
-fn player_map_recent_defaults_to_osu_and_excludes_fails_across_pages() {
+fn player_map_recent_uses_map_mode_and_excludes_fails_across_pages() {
     let mut unrelated = score(1, "2026-01-01T00:00:00Z");
     unrelated["beatmap_id"] = 4.into();
+    let mut record = score(122, "2026-01-01T00:00:00Z");
+    record["ruleset_id"] = 1.into();
     let (base, handle) = mock(vec![
-        ("users/@%61/osu", serde_json::json!({"id":7})),
+        ("beatmaps/2", serde_json::json!({"id":2,"mode":"taiko"})),
+        ("users/@%61/taiko", serde_json::json!({"id":7})),
         (
-            "users/7/scores/recent?mode=osu&include_fails=0&legacy_only=0&limit=100&offset=0",
+            "users/7/scores/recent?mode=taiko&include_fails=0&legacy_only=0&limit=100&offset=0",
             serde_json::json!(vec![unrelated; 100]),
         ),
         (
-            "users/7/scores/recent?mode=osu&include_fails=0&legacy_only=0&limit=100&offset=100",
-            serde_json::json!([score(122, "2026-01-01T00:00:00Z")]),
+            "users/7/scores/recent?mode=taiko&include_fails=0&legacy_only=0&limit=100&offset=100",
+            serde_json::json!([record]),
         ),
     ]);
     let deadline = RequestDeadline::new(Instant::now(), "test", Duration::from_secs(5));
