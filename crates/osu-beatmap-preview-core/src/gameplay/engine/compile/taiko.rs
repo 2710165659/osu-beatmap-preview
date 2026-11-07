@@ -276,15 +276,7 @@ impl Compiler<'_> {
                         HitResult::Miss
                     };
                     self.first_key[id] = key;
-                    self.emit(
-                        time,
-                        id,
-                        None,
-                        result,
-                        HitResult::Great,
-                        start,
-                        result.is_hit().then_some(error),
-                    );
+                    self.emit(time, id, None, result, HitResult::Great, start, Some(error));
                     if object.strong() && !result.is_hit() {
                         self.emit(
                             time,
@@ -669,6 +661,9 @@ mod tests {
     #[test]
     fn window_edges_and_note_lock_discard_same_timestamp_presses() {
         for (offset, expected) in [
+            (-80, HitResult::Miss),
+            (-35, HitResult::Ok),
+            (0, HitResult::Great),
             (34, HitResult::Great),
             (35, HitResult::Ok),
             (79, HitResult::Ok),
@@ -677,7 +672,20 @@ mod tests {
         ] {
             let t = compile("0,0,1000,1,0", &[(0, 0), (1000 + offset, 1), (1200, 0)]);
             assert_eq!(t.objects[0].head.unwrap().1, expected, "offset {offset}");
+            let event = t
+                .events
+                .iter()
+                .find(|e| e.kind == EventKind::Judgement)
+                .unwrap();
+            assert_eq!(event.error, Some(offset as f64));
         }
+        let automatic = compile("0,0,1000,1,0", &[(0, 0), (1200, 0)]);
+        let event = automatic
+            .events
+            .iter()
+            .find(|e| e.kind == EventKind::Judgement)
+            .unwrap();
+        assert_eq!(event.error, None);
         let t = compile(
             "0,0,1000,1,0\n0,0,1010,1,0",
             &[

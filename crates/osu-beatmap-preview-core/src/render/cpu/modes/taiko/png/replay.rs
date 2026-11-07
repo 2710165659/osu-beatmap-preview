@@ -1,4 +1,4 @@
-//! 太鼓静态回放：保留原谱面排版，叠加判定背景、左右手击打及下方 ACC 轨道。
+//! 太鼓静态回放：保留原谱面排版，叠加判定背景、击打早晚、左右手击打及下方 ACC 轨道。
 
 use super::*;
 use crate::{
@@ -107,6 +107,9 @@ pub fn render_scene(
         &mut base, &layout, mapper, prepared, gameplay, end, result_end,
     );
     draw_inputs(&mut base, &layout, mapper, &gameplay.taiko_inputs, end);
+    draw_timing_signs(
+        &mut base, &layout, mapper, prepared, gameplay, end, result_end,
+    );
 
     let mut image = Img::new(
         chart.image_width as u32,
@@ -314,6 +317,111 @@ fn draw_note_judgement(
     );
 }
 
+fn timing_sign(event: &GameplayEvent, great_window: f64) -> Option<&'static str> {
+    match event.error {
+        Some(error) if error.abs() <= great_window => None,
+        Some(error) if error < 0.0 => Some("+"),
+        Some(error) if error > 0.0 => Some("-"),
+        _ => None,
+    }
+}
+
+fn wrong_colour_hit(
+    object: &PreparedObject,
+    event: &GameplayEvent,
+    presses: &[TaikoPress],
+) -> bool {
+    if event.result != HitResult::Miss || event.error.is_none() {
+        return false;
+    }
+    let first = presses.partition_point(|press| press.time < event.time);
+    // 同刻可能有多次击打，只检查真正触发主体判定的首个关联输入。
+    presses[first..]
+        .iter()
+        .take_while(|press| press.time == event.time)
+        .find(|press| press.object_id == Some(event.object_id) && press.node_id.is_none())
+        .is_some_and(|press| (press.key & 10 != 0) != object.rim())
+}
+
+fn draw_wrong_colour_mark(image: &mut Img, x: i64, y: i64, size: i64) {
+    // 位图字体不含 ×，直接绘制两条对角线，避免回退为问号。
+    let stroke = (size as f64 / 6.0).max(1.0);
+    let left = x as f64 + stroke / 2.0;
+    let right = (x + size) as f64 - stroke / 2.0;
+    let top = y as f64 + stroke / 2.0;
+    let bottom = (y + size) as f64 - stroke / 2.0;
+    image.draw_line(left, top, right, bottom, stroke, MISS);
+    image.draw_line(left, bottom, right, top, stroke, MISS);
+}
+
+fn draw_timing_signs(
+    image: &mut Img,
+    layout: &ReplayLayout<'_>,
+    mapper: &ScrollPositionMapper,
+    prepared: &PreparedTaiko,
+    gameplay: &GameplayTimeline,
+    end: i64,
+    result_end: f64,
+) {
+    let great_window = crate::domain::rulesets::taiko::gameplay::hit_windows(prepared.od)[0];
+    for (object, event, time) in visible_judgements(
+        prepared,
+        gameplay,
+        layout.chart.chart_start_time,
+        end,
+        result_end,
+    ) {
+        if !matches!(object.kind, TaikoObjectKind::Hit)
+            || event.node_id.is_some()
+            || !matches!(event.result, HitResult::Miss | HitResult::Ok)
+        {
+            continue;
+        }
+        let sign = timing_sign(event, great_window);
+        let wrong_colour = wrong_colour_hit(object, event, &gameplay.taiko_inputs);
+        if sign.is_none() && !wrong_colour {
+            continue;
+        }
+        let (row, x) = layout.locate(mapper, time);
+        let bottom = png_row_top(row) + taiko_constants::png::sizing().ROW_HEIGHT;
+        let top =
+            png_row_center_y(row) + note_diameter(layout.chart, object) / 2 + layout.px(2.0).max(1);
+        // 大饼下方的空白更窄，只缩小符号，不改变轨道、时间标尺和行间距。
+        let available = bottom - layout.px(1.0).max(1) - top;
+        if available <= 0 {
+            continue;
+        }
+        let font = scaled_bitmap_font_height(16, layout.scale).min(available as u32);
+        let sign_width = sign.map_or(0, |sign| i64::from(text_size(sign, font).0));
+        let cross_size = i64::from(text_size("+", font).0);
+        let gap = if wrong_colour && sign.is_some() {
+            layout.px(3.0).max(1)
+        } else {
+            0
+        };
+        let width = sign_width + if wrong_colour { cross_size + gap } else { 0 };
+        let left = pyround(x - width as f64 / 2.0);
+        if wrong_colour {
+            draw_wrong_colour_mark(
+                image,
+                left,
+                top + (i64::from(font) - cross_size) / 2,
+                cross_size,
+            );
+        }
+        if let Some(sign) = sign {
+            draw_text(
+                image,
+                left + if wrong_colour { cross_size + gap } else { 0 },
+                top,
+                sign,
+                font,
+                colors::hit_result(event.result),
+            );
+        }
+    }
+}
+
 fn judgement_time(object: &PreparedObject, event: &GameplayEvent) -> Option<f64> {
     // sample_time 用于音效选样，滚奏超时事件也可能保存条头时间，不能用它定位静态节点。
     match &object.kind {
@@ -434,6 +542,232 @@ fn draw_states(
 mod tests {
     use super::*;
     use crate::domain::rulesets::taiko::gameplay::DrumRollTick;
+
+    fn fixture(objects: &str, frames: &[(i64, u32)]) -> (PreparedTaiko, GameplayTimeline) {
+        let (_, mut document) =
+            crate::replay::preparation::mania::tests::fixture("64,192,1000,1,0", frames);
+        let replay = std::sync::Arc::get_mut(&mut document).unwrap();
+        replay.header.ruleset_id = 1;
+        replay.header.version = 20200101;
+        for (frame, &(_, keys)) in replay.frames.iter_mut().zip(frames) {
+            frame.keys = keys;
+        }
+        let map = crate::parse_beatmap_bytes(format!("osu file format v14\n[General]\nMode:1\n[Difficulty]\nOverallDifficulty:5\nHPDrainRate:5\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n{objects}\n").as_bytes()).unwrap();
+        let prepared = crate::replay::preparation::taiko::prepare_replay(&map, &document).unwrap();
+        let gameplay = crate::gameplay::engine::compile_taiko(&prepared, document).unwrap();
+        (prepared, gameplay)
+    }
+
+    #[test]
+    fn wrong_colour_uses_the_judging_press_and_keeps_timing_separate() {
+        for (sound, key, offset, wrong) in [
+            (0, 2, -35, true),
+            (0, 2, -34, true),
+            (0, 2, 0, true),
+            (0, 2, 34, true),
+            (0, 2, 35, true),
+            (8, 1, -35, true),
+            (8, 1, -34, true),
+            (8, 1, 0, true),
+            (8, 1, 34, true),
+            (8, 1, 35, true),
+            (0, 1, 80, false),
+            (8, 2, 80, false),
+        ] {
+            let (prepared, gameplay) = fixture(
+                &format!("0,0,1000,1,{sound}"),
+                &[(0, 0), (1000 + offset, key), (1200, 0)],
+            );
+            let event = gameplay
+                .events
+                .iter()
+                .find(|e| e.kind == EventKind::Judgement)
+                .unwrap();
+            assert_eq!(
+                wrong_colour_hit(&prepared.objects[0], event, &gameplay.taiko_inputs),
+                wrong
+            );
+            assert_eq!(
+                timing_sign(
+                    event,
+                    crate::domain::rulesets::taiko::gameplay::hit_windows(prepared.od)[0]
+                ),
+                if offset.abs() <= 34 {
+                    None
+                } else if offset < 0 {
+                    Some("+")
+                } else {
+                    Some("-")
+                }
+            );
+        }
+        // 同刻的后续错色输入不能把先前的普通超窗 Miss 误标为错色。
+        for (frames, wrong) in [
+            (
+                vec![(0, 0), (1080, 1), (1080, 0), (1080, 2), (1200, 0)],
+                false,
+            ),
+            (
+                vec![(0, 0), (1080, 2), (1080, 0), (1080, 1), (1200, 0)],
+                true,
+            ),
+            (vec![(0, 0), (1200, 0)], false),
+        ] {
+            let (prepared, gameplay) = fixture("0,0,1000,1,0", &frames);
+            let event = gameplay
+                .events
+                .iter()
+                .find(|e| e.kind == EventKind::Judgement)
+                .unwrap();
+            assert_eq!(
+                wrong_colour_hit(&prepared.objects[0], event, &gameplay.taiko_inputs),
+                wrong
+            );
+        }
+    }
+
+    #[test]
+    fn timing_signs_stay_below_notes_and_inside_existing_rows() {
+        let objects = "0,0,1000,1,0\n0,0,2000,1,4\n0,0,3000,1,0\n0,0,4000,1,0\n0,0,5000,1,0\n0,0,6000,2,0,L|100:0,1,100\n0,0,7000,1,0\n0,0,7500,1,0";
+        let frames = [
+            (0, 0),
+            (965, 2),
+            (966, 0),
+            (2035, 2),
+            (2036, 0),
+            (3080, 1),
+            (3081, 0),
+            (5000, 2),
+            (5001, 0),
+            (6000, 1),
+            (6001, 0),
+            (7035, 1),
+            (7036, 0),
+            (7510, 1),
+            (7511, 0),
+            (8000, 0),
+        ];
+        let (prepared, gameplay) = fixture(objects, &frames);
+        for (id, expected) in [
+            (0, Some("+")),
+            (1, Some("-")),
+            (2, Some("-")),
+            (3, None),
+            (4, None),
+            (7, None),
+        ] {
+            let event = gameplay
+                .events
+                .iter()
+                .find(|e| {
+                    e.kind == EventKind::Judgement && e.object_id == id && e.node_id.is_none()
+                })
+                .unwrap();
+            assert_eq!(
+                timing_sign(
+                    event,
+                    crate::domain::rulesets::taiko::gameplay::hit_windows(prepared.od)[0]
+                ),
+                expected
+            );
+        }
+        for scale in [0.5, 0.75, 1.0, 1.25, 2.0] {
+            let mut config = crate::config::CoreConfig::default();
+            config.render.taiko.png.SCALE = scale;
+            config.render.taiko.gif.SCALE = 3.0;
+            config.render.taiko.mp4.SCALE = 4.0;
+            crate::config::with_config(std::sync::Arc::new(config), || {
+                let px = |value| scale_px(value, scale);
+                let sizing = taiko_constants::png::sizing();
+                let stride = sizing.ROW_HEIGHT + sizing.INFO_MARGIN_BOTTOM + sizing.ROW_GAP;
+                let chart = TaikoPngLayout {
+                    row_count: 2,
+                    max_row_width: px(400.0),
+                    content_width: px(466.0),
+                    image_width: px(482.0),
+                    image_height: stride * 2 + px(18.0),
+                    normal_note_diameter: px(48.0),
+                    big_note_diameter: px(74.0),
+                    row_start_positions: vec![0.0, 400.0 * scale],
+                    chart_start_time: 0,
+                    overall_difficulty: 5.0,
+                };
+                let mapper = ScrollPositionMapper::new(vec![ScrollSegment {
+                    start_time: 0,
+                    end_time: 8000,
+                    pixels_per_ms: 0.1 * scale,
+                    start_position: 0.0,
+                }]);
+                let layout = ReplayLayout::new(&chart);
+                let mut image = Img::new(
+                    chart.image_width as u32,
+                    (chart.image_height + chart.row_count * layout.extra) as u32,
+                    [0; 4],
+                );
+                draw_timing_signs(
+                    &mut image, &layout, &mapper, &prepared, &gameplay, 7500, 8000.0,
+                );
+                for (id, time) in [
+                    (0, 1000.0),
+                    (1, 2000.0),
+                    (2, 3000.0),
+                    (4, 5000.0),
+                    (6, 7000.0),
+                ] {
+                    let (row, x) = layout.locate(&mapper, time);
+                    let top =
+                        png_row_center_y(row) + note_diameter(&chart, &prepared.objects[id]) / 2;
+                    let bottom = png_row_top(row) + sizing.ROW_HEIGHT;
+                    assert!(
+                        (top..bottom).any(|y| {
+                            (x as i64 - px(14.0)..=x as i64 + px(14.0))
+                                .any(|x| image.get(x as u32, y as u32)[3] > 0)
+                        }),
+                        "missing sign for note {id} at scale {scale}"
+                    );
+                }
+                assert!(image
+                    .data
+                    .chunks_exact(4)
+                    .enumerate()
+                    .filter(|(_, p)| p[3] > 0)
+                    .all(|(i, _)| {
+                        let x = (i % image.w as usize) as i64;
+                        let y = (i / image.w as usize) as i64;
+                        [0, 1, 2, 4, 6].into_iter().any(|id| {
+                            let (row, center) = layout
+                                .locate(&mapper, prepared.objects[id].source.start_time as f64);
+                            (x - center.round() as i64).abs() <= px(14.0)
+                                && y > png_row_center_y(row)
+                                    + note_diameter(&chart, &prepared.objects[id]) / 2
+                                && y < png_row_top(row) + sizing.ROW_HEIGHT
+                        })
+                    }));
+                let mut clipped = image.clone();
+                clipped.data.fill(0);
+                draw_timing_signs(
+                    &mut clipped,
+                    &layout,
+                    &mapper,
+                    &prepared,
+                    &gameplay,
+                    900,
+                    8000.0,
+                );
+                assert!(clipped.data.iter().all(|v| *v == 0));
+                draw_timing_signs(
+                    &mut clipped,
+                    &layout,
+                    &mapper,
+                    &prepared,
+                    &gameplay,
+                    7500,
+                    900.0,
+                );
+                assert!(clipped.data.iter().all(|v| *v == 0));
+            });
+        }
+    }
 
     #[test]
     fn state_badges_include_display_time_without_chart_connector() {
