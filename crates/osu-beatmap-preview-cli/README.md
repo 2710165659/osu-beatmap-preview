@@ -33,8 +33,8 @@ osu-beatmap-preview-cli --bid=738063 --fmt=mp4 --time-points=preview --duration-
 # 本地谱面包，使用 --bid 选择难度
 osu-beatmap-preview-cli --osz-file=map.osz --bid=738063 --fmt=mp4
 
-# 本地回放，默认输出 MP4
-osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osz-file=map.osz
+# 本地回放，Standard 默认 GIF，其他模式默认 PNG
+osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osu-file=map.osu
 ```
 
 ## 命令行参数
@@ -54,7 +54,7 @@ osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osz-file=map.osz
 | `--mode=osu\|taiko\|fruits\|mania` | 仅玩家查询；`osu` 别名为 `std`、`standard`，`fruits` 别名为 `fruit`、`ctb`、`catch`；省略时，指定谱面则使用谱面原生模式，无谱面则由官方使用玩家默认模式 |
 | `--include-fails` | 最近成绩查询包含失败成绩；默认排除，指定谱面时需搭配 `--score-select=recent` |
 | `--convert=<模式>` | `standard` / `std`、`taiko`、`ctb`、`mania`；只有 Standard 可转其他模式，同模式视为无操作 |
-| `--fmt=png\|gif\|mp4` | 谱面默认 Standard 为 GIF、其他为 PNG；回放默认 MP4，支持 PNG/GIF/MP4 |
+| `--fmt=png\|gif\|mp4` | 默认 Standard 为 GIF、其他为 PNG；支持 PNG/GIF/MP4 |
 | `--mod=<Mod>` | 缩写或全名，不区分大小写；全名空格写成短横杠，如 `hard-rock` |
 | `--time-points=<秒数或preview>` | 片段起点；GIF、Standard PNG 可重复，MP4 与其他模式 PNG 最多一个 |
 | `--duration-time=<秒数>` | GIF 每段时长、MP4 时长或区间段 PNG 时长；必须为有限正数 |
@@ -104,7 +104,7 @@ osu-beatmap-preview-cli --osu-file=edited.osu --osz-file=map.osz --fmt=mp4
 osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osu-file=map.osu --fmt=gif
 
 # 离线 MP4，需要匹配的完整谱面包
-osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osz-file=map.osz
+osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osz-file=map.osz --fmt=mp4
 
 # 在线成绩或指定谱面的个人最高分
 osu-beatmap-preview-cli --type=osr --score-id=6086051920

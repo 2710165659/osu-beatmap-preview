@@ -11,7 +11,7 @@ use osu_beatmap_preview_core::gameplay::GameplayOptions;
 use osu_beatmap_preview_core::processing::validation::parse_time_point;
 
 pub const USAGE: &str = "usage: osu-beatmap-preview-cli [--type=osu|osr] [--osr-file=<PATH> | --score-id=<ID> | --user=<NAME> [--bid=<BID>] [--mode=osu|taiko|fruits|mania] [--score-select=best|recent] [--include-fails]] [--bid=<BID>] [--osu-file=<PATH>] [--osz-file=<PATH>] [--convert=<MODE>] [--fmt=png|gif|mp4] [--mod=<MOD>]... [--time-points=<SECONDS|preview>]... [--duration-time=<SECONDS>] [--fps=<1-60>] [--no-log] [--no-cache] [--config=<PATH|JSON|YAML>] [--scale=<POSITIVE_NUMBER>] [--output-dir=<DIR>] [--version] [--help]\n\
-    \x20 --type=osr --osr-file=<FILE.osr>  Standard/Taiko/Catch/Mania 均支持 PNG/GIF/MP4；默认 MP4；禁止 --convert 和 --mod\n\
+    \x20 --type=osr --osr-file=<FILE.osr>  Standard/Taiko/Catch/Mania 均支持 PNG/GIF/MP4；默认 Standard 为 GIF、其他为 PNG；禁止 --convert 和 --mod\n\
     \x20 OSR 来源三选一：--osr-file、--score-id、--user；--bid 仅用于 --user，带 --bid 默认 best，不带 --bid 默认 recent\n\
     \x20 玩家成绩：--user=<NAME> [--mode=osu|taiko|fruits|mania]；省略模式时，带 --bid 使用谱面原生模式，否则使用玩家默认模式，--include-fails 仅用于 recent，开启失败成绩（默认排除）\n\
     \x20 --mode 别名：osu 支持 std、standard；fruits 支持 fruit、ctb、catch\n\

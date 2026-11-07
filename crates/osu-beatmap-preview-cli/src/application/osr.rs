@@ -2,7 +2,7 @@
 
 use super::{
     artifact::ArtifactName,
-    output_plan::{OutputFormat, RenderPlan},
+    output_plan::{resolve_format, OutputFormat, RenderPlan},
     request::ValidatedRequest,
     source_osr,
 };
@@ -15,9 +15,8 @@ use osu_beatmap_preview_core::support::timeout::RequestDeadline;
 use osu_beatmap_preview_core::{replay::preparation::PreparedReplay, PreviewError, Result};
 use std::{sync::Arc, time::Instant};
 
-pub(super) fn execute(mut request: ValidatedRequest) -> Result<serde_json::Value> {
+pub(super) fn execute(request: ValidatedRequest) -> Result<serde_json::Value> {
     let started = Instant::now();
-    request.output.format.get_or_insert_with(|| "mp4".into());
     if !request.source.bid.is_empty() {
         logging::set_bid(&request.source.bid);
     }
@@ -25,7 +24,6 @@ pub(super) fn execute(mut request: ValidatedRequest) -> Result<serde_json::Value
         bid: request.source.bid.clone(),
         request_type: Some("osr".into()),
         fmt: request.output.format.clone(),
-        target_mode: Some(0),
         time_points: (!request.view.time_points.is_empty()).then(|| {
             request
                 .view
@@ -60,17 +58,37 @@ fn execute_inner(
     started: Instant,
     rec: &mut SummaryRecord,
 ) -> Result<serde_json::Value> {
-    let format = request.output.format.clone().expect("回放输出格式已补齐");
     let config = crate::config::current();
+    let timeout = match request.output.format.as_deref() {
+        Some("png") => config.timeout.PNG_TIMEOUT,
+        Some("gif") => config.timeout.GIF_TIMEOUT,
+        Some("mp4") => config.timeout.MP4_TIMEOUT,
+        // 读取回放前尚不知道模式；加载后按实际格式收紧总截止时间。
+        None => config.timeout.PNG_TIMEOUT.max(config.timeout.GIF_TIMEOUT),
+        Some(_) => unreachable!("输出格式已经通过第一阶段校验"),
+    };
+    let deadline = RequestDeadline::new(
+        started,
+        request.output.format.as_deref().unwrap_or("osr"),
+        timeout,
+    );
+    let cache_root = crate::config::resolve_path(&config.paths.CACHE_DIR);
+    let t_source = Instant::now();
+    let mut source = source_osr::load(&request, &cache_root, &deadline)?;
+    let mode = i32::from(source.document.header.ruleset_id);
+    let format = resolve_format(request.output.format.as_deref(), mode)
+        .as_str()
+        .to_string();
+    request.output.format = Some(format.clone());
+    rec.fmt = Some(format.clone());
+    rec.target_mode = Some(mode);
     let timeout = match format.as_str() {
         "png" => config.timeout.PNG_TIMEOUT,
         "gif" => config.timeout.GIF_TIMEOUT,
         _ => config.timeout.MP4_TIMEOUT,
     };
     let deadline = RequestDeadline::new(started, &format, timeout);
-    let cache_root = crate::config::resolve_path(&config.paths.CACHE_DIR);
-    let t_source = Instant::now();
-    let mut source = source_osr::load(&request, &cache_root, &deadline)?;
+    deadline.check()?;
     let is_taiko = source.document.header.ruleset_id == 1;
     logging::record_stage("load_replay_ms", t_source.elapsed().as_secs_f64() * 1000.0);
     // 日志保留谱面 ID，回放身份单独记录；产物命名继续沿用原有规则。
@@ -98,7 +116,6 @@ fn execute_inner(
         PreparedReplay::Mania(p) => source.beatmap = p.beatmap.clone(),
         _ => (),
     }
-    rec.target_mode = Some(i32::from(source.document.header.ruleset_id));
     rec.mods = Some(prepared.mods().settings.tokens.join(","));
     let t_compile = Instant::now();
     let gameplay = prepared.compile(source.document.clone()).map(Arc::new);
@@ -385,7 +402,7 @@ mod tests {
             execute(request.clone()).unwrap()["replay-info"]["cache-hit"],
             true
         );
-        request.output.format = Some("png".into());
+        request.output.format = None;
         request.output.fps = None;
         request.view.duration_seconds = None;
         request.view.time_points.clear();
@@ -508,7 +525,7 @@ mod tests {
         let cached = execute(request.clone()).unwrap();
         assert_eq!(cached["replay-info"]["cache-hit"], true);
         assert_eq!(cached["preview-img"], result["preview-img"]);
-        request.output.format = Some("png".into());
+        request.output.format = None;
         request.view.time_points.truncate(1);
         request.view.duration_seconds = Some(0.2);
         request.output.fps = None;
@@ -611,7 +628,8 @@ mod tests {
         ));
         logging::reset_for_tests();
         logging::config::init_for_tests(&root.join("logs"));
-        let request = replay_request(&root);
+        let mut request = replay_request(&root);
+        request.output.format = None;
         let result = execute(request.clone()).unwrap();
         assert_eq!(result["replay-info"]["cache-hit"], false);
         let output = PathBuf::from(result["preview-img"].as_str().unwrap());
@@ -635,7 +653,7 @@ mod tests {
         bad_source.kind = RequestKind::Osr {
             source: ReplaySource::File(invalid_replay.to_string_lossy().into()),
         };
-        // 未指定格式时默认 MP4，资源加载失败也必须保留这一实际格式。
+        // 回放解析失败时还无法确定默认格式，不在日志中猜测模式或格式。
         bad_source.output.format = None;
         assert!(execute(bad_source).is_err());
 
@@ -672,7 +690,8 @@ mod tests {
         assert_eq!(records[2]["no_cache"], true);
         assert!(records[3]["render_ms"].is_number());
         assert!(records[3]["error"].is_string());
-        assert_eq!(records[4]["fmt"], "mp4");
+        assert!(records[4].get("fmt").is_none());
+        assert!(records[4].get("target_mode").is_none());
         assert!(records[4]["error_kind"].is_string());
         let progress = std::fs::read_to_string(root.join("logs/progress.log")).unwrap();
         assert_eq!(progress.matches("step=render status=start").count(), 3);

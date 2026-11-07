@@ -78,7 +78,7 @@ impl RenderPlan {
     }
 }
 
-fn resolve_format(format: Option<&str>, target_mode: i32) -> OutputFormat {
+pub(super) fn resolve_format(format: Option<&str>, target_mode: i32) -> OutputFormat {
     match format {
         Some("png") => OutputFormat::Png,
         Some("gif") => OutputFormat::Gif,
@@ -104,12 +104,35 @@ mod tests {
 
     #[test]
     fn default_format_depends_on_resolved_mode() {
-        let standard =
-            RenderPlan::build(RenderRequest::new("1").validate().unwrap(), 0, false).unwrap();
-        let mania =
-            RenderPlan::build(RenderRequest::new("1").validate().unwrap(), 3, false).unwrap();
-        assert_eq!(standard.format, OutputFormat::Gif);
-        assert_eq!(mania.format, OutputFormat::Png);
+        for (mode, default) in [
+            (0, OutputFormat::Gif),
+            (1, OutputFormat::Png),
+            (2, OutputFormat::Png),
+            (3, OutputFormat::Png),
+        ] {
+            for kind in [
+                crate::RequestKind::Osu,
+                crate::RequestKind::Osr {
+                    source: crate::ReplaySource::File("replay.osr".into()),
+                },
+            ] {
+                let mut request = RenderRequest::new("");
+                request.kind = kind;
+                request.source.osu_file = Some("map.osu".into());
+                request.source.osz_file = Some("map.osz".into());
+                for (format, expected) in [
+                    (None, default),
+                    (Some("png"), OutputFormat::Png),
+                    (Some("gif"), OutputFormat::Gif),
+                    (Some("mp4"), OutputFormat::Mp4),
+                ] {
+                    request.output.format = format.map(str::to_owned);
+                    let plan = RenderPlan::build(request.clone().validate().unwrap(), mode, false)
+                        .unwrap();
+                    assert_eq!(plan.format, expected, "mode={mode}, format={format:?}");
+                }
+            }
+        }
     }
 
     #[test]

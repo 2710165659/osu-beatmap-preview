@@ -89,12 +89,12 @@ fn osz_must_contain_matching_top_level_map_and_nonempty_song() {
 }
 
 #[test]
-fn png_and_gif_use_only_local_osu_or_download_osu_without_opening_archive() {
-    for format in ["png", "gif"] {
+fn default_png_and_gif_use_only_local_osu_or_download_osu_without_opening_archive() {
+    for format in [None, Some("png"), Some("gif")] {
         let fixture = Fixture::new();
         for local in [true, false] {
             let mut request = fixture.request(local, true);
-            request.output.format = Some(format.into());
+            request.output.format = format.map(str::to_owned);
             // 非 ZIP 文件可证明 PNG/GIF 没有尝试解包或读取音频、背景。
             std::fs::write(&fixture.osz, b"not a zip archive").unwrap();
             let downloads = fixture.downloads(Some("archive"));
@@ -113,7 +113,7 @@ fn png_and_gif_use_only_local_osu_or_download_osu_without_opening_archive() {
             );
         }
         let mut request = fixture.request(true, false);
-        request.output.format = Some(format.into());
+        request.output.format = format.map(str::to_owned);
         let downloads = fixture.downloads(None);
         assert!(resolve_resources(&request, &"0".repeat(32), &downloads).is_err());
         assert!(downloads.calls.borrow().is_empty());
@@ -128,8 +128,8 @@ fn png_and_gif_use_only_local_osu_or_download_osu_without_opening_archive() {
 }
 
 #[test]
-fn local_png_and_gif_load_do_not_require_audio_or_official_credentials() {
-    for format in ["png", "gif"] {
+fn local_default_png_and_gif_load_do_not_require_audio_or_official_credentials() {
+    for format in [None, Some("png"), Some("gif")] {
         let fixture = Fixture::new();
         let mut request = fixture.request(true, false);
         let root =
@@ -146,10 +146,10 @@ fn local_png_and_gif_load_do_not_require_audio_or_official_credentials() {
                     .into_owned(),
             ),
         };
-        request.output.format = Some(format.into());
+        request.output.format = format.map(str::to_owned);
         let deadline = RequestDeadline::new(
             std::time::Instant::now(),
-            format,
+            format.unwrap_or("osr"),
             std::time::Duration::from_secs(5),
         );
         let source = load(&request, &fixture.directory, &deadline).unwrap();
@@ -249,6 +249,7 @@ impl Fixture {
         };
         request.source.osu_file = osu.then(|| self.osu.to_string_lossy().into_owned());
         request.source.osz_file = osz.then(|| self.osz.to_string_lossy().into_owned());
+        request.output.format = Some("mp4".into());
         request.validate().unwrap()
     }
     fn downloads(&self, failure: Option<&'static str>) -> FakeDownloads {

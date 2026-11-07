@@ -40,8 +40,8 @@ osu-beatmap-preview-cli --bid=738063
 # 从本地谱面包导出视频，多难度包用 --bid 选择
 osu-beatmap-preview-cli --osz-file=map.osz --bid=738063 --fmt=mp4
 
-# 回放：默认 MP4，需要匹配的完整谱面包
-osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osz-file=map.osz
+# 回放：与谱面相同，Standard 默认 GIF，其他模式默认 PNG
+osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osu-file=map.osu
 ```
 
 成功后 stdout 返回 JSON，`preview-img` 为产物绝对路径。参数、Mod、选段和配置见 [CLI 使用说明](crates/osu-beatmap-preview-cli/README.md)。
