@@ -26,16 +26,26 @@ impl Arguments {
         if input_type != "osr" {
             return Err(CliError("--type must be osu or osr".into()));
         }
-        if count != 1 {
+        if count == 0 {
             return Err(CliError(
-                "OSR 来源必须三选一：--osr-file、--score-id、--user（可搭配 --bid 或 --mode）"
-                    .into(),
+                "--type=osr 缺少回放来源：请指定 --osr-file、--score-id 或 --user".into(),
             ));
         }
-        if !player && (self.selection.is_some() || self.mode.is_some() || self.include_fails) {
+        if count > 1 {
             return Err(CliError(
-                "--score-select、--mode、--include-fails 仅用于玩家查询".into(),
+                "--osr-file、--score-id、--user 互斥，只能指定一种回放来源".into(),
             ));
+        }
+        if !player {
+            for (present, flag) in [
+                (self.selection.is_some(), "--score-select"),
+                (self.mode.is_some(), "--mode"),
+                (self.include_fails, "--include-fails"),
+            ] {
+                if present {
+                    return Err(CliError(format!("{flag} 仅用于 --user 玩家查询")));
+                }
+            }
         }
         // 指定谱面保持原有最高分默认值；未指定谱面时定位最近一次游玩。
         let default_selection = if bid.is_empty() { "recent" } else { "best" };
@@ -102,6 +112,69 @@ mod tests {
             vec!["--bid=2", "--include-fails"],
         ] {
             assert!(parse_args(args.clone()).is_err(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn errors_identify_the_invalid_parameter_or_source_combination() {
+        for (args, expected) in [
+            (vec!["--type=osr"], "缺少回放来源"),
+            (
+                vec!["--type=osr", "--osr-file=a.osr", "--score-id=1"],
+                "互斥",
+            ),
+            (
+                vec!["--type=osr", "--score-id=1", "--mode=osu"],
+                "--mode 仅用于 --user",
+            ),
+            (
+                vec!["--type=osr", "--score-id=1", "--score-select=best"],
+                "--score-select 仅用于 --user",
+            ),
+            (
+                vec!["--type=osr", "--osr-file=a.osr", "--include-fails"],
+                "--include-fails 仅用于 --user",
+            ),
+            (
+                vec!["--type=osr", "--osr-file=a.osr", "--bid=2"],
+                "--bid 仅用于 --user",
+            ),
+            (
+                vec!["--type=osr", "--score-id=1", "--convert=taiko"],
+                "不接受 --convert",
+            ),
+            (
+                vec!["--type=osr", "--score-id=1", "--mod=NM"],
+                "不接受 --mod",
+            ),
+            (
+                vec!["--type=osr", "--user=a", "--score-select=best"],
+                "--score-select=best 需要 --bid",
+            ),
+            (
+                vec!["--type=osr", "--user=a", "--bid=2", "--include-fails"],
+                "--include-fails 仅用于最近成绩查询",
+            ),
+        ] {
+            let error = parse_args(args.clone()).unwrap_err().to_string();
+            assert!(error.contains(expected), "{args:?}: {error}");
+        }
+    }
+
+    #[test]
+    fn username_errors_distinguish_empty_names_from_byte_limit() {
+        for (name, expected) in [
+            (" ".into(), "非空"),
+            ("a".repeat(257), "不能超过 256 字节"),
+            ("玩".repeat(86), "不能超过 256 字节"),
+        ] {
+            let error = parse_args(["--type=osr", &format!("--user={name}")])
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(expected), "{error}");
+        }
+        for name in ["a".repeat(256), "玩".repeat(85)] {
+            assert!(parse_args(["--type=osr", &format!("--user={name}")]).is_ok());
         }
     }
 

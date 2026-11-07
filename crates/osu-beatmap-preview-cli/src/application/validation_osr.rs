@@ -15,8 +15,11 @@ pub(super) fn validate(request: &RenderRequest) -> Result<()> {
             include_fails,
             ..
         } => {
-            if user.trim().is_empty() || user.len() > 256 {
+            if user.trim().is_empty() {
                 return Err(PreviewError::new("--user 需要非空的玩家名"));
+            }
+            if user.len() > 256 {
+                return Err(PreviewError::new("--user 玩家名不能超过 256 字节"));
             }
             if !request.source.bid.is_empty() {
                 positive_id(&request.source.bid, "--bid")?;
@@ -30,12 +33,19 @@ pub(super) fn validate(request: &RenderRequest) -> Result<()> {
             }
         }
     }
-    if (!matches!(source, crate::ReplaySource::Player { .. }) && !request.source.bid.is_empty())
-        || request.ruleset.convert.is_some()
-        || !request.ruleset.mods.is_empty()
-    {
+    if !matches!(source, crate::ReplaySource::Player { .. }) && !request.source.bid.is_empty() {
         return Err(PreviewError::new(
-            "OSR rejects --convert and user --mod (including NM); --bid 仅用于玩家查询",
+            "--type=osr 时，--bid 仅用于 --user 玩家查询，不能与 --osr-file 或 --score-id 搭配",
+        ));
+    }
+    if request.ruleset.convert.is_some() {
+        return Err(PreviewError::new(
+            "--type=osr 不接受 --convert，模式由回放确定",
+        ));
+    }
+    if !request.ruleset.mods.is_empty() {
+        return Err(PreviewError::new(
+            "--type=osr 不接受 --mod（包括 NM），Mod 由回放确定",
         ));
     }
     for (file, extension) in [

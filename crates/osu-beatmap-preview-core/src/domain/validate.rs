@@ -20,7 +20,7 @@ pub fn validate_convert_value(v: &str) -> Result<()> {
     match v {
         "mania" | "ctb" | "taiko" | "standard" | "std" => Ok(()),
         _ => Err(PreviewError::new(format!(
-            "--convert must be one of mania, ctb, taiko, standard; got '{v}'"
+            "--convert must be one of mania, ctb, taiko, standard (alias: std); got '{v}'"
         ))),
     }
 }
