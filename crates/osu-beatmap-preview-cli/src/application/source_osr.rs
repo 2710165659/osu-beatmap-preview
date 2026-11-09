@@ -48,6 +48,8 @@ pub(super) fn load(
     )?);
     let checksum = &document.header.beatmap_md5;
     let mut hasher = Sha256::new();
+    // 判定算法更新后不能复用旧回放图片，否则图文结果会不一致。
+    hasher.update(b"replay-rules-v2");
     hasher.update(&replay_bytes);
     if !document.diagnostics.is_empty() {
         hasher.update(b"approximate-replay-v1");

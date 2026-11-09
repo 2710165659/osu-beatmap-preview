@@ -207,7 +207,7 @@ pub fn taiko_slider_geometry(
 ) -> TaikoSliderGeometry {
     let spans = i32::max(1, hit_object.slider_repeats);
 
-    let mut distance = hit_object.slider_pixel_length;
+    let mut distance = hit_object.slider_pixel_length.max(0.0);
     distance *= VELOCITY_MULTIPLIER;
     distance *= spans as f64;
 
@@ -241,7 +241,7 @@ fn slider_conversion_values(
 ) -> SliderConversionValues {
     let spans = i32::max(1, hit_object.slider_repeats);
 
-    let mut distance = hit_object.slider_pixel_length;
+    let mut distance = hit_object.slider_pixel_length.max(0.0);
     distance *= VELOCITY_MULTIPLIER;
     distance *= spans as f64;
 
