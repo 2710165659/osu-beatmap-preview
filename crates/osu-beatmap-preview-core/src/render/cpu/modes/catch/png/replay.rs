@@ -14,7 +14,8 @@ use crate::{
     replay::preparation::catch::PreparedCatch,
 };
 
-const PATH_COLOR: [u8; 4] = [252, 97, 143, 230];
+const PATH_COLOR: [u8; 4] = [190, 161, 205, 230];
+const DASH_PATH_COLOR: [u8; 4] = [255, 45, 105, 230];
 const DROPLET_COLOR: [u8; 4] = colors::BLUE;
 const MISS_BAND_COLOR: [u8; 4] = colors::with_alpha(MISS_COLOR, 72);
 const DROPLET_BAND_COLOR: [u8; 4] = colors::with_alpha(DROPLET_COLOR, 72);
@@ -92,6 +93,11 @@ fn draw_path(image: &mut Img, layout: &CatchPngLayout, gameplay: &GameplayTimeli
         if to <= from {
             continue;
         }
+        let color = if pair[0].keys == 1 {
+            DASH_PATH_COLOR
+        } else {
+            PATH_COLOR
+        };
         let x0 = f64::from(pair[0].cursor[0]);
         let x1 = f64::from(pair[1].cursor[0]);
         // 先插值再限制盘子位置；越界输入在场地边缘保留平台段。
@@ -117,7 +123,7 @@ fn draw_path(image: &mut Img, layout: &CatchPngLayout, gameplay: &GameplayTimeli
                 x_at(span[1]),
                 layout,
             ) {
-                image.draw_line(p.0, p.1, q.0, q.1, (1.5 * scale()).max(1.0), PATH_COLOR);
+                image.draw_line(p.0, p.1, q.0, q.1, (1.5 * scale()).max(1.0), color);
             }
         }
     }
@@ -450,6 +456,62 @@ mod tests {
             layout.image_height as u32,
             [0; 4],
         )
+    }
+
+    #[test]
+    fn dash_path_color_follows_held_keys_across_columns_and_fractional_scales() {
+        let (_, mut gameplay) = fixture();
+        gameplay.input = ReplayTimeline::new(
+            [
+                (900, 1),
+                (1500, 0),
+                (2000, 1),
+                (2000, 0),
+                (2400, 1),
+                (3400, 0),
+                (4000, 1),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(sequence, (time_ms, keys))| ReplayFrame {
+                time_ms,
+                cursor: [256.0, 0.0],
+                sequence,
+                delta_ms: 0,
+                keys,
+            })
+            .collect(),
+        );
+        gameplay.settlement_time = 3800.0;
+        for png_scale in [0.75, 1.25] {
+            let mut config = crate::config::CoreConfig::default();
+            config.render.catch.png.SCALE = png_scale;
+            config.render.catch.gif.SCALE = 2.0;
+            config.render.catch.mp4.SCALE = 0.5;
+            crate::config::with_config(Arc::new(config), || {
+                let layout = layout();
+                let mut image = blank(&layout);
+                draw_path(&mut image, &layout, &gameplay, 4200.0);
+                let path_row = |time| {
+                    let (column, y) = locate_time(time - layout.chart_start_time, &layout);
+                    (playfield_left(column, &layout)
+                        ..playfield_left(column, &layout) + layout.visible_playfield_width)
+                        .map(|x| image.get(x as u32, y as u32))
+                        .filter(|pixel| pixel[3] > 0)
+                        .collect::<Vec<_>>()
+                };
+                let normal = path_row(1700);
+                let dash = path_row(1100);
+                assert!(!normal.is_empty());
+                assert!(normal.iter().all(|pixel| *pixel == PATH_COLOR));
+                assert_eq!(dash, vec![DASH_PATH_COLOR; normal.len()]);
+                assert_eq!(path_row(2200), normal);
+                assert_eq!(path_row(2700), dash);
+                assert_eq!(path_row(3200), dash);
+                assert_eq!(path_row(3600), normal);
+                assert!(path_row(3900).is_empty());
+            });
+        }
     }
 
     #[test]
