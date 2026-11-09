@@ -323,7 +323,8 @@ fn execute_inner(
             "replay-info": {"player": source.document.header.player, "identity": source.identity, "rulesetId": source.document.header.ruleset_id,
             "state": gameplay.state_at(f64::INFINITY), "recorded-score": source.document.header.total_score,
             "failure-time": gameplay.failure_time, "cache-hit": cached,
-            "recorded-result-differences": gameplay.recorded_differences},
+            "recorded-result-differences": gameplay.recorded_differences,
+            "approximation-warnings": source.document.diagnostics},
         "beatmap-info": {"meta-data": cache::format_section_keys(&source.beatmap.metadata),
             "difficulty": cache::format_section_keys(&source.beatmap.difficulty)}
     }))

@@ -7,6 +7,9 @@ use crate::support::error::{PreviewError, Result};
 #[derive(Debug, Clone)]
 pub struct ReplayMods {
     pub settings: ModSettings,
+    pub no_fail: bool,
+    pub sudden_death: bool,
+    pub perfect: bool,
     pub hidden_only_approach: bool,
     pub flashlight_size: f64,
     pub flashlight_combo: bool,
@@ -19,6 +22,9 @@ impl Default for ReplayMods {
     fn default() -> Self {
         Self {
             settings: ModSettings::new(),
+            no_fail: false,
+            sudden_death: false,
+            perfect: false,
             hidden_only_approach: false,
             flashlight_size: 1.0,
             flashlight_combo: true,
@@ -40,9 +46,11 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
         metadata.mods.clone()
     } else {
         let bits = document.header.mods_bits;
-        let supported = (1 << 1)
+        let supported = (1 << 0)
+            | (1 << 1)
             | (1 << 3)
             | (1 << 4)
+            | (1 << 5)
             | (1 << 6)
             | (1 << 7)
             | (1 << 8)
@@ -50,6 +58,7 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             | (1 << 10)
             | (1 << 12)
             | (1 << 13)
+            | (1 << 14)
             | (1 << 29);
         if bits & !supported != 0 {
             return Err(unsupported(format!(
@@ -58,9 +67,11 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             )));
         }
         [
+            (0, "NF"),
             (1, "EZ"),
             (3, "HD"),
             (4, "HR"),
+            (5, "SD"),
             (6, "DT"),
             (7, "RX"),
             (8, "HT"),
@@ -68,10 +79,15 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             (10, "FL"),
             (12, "SO"),
             (13, "AP"),
+            (14, "PF"),
         ]
         .into_iter()
         // NC 的旧编码同时包含 DT；它们只代表一个速度 Mod。
-        .filter(|&(bit, _)| bits & (1 << bit) != 0 && !(bit == 6 && bits & (1 << 9) != 0))
+        .filter(|&(bit, _)| {
+            bits & (1 << bit) != 0
+                && !(bit == 6 && bits & (1 << 9) != 0)
+                && !(bit == 5 && bits & (1 << 14) != 0)
+        })
         .map(|(_, acronym)| ReplayMod {
             acronym: acronym.into(),
             settings: Default::default(),
@@ -84,6 +100,9 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
         let code = modifier.acronym.as_str();
         if !seen.insert(modifier.acronym.clone()) {
             return Err(unsupported(format!("duplicate Mod {code}")));
+        }
+        if apply_fail_mod(&mut result, &modifier)? {
+            continue;
         }
         if !matches!(
             code,
@@ -193,6 +212,7 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
     if !errors.is_empty() {
         return Err(unsupported(errors.join("; ")));
     }
+    validate_fail_mods(&result)?;
     Ok(result)
 }
 
@@ -221,25 +241,31 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
             0
         };
         let supported = mania_bits
+            | (1 << 0)
             | (1 << 1)
             | (1 << 3)
             | (1 << 4)
+            | (1 << 5)
             | (1 << 6)
             | (1 << 8)
             | (1 << 9)
             | (1 << 10)
+            | (1 << 14)
             | (1 << 29);
         if bits & !supported != 0 {
             return Err(unsupported(format!("legacy Mods 0x{bits:08x}")));
         }
         [
+            (0, "NF"),
             (1, "EZ"),
             (3, "HD"),
             (4, "HR"),
+            (5, "SD"),
             (6, "DT"),
             (8, "HT"),
             (9, "NC"),
             (10, "FL"),
+            (14, "PF"),
             (30, "MR"),
             (15, "4K"),
             (16, "5K"),
@@ -253,7 +279,11 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
             (28, "2K"),
         ]
         .into_iter()
-        .filter(|&(bit, _)| bits & (1 << bit) != 0 && !(bit == 6 && bits & (1 << 9) != 0))
+        .filter(|&(bit, _)| {
+            bits & (1 << bit) != 0
+                && !(bit == 6 && bits & (1 << 9) != 0)
+                && !(bit == 5 && bits & (1 << 14) != 0)
+        })
         .map(|(_, acronym)| ReplayMod {
             acronym: acronym.into(),
             settings: Default::default(),
@@ -276,7 +306,10 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
         if !seen.insert(code.to_owned()) {
             return Err(unsupported(format!("duplicate Mod {code}")));
         }
-        if mode == 3 && matches!(code, "NF" | "SV2") {
+        if apply_fail_mod(&mut result, &modifier)? {
+            continue;
+        }
+        if mode == 3 && code == "SV2" {
             if !modifier.settings.is_empty() || !modifier.extra.is_empty() {
                 return Err(unsupported(format!("{code} settings")));
             }
@@ -349,7 +382,37 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
     if !errors.is_empty() {
         return Err(unsupported(errors.join("; ")));
     }
+    validate_fail_mods(&result)?;
     Ok(result)
+}
+
+// 这些 Mod 改变失败条件，不改变录制的输入或谱面；回放仍按输入帧推断结束位置。
+fn apply_fail_mod(result: &mut ReplayMods, modifier: &ReplayMod) -> Result<bool> {
+    let code = modifier.acronym.as_str();
+    if !matches!(code, "NF" | "SD" | "PF") {
+        return Ok(false);
+    }
+    if !modifier.extra.is_empty()
+        || modifier.settings.iter().any(|(key, value)| {
+            !((code == "SD" || code == "PF") && key == "restart" && value.is_boolean())
+        })
+    {
+        return Err(unsupported(format!("{code} settings")));
+    }
+    match code {
+        "NF" => result.no_fail = true,
+        "SD" => result.sudden_death = true,
+        "PF" => result.perfect = true,
+        _ => unreachable!(),
+    }
+    Ok(true)
+}
+
+fn validate_fail_mods(mods: &ReplayMods) -> Result<()> {
+    if u8::from(mods.no_fail) + u8::from(mods.sudden_death) + u8::from(mods.perfect) > 1 {
+        return Err(unsupported("incompatible NF/SD/PF mods"));
+    }
+    Ok(())
 }
 
 fn number(value: &serde_json::Value, min: f64, max: f64) -> Option<f64> {
@@ -375,6 +438,9 @@ impl ReplayMods {
     pub fn score_multiplier(&self, beatmap: &Beatmap) -> f64 {
         let m = &self.settings;
         let mut multiplier = 1.0;
+        if self.no_fail {
+            multiplier *= 0.5;
+        }
         if m.relax {
             multiplier *= 0.1;
         }
@@ -444,6 +510,39 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn fail_condition_mods_support_legacy_and_extended_formats_in_every_ruleset() {
+        for mode in 0..=3 {
+            for (bits, code) in [(1, "NF"), (1 << 5, "SD"), ((1 << 5) | (1 << 14), "PF")] {
+                let mut old = document(json!([]));
+                old.header.ruleset_id = mode;
+                old.header.mods_bits = bits;
+                old.metadata = None;
+                let decoded = decode(&old).unwrap();
+                assert_eq!(
+                    (decoded.no_fail, decoded.sudden_death, decoded.perfect),
+                    (code == "NF", code == "SD", code == "PF")
+                );
+                let mut modern = document(json!([{ "acronym": code }]));
+                modern.header.ruleset_id = mode;
+                let decoded = decode(&modern).unwrap();
+                assert_eq!(
+                    (decoded.no_fail, decoded.sudden_death, decoded.perfect),
+                    (code == "NF", code == "SD", code == "PF")
+                );
+            }
+            let mut invalid = document(json!([{ "acronym": "NF" }, { "acronym": "SD" }]));
+            invalid.header.ruleset_id = mode;
+            assert!(decode(&invalid).is_err());
+
+            let mut combined = document(json!([
+                { "acronym": "HD" }, { "acronym": "HR" }, { "acronym": "SD" }
+            ]));
+            combined.header.ruleset_id = mode;
+            assert!(decode(&combined).unwrap().sudden_death);
+        }
+    }
+
+    #[test]
     fn accepts_every_standard_preview_mod_and_validates_settings_and_combinations() {
         for code in crate::domain::mods::supported_mod_tokens(0) {
             assert!(
@@ -470,6 +569,7 @@ mod tests {
     fn score_multipliers_match_current_official_v2_defaults_and_custom_settings() {
         let beatmap = crate::parse_beatmap_bytes(b"osu file format v14\n[General]\nMode:0\n[Difficulty]\nCircleSize:5\nOverallDifficulty:5\nHPDrainRate:5\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n100,100,1000,1,0\n").unwrap();
         for (mods, expected) in [
+            (json!([{"acronym":"NF"}]), 0.5),
             (json!([{"acronym":"EZ"}]), 0.8),
             (json!([{"acronym":"EZ","settings":{"retries":10}}]), 0.4),
             (json!([{"acronym":"HR"}]), 1.09),
@@ -537,10 +637,8 @@ mod tests {
         replay.metadata = document(json!([{"acronym":"HT"}])).metadata;
         assert!(decode(&replay).unwrap().settings.half_time);
         replay.metadata = None;
-        for unsupported_bit in [1, 1 << 11] {
-            replay.header.mods_bits = unsupported_bit;
-            assert!(decode(&replay).is_err());
-        }
+        replay.header.mods_bits = 1 << 11;
+        assert!(decode(&replay).is_err());
     }
 
     fn document(mods: serde_json::Value) -> ReplayDocument {

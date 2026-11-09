@@ -42,6 +42,9 @@ impl RenderRequest {
 
     pub(crate) fn validate(self) -> Result<ValidatedRequest> {
         super::validation_osr::validate(&self)?;
+        if self.execution.approximate_replay && matches!(self.kind, RequestKind::Osu) {
+            return Err(PreviewError::new("approximate replay requires --type=osr"));
+        }
         if matches!(self.kind, RequestKind::Osu) {
             super::validation_common::validate_source(&self.source)?;
         }

@@ -16,6 +16,7 @@ pub const USAGE: &str = "usage: osu-beatmap-preview-cli [--type=osu|osr] [--osr-
     \x20 玩家成绩：--user=<NAME> [--mode=osu|taiko|fruits|mania]；省略模式时，带 --bid 使用谱面原生模式，否则使用玩家默认模式，--include-fails 仅用于 recent，开启失败成绩（默认排除）\n\
     \x20 --mode 别名：osu 支持 std、standard；fruits 支持 fruit、ctb、catch\n\
     \x20 OSR 可选 --osu-file/--osz-file，按原始 MD5 绑定；缺少资源时查询官方 API 并下载，失败报错\n\
+    \x20 --approximate-replay：无法还原的 Mod 会被跳过并在回放结果中提示\n\
     \x20 --fmt=png|gif|mp4；--fps=1-60 仅用于 GIF/MP4；--scale 为有限正数\n\
     \x20 --time-points 可填秒数或 preview；MP4 和 Taiko/Catch/Mania PNG 最多一个时间点，GIF 和 Standard PNG 可重复指定\n\
     \x20 --duration-time 为有限正数，用于 GIF/MP4 或 Taiko/Catch/Mania PNG；后者须与 --time-points 成对使用\n\
@@ -75,6 +76,7 @@ pub fn parse_args(
             Long("score-select") => osr.selection = Some(value(&mut parser, "--score-select")?),
             Long("mode") => osr.mode = Some(value(&mut parser, "--mode")?),
             Long("include-fails") => osr.include_fails = true,
+            Long("approximate-replay") => request.execution.approximate_replay = true,
             Long("bid") => osu.bid = Some(value(&mut parser, "--bid")?),
             Long("osu-file") => osu.osu_file = Some(value(&mut parser, "--osu-file")?),
             Long("osz-file") => osu.osz_file = Some(value(&mut parser, "--osz-file")?),
@@ -172,6 +174,21 @@ fn argument_error(error: impl std::fmt::Display) -> CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn approximate_replay_requires_osr_and_is_opt_in() {
+        let CliAction::Render(request) =
+            parse_args(["--type=osr", "--score-id=1", "--approximate-replay"]).unwrap()
+        else {
+            panic!("应解析为回放请求")
+        };
+        assert!(request.execution.approximate_replay);
+        let CliAction::Render(request) = parse_args(["--type=osr", "--score-id=1"]).unwrap() else {
+            panic!("应解析为回放请求")
+        };
+        assert!(!request.execution.approximate_replay);
+        assert!(parse_args(["--bid=1", "--approximate-replay"]).is_err());
+    }
 
     /// CLI 不再接受 WGPU 相关参数。
     #[test]
