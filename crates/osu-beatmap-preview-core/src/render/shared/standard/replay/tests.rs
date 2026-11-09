@@ -6,6 +6,65 @@ use crate::render::cpu::modes::standard::osr::render_frame;
 use std::sync::Arc;
 
 #[test]
+fn replay_keys_merge_input_sources_and_show_smoke_independently() {
+    use crate::render::scene::{DrawCommand, FrameSceneBuilder};
+
+    let (_, prepared, mut gameplay, context) = mod_fixture(serde_json::json!([]));
+    let visuals = ReplayVisuals::new(&context, &gameplay, None, &[], prepared.od);
+    let scale = context.frame_layout.output_scale();
+    let key_width = (34.0 * scale).round() as f32;
+    let key_height = (26.0 * scale).round() as f32;
+    for (keys, expected) in [
+        (0, [false, false, false]),
+        (1, [true, false, false]),
+        (4, [true, false, false]),
+        (5, [true, false, false]),
+        (2, [false, true, false]),
+        (8, [false, true, false]),
+        (10, [false, true, false]),
+        (15, [true, true, false]),
+        (16, [false, false, true]),
+        (21, [true, false, true]),
+        (26, [false, true, true]),
+        (31, [true, true, true]),
+    ] {
+        let mut frames = gameplay.input.frames.to_vec();
+        for frame in &mut frames {
+            frame.keys = keys;
+        }
+        gameplay.input = crate::replay::ReplayTimeline::new(frames);
+        let mut scene = FrameSceneBuilder::new(
+            context.frame_layout.frame_width as u32,
+            context.frame_layout.frame_height as u32,
+            500,
+        );
+        hud::draw(
+            &mut scene,
+            &context,
+            &gameplay,
+            &visuals,
+            500.0,
+            2000,
+            prepared.od,
+        );
+        let active: Vec<_> = scene
+            .finish()
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Rectangle { rect, color }
+                    if rect.width == key_width && rect.height == key_height =>
+                {
+                    Some(*color == [252, 97, 143, 255])
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(active, expected, "按键位：{keys}");
+    }
+}
+
+#[test]
 fn cpu_and_scene_keep_earlier_objects_on_top_in_every_format() {
     use crate::render::{geometry::OutputFormat, scene::DrawCommand};
 

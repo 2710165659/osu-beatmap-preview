@@ -48,6 +48,7 @@ fn draw_input(
     let Some(input) = gameplay.input_at(time) else {
         return;
     };
+    let actions = crate::replay::timeline::standard_actions(input.keys);
     hud::draw_keys(
         image,
         &visuals.hud,
@@ -58,10 +59,9 @@ fn draw_input(
             time_axis: context.time_axis,
         },
         &[
-            (input.keys & 1 != 0, "M1"),
-            (input.keys & 2 != 0, "M2"),
-            (input.keys & 4 != 0, "K1"),
-            (input.keys & 8 != 0, "K2"),
+            (actions & 1 != 0, "B1"),
+            (actions & 2 != 0, "B2"),
+            (input.keys & 16 != 0, "B3"),
         ],
     );
     draw_cursor(image, context, visuals, input, time);

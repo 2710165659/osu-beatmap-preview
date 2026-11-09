@@ -111,7 +111,7 @@ mod tests {
     fn embedded_font_contains_all_replay_labels() {
         assert!(font()
             .unwrap()
-            .supports("0123456789x%.-/: SSABCD F REPLAY FAILED GREAT OK MEH MISS M1M2K1K2"));
+            .supports("0123456789x%.-/: SSABCD F REPLAY FAILED GREAT OK MEH MISS B1B2B3"));
     }
     #[test]
     fn invalid_replay_rejected_before_session_creation() {

@@ -7,7 +7,7 @@ use std::io::Cursor;
 
 const FONT: &[u8] = include_bytes!("../../../../../assets/fonts/argon/Torus-Bold.bin");
 const ATLAS: &[u8] = include_bytes!("../../../../../assets/fonts/argon/Torus-Bold_0.png");
-const LABELS: &str = "0123456789.%:/-x GREAT OK MEH MISS REPLAY FAILED SS A B C D F M1 M2 K1 K2";
+const LABELS: &str = "0123456789.%:/-x GREAT OK MEH MISS REPLAY FAILED SS A B C D F B1 B2 B3";
 
 pub(crate) fn load() -> Result<Option<ArgonFont>> {
     embedded().map(Some)
@@ -53,8 +53,9 @@ mod tests {
     #[test]
     fn full_embedded_font_covers_every_replay_label() {
         let font = embedded().unwrap();
-        assert!(font
-            .supports("0123456789.%:/-x GREAT OK MEH MISS REPLAY FAILED SS A B C D F M1 M2 K1 K2"));
+        assert!(
+            font.supports("0123456789.%:/-x GREAT OK MEH MISS REPLAY FAILED SS A B C D F B1 B2 B3")
+        );
         // 保留完整原资源，防止再次误用只包含 HUD 字符的子集。
         assert!(font.supports("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"));
         assert_eq!(FONT.len(), 150_046);
