@@ -371,7 +371,17 @@ pub(crate) fn parse_taiko(
         let start_time: i64 = parts[2].parse().ok()?;
         let hit_type: i32 = parts[3].parse().ok()?;
         let hitsound: i32 = parts[4].parse().ok()?;
-        let end_time = parse_end_time(&parts, start_time, hit_type, difficulty, timing_points)?;
+        let zero_length = hit_type & 2 != 0
+            && parts
+                .get(7)
+                .and_then(|v| v.parse::<f64>().ok())
+                .is_some_and(|v| v <= 0.0);
+        // 太鼓转换器对未指定长度的滚奏使用零距离；其他模式使用实际曲线长度。
+        let end_time = if zero_length {
+            start_time
+        } else {
+            parse_end_time(&parts, start_time, hit_type, difficulty, timing_points)?
+        };
         // 列数随物件类型变化（原生 taiko 谱面也可能有滑条与转盘）。
         let hit_sample = parse_object_hit_sample(&parts, hit_type);
         objects.push(TaikoHitObject {
@@ -583,12 +593,18 @@ pub fn round_half_even(v: f64) -> i64 {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn nonpositive_slider_lengths_use_the_actual_path_distance() {
+    fn nonpositive_slider_lengths_follow_ruleset_conversion() {
         for length in ["-1", "0"] {
-            let text = format!("osu file format v14\n[General]\nMode:1\n[Difficulty]\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n0,0,1000,2,0,L|100:0,1,{length}\n");
-            let map = crate::parse_beatmap_bytes(text.as_bytes()).unwrap();
-            let object = &map.hit_objects.as_taiko().unwrap()[0];
-            assert_eq!((object.start_time, object.end_time), (1000, 1500));
+            for mode in 0..=2 {
+                let text = format!("osu file format v14\n[General]\nMode:{mode}\n[Difficulty]\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n0,0,1000,2,0,L|100:0,1,{length}\n");
+                let map = crate::parse_beatmap_bytes(text.as_bytes()).unwrap();
+                let end = match mode {
+                    0 => map.hit_objects.as_standard().unwrap()[0].end_time,
+                    1 => map.hit_objects.as_taiko().unwrap()[0].end_time,
+                    _ => map.hit_objects.as_catch().unwrap()[0].end_time,
+                };
+                assert_eq!(end, if mode == 1 { 1000 } else { 1500 });
+            }
         }
     }
 }

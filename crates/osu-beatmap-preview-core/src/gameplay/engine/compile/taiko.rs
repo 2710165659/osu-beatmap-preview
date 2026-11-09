@@ -230,144 +230,151 @@ impl Compiler<'_> {
     }
 
     fn press(&mut self, time: f64, key: u32, held: u32) -> Option<(usize, Option<usize>)> {
-        for index in 0..self.active.len() {
-            let id = self.active[index];
-            let object = &self.prepared.objects[id];
-            let start = object.source.start_time as f64;
-            match &object.kind {
-                TaikoObjectKind::Hit => {
-                    if object.strong()
-                        && self.objects[id].nodes[0].is_none()
-                        && self.objects[id]
-                            .head
-                            .is_some_and(|(hit, result)| result.is_hit() && time - hit <= 30.0)
-                        && held & self.first_key[id] != 0
-                        && key != self.first_key[id]
-                        && (key & 10 != 0) == object.rim()
-                    {
-                        self.emit(
-                            time,
-                            id,
-                            Some(0),
-                            HitResult::LargeBonus,
-                            HitResult::LargeBonus,
-                            start,
-                            None,
-                        );
-                        return Some((id, Some(0)));
-                    }
-                    if self.last_press[id] == Some(time) {
+        // 滚奏可能跨越普通音符，优先处理击打窗口内的普通音符。
+        for hits_first in [true, false] {
+            for index in 0..self.active.len() {
+                let id = self.active[index];
+                let object = &self.prepared.objects[id];
+                if matches!(object.kind, TaikoObjectKind::Hit) != hits_first {
+                    continue;
+                }
+                let start = object.source.start_time as f64;
+                match &object.kind {
+                    TaikoObjectKind::Hit => {
+                        if object.strong()
+                            && self.objects[id].nodes[0].is_none()
+                            && self.objects[id]
+                                .head
+                                .is_some_and(|(hit, result)| result.is_hit() && time - hit <= 30.0)
+                            && held & self.first_key[id] != 0
+                            && key != self.first_key[id]
+                            && (key & 10 != 0) == object.rim()
+                        {
+                            self.emit(
+                                time,
+                                id,
+                                Some(0),
+                                HitResult::LargeBonus,
+                                HitResult::LargeBonus,
+                                start,
+                                None,
+                            );
+                            return Some((id, Some(0)));
+                        }
+                        if self.last_press[id] == Some(time) {
+                            return Some((id, None));
+                        }
+                        if self.objects[id].head.is_some() {
+                            continue;
+                        }
+                        self.last_press[id] = Some(time);
+                        let error = time - start;
+                        if error.abs() > self.windows[2] {
+                            continue;
+                        }
+                        let result = if (key & 10 != 0) != object.rim() {
+                            HitResult::Miss
+                        } else if error.abs() <= self.windows[0] {
+                            HitResult::Great
+                        } else if error.abs() <= self.windows[1] {
+                            HitResult::Ok
+                        } else {
+                            HitResult::Miss
+                        };
+                        self.first_key[id] = key;
+                        self.emit(time, id, None, result, HitResult::Great, start, Some(error));
+                        if object.strong() && !result.is_hit() {
+                            self.emit(
+                                time,
+                                id,
+                                Some(0),
+                                HitResult::IgnoreMiss,
+                                HitResult::LargeBonus,
+                                start,
+                                None,
+                            );
+                        }
                         return Some((id, None));
                     }
-                    if self.objects[id].head.is_some() {
-                        continue;
-                    }
-                    self.last_press[id] = Some(time);
-                    let error = time - start;
-                    if error.abs() > self.windows[2] {
-                        continue;
-                    }
-                    let result = if (key & 10 != 0) != object.rim() {
-                        HitResult::Miss
-                    } else if error.abs() <= self.windows[0] {
-                        HitResult::Great
-                    } else if error.abs() <= self.windows[1] {
-                        HitResult::Ok
-                    } else {
-                        HitResult::Miss
-                    };
-                    self.first_key[id] = key;
-                    self.emit(time, id, None, result, HitResult::Great, start, Some(error));
-                    if object.strong() && !result.is_hit() {
+                    TaikoObjectKind::DrumRoll { ticks, window } => {
+                        let Some(node) = self.objects[id].nodes.iter().position(Option::is_none)
+                        else {
+                            continue;
+                        };
+                        let sample_time = ticks[node].time;
+                        if (time - sample_time).abs() > *window {
+                            continue;
+                        }
                         self.emit(
                             time,
                             id,
-                            Some(0),
-                            HitResult::IgnoreMiss,
-                            HitResult::LargeBonus,
-                            start,
-                            None,
-                        );
-                    }
-                    return Some((id, None));
-                }
-                TaikoObjectKind::DrumRoll { ticks, window } => {
-                    let Some(node) = self.objects[id].nodes.iter().position(Option::is_none) else {
-                        continue;
-                    };
-                    let sample_time = ticks[node].time;
-                    if (time - sample_time).abs() > *window {
-                        continue;
-                    }
-                    self.emit(
-                        time,
-                        id,
-                        Some(node),
-                        HitResult::SmallBonus,
-                        HitResult::SmallBonus,
-                        sample_time,
-                        None,
-                    );
-                    if object.strong() {
-                        // Strong 滚奏节点自动跟随父节点，不要求另一只手补击。
-                        self.events.push(GameplayEvent {
-                            id: 0,
-                            time,
-                            object_id: id,
-                            node_id: Some(node),
-                            result: HitResult::LargeBonus,
-                            maximum: HitResult::LargeBonus,
-                            kind: EventKind::Judgement,
-                            error: None,
-                            position: None,
+                            Some(node),
+                            HitResult::SmallBonus,
+                            HitResult::SmallBonus,
                             sample_time,
-                        });
+                            None,
+                        );
+                        if object.strong() {
+                            // Strong 滚奏节点自动跟随父节点，不要求另一只手补击。
+                            self.events.push(GameplayEvent {
+                                id: 0,
+                                time,
+                                object_id: id,
+                                node_id: Some(node),
+                                result: HitResult::LargeBonus,
+                                maximum: HitResult::LargeBonus,
+                                kind: EventKind::Judgement,
+                                error: None,
+                                position: None,
+                                sample_time,
+                            });
+                        }
+                        return Some((id, Some(node)));
                     }
-                    return Some((id, Some(node)));
-                }
-                TaikoObjectKind::Swell { required } => {
-                    if time < start
-                        || time > object.source.end_time as f64
-                        || self.objects[id].head.is_some()
-                    {
-                        continue;
-                    }
-                    let rim = key & 10 != 0;
-                    if self.swell_colour[id] == Some(rim) {
-                        continue;
-                    }
-                    if self.last_press[id] == Some(time) {
-                        return Some((id, None));
-                    }
-                    self.swell_colour[id] = Some(rim);
-                    self.last_press[id] = Some(time);
-                    let node = self.objects[id]
-                        .nodes
-                        .iter()
-                        .position(Option::is_none)
-                        .unwrap();
-                    self.emit(
-                        time,
-                        id,
-                        Some(node),
-                        HitResult::IgnoreHit,
-                        HitResult::IgnoreHit,
-                        start,
-                        None,
-                    );
-                    if node + 1 == *required as usize {
+                    TaikoObjectKind::Swell { required } => {
+                        if time < start
+                            || time > object.source.end_time as f64
+                            || self.objects[id].head.is_some()
+                        {
+                            continue;
+                        }
+                        let rim = key & 10 != 0;
+                        if self.swell_colour[id] == Some(rim) {
+                            continue;
+                        }
+                        if self.last_press[id] == Some(time) {
+                            return Some((id, None));
+                        }
+                        self.swell_colour[id] = Some(rim);
+                        self.last_press[id] = Some(time);
+                        let node = self.objects[id]
+                            .nodes
+                            .iter()
+                            .position(Option::is_none)
+                            .unwrap();
                         self.emit(
                             time,
                             id,
-                            None,
-                            HitResult::LargeBonus,
-                            HitResult::LargeBonus,
+                            Some(node),
+                            HitResult::IgnoreHit,
+                            HitResult::IgnoreHit,
                             start,
                             None,
                         );
-                        self.objects[id].end = Some((time, HitResult::LargeBonus));
+                        if node + 1 == *required as usize {
+                            self.emit(
+                                time,
+                                id,
+                                None,
+                                HitResult::LargeBonus,
+                                HitResult::LargeBonus,
+                                start,
+                                None,
+                            );
+                            self.objects[id].end = Some((time, HitResult::LargeBonus));
+                        }
+                        return Some((id, Some(node)));
                     }
-                    return Some((id, Some(node)));
                 }
             }
         }
@@ -665,6 +672,15 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(actions(&plain), actions(&smoke));
+    }
+
+    #[test]
+    fn overlapping_drumroll_does_not_steal_hit_from_note() {
+        let timeline = compile(
+            "0,0,1000,2,0,L|100:0,1,500\n0,0,2000,1,0",
+            &[(0, 0), (2000, 1), (2200, 0), (4000, 0)],
+        );
+        assert_eq!(timeline.objects[1].head.unwrap().1, HitResult::Great);
     }
 
     #[test]
