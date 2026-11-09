@@ -189,6 +189,11 @@ fn local_default_png_and_gif_load_do_not_require_audio_or_official_credentials()
             std::time::Duration::from_secs(5),
         );
         let source = load(&request, &fixture.directory, &deadline).unwrap();
+        let old_identity = format!(
+            "{:x}",
+            Sha256::digest(std::fs::read(&source.osr_path).unwrap())
+        );
+        assert_ne!(source.identity, old_identity[..16]);
         assert!(source.osz_path.is_none());
         assert!(source.beatmap.general.get("AudioFilename").is_none());
     }

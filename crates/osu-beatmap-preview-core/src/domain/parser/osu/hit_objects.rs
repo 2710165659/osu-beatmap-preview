@@ -604,6 +604,11 @@ mod tests {
                     _ => map.hit_objects.as_catch().unwrap()[0].end_time,
                 };
                 assert_eq!(end, if mode == 1 { 1000 } else { 1500 });
+                if mode == 0 {
+                    let converted =
+                        crate::domain::rulesets::taiko::taiko_convert(&map, 1, None).unwrap();
+                    assert_eq!(converted.hit_objects.as_taiko().unwrap()[0].end_time, 1000);
+                }
             }
         }
     }
