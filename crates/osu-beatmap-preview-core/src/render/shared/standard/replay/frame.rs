@@ -7,10 +7,12 @@ use crate::replay::preparation::standard::PreparedStandard;
 
 pub struct ReplayRenderPlan {
     visibility: super::super::visibility::ObjectVisibility,
+    smoke: super::ReplaySmoke,
 }
 
 /// 后端接收已解析的显示状态，不读取判定时间线或自行决定物件层序。
 pub(crate) trait ReplayDrawTarget {
+    fn smoke(&mut self, smoke: &super::ReplaySmoke);
     fn follow_points(&mut self);
     fn circle(&mut self, id: usize, position: (f64, f64), opacity: f64);
     fn slider(&mut self, id: usize, head_opacity: Option<f64>, tracking: bool);
@@ -36,6 +38,7 @@ impl ReplayRenderPlan {
         });
         Self {
             visibility: super::super::visibility::ObjectVisibility::new(intervals),
+            smoke: super::ReplaySmoke::new(context, gameplay),
         }
     }
 
@@ -77,6 +80,7 @@ impl ReplayFrame<'_> {
             ..
         } = *self;
         let failed = gameplay.failure_time.is_some_and(|end| time as f64 >= end);
+        target.smoke(&self.plan.smoke);
         target.follow_points();
         for id in self.plan.visibility.at(time) {
             let object = &context.hit_objects[id];

@@ -43,6 +43,10 @@ struct CpuReplayTarget<'a> {
 }
 
 impl ReplayDrawTarget for CpuReplayTarget<'_> {
+    fn smoke(&mut self, smoke: &crate::render::shared::standard::replay::ReplaySmoke) {
+        smoke.draw(self.image, self.context, self.time as f64);
+    }
+
     fn follow_points(&mut self) {
         frame::draw_follow_points(self.image, self.context, self.cache, self.time);
     }

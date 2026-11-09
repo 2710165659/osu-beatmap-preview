@@ -7,6 +7,7 @@ mod frame;
 mod hud;
 mod layout;
 mod slider;
+mod smoke;
 use crate::gameplay::timeline::GameplayTimeline;
 use crate::model::BreakPeriod;
 use crate::render::canvas::Img;
@@ -17,6 +18,7 @@ use frame::head_alpha;
 pub(crate) use frame::ReplayDrawTarget;
 pub use frame::ReplayRenderPlan;
 pub(crate) use slider::data as slider_data;
+pub(crate) use smoke::ReplaySmoke;
 
 pub(crate) fn replay_layout(format: crate::render::geometry::OutputFormat) -> FrameLayout {
     layout::build(format)

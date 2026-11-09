@@ -117,6 +117,10 @@ struct SceneReplayTarget<'a> {
 }
 
 impl crate::render::shared::standard::replay::ReplayDrawTarget for SceneReplayTarget<'_> {
+    fn smoke(&mut self, smoke: &crate::render::shared::standard::replay::ReplaySmoke) {
+        smoke.draw(self.scene, self.context, self.time as f64);
+    }
+
     fn follow_points(&mut self) {
         draw_follow_points(self.scene, self.context, self.follow, self.time);
     }
