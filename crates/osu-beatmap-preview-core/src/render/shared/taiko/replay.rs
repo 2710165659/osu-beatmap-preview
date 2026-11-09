@@ -294,7 +294,6 @@ mod tests {
                             })
                             .collect(),
                         seed: None,
-                        diagnostics: Vec::new(),
                     });
                     let prepared = Arc::new(
                         crate::replay::preparation::taiko::prepare_replay(&beatmap, &document)
@@ -435,7 +434,6 @@ mod tests {
                     })
                     .collect(),
                 seed: None,
-                diagnostics: Vec::new(),
             });
             let prepared = Arc::new(
                 crate::replay::preparation::taiko::prepare_replay(&beatmap, &document).unwrap(),

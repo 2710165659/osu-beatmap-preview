@@ -352,7 +352,6 @@ mod tests {
                 sequence: 0,
             }],
             seed: None,
-            diagnostics: vec![],
         }
     }
 }

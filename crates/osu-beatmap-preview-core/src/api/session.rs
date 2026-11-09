@@ -556,7 +556,6 @@ mod osr {
                     },
                 ],
                 seed: None,
-                diagnostics: vec![],
             };
             let options = RealtimeOptions {
                 render: crate::api::input::RenderConfig {

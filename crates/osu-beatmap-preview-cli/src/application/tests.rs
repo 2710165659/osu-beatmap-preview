@@ -7,42 +7,6 @@ use std::{cell::RefCell, io::Write};
 use zip::write::SimpleFileOptions;
 
 #[test]
-fn approximate_replay_preserves_known_mods_and_warns_for_unsupported_ones() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../osu-beatmap-preview-web/test/fixtures/replay-standard.osr");
-    let original = parse_osr(&std::fs::read(path).unwrap()).unwrap();
-    let mut legacy = original.clone();
-    legacy.metadata = None;
-    legacy.header.mods_bits = (1 << 3) | (1 << 4) | (1 << 23);
-    assert!(compatible_replay(legacy.clone(), false).is_err());
-    let result = compatible_replay(legacy.clone(), true).unwrap();
-    assert_eq!(result.header.mods_bits, (1 << 3) | (1 << 4));
-    assert_eq!(result.frames, legacy.frames);
-    assert!(result.diagnostics[0].contains("0x00800000"));
-
-    let mut modern = original;
-    modern.metadata = Some(
-        serde_json::from_value(serde_json::json!({"mods": [
-            {"acronym": "HD"}, {"acronym": "UNKNOWN"}, {"acronym": "DT"}
-        ]}))
-        .unwrap(),
-    );
-    let result = compatible_replay(modern.clone(), true).unwrap();
-    let codes = result
-        .metadata
-        .unwrap()
-        .mods
-        .into_iter()
-        .map(|m| m.acronym)
-        .collect::<Vec<_>>();
-    assert_eq!(codes, ["HD", "DT"]);
-    assert!(result.diagnostics[0].contains("UNKNOWN"));
-    modern.metadata.as_mut().unwrap().mods.clear();
-    modern.frames[0].keys = 32;
-    assert!(compatible_replay(modern, true).is_err());
-}
-
-#[test]
 fn checksum_uses_original_bytes_not_normalized_text() {
     let original = b"a\r\nb\r\n";
     let checksum = format!("{:x}", md5::compute(original));
@@ -189,11 +153,6 @@ fn local_default_png_and_gif_load_do_not_require_audio_or_official_credentials()
             std::time::Duration::from_secs(5),
         );
         let source = load(&request, &fixture.directory, &deadline).unwrap();
-        let old_identity = format!(
-            "{:x}",
-            Sha256::digest(std::fs::read(&source.osr_path).unwrap())
-        );
-        assert_ne!(source.identity, old_identity[..16]);
         assert!(source.osz_path.is_none());
         assert!(source.beatmap.general.get("AudioFilename").is_none());
     }

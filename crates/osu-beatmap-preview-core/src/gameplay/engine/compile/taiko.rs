@@ -528,7 +528,6 @@ mod tests {
             },
             metadata: None,
             seed: None,
-            diagnostics: Vec::new(),
             frames: frames
                 .iter()
                 .enumerate()

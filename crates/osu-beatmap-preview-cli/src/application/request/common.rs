@@ -31,7 +31,6 @@ pub struct ExecutionOptions {
     pub no_cache: bool,
     pub logging: bool,
     pub config: Option<String>,
-    pub approximate_replay: bool,
 }
 
 impl Default for ExecutionOptions {
@@ -40,7 +39,6 @@ impl Default for ExecutionOptions {
             no_cache: false,
             logging: true,
             config: None,
-            approximate_replay: false,
         }
     }
 }

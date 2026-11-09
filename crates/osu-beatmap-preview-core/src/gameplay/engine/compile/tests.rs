@@ -628,6 +628,5 @@ fn document(frames: &[(i64, [f32; 2], u32)]) -> ReplayDocument {
             })
             .collect(),
         seed: None,
-        diagnostics: vec![],
     }
 }

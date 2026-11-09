@@ -172,7 +172,6 @@ fn fixture(objects: &str) -> (Beatmap, PreparedStandard, GameplayTimeline) {
             sequence: 0,
         }],
         seed: None,
-        diagnostics: vec![],
     });
     let gameplay = GameplayTimeline {
         policy: Default::default(),

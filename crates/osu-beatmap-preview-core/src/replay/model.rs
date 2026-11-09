@@ -64,7 +64,6 @@ pub struct ReplayDocument {
     pub metadata: Option<ReplayMetadata>,
     pub frames: Vec<ReplayFrame>,
     pub seed: Option<i64>,
-    pub diagnostics: Vec<String>,
 }
 
 /// 官方历史扩展允许 rank/client_version 缺失或为 null；不影响输入帧播放。

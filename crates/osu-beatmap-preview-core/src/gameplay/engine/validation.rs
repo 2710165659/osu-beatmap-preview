@@ -285,7 +285,6 @@ mod tests {
             }),
             frames: vec![],
             seed: None,
-            diagnostics: vec![],
         };
         (document, state, maximums)
     }

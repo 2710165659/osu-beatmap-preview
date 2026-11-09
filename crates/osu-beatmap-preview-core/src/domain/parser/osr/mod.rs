@@ -37,7 +37,6 @@ pub fn parse_osr(bytes: &[u8]) -> Result<ReplayDocument> {
         metadata,
         frames,
         seed,
-        diagnostics: Vec::new(),
     })
 }
 
