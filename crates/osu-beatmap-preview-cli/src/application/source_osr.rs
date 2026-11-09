@@ -42,10 +42,20 @@ pub(super) fn load(
         _ => online.as_ref().expect("在线来源已下载").path.clone(),
     };
     let replay_bytes = read_limited(&osr_path, 64 * 1024 * 1024)?;
-    let document = Arc::new(parse_osr(&replay_bytes)?);
-    compatibility::select_replay(&document)?;
+    let document = Arc::new(compatible_replay(
+        parse_osr(&replay_bytes)?,
+        request.execution.approximate_replay,
+    )?);
     let checksum = &document.header.beatmap_md5;
-    let identity = format!("{:x}", Sha256::digest(&replay_bytes))[..16].to_string();
+    let mut hasher = Sha256::new();
+    hasher.update(&replay_bytes);
+    if !document.diagnostics.is_empty() {
+        hasher.update(b"approximate-replay-v1");
+        for warning in &document.diagnostics {
+            hasher.update(warning.as_bytes());
+        }
+    }
+    let identity = format!("{:x}", hasher.finalize())[..16].to_string();
     let downloads = Official {
         cache,
         no_cache: request.execution.no_cache,
@@ -68,6 +78,102 @@ pub(super) fn load(
         osu_path,
         osr_path,
     })
+}
+
+// 只降级无法解码的 Mod；其他回放错误仍原样返回。原始 OSR 不会被修改。
+fn compatible_replay(
+    mut document: ReplayDocument,
+    allow_approximate: bool,
+) -> Result<ReplayDocument> {
+    let error = match compatibility::select_replay(&document) {
+        Ok(_) => return Ok(document),
+        Err(error) => error,
+    };
+    if !allow_approximate || osu_beatmap_preview_core::replay::mods::decode(&document).is_ok() {
+        return Err(error);
+    }
+    let mut skipped = Vec::new();
+    if let Some(metadata) = &mut document.metadata {
+        let original = std::mem::take(&mut metadata.mods);
+        for modifier in original {
+            document
+                .metadata
+                .as_mut()
+                .expect("metadata is present")
+                .mods
+                .push(modifier.clone());
+            if osu_beatmap_preview_core::replay::mods::decode(&document).is_err() {
+                document
+                    .metadata
+                    .as_mut()
+                    .expect("metadata is present")
+                    .mods
+                    .pop();
+                skipped.push(modifier.acronym);
+            }
+        }
+    } else {
+        let original = document.header.mods_bits;
+        document.header.mods_bits = 0;
+        for bit in 0..32 {
+            let flag = 1_u32 << bit;
+            if original & flag == 0 {
+                continue;
+            }
+            document.header.mods_bits |= flag;
+            if osu_beatmap_preview_core::replay::mods::decode(&document).is_err() {
+                document.header.mods_bits &= !flag;
+                skipped.push(legacy_mod_label(bit, flag));
+            }
+        }
+    }
+    if skipped.is_empty() {
+        return Err(error);
+    }
+    compatibility::select_replay(&document)?;
+    document.diagnostics.push(format!(
+        "未还原 Mod：{}；谱面、动作和重算判定可能不准确",
+        skipped.join(", ")
+    ));
+    Ok(document)
+}
+
+fn legacy_mod_label(bit: u32, flag: u32) -> String {
+    let name = match bit {
+        0 => "NF",
+        1 => "EZ",
+        2 => "TD",
+        3 => "HD",
+        4 => "HR",
+        5 => "SD",
+        6 => "DT",
+        7 => "RX",
+        8 => "HT",
+        9 => "NC",
+        10 => "FL",
+        11 => "AT",
+        12 => "SO",
+        13 => "AP",
+        14 => "PF",
+        15 => "4K",
+        16 => "5K",
+        17 => "6K",
+        18 => "7K",
+        19 => "8K",
+        20 => "FI",
+        21 => "RD",
+        22 => "CN",
+        23 => "TP",
+        24 => "9K",
+        25 => "COOP",
+        26 => "1K",
+        27 => "3K",
+        28 => "2K",
+        29 => "SV2",
+        30 => "MR",
+        _ => "未知",
+    };
+    format!("{name} (0x{flag:08x})")
 }
 
 fn resolve_resources(

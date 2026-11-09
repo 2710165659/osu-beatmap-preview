@@ -518,8 +518,25 @@ fn parse_slider_end_time(
     difficulty: &KvSection,
     timing_points: &[TimingPoint],
 ) -> Option<i64> {
-    let slides: f64 = parts.get(6)?.parse::<i32>().ok()? as f64;
-    let pixel_length: f64 = parts.get(7)?.parse().ok()?;
+    let slides = parts.get(6)?.parse::<i32>().ok()?.max(1) as f64;
+    let mut pixel_length: f64 = parts.get(7)?.parse().ok()?;
+    if !pixel_length.is_finite() {
+        return None;
+    }
+    if pixel_length <= 0.0 {
+        // 官方旧谱解码器把非正长度视为未指定，使用曲线的实际长度。
+        let fields = parse_slider_fields(parts.get(..8)?)?;
+        let x = parts.first()?.parse::<f64>().ok()? as i32;
+        let y = parts.get(1)?.parse::<f64>().ok()? as i32;
+        pixel_length = crate::domain::shared::slider_path::build_lazer_slider_path(
+            x,
+            y,
+            &fields.points,
+            &fields.slider_type,
+            0.0,
+        )
+        .total_length;
+    }
     let slider_multiplier = difficulty.get_f64("SliderMultiplier")?;
     let (beat_length, slider_velocity) = resolve_slider_timing(start_time, timing_points);
     let duration =
@@ -559,6 +576,19 @@ pub fn round_half_even(v: f64) -> i64 {
             f
         } else {
             f + 1
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn nonpositive_slider_lengths_use_the_actual_path_distance() {
+        for length in ["-1", "0"] {
+            let text = format!("osu file format v14\n[General]\nMode:1\n[Difficulty]\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n0,0,1000,2,0,L|100:0,1,{length}\n");
+            let map = crate::parse_beatmap_bytes(text.as_bytes()).unwrap();
+            let object = &map.hit_objects.as_taiko().unwrap()[0];
+            assert_eq!((object.start_time, object.end_time), (1000, 1500));
         }
     }
 }

@@ -130,11 +130,12 @@ pub fn compile_taiko(
         }
         checkpoints.push((events.last().unwrap().time, score.state.clone()));
     }
-    score.state.status = if failure_time.is_some() || score.state.health < 0.5 {
-        ReplayStatus::Failed
-    } else {
-        ReplayStatus::Completed
-    };
+    score.state.status =
+        if failure_time.is_some() || (!prepared.mods.no_fail && score.state.health < 0.5) {
+            ReplayStatus::Failed
+        } else {
+            ReplayStatus::Completed
+        };
     if score.state.status == ReplayStatus::Failed {
         events.push(GameplayEvent {
             id: events.len(),
@@ -641,6 +642,29 @@ mod tests {
                 assert_eq!(actual.state_at(time), baseline.state_at(time));
             }
         }
+    }
+
+    #[test]
+    fn legacy_smoke_does_not_change_taiko_hits_or_judgements() {
+        let objects = "0,0,1000,1,0\n0,0,2000,1,8";
+        let plain = compile(
+            objects,
+            &[(0, 0), (1000, 4), (1100, 0), (2000, 8), (2200, 0)],
+        );
+        let smoke = compile(
+            objects,
+            &[(0, 16), (1000, 20), (1100, 16), (2000, 24), (2200, 16)],
+        );
+        assert_eq!(plain.checkpoints, smoke.checkpoints);
+        assert_eq!(plain.state_at(2200.0), smoke.state_at(2200.0));
+        let actions = |timeline: &GameplayTimeline| {
+            timeline
+                .taiko_inputs
+                .iter()
+                .map(|p| (p.time as i64, p.key))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(actions(&plain), actions(&smoke));
     }
 
     #[test]

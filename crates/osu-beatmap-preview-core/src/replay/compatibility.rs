@@ -55,7 +55,8 @@ pub fn select_replay(document: &ReplayDocument) -> Result<ReplayPolicy> {
                     "InvalidReplay: empty or backwards Taiko frames",
                 ));
             }
-            if document.frames.iter().any(|f| f.keys & !15 != 0) {
+            // 旧格式的第 5 位是 Smoke，不参与 Taiko 击打；仍拒绝未知按键位。
+            if document.frames.iter().any(|f| f.keys & !31 != 0) {
                 return Err(PreviewError::new(
                     "UnsupportedReplayVariant: unknown Taiko input buttons",
                 ));
@@ -67,7 +68,7 @@ pub fn select_replay(document: &ReplayDocument) -> Result<ReplayPolicy> {
         2 => {
             let mods = super::mods::decode(document)?;
             if document.frames.is_empty() || document.frames.windows(2).any(|w| w[1].time_ms < w[0].time_ms)
-                || document.frames.iter().any(|f| f.cursor.iter().any(|p| !p.is_finite()) || f.keys > 1) {
+                || document.frames.iter().any(|f| f.cursor.iter().any(|p| !p.is_finite()) || f.keys & !31 != 0) {
                 return Err(PreviewError::parse("InvalidReplay: invalid Catch input frames"));
             }
             Ok(ReplayPolicy::Catch(CatchPolicy { classic: mods.settings.classic }))
@@ -217,24 +218,60 @@ mod tests {
     use crate::replay::{ReplayFrame, ReplayHeader, ReplayMetadata};
 
     #[test]
+    fn taiko_ignores_legacy_smoke_but_rejects_unknown_input_bits() {
+        let mut replay = document();
+        replay.header.ruleset_id = 1;
+        replay.frames[0].keys = 0b1_0100;
+        assert!(matches!(select_replay(&replay), Ok(ReplayPolicy::Taiko(_))));
+        replay.frames[0].keys = 0b10_0000;
+        assert!(select_replay(&replay)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown Taiko input buttons"));
+    }
+
+    #[test]
+    fn catch_accepts_legacy_button_masks_and_rejects_unknown_bits() {
+        let mut replay = document();
+        replay.header.ruleset_id = 2;
+        for bits in [0, 1, 2, 16, 17, 31] {
+            replay.frames[0].keys = bits;
+            assert!(
+                matches!(select_replay(&replay), Ok(ReplayPolicy::Catch(_))),
+                "{bits}"
+            );
+        }
+        replay.frames[0].keys = 32;
+        assert!(select_replay(&replay).is_err());
+    }
+
+    #[test]
+    fn smoke_flag_is_accepted_in_all_four_rulesets() {
+        for mode in 0..=3 {
+            let mut replay = document();
+            replay.header.ruleset_id = mode;
+            replay.frames[0].keys = 16;
+            assert!(select_replay(&replay).is_ok(), "mode {mode}");
+        }
+    }
+
+    #[test]
     fn rejects_unsupported_mods_and_invalid_input_instead_of_client_versions() {
         let original = document();
         assert!(select(&original).is_ok());
-        for acronym in ["NF", "UNKNOWN"] {
-            let mut replay = original.clone();
-            replay.metadata.as_mut().unwrap().mods.push(ReplayMod {
-                acronym: acronym.into(),
-                settings: Default::default(),
-                extra: Default::default(),
-            });
-            assert!(select(&replay).unwrap_err().to_string().contains(acronym));
-        }
+        let mut replay = original.clone();
+        replay.metadata.as_mut().unwrap().mods.push(ReplayMod {
+            acronym: "UNKNOWN".into(),
+            settings: Default::default(),
+            extra: Default::default(),
+        });
+        assert!(select(&replay).unwrap_err().to_string().contains("UNKNOWN"));
         for version in [20070916, 20200101, 30_000_000, 30_000_019, 40_000_000] {
             let mut replay = original.clone();
             replay.header.version = version;
             assert!(select(&replay).is_ok());
         }
-        for bits in [1, 1 << 30, 1 << 31] {
+        for bits in [1 << 30, 1 << 31] {
             let mut replay = original.clone();
             replay.metadata = None;
             replay.header.mods_bits = bits;
