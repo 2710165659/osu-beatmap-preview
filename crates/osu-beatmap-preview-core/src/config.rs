@@ -6,6 +6,9 @@
 use std::cell::RefCell;
 use std::sync::{Arc, OnceLock};
 
+mod taiko_spacing;
+pub use taiko_spacing::TaikoPngSpacing;
+
 include!("generated_config.rs");
 
 #[derive(Clone, Debug, serde::Deserialize)]

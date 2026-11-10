@@ -107,7 +107,7 @@ pub struct RenderTaikoPngStyleConfig {
     pub ROW_WIDTH_MULTIPLIER_BPM_180_TO_240: f64,
     pub ROW_WIDTH_MULTIPLIER_BPM_240_TO_300: f64,
     pub ROW_WIDTH_MULTIPLIER_BPM_300_PLUS: f64,
-    pub SPACING_PER_BPM: f64,
+    pub SPACING_PER_BPM: TaikoPngSpacing,
     pub TIME_LABEL_MIN_INTERVAL_MS: i64,
 }
 

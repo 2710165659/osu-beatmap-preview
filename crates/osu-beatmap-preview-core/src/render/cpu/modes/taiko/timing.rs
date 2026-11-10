@@ -116,6 +116,56 @@ pub fn build_scroll_mapper(
     ))
 }
 
+/// most 统计整谱物件时间范围内的红线持续时间，忽略绿线及首尾空白。
+/// 节拍长度按 0.001 ms 归组以消除浮点误差；相同时保留先出现的区段。
+pub fn resolve_png_spacing_bpm(
+    spacing: crate::config::TaikoPngSpacing,
+    timing_points: &[TimingPoint],
+    first_note_time: i64,
+    chart_end_time: i64,
+) -> f64 {
+    use crate::config::TaikoPngSpacing;
+    match spacing {
+        TaikoPngSpacing::Auto => return 0.0,
+        TaikoPngSpacing::Fixed(bpm) => return bpm,
+        TaikoPngSpacing::Most => {}
+    }
+
+    let mut buckets: Vec<(i64, f64, f64)> = Vec::new();
+    let mut beat_length = DEFAULT_BEAT_LENGTH;
+    let mut start = first_note_time as f64;
+    let end = chart_end_time as f64;
+    let mut accumulate = |beat_length: f64, duration: f64| {
+        if duration <= 0.0 {
+            return;
+        }
+        let key = pyround(beat_length * 1000.0);
+        if let Some(bucket) = buckets.iter_mut().find(|bucket| bucket.0 == key) {
+            bucket.2 += duration;
+        } else {
+            buckets.push((key, beat_length, duration));
+        }
+    };
+    for point in timing_points.iter().filter(|point| point.uninherited) {
+        if point.time > end {
+            break;
+        }
+        if point.time > start {
+            accumulate(beat_length, point.time - start);
+            start = point.time;
+        }
+        beat_length = apply_timing_state(point, beat_length, DEFAULT_METER, 1.0).0;
+    }
+    accumulate(beat_length, end - start);
+    let mut selected = (beat_length, 0.0);
+    for (_, beat_length, duration) in buckets {
+        if duration > selected.1 {
+            selected = (beat_length, duration);
+        }
+    }
+    60_000.0 / selected.0
+}
+
 fn pixels_per_ms(
     slider_multiplier: f64,
     scroll_speed: f64,
@@ -720,6 +770,33 @@ mod tests {
             sample_index: 0,
             sample_volume: 100,
         }
+    }
+
+    #[test]
+    fn png_most_spacing_accumulates_duration_within_object_bounds() {
+        use crate::config::TaikoPngSpacing::{Auto, Fixed, Most};
+        let points = vec![
+            redline(0.0, 1000.0),
+            redline(10_000.0, 500.0),
+            redline(13_000.0, 250.0),
+            redline(17_000.0, 500.000_000_1),
+            redline(20_000.0, 1000.0),
+        ];
+        assert_eq!(
+            resolve_png_spacing_bpm(Most, &points, 10_000, 20_000),
+            120.0
+        );
+        assert_eq!(resolve_png_spacing_bpm(Auto, &points, 10_000, 20_000), 0.0);
+        assert_eq!(
+            resolve_png_spacing_bpm(Fixed(180.0), &points, 10_000, 20_000),
+            180.0
+        );
+        // 两种 BPM 各占两秒，保留较早出现的 120 BPM。
+        assert_eq!(
+            resolve_png_spacing_bpm(Most, &points, 11_000, 15_000),
+            120.0
+        );
+        assert_eq!(resolve_png_spacing_bpm(Most, &[], 0, 1000), 120.0);
     }
 
     #[test]

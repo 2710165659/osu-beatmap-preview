@@ -117,6 +117,19 @@ fn render_grid(
         ));
     }
 
+    // 在裁剪前按整谱确定基准，保证不同导出片段的间距一致。
+    let spacing_bpm = resolve_png_spacing_bpm(
+        crate::config::current()
+            .render
+            .taiko
+            .png
+            .style
+            .SPACING_PER_BPM,
+        &beatmap.timing_points,
+        first_note_time,
+        chart_end_time,
+    );
+
     // 只保留窗口内的物件并平移到窗口起点；整谱模式窗口覆盖全部物件，行为不变。
     window_hit_objects(&mut hit_objects, window);
 
@@ -135,12 +148,7 @@ fn render_grid(
         &spacing_timing_points,
         effective_chart_end_time,
         slider_multiplier,
-        crate::config::current()
-            .render
-            .taiko
-            .png
-            .style
-            .SPACING_PER_BPM,
+        spacing_bpm,
         render_scale,
     );
     let redline_sections = build_redline_sections(&timing_points, effective_chart_end_time);

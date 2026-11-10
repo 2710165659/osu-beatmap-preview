@@ -1194,6 +1194,26 @@ render:
     }
 
     #[test]
+    fn taiko_png_spacing_accepts_new_modes_through_config_layers() {
+        use osu_beatmap_preview_core::config::TaikoPngSpacing::{Auto, Fixed, Most};
+        for (value, expected) in [
+            (serde_json::json!("most"), Most),
+            (serde_json::json!("AUTO"), Auto),
+            (serde_json::json!("179.5 bPm"), Fixed(179.5)),
+            (serde_json::json!(0), Auto),
+        ] {
+            let source = serde_json::json!({
+                "render": {"taiko": {"png": {"style": {"SPACING_PER_BPM": value}}}}
+            })
+            .to_string();
+            let configured = load_snapshot(Some(&source)).unwrap();
+            assert_eq!(configured.render.taiko.png.style.SPACING_PER_BPM, expected);
+        }
+        let invalid = r#"{"render":{"taiko":{"png":{"style":{"SPACING_PER_BPM":"fast"}}}}}"#;
+        assert!(load_snapshot(Some(invalid)).is_err());
+    }
+
+    #[test]
     fn png_layout_limits_and_taiko_spacing_have_explicit_scale_semantics() {
         let configured = load_snapshot(Some(
             r#"{
@@ -1224,7 +1244,10 @@ render:
                 .ROW_WIDTH_MULTIPLIER_BPM_180_TO_240,
             1.15
         );
-        assert_eq!(configured.render.taiko.png.style.SPACING_PER_BPM, 180.0);
+        assert_eq!(
+            configured.render.taiko.png.style.SPACING_PER_BPM,
+            osu_beatmap_preview_core::config::TaikoPngSpacing::Fixed(180.0)
+        );
         assert_eq!(
             configured
                 .render
@@ -1436,7 +1459,10 @@ render:
                     .ROW_WIDTH_MULTIPLIER_BPM_300_PLUS,
                 1.45
             );
-            assert_eq!(configured.render.taiko.png.style.SPACING_PER_BPM, 0.0);
+            assert_eq!(
+                configured.render.taiko.png.style.SPACING_PER_BPM,
+                osu_beatmap_preview_core::config::TaikoPngSpacing::Most
+            );
             assert_eq!(
                 configured
                     .render
