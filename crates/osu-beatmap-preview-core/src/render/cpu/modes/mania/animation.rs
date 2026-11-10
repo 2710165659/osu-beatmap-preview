@@ -65,12 +65,18 @@ pub fn mania_visibility_timeline(
     VisibilityTimeline::new(hit_times, breaks)
 }
 
-pub fn mania_hidden(
+pub fn mania_note_cover(
     timeline: &VisibilityTimeline,
     time: i64,
     layout: &AnimationLayout,
+    fade_in: bool,
 ) -> ManiaHidden {
-    ManiaHidden::new(
+    let constructor = if fade_in {
+        ManiaHidden::new_fade_in
+    } else {
+        ManiaHidden::new
+    };
+    constructor(
         timeline,
         time,
         layout.playfield_top,
@@ -139,8 +145,9 @@ pub fn prepare_mania_gif_frames(
     }
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     let hidden = mods.is_some_and(|mods| mods.hidden);
+    let fade_in = mods.is_some_and(|mods| mods.fade_in);
     let flashlight = mods.is_some_and(|mods| mods.flashlight);
-    let visibility = (hidden || flashlight)
+    let visibility = (hidden || fade_in || flashlight)
         .then(|| mania_visibility_timeline(&hit_objects, &beatmap.break_periods));
     if hit_objects.is_empty() {
         return Err(PreviewError::render("mania beatmap has no hit objects"));
@@ -320,7 +327,7 @@ pub fn prepare_mania_gif_frames(
         );
         for (segment_index, _) in segment_timings.iter().enumerate() {
             let mut frame = static_bg.clone();
-            let mut notes = hidden.then(|| Img::new(frame.w, frame.h, [0, 0, 0, 0]));
+            let mut notes = (hidden || fade_in).then(|| Img::new(frame.w, frame.h, [0, 0, 0, 0]));
             let seg_left = layout.playfield_left;
             let snapshot_time = segment_snapshot_times[segment_index][frame_index];
             let snapshot_pos = scroll_map.position_at(snapshot_time as f64);
@@ -370,7 +377,7 @@ pub fn prepare_mania_gif_frames(
                     height: layout.playfield_height,
                 };
                 if let Some(notes) = &mut notes {
-                    mania_hidden(timeline, snapshot_time, &layout).apply(notes, rect);
+                    mania_note_cover(timeline, snapshot_time, &layout, fade_in).apply(notes, rect);
                 }
             }
             if let Some(notes) = notes {
@@ -1155,7 +1162,7 @@ mod tests {
     }
 
     #[test]
-    fn hidden_fades_hold_body_and_head_without_covering_judgement_line() {
+    fn note_covers_fade_holds_in_opposite_directions_without_covering_judgement_line() {
         let skin = load_mania_skin_config(4, crate::render::geometry::OutputFormat::Gif);
         let layout = build_layout(&skin, crate::render::geometry::OutputFormat::Gif);
         let object = ManiaHitObject {
@@ -1192,17 +1199,24 @@ mod tests {
         let upper_y = layout.playfield_top + 100;
         assert_eq!(notes.get(x, upper_y as u32)[3], 255);
         let timeline = mania_visibility_timeline(std::slice::from_ref(&object), &[]);
-        mania_hidden(&timeline, 900, &layout).apply(&mut notes, layout.content);
-        assert_eq!(notes.get(x, head_y as u32)[3], 0);
-        assert_eq!(notes.get(x, upper_y as u32)[3], 255);
-        let mut canvas = Img::new(notes.w, notes.h, [0, 0, 0, 0]);
-        draw_segment_background(&mut canvas, left, &layout);
-        let judgement = canvas.get(x, (layout.playfield_top + layout.hit_position_y) as u32);
-        canvas.alpha_composite(&notes, 0, 0);
-        assert_eq!(
-            canvas.get(x, (layout.playfield_top + layout.hit_position_y) as u32),
-            judgement
-        );
+        for fade_in in [false, true] {
+            let mut covered = notes.clone();
+            mania_note_cover(&timeline, 900, &layout, fade_in).apply(&mut covered, layout.content);
+            assert_eq!(covered.get(x, head_y as u32)[3], if fade_in { 255 } else { 0 });
+            if fade_in {
+                assert!((1..255).contains(&covered.get(x, upper_y as u32)[3]));
+            } else {
+                assert_eq!(covered.get(x, upper_y as u32)[3], 255);
+            }
+            let mut canvas = Img::new(notes.w, notes.h, [0, 0, 0, 0]);
+            draw_segment_background(&mut canvas, left, &layout);
+            let judgement = canvas.get(x, (layout.playfield_top + layout.hit_position_y) as u32);
+            canvas.alpha_composite(&covered, 0, 0);
+            assert_eq!(
+                canvas.get(x, (layout.playfield_top + layout.hit_position_y) as u32),
+                judgement
+            );
+        }
     }
 
     /// 下落音符模式下，未来音符位于判定线以上，过去音符位于判定线以下。
@@ -1392,6 +1406,7 @@ mod tests {
         for (scale, rows, columns, mods) in [
             (0.5, 2, 2, None),
             (0.75, 1, 4, Some("HD")),
+            (0.75, 2, 2, Some("FI")),
             (0.5, 4, 1, Some("FL")),
         ] {
             let mut config = CoreConfig::default();
@@ -1402,6 +1417,7 @@ mod tests {
             config.render.mania.mp4.SCALE = 2.0;
             let mut settings = ModSettings::default();
             settings.hidden = mods == Some("HD");
+            settings.fade_in = mods == Some("FI");
             settings.flashlight = mods == Some("FL");
             with_config(Arc::new(config.clone()), || {
                 let layout = build_layout(
@@ -1416,10 +1432,10 @@ mod tests {
                     (layout.playfield_left * 2 + layout.segment_width - layout.image_width).abs()
                         <= 1
                 );
-                let render = |times| {
+                let render = |times, settings: &ModSettings| {
                     prepare_mania_gif_frames(
                         &beatmap,
-                        Some(&settings),
+                        Some(settings),
                         GifRenderOptions::ResolvedSegments {
                             times_ms: times,
                             duration_seconds: Some(0.2),
@@ -1432,14 +1448,19 @@ mod tests {
                     .render(1)
                 };
                 let times = [900, 1400, 1900, 2900];
-                let grid = render(times.to_vec());
+                let grid = render(times.to_vec(), &settings);
+                if settings.fade_in {
+                    let mut uncovered = settings.clone();
+                    uncovered.fade_in = false;
+                    assert_ne!(grid.data, render(times.to_vec(), &uncovered).data);
+                }
                 let mut single_config = config.clone();
                 single_config.render.mania.gif.structure.ROW_COUNT = 1;
                 single_config.render.mania.gif.structure.IMAGES_PER_ROW = 1;
                 let (width, height) = gif_unit_size(&layout, true);
                 for (index, time) in times.into_iter().enumerate() {
                     let single =
-                        with_config(Arc::new(single_config.clone()), || render(vec![time]));
+                        with_config(Arc::new(single_config.clone()), || render(vec![time], &settings));
                     let (x, y) = gif_frame_origin(index, &layout, true);
                     let (single_x, single_y) = with_config(Arc::new(single_config.clone()), || {
                         gif_frame_origin(0, &layout, true)

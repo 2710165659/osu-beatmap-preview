@@ -8,7 +8,7 @@ use crate::domain::mods::ModSettings;
 use crate::domain::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::cpu::modes::mania::animation::{
-    build_scroll_map, build_video_layout, compute_time_range, mania_flashlight, mania_hidden,
+    build_scroll_map, build_video_layout, compute_time_range, mania_flashlight, mania_note_cover,
     mania_visibility_timeline, visible_pos_window,
 };
 use crate::render::cpu::modes::mania::hit_flash::HitFlashes;
@@ -65,8 +65,9 @@ pub fn prepare_realtime(
         return Err(PreviewError::render("mania beatmap has no hit objects"));
     }
     let hidden = mods.is_some_and(|mods| mods.hidden);
+    let fade_in = mods.is_some_and(|mods| mods.fade_in);
     let flashlight = mods.is_some_and(|mods| mods.flashlight);
-    let visibility = (hidden || flashlight)
+    let visibility = (hidden || fade_in || flashlight)
         .then(|| mania_visibility_timeline(&hit_objects, &beatmap.break_periods));
     let speed = mods.map_or(1.0, |value| value.speed_multiplier);
     let skin_config = load_mania_skin_config(key_count, OutputFormat::Mp4);
@@ -156,7 +157,7 @@ pub fn prepare_realtime(
                 &layout,
                 pixels_per_scroll_unit,
             );
-            let mut notes = hidden.then(|| {
+            let mut notes = (hidden || fade_in).then(|| {
                 // 每个键道单独裁切，左右各保留一列透明像素。小数倍率下 GPU 的
                 // 双线性采样需要这两列，直接拉伸一列会改变音符边缘的透明度。
                 (0..key_count as usize)
@@ -211,7 +212,7 @@ pub fn prepare_realtime(
             }
             if let Some(timeline) = &visibility {
                 if let Some(notes) = notes {
-                    let cover = mania_hidden(timeline, absolute_time_ms, &layout);
+                    let cover = mania_note_cover(timeline, absolute_time_ms, &layout, fade_in);
                     for (lane, mut strip) in notes.into_iter().enumerate() {
                         let strip_width = i64::from(strip.w);
                         cover.apply(
@@ -405,7 +406,7 @@ mod tests {
     use crate::render::cpu::modes::mania::animation::draw_gif_hit_object;
 
     #[test]
-    fn hidden_lane_strips_match_full_note_layer_with_overlapping_holds() {
+    fn note_cover_lane_strips_match_full_note_layer_with_overlapping_holds() {
         for keys in [4, 7] {
             let skin = load_mania_skin_config(keys, OutputFormat::Mp4);
             let layout = build_video_layout(&skin, OutputFormat::Mp4);
@@ -439,7 +440,10 @@ mod tests {
                 })
                 .collect();
             let timeline = mania_visibility_timeline(&objects, &[]);
-            for snapshot in [900, 1600, 3100] {
+            for (snapshot, fade_in) in [900, 1600, 3100]
+                .into_iter()
+                .flat_map(|snapshot| [false, true].map(|fade_in| (snapshot, fade_in)))
+            {
                 let mut full = Img::new(
                     layout.image_width as u32,
                     layout.image_height as u32,
@@ -488,7 +492,7 @@ mod tests {
                         0.15 * layout.render_scale,
                     );
                 }
-                let cover = mania_hidden(&timeline, snapshot, &layout);
+                let cover = mania_note_cover(&timeline, snapshot, &layout, fade_in);
                 cover.apply(&mut full, layout.content);
                 for (lane, mut strip) in strips.into_iter().enumerate() {
                     let strip_width = i64::from(strip.w);

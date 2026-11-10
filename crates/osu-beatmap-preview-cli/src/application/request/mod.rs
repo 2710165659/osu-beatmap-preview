@@ -167,6 +167,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fade_in_is_accepted_before_resolving_the_mania_animation_source() {
+        for token in ["FI", "fade-in"] {
+            for format in [None, Some("gif"), Some("mp4")] {
+                let mut request = RenderRequest::new("123");
+                request.ruleset.mods = vec![token.into()];
+                request.output.format = format.map(str::to_owned);
+                assert!(request.validate().unwrap().ruleset.mods.unwrap().fade_in);
+            }
+        }
+    }
+
+    #[test]
     fn realtime_only_mods_are_rejected_before_reading_or_downloading_maps() {
         for code in [
             "CL",

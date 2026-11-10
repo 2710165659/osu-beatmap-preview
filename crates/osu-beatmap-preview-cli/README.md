@@ -187,7 +187,7 @@ Windows 自动尝试 NVENC 或 AMF，失败时回退 CPU OpenH264；其他平台
 | Standard | Easy、Hard-Rock、Hidden、Flashlight、Difficulty-Adjust、Traceable、Mirror | Double-Time、Half-Time、Nightcore、Daycore | Classic、Relax、Spun-Out、Autopilot、Alternate、Single-Tap、No-Fail、Sudden-Death、Perfect |
 | Taiko | Easy、Hard-Rock、Swap | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | Classic、Relax、No-Fail、Sudden-Death、Perfect |
 | Catch | Easy、Hard-Rock、Mirror | Hidden、Flashlight、Double-Time、Half-Time、Nightcore、Daycore | Classic、Relax、No-Fail、Sudden-Death、Perfect |
-| Mania | One-Key 至 Ten-Keys、Dual-Stages、Invert、Hold-Off、Mirror | Hidden、Flashlight、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | Classic、Easy、Hard-Rock、Fade-In、No-Fail、Sudden-Death、Perfect |
+| Mania | One-Key 至 Ten-Keys、Dual-Stages、Invert、Hold-Off、Mirror | Hidden、Flashlight、Fade-In、Constant-Speed、Double-Time、Half-Time、Nightcore、Daycore | Classic、Easy、Hard-Rock、No-Fail、Sudden-Death、Perfect |
 
 CLI 普通导出不支持“实时预览新增”列的 Mod。
 
@@ -205,6 +205,7 @@ CLI 普通导出不支持“实时预览新增”列的 Mod。
 | Hard-Rock | HR |
 | Hidden | HD |
 | Flashlight | FL |
+| Fade-In | FI |
 | Difficulty-Adjust | DA（需附加难度参数） |
 | Traceable | TC |
 | Double-Time | DT |

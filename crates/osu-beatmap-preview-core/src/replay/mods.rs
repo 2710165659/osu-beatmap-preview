@@ -417,6 +417,7 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
     }
     validate_fail_mods(&result)?;
     if result.fade_in {
+        result.settings.fade_in = true;
         result.settings.tokens.push("FI".into());
     }
     Ok(result)
@@ -632,6 +633,7 @@ mod tests {
                 let mods = decode(&replay).unwrap();
                 assert_eq!(mods.settings.relax, code == "RX");
                 assert_eq!(mods.fade_in, code == "FI");
+                assert_eq!(mods.settings.fade_in, code == "FI");
             }
         }
         for mode in 1..=3 {

@@ -24,7 +24,7 @@ use std::path::Path;
 
 use super::animation::{
     build_scroll_map, build_video_layout, compute_time_range, draw_gif_hit_object,
-    draw_gif_sv_indicators, draw_segment_background, mania_flashlight, mania_hidden,
+    draw_gif_sv_indicators, draw_segment_background, mania_flashlight, mania_note_cover,
     mania_visibility_timeline, visible_pos_window,
 };
 use super::skin::load_mania_skin_config;
@@ -62,8 +62,9 @@ pub(crate) fn render_mania_video(
     }
     let cs_mode = mods.is_some_and(|m| m.cs_override);
     let hidden = mods.is_some_and(|mods| mods.hidden);
+    let fade_in = mods.is_some_and(|mods| mods.fade_in);
     let flashlight = mods.is_some_and(|mods| mods.flashlight);
-    let visibility = (hidden || flashlight)
+    let visibility = (hidden || fade_in || flashlight)
         .then(|| mania_visibility_timeline(&hit_objects, &beatmap.break_periods));
     if hit_objects.is_empty() {
         return Err(PreviewError::render("mania beatmap has no hit objects"));
@@ -171,7 +172,7 @@ pub(crate) fn render_mania_video(
         let snapshot_time = frame_time_ms(start, frame_index, speed, fps);
         let snapshot_pos = scroll_map.position_at(snapshot_time as f64);
         let mut canvas = static_bg.clone();
-        let mut notes = hidden.then(|| Img::new(canvas.w, canvas.h, [0, 0, 0, 0]));
+        let mut notes = (hidden || fade_in).then(|| Img::new(canvas.w, canvas.h, [0, 0, 0, 0]));
         let seg_left = layout.playfield_left;
         draw_gif_sv_indicators(
             &mut canvas,
@@ -213,7 +214,8 @@ pub(crate) fn render_mania_video(
         }
         if let Some(timeline) = &visibility {
             if let Some(mut notes) = notes {
-                mania_hidden(timeline, snapshot_time, &layout).apply(&mut notes, layout.content);
+                mania_note_cover(timeline, snapshot_time, &layout, fade_in)
+                    .apply(&mut notes, layout.content);
                 canvas.alpha_composite(&notes, 0, 0);
             }
             if flashlight {
