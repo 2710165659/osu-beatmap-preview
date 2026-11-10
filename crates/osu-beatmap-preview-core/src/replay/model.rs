@@ -24,6 +24,7 @@ pub struct ReplayHeader {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct ReplayMod {
+    #[serde(default)]
     pub acronym: String,
     #[serde(default)]
     pub settings: BTreeMap<String, serde_json::Value>,
@@ -40,9 +41,9 @@ pub struct ReplayMetadata {
     #[serde(default)]
     pub mods: Vec<ReplayMod>,
     #[serde(default)]
-    pub statistics: BTreeMap<String, u32>,
+    pub statistics: BTreeMap<String, i32>,
     #[serde(default)]
-    pub maximum_statistics: BTreeMap<String, u32>,
+    pub maximum_statistics: BTreeMap<String, i32>,
     #[serde(default)]
     pub pauses: Vec<serde_json::Value>,
     #[serde(flatten)]

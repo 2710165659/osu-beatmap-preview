@@ -65,19 +65,13 @@ fn rejects_truncation_malformed_empty_nonfinite_and_corrupt_compression() {
     for len in [0, 5, 50, bytes.len() - 1] {
         assert!(parse_osr(&bytes[..len]).is_err());
     }
-    for frames in [
-        "",
-        "0|1|2",
-        "0|NaN|2|0",
-        "0|1|2|0,,",
-        "0|1|2|0,1|1|2|0|extra",
-    ] {
+    for frames in ["0|NaN|2|0", "0|1|2|bad", "bad|1|2|0", "0|131073|2|0"] {
         assert!(parse_osr(&fixture(frames)).is_err(), "{frames}");
     }
     assert!(decode::decompress(&[255; 20]).is_err());
     let mut bad = bytes.clone();
     bad.push(0);
-    assert!(parse_osr(&bad).is_err());
+    assert!(parse_osr(&bad).is_ok());
 }
 #[test]
 fn backwards_start_frames_are_repaired_like_official_decoder() {
@@ -207,4 +201,201 @@ fn reads_legacy_online_id_widths_and_optional_lazer_metadata() {
         .unwrap();
         assert!(crate::replay::compatibility::select(&document).is_ok());
     }
+}
+
+#[test]
+fn skips_short_tokens_and_seed_rows_and_ignores_extra_frame_columns() {
+    let replay = parse_osr(&fixture(
+        ",short,0| 1 | 2 | 33 |ignored,,1|2,-12345|bad|bad|seed,10|3|4|-1,-12345|0|0|7,10|5|6|0,",
+    ))
+    .unwrap();
+    assert_eq!(
+        replay
+            .frames
+            .iter()
+            .map(|f| (f.time_ms, f.keys))
+            .collect::<Vec<_>>(),
+        [(0, 33), (10, u32::MAX), (20, 0)]
+    );
+    assert_eq!(replay.seed, Some(7));
+    for frames in ["", ",,", "0|1|2", "-12345|bad|bad|bad", "0|256|-500|0"] {
+        let replay = parse_osr(&fixture(frames)).unwrap();
+        assert!(replay.frames.is_empty());
+        assert!(crate::replay::compatibility::select(&replay).is_err());
+    }
+}
+
+#[test]
+fn game_numeric_limits_apply_before_mode_specific_button_conversion() {
+    for (mode, x, y, keys, valid) in [
+        (0, "131072", "-131072", "2147483647", true),
+        (0, "131073", "0", "0", false),
+        (1, "0", "131073", "0", false),
+        (2, "-131072", "0", "-2147483647", true),
+        (2, "0", "0", "-2147483648", false),
+        (0, "0", "0", "2147483648", false),
+        (3, "1048575", "0", "32", true),
+        (3, "-1048575", "0", "0", true),
+        (3, "1048576", "0", "0", false),
+        (3, "1.9", "0", "0", true),
+        (0, "Infinity", "0", "0", false),
+    ] {
+        let mut bytes = fixture(&format!("0|{x}|{y}|{keys}"));
+        bytes[0] = mode;
+        assert_eq!(parse_osr(&bytes).is_ok(), valid, "{mode}/{x}/{y}/{keys}");
+    }
+}
+
+fn header_end(bytes: &[u8]) -> usize {
+    let mut reader = header::Reader::new(bytes);
+    reader.header().unwrap();
+    bytes.len() - reader.remaining()
+}
+
+#[test]
+fn binary_header_uses_signed_score_nonzero_boolean_and_datetime_bounds() {
+    let original = fixture("0|1|2|0");
+    let end = header_end(&original);
+    let score_offset = end - 8 - 2 - 4 - 1 - 2 - 4;
+    let bool_offset = end - 8 - 2 - 4 - 1;
+    let mut bytes = original.clone();
+    bytes[5] = 1; // SerializationReader 接受任意非零字符串标记。
+    bytes[score_offset..score_offset + 4].copy_from_slice(&(-42_i32).to_le_bytes());
+    bytes[bool_offset] = 255;
+    let replay = parse_osr(&bytes).unwrap();
+    assert_eq!(replay.header.total_score, -42);
+    assert!(replay.header.perfect);
+    for (ticks, valid) in [
+        (0_i64, true),
+        (3_155_378_975_999_999_999, true),
+        (-1, false),
+        (3_155_378_976_000_000_000, false),
+    ] {
+        let mut bytes = original.clone();
+        bytes[end - 8..end].copy_from_slice(&ticks.to_le_bytes());
+        assert_eq!(parse_osr(&bytes).is_ok(), valid, "ticks={ticks}");
+    }
+}
+
+#[test]
+fn life_graph_checks_decimal_fields_but_allows_extra_columns_and_unbounded_health() {
+    let original = fixture("0|1|2|0");
+    let graph_offset = header_end(&original) - 8 - 2;
+    for (graph, valid) in [
+        ("", true),
+        (" , ", true),
+        ("100|2.5|extra,200|-1,", true),
+        ("100|0.5,broken", false),
+        ("100|NaN", false),
+        ("1e3|1", false),
+        ("79228162514264337593543950336|1", false),
+        ("79228162514264337593543950335.1|1", true),
+        ("79228162514264337593543950335.5|1", false),
+    ] {
+        let mut bytes = original[..graph_offset].to_vec();
+        string(&mut bytes, graph);
+        bytes.extend_from_slice(&original[graph_offset + 2..]);
+        assert_eq!(parse_osr(&bytes).is_ok(), valid, "{graph}");
+    }
+}
+
+#[test]
+fn null_payloads_are_readable_but_required_binary_fields_cannot_be_omitted() {
+    let original = fixture("0|1|2|0");
+    let end = header_end(&original);
+    for length in [-2_i32, -1, 0] {
+        let mut bytes = original[..end].to_vec();
+        bytes.extend_from_slice(&length.to_le_bytes());
+        bytes.extend_from_slice(&0_i64.to_le_bytes());
+        bytes.extend_from_slice(&length.to_le_bytes());
+        let replay = parse_osr(&bytes).unwrap();
+        assert!(replay.frames.is_empty() && replay.metadata.is_none());
+        assert!(parse_osr(&bytes[..end + 4]).is_err());
+    }
+    // ReadBytes 在文件末尾返回已有字节；扩展流完整时不因声明长度过长而拒绝。
+    let mut bytes = fixture_version("0|1|2|0", 30_000_019, None);
+    bytes.truncate(bytes.len() - 4);
+    let offset = bytes.len();
+    compressed(&mut bytes, "{}");
+    bytes[offset..offset + 4].copy_from_slice(&10000_i32.to_le_bytes());
+    assert!(parse_osr(&bytes).unwrap().metadata.is_some());
+}
+
+#[test]
+fn extension_defaults_unknown_fields_and_known_field_types_match_game_schema() {
+    for json in [
+        "{}",
+        r#"{"future":{"data":[1,2]},"rank":null}"#,
+        r#"{"rank":"s","statistics":{"Great":-1,"99":2},"pauses":[1,2,"3"]}"#,
+        r#"{"online_id":"42","user_id":2,"total_score_without_mods":null}"#,
+        r#"{"online_id":true,"total_score_without_mods":2.5}"#,
+        r#"{"rank":"A","rank":"S","client_version":123}"#,
+        r#"{"mods":[{"acronym":"NF","future_field":{"x":1}}]}"#,
+        r#"{"mods":[{}]}"#,
+    ] {
+        assert!(
+            parse_osr(&fixture_version("0|1|2|0", 30_000_019, Some(json))).is_ok(),
+            "{json}"
+        );
+    }
+    for json in [
+        "null",
+        "[]",
+        r#"{"rank":"wat"}"#,
+        r#"{"pauses":[{}]}"#,
+        r#"{"statistics":{"invented":1}}"#,
+        r#"{"statistics":{"great":2147483648}}"#,
+        r#"{"maximum_statistics":null}"#,
+        r#"{"online_id":{}}"#,
+        r#"{"user_id":2147483648}"#,
+        r#"{"total_score_without_mods":{}}"#,
+        r#"{"pauses":[2.5]}"#,
+        r#"{"statistics":{"great":2.5}}"#,
+        r#"{"client_version":[]}"#,
+        r#"{"rank":"bad","rank":"S"}"#,
+        r#"{"rank":2.5}"#,
+    ] {
+        let error = parse_osr(&fixture_version("0|1|2|0", 30_000_019, Some(json)))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("extension JSON"), "{json}: {error}");
+    }
+    let replay = parse_osr(&fixture_version(
+        "0|1|2|0",
+        30_000_019,
+        Some(r#"{"rank":"s","statistics":{"Great":-1},"pauses":[2]}"#),
+    ))
+    .unwrap();
+    let metadata = replay.metadata.unwrap();
+    assert_eq!(metadata.rank, "S");
+    assert_eq!(metadata.statistics["great"], -1);
+    assert_eq!(metadata.pauses, [serde_json::json!(2)]);
+    let replay = parse_osr(&fixture_version(
+        "0|1|2|0",
+        30_000_019,
+        Some(r#"{"pauses":[1],"Pauses":[2],"rank":"S, A"}"#),
+    ))
+    .unwrap();
+    let metadata = replay.metadata.unwrap();
+    assert_eq!(metadata.pauses, [serde_json::json!(2)]);
+    assert_eq!(metadata.rank, "XH");
+    for mode in 0..=3 {
+        let mut bytes = fixture_version(
+            "0|1|2|0",
+            30_000_019,
+            Some(r#"{"mods":[{"acronym":"NF","future_field":true}]}"#),
+        );
+        bytes[0] = mode;
+        assert!(crate::replay::compatibility::select_replay(&parse_osr(&bytes).unwrap()).is_ok());
+    }
+}
+
+#[test]
+fn stream_reader_bom_and_invalid_utf8_fallback_apply_to_replay_text() {
+    let text = "0|1|2|0";
+    let mut utf16 = vec![0xff, 0xfe];
+    utf16.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    assert_eq!(frames::parse(&utf16, 0).unwrap().0.len(), 1);
+    assert_eq!(frames::parse(b"\xef\xbb\xbf0|1|2|0", 0).unwrap().0.len(), 1);
+    assert_eq!(frames::parse(b"\xff,0|1|2|0", 0).unwrap().0.len(), 1);
 }

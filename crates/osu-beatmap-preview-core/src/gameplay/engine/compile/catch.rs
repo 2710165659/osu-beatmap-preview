@@ -350,7 +350,7 @@ mod tests {
         }
         let mut d = document.clone();
         d.frames[0].keys = 32;
-        assert!(prepare_replay(&prepared.beatmap, &d).is_err());
+        assert!(prepare_replay(&prepared.beatmap, &d).is_ok());
         let mut d = document;
         d.frames[0].cursor[0] = f32::NAN;
         assert!(prepare_replay(&prepared.beatmap, &d).is_err());

@@ -5,6 +5,48 @@ use std::io::{Cursor, Write};
 pub(super) const MAX_COMPRESSED_BYTES: usize = 64 * 1024 * 1024;
 const MAX_DECODED_BYTES: usize = 128 * 1024 * 1024;
 
+/// 对照 StreamReader 的 BOM 检测和替代字符回退；未标记的文本使用 UTF-8。
+pub(super) fn text(bytes: &[u8]) -> String {
+    if let Some((bytes, little)) = bytes
+        .strip_prefix(&[0xff, 0xfe, 0, 0])
+        .map(|b| (b, true))
+        .or_else(|| bytes.strip_prefix(&[0, 0, 0xfe, 0xff]).map(|b| (b, false)))
+    {
+        return bytes
+            .chunks(4)
+            .map(|chunk| {
+                let Ok(chunk) = <[u8; 4]>::try_from(chunk) else {
+                    return char::REPLACEMENT_CHARACTER;
+                };
+                char::from_u32(if little {
+                    u32::from_le_bytes(chunk)
+                } else {
+                    u32::from_be_bytes(chunk)
+                })
+                .unwrap_or(char::REPLACEMENT_CHARACTER)
+            })
+            .collect();
+    }
+    if let Some((bytes, little)) = bytes
+        .strip_prefix(&[0xff, 0xfe])
+        .map(|b| (b, true))
+        .or_else(|| bytes.strip_prefix(&[0xfe, 0xff]).map(|b| (b, false)))
+    {
+        return char::decode_utf16(bytes.chunks(2).map(|chunk| {
+            if chunk.len() < 2 {
+                0xfffd
+            } else if little {
+                u16::from_le_bytes([chunk[0], chunk[1]])
+            } else {
+                u16::from_be_bytes([chunk[0], chunk[1]])
+            }
+        }))
+        .map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))
+        .collect();
+    }
+    String::from_utf8_lossy(bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes)).into_owned()
+}
+
 struct LimitedOutput(Vec<u8>);
 impl Write for LimitedOutput {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {

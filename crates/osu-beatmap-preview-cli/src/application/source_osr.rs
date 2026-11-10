@@ -74,6 +74,12 @@ fn resolve_resources(
     checksum: &str,
     downloads: &impl Downloads,
 ) -> Result<(PathBuf, Option<PathBuf>, Vec<u8>)> {
+    // OSR 解码保留原始字符串；只有查找资源时才要求可用的谱面 MD5。
+    if checksum.len() != 32 || !checksum.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(PreviewError::new(
+            "BeatmapNotFound: replay beatmap hash is not a usable MD5",
+        ));
+    }
     let external = request
         .source
         .osu_file

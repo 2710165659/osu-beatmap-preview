@@ -41,47 +41,21 @@ pub struct ManiaPolicy {
 }
 
 pub fn select_replay(document: &ReplayDocument) -> Result<ReplayPolicy> {
+    validate_input(document)?;
     match document.header.ruleset_id {
         0 => select(document).map(ReplayPolicy::Standard),
         1 => {
             let mods = super::mods::decode(document)?;
-            if document.frames.is_empty()
-                || document
-                    .frames
-                    .windows(2)
-                    .any(|w| w[1].time_ms < w[0].time_ms)
-            {
-                return Err(PreviewError::parse(
-                    "InvalidReplay: empty or backwards Taiko frames",
-                ));
-            }
-            // 旧格式的第 5 位是 Smoke，不参与 Taiko 击打；仍拒绝未知按键位。
-            if document.frames.iter().any(|f| f.keys & !31 != 0) {
-                return Err(PreviewError::new(
-                    "UnsupportedReplayVariant: unknown Taiko input buttons",
-                ));
-            }
             Ok(ReplayPolicy::Taiko(TaikoPolicy {
                 classic: mods.settings.classic,
             }))
         }
         2 => {
             let mods = super::mods::decode(document)?;
-            if document.frames.is_empty() || document.frames.windows(2).any(|w| w[1].time_ms < w[0].time_ms)
-                || document.frames.iter().any(|f| f.cursor.iter().any(|p| !p.is_finite()) || f.keys & !31 != 0) {
-                return Err(PreviewError::parse("InvalidReplay: invalid Catch input frames"));
-            }
             Ok(ReplayPolicy::Catch(CatchPolicy { classic: mods.settings.classic }))
         }
         3 => {
             let mods = super::mods::decode(document)?;
-            if document.frames.is_empty()
-                || document.frames.windows(2).any(|w| w[1].time_ms < w[0].time_ms)
-                || document.frames.iter().any(|f| !f.cursor[0].is_finite()
-                    || f.cursor[0] < 0.0 || f.cursor[0] > 262143.0 || f.cursor[0].fract() != 0.0)
-            {
-                return Err(PreviewError::parse("InvalidReplay: invalid Mania column mask"));
-            }
             Ok(ReplayPolicy::Mania(ManiaPolicy {
                 classic: mods.settings.classic,
                 score_v2: document.metadata.as_ref().map_or(document.header.mods_bits & (1 << 29) != 0, |metadata| metadata.mods.iter().any(|modifier| modifier.acronym == "SV2")),
@@ -165,7 +139,7 @@ pub fn select(document: &ReplayDocument) -> Result<StandardPolicy> {
                     "classic_note_lock" => policy.classic_note_lock = value,
                     "always_play_tail_sample" => policy.always_tail_sample = value,
                     "fade_hit_circle_early" => policy.fade_hit_circle_early = value,
-                    // 预览只在输入提前结束时失败，不另外模拟 HP 失败。
+                    // 历史血量规则由血量处理器负责，不改变输入转换。
                     "classic_health" => (),
                     _ => return Err(unsupported(format!("CL setting {name}"))),
                 }
@@ -173,20 +147,37 @@ pub fn select(document: &ReplayDocument) -> Result<StandardPolicy> {
         }
     }
     // Pauses 是录制时的墙钟统计，帧已经使用谱面时间；不能再次累加暂停时长。
+    validate_input(document)?;
+    Ok(policy)
+}
+
+fn validate_input(document: &ReplayDocument) -> Result<()> {
     if document.frames.is_empty() {
-        return Err(PreviewError::parse("InvalidReplay: empty input frames"));
+        return Err(PreviewError::new(
+            "UnsupportedReplayVariant: no playable input frames for preview",
+        ));
     }
+    let x_limit = if document.header.ruleset_id == 3 {
+        1048575.0
+    } else {
+        131072.0
+    };
     if document
         .frames
         .windows(2)
         .any(|w| w[1].time_ms < w[0].time_ms)
+        || document.frames.iter().any(|f| {
+            !f.cursor[0].is_finite()
+                || f.cursor[0].abs() > x_limit
+                || !f.cursor[1].is_finite()
+                || f.cursor[1].abs() > 131072.0
+        })
     {
-        return Err(PreviewError::parse("InvalidReplay: backwards frame time"));
+        return Err(PreviewError::parse(
+            "InvalidReplay: backwards time or coordinates outside game parse limits",
+        ));
     }
-    if document.frames.iter().any(|frame| frame.keys & !31 != 0) {
-        return Err(unsupported("unknown Standard input buttons"));
-    }
-    Ok(policy)
+    Ok(())
 }
 
 pub fn validate_beatmap(beatmap: &Beatmap) -> Result<()> {
@@ -218,20 +209,17 @@ mod tests {
     use crate::replay::{ReplayFrame, ReplayHeader, ReplayMetadata};
 
     #[test]
-    fn taiko_ignores_legacy_smoke_but_rejects_unknown_input_bits() {
+    fn taiko_ignores_smoke_and_unknown_input_bits() {
         let mut replay = document();
         replay.header.ruleset_id = 1;
         replay.frames[0].keys = 0b1_0100;
         assert!(matches!(select_replay(&replay), Ok(ReplayPolicy::Taiko(_))));
         replay.frames[0].keys = 0b10_0000;
-        assert!(select_replay(&replay)
-            .unwrap_err()
-            .to_string()
-            .contains("unknown Taiko input buttons"));
+        assert!(select_replay(&replay).is_ok());
     }
 
     #[test]
-    fn catch_accepts_legacy_button_masks_and_rejects_unknown_bits() {
+    fn catch_accepts_button_masks_without_interpreting_unknown_bits() {
         let mut replay = document();
         replay.header.ruleset_id = 2;
         for bits in [0, 1, 2, 16, 17, 31] {
@@ -242,7 +230,7 @@ mod tests {
             );
         }
         replay.frames[0].keys = 32;
-        assert!(select_replay(&replay).is_err());
+        assert!(select_replay(&replay).is_ok());
     }
 
     #[test]
@@ -285,7 +273,7 @@ mod tests {
         assert!(select(&replay)
             .unwrap_err()
             .to_string()
-            .contains("InvalidReplay"));
+            .contains("no playable input"));
     }
 
     #[test]

@@ -15,15 +15,19 @@ pub fn parse_osr(bytes: &[u8]) -> Result<ReplayDocument> {
     }
     let mut reader = header::Reader::new(bytes);
     let mut header = reader.header()?;
-    let compressed = reader.byte_array()?;
-    let decoded = if compressed.is_empty() { Vec::new() } else { decode::decompress(compressed)? };
+    let compressed = reader.field("replay_data", header::Reader::byte_array)?;
+    let decoded = if compressed.is_empty() {
+        Vec::new()
+    } else {
+        decode::decompress(compressed)?
+    };
     let (frames, seed) = frames::parse(&decoded, header.ruleset_id)?;
     header.online_id = match header.version {
-        20140721.. => reader.i64()?,
-        20121008.. => i64::from(reader.i32()?),
+        20140721.. => reader.field("online_id", header::Reader::i64)?,
+        20121008.. => i64::from(reader.field("online_id", header::Reader::i32)?),
         _ => 0,
     };
-    // Target Practice 在旧格式尾部另存 double，必须读出后才能定位扩展 JSON。
+    // stable 的 Target Practice 可能在尾部附加 double；仅保留诊断，不改变 lazer 扩展的读取位置。
     if header.version < 30_000_001 && header.mods_bits & (1 << 23) != 0 && reader.remaining() >= 8 {
         header.target_practice_accuracy = Some(reader.f64()?);
     }

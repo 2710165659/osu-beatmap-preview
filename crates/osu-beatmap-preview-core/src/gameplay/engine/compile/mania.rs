@@ -66,7 +66,8 @@ pub fn compile_mania(
     let mut previous = 0;
     let mut frames = document.frames.clone();
     for frame in &mut frames {
-        frame.keys = frame.cursor[0] as u32;
+        // ManiaReplayFrame 先截断小数，负值无动作；不存在的列不接收按键。
+        frame.keys = (frame.cursor[0] as u32) & ((1 << prepared.keys) - 1);
         frame.cursor = [0.0; 2];
     }
     for (time, phase, id) in schedule {

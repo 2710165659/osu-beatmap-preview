@@ -323,13 +323,13 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
             continue;
         }
         if code == "SV2" {
-            if !modifier.settings.is_empty() || !modifier.extra.is_empty() {
+            if !modifier.settings.is_empty() {
                 return Err(unsupported(format!("{code} settings")));
             }
             continue;
         }
         if mode == 3 && code == "FI" {
-            if !modifier.settings.is_empty() || !modifier.extra.is_empty() {
+            if !modifier.settings.is_empty() {
                 return Err(unsupported("Mania Mod FI (Fade In) settings"));
             }
             result.fade_in = true;
@@ -366,9 +366,6 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
             return Err(unsupported_mod(mode, code));
         }
         let mut token = code.to_owned();
-        if !modifier.extra.is_empty() {
-            return Err(unsupported(format!("{code} extra settings")));
-        }
         for (name, value) in &modifier.settings {
             match (code, name.as_str()) {
                 ("DT" | "HT" | "NC" | "DC", "speed_change") => {
@@ -430,9 +427,6 @@ fn apply_fail_mod(result: &mut ReplayMods, modifier: &ReplayMod, mode: i32) -> R
     let code = modifier.acronym.as_str();
     if !matches!(code, "NF" | "SD" | "PF") {
         return Ok(false);
-    }
-    if !modifier.extra.is_empty() {
-        return Err(unsupported(format!("{code} extra settings")));
     }
     for (key, value) in &modifier.settings {
         match (code, key.as_str()) {

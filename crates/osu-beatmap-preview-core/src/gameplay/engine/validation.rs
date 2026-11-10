@@ -17,13 +17,6 @@ pub(super) fn validate(
     maximums: &BTreeMap<String, u32>,
 ) -> Result<Option<serde_json::Value>> {
     let metadata = document.metadata.as_ref();
-    let normalized = |values: &BTreeMap<String, u32>| {
-        values
-            .iter()
-            .filter(|(_, count)| **count != 0)
-            .map(|(name, count)| (name.clone(), *count))
-            .collect::<BTreeMap<_, _>>()
-    };
     let mut differences = serde_json::Map::new();
     macro_rules! compare {
         ($name:literal, $recorded:expr, $calculated:expr) => {
@@ -130,7 +123,11 @@ pub(super) fn validate(
         };
         compare!("statistics", normalized(&recorded), normalized(&calculated));
     }
-    compare!("score", i64::from(document.header.total_score), state.score as i64);
+    compare!(
+        "score",
+        i64::from(document.header.total_score),
+        state.score as i64
+    );
     compare!(
         "max_combo",
         u32::from(document.header.max_combo),
@@ -144,12 +141,22 @@ pub(super) fn validate(
     }
 }
 
-fn accuracy(
-    statistics: &BTreeMap<String, u32>,
-    maximums: &BTreeMap<String, u32>,
+fn normalized<T: Copy + Into<i64>>(values: &BTreeMap<String, T>) -> BTreeMap<String, i64> {
+    values
+        .iter()
+        .filter_map(|(name, count)| {
+            let count = (*count).into();
+            (count != 0).then(|| (name.clone(), count))
+        })
+        .collect()
+}
+
+fn accuracy<T: Copy + Into<i64>>(
+    statistics: &BTreeMap<String, T>,
+    maximums: &BTreeMap<String, T>,
     ruleset: u8,
 ) -> Option<f64> {
-    let value = |map: &BTreeMap<String, u32>| {
+    let value = |map: &BTreeMap<String, T>| {
         [
             HitResult::Perfect,
             HitResult::Great,
@@ -162,13 +169,13 @@ fn accuracy(
         ]
         .into_iter()
         .map(|result| {
-            u64::from(if ruleset == 2 { 1 } else { result.value() })
-                * u64::from(*map.get(result.name()).unwrap_or(&0))
+            f64::from(if ruleset == 2 { 1 } else { result.value() })
+                * map.get(result.name()).map_or(0_i64, |v| (*v).into()) as f64
         })
-        .sum::<u64>()
+        .sum::<f64>()
     };
     let maximum = value(maximums);
-    (maximum != 0).then(|| value(statistics) as f64 / maximum as f64)
+    (maximum != 0.0).then(|| value(statistics) / maximum)
 }
 
 #[cfg(test)]
@@ -199,17 +206,32 @@ mod tests {
         let mut reverse = document.clone();
         reverse.header.total_score = state.score as i32;
         reverse.header.max_combo = state.max_combo as u16;
-        reverse.metadata.as_mut().unwrap().statistics = state.statistics.clone();
+        reverse.metadata.as_mut().unwrap().statistics = state
+            .statistics
+            .iter()
+            .map(|(k, v)| (k.clone(), *v as i32))
+            .collect();
         let mut recorded = state.clone();
         recorded.score = document.header.total_score as u64;
         recorded.max_combo = u32::from(document.header.max_combo);
-        recorded.statistics = document.metadata.as_ref().unwrap().statistics.clone();
+        recorded.statistics = document
+            .metadata
+            .as_ref()
+            .unwrap()
+            .statistics
+            .iter()
+            .map(|(k, v)| (k.clone(), *v as u32))
+            .collect();
         recorded.accuracy = accuracy(&recorded.statistics, &maximums, 0);
         assert!(validate(&reverse, &recorded, &maximums).unwrap().is_some());
         let mut document = document;
         document.header.total_score = state.score as i32;
         document.header.max_combo = state.max_combo as u16;
-        document.metadata.as_mut().unwrap().statistics = state.statistics.clone();
+        document.metadata.as_mut().unwrap().statistics = state
+            .statistics
+            .iter()
+            .map(|(k, v)| (k.clone(), *v as i32))
+            .collect();
         assert_eq!(validate(&document, &state, &maximums).unwrap(), None);
     }
 
@@ -235,7 +257,7 @@ mod tests {
 
     fn fixture() -> (ReplayDocument, GameplayState, BTreeMap<String, u32>) {
         use crate::replay::{ReplayHeader, ReplayMetadata};
-        let statistics = BTreeMap::from([
+        let statistics: BTreeMap<String, i32> = BTreeMap::from([
             ("great".into(), 500),
             ("ok".into(), 2),
             ("slider_tail_hit".into(), 102),
@@ -250,7 +272,10 @@ mod tests {
         let mut state = GameplayState {
             score: 991_262,
             max_combo: 729,
-            statistics: statistics.clone(),
+            statistics: statistics
+                .iter()
+                .map(|(k, v)| (k.clone(), *v as u32))
+                .collect(),
             rank: Some("S".into()),
             ..Default::default()
         };
@@ -279,7 +304,10 @@ mod tests {
                 rank: "S".into(),
                 mods: vec![],
                 statistics,
-                maximum_statistics: maximums.clone(),
+                maximum_statistics: maximums
+                    .iter()
+                    .map(|(k, v)| (k.clone(), *v as i32))
+                    .collect(),
                 pauses: vec![],
                 extra: Default::default(),
             }),
