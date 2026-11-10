@@ -25,8 +25,8 @@ pub fn compile_catch(
     };
     let input = ReplayTimeline::new(document.frames.clone());
     let last_input = input.last_time() as f64;
-    let failure_time = (last_input < prepared.last_end).then_some(last_input);
-    let settlement_time = failure_time.unwrap_or(prepared.last_end);
+    let mut fail = super::failure::ReplayFailure::new(last_input, 2, &prepared.mods);
+    let mut settlement_time = prepared.last_end;
     let mut score = Score::new(prepared);
     let initial = score.state.clone();
     let mut checkpoints = Vec::new();
@@ -66,6 +66,7 @@ pub fn compile_catch(
             sample_time: time,
         };
         let combo_break = score.apply(&event, prepared);
+        let failed = fail.apply(&event, &mut score.state, id + 1 == prepared.objects.len());
         events.push(event.clone());
         if combo_break {
             event.id = events.len();
@@ -73,13 +74,19 @@ pub fn compile_catch(
             events.push(event);
         }
         checkpoints.push((time, score.state.clone()));
+        if failed {
+            break;
+        }
     }
+    let failure_time = fail.time;
+    settlement_time = failure_time.unwrap_or(settlement_time);
     score.state.status = if failure_time.is_some() {
         ReplayStatus::Failed
     } else {
         ReplayStatus::Completed
     };
     if failure_time.is_some() {
+        score.state.rank = Some("F".into());
         events.push(GameplayEvent {
             id: events.len(),
             time: settlement_time,
@@ -99,7 +106,7 @@ pub fn compile_catch(
     } else {
         None
     };
-    Ok(GameplayTimeline {
+    let mut timeline = GameplayTimeline {
         input,
         document,
         policy: ReplayPolicy::Catch(policy),
@@ -111,7 +118,9 @@ pub fn compile_catch(
         failure_time,
         settlement_time,
         recorded_differences,
-    })
+    };
+    super::failure::truncate(&mut timeline);
+    Ok(timeline)
 }
 
 #[cfg(test)]
@@ -129,6 +138,34 @@ mod tests {
         ))
         .unwrap();
         (prepare_replay(&map, &document).unwrap(), document)
+    }
+
+    #[test]
+    fn relax_uses_recorded_positions_and_mirror_preserves_judgements_when_inputs_are_mirrored() {
+        let (prepared, document) = fixture();
+        let baseline = compile_catch(&prepared, Arc::new(document.clone())).unwrap();
+        for mirror in [false, true] {
+            let mut replay = document.clone();
+            replay.header.version = 30_000_019;
+            let mut mods = serde_json::json!([{"acronym":"CL"},{"acronym":"RX"}]);
+            if mirror {
+                mods.as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({"acronym":"MR"}));
+                for frame in &mut replay.frames {
+                    frame.cursor[0] = 512.0 - frame.cursor[0];
+                }
+            }
+            replay.metadata =
+                Some(serde_json::from_value(serde_json::json!({"mods":mods})).unwrap());
+            let prepared = prepare_replay(&prepared.beatmap, &replay).unwrap();
+            let timeline = compile_catch(&prepared, Arc::new(replay)).unwrap();
+            assert_eq!(
+                timeline.state_at(f64::INFINITY).statistics,
+                baseline.state_at(f64::INFINITY).statistics
+            );
+            assert_eq!(prepared.score_multiplier, 0.1);
+        }
     }
 
     #[test]
@@ -284,9 +321,12 @@ mod tests {
     }
 
     #[test]
-    fn early_end_freezes_input_results_and_events_without_judging_future_objects() {
+    fn sudden_death_after_input_end_freezes_future_results_and_events() {
         let (prepared, mut document) = fixture();
         document.frames.retain(|f| f.time_ms <= 1500);
+        document.header.mods_bits |= 1 << 5;
+        document.metadata = None;
+        let prepared = prepare_replay(&prepared.beatmap, &document).unwrap();
         let timeline = compile_catch(&prepared, Arc::new(document)).unwrap();
         assert_eq!(timeline.failure_time, Some(1500.0));
         assert_eq!(timeline.state_at(1500.0).status, ReplayStatus::Failed);

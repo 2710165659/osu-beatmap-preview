@@ -248,6 +248,12 @@ pub fn build_catch_render_objects(
         render_objects.push(fruit);
     }
 
+    // CatchModMirror 在 HR 偏移、滑条和香蕉展开后镜像；录制输入已经是最终坐标。
+    if mods.is_some_and(|mods| mods.mirror) {
+        for object in &mut render_objects {
+            object.x = 512.0 - object.x;
+        }
+    }
     if enable_banana_routes {
         super::route::highlight_banana_shower_routes(
             &mut render_objects,
@@ -833,6 +839,40 @@ mod tests {
             edge: false,
             banana_shower_id: None,
             banana_route_x: None,
+        }
+    }
+
+    #[test]
+    fn mirror_flips_expanded_fruits_streams_and_bananas_after_hard_rock_offsets() {
+        let map = crate::parse_beatmap_bytes(include_bytes!(
+            "../../../../../../osu-beatmap-preview-web/test/fixtures/replay-catch.osu"
+        ))
+        .unwrap();
+        for hard_rock in [false, true] {
+            let mut mods = ModSettings {
+                hard_rock,
+                ..Default::default()
+            };
+            let difficulty = effective_difficulty(&map, Some(&mods));
+            let build = |mods: &ModSettings| {
+                build_catch_render_objects(
+                    &map,
+                    map.hit_objects.as_catch().unwrap(),
+                    Some(mods),
+                    &difficulty,
+                    true,
+                )
+                .unwrap()
+            };
+            let original = build(&mods);
+            mods.mirror = true;
+            let mirrored = build(&mods);
+            assert_eq!(original.len(), mirrored.len());
+            for (a, b) in original.iter().zip(&mirrored) {
+                assert_eq!(b.x, 512.0 - a.x);
+                assert_eq!(a.hyper_dash, b.hyper_dash);
+                assert_eq!(a.event_time, b.event_time);
+            }
         }
     }
 

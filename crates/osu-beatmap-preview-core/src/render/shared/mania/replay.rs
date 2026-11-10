@@ -244,12 +244,21 @@ impl ReplayRenderPlan {
         target.shared_sprite(&self.track, l.playfield_left, l.playfield_top);
         let pos = self.scroll.position_at(time as f64);
         let (lo, hi) = visible_pos_window(pos, l, self.pixels_per_unit, self.max_hold);
-        let hidden = self
-            .prepared
-            .mods
-            .settings
-            .hidden
-            .then(|| mania_hidden(&self.visibility, time, l));
+        let hidden = if self.prepared.mods.fade_in {
+            Some(ManiaHidden::new_fade_in(
+                &self.visibility,
+                time,
+                l.playfield_top,
+                l.playfield_top + l.hit_position_y,
+                l.render_scale * 0.5,
+            ))
+        } else {
+            self.prepared
+                .mods
+                .settings
+                .hidden
+                .then(|| mania_hidden(&self.visibility, time, l))
+        };
         let stage_left = l.playfield_left + l.left_panel_width;
         let line = l.playfield_top + l.hit_position_y;
         let y_at = |p: f64| line - ((p - pos) * self.pixels_per_unit).round_ties_even() as i64;

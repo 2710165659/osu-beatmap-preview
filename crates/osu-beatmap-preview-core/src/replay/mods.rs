@@ -1,4 +1,4 @@
-//! 回放 Mod 解码与当前 osu! Standard 计分倍率；lazer 扩展覆盖旧位掩码。
+//! 四模式回放 Mod 解码与 Standard 计分倍率；lazer 扩展覆盖旧位掩码。
 use super::{model::ReplayMod, ReplayDocument};
 use crate::domain::mods::{parse_mods, validate_mods_for_level, ModSettings, ModSupportLevel};
 use crate::model::Beatmap;
@@ -7,9 +7,11 @@ use crate::support::error::{PreviewError, Result};
 #[derive(Debug, Clone)]
 pub struct ReplayMods {
     pub settings: ModSettings,
+    pub fade_in: bool,
     pub no_fail: bool,
     pub sudden_death: bool,
     pub perfect: bool,
+    pub require_perfect_hits: bool,
     pub hidden_only_approach: bool,
     pub flashlight_size: f64,
     pub flashlight_combo: bool,
@@ -22,9 +24,11 @@ impl Default for ReplayMods {
     fn default() -> Self {
         Self {
             settings: ModSettings::new(),
+            fade_in: false,
             no_fail: false,
             sudden_death: false,
             perfect: false,
+            require_perfect_hits: false,
             hidden_only_approach: false,
             flashlight_size: 1.0,
             flashlight_combo: true,
@@ -61,10 +65,7 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
             | (1 << 14)
             | (1 << 29);
         if bits & !supported != 0 {
-            return Err(unsupported(format!(
-                "legacy Mods 0x{:08x}",
-                bits & !supported
-            )));
+            return Err(unsupported_legacy(0, bits & !supported));
         }
         [
             (0, "NF"),
@@ -101,7 +102,11 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
         if !seen.insert(modifier.acronym.clone()) {
             return Err(unsupported(format!("duplicate Mod {code}")));
         }
-        if apply_fail_mod(&mut result, &modifier)? {
+        if apply_fail_mod(
+            &mut result,
+            &modifier,
+            i32::from(document.header.ruleset_id),
+        )? {
             continue;
         }
         if !matches!(
@@ -123,7 +128,7 @@ pub fn decode(document: &ReplayDocument) -> Result<ReplayMods> {
                 | "SG"
                 | "MR"
         ) {
-            return Err(unsupported(format!("Mod {code}")));
+            return Err(unsupported_mod(0, code));
         }
         let mut rate = None;
         let mut da = String::from("DA");
@@ -225,7 +230,7 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
         let bits = document.header.mods_bits;
         // Mania 键数标记保留原谱面布局；MR 只改变列，不改变录制输入位。
         let mania_bits = if mode == 3 {
-            (1 << 0)
+            (1 << 20)
                 | (1 << 15)
                 | (1 << 16)
                 | (1 << 17)
@@ -240,7 +245,9 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
         } else {
             0
         };
+        let relax_bits = if matches!(mode, 1 | 2) { 1 << 7 } else { 0 };
         let supported = mania_bits
+            | relax_bits
             | (1 << 0)
             | (1 << 1)
             | (1 << 3)
@@ -253,7 +260,7 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
             | (1 << 14)
             | (1 << 29);
         if bits & !supported != 0 {
-            return Err(unsupported(format!("legacy Mods 0x{bits:08x}")));
+            return Err(unsupported_legacy(mode, bits & !supported));
         }
         [
             (0, "NF"),
@@ -262,6 +269,7 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
             (4, "HR"),
             (5, "SD"),
             (6, "DT"),
+            (7, "RX"),
             (8, "HT"),
             (9, "NC"),
             (10, "FL"),
@@ -272,6 +280,7 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
             (17, "6K"),
             (18, "7K"),
             (19, "8K"),
+            (20, "FI"),
             (24, "9K"),
             (25, "DS"),
             (26, "1K"),
@@ -306,13 +315,24 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
         if !seen.insert(code.to_owned()) {
             return Err(unsupported(format!("duplicate Mod {code}")));
         }
-        if apply_fail_mod(&mut result, &modifier)? {
+        if apply_fail_mod(
+            &mut result,
+            &modifier,
+            i32::from(document.header.ruleset_id),
+        )? {
             continue;
         }
-        if mode == 3 && code == "SV2" {
+        if code == "SV2" {
             if !modifier.settings.is_empty() || !modifier.extra.is_empty() {
                 return Err(unsupported(format!("{code} settings")));
             }
+            continue;
+        }
+        if mode == 3 && code == "FI" {
+            if !modifier.settings.is_empty() || !modifier.extra.is_empty() {
+                return Err(unsupported("Mania Mod FI (Fade In) settings"));
+            }
+            result.fade_in = true;
             continue;
         }
         let key_mod = matches!(
@@ -334,15 +354,16 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
                 | "MR"
                 | "HO"
                 | "IN"
+                | "RX"
         ) && !(mode == 3 && key_mod)
         {
-            return Err(unsupported(format!("Mod {code}")));
+            return Err(unsupported_mod(mode, code));
         }
-        if (mode == 2 && matches!(code, "SW" | "CS" | "MR" | "HO" | "IN"))
+        if (mode == 2 && matches!(code, "SW" | "CS" | "HO" | "IN"))
             || (mode == 1 && matches!(code, "MR" | "HO" | "IN"))
-            || (mode == 3 && code == "SW")
+            || (mode == 3 && matches!(code, "SW" | "RX"))
         {
-            return Err(unsupported(format!("Catch Mod {code}")));
+            return Err(unsupported_mod(mode, code));
         }
         let mut token = code.to_owned();
         if !modifier.extra.is_empty() {
@@ -362,6 +383,12 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
                         .as_bool()
                         .ok_or_else(|| unsupported(format!("{code} setting {name}")))?
                 }
+                ("EZ", "retries") if matches!(mode, 2 | 3) => {
+                    result.easy_retries = value
+                        .as_u64()
+                        .filter(|v| *v <= 10)
+                        .ok_or_else(|| unsupported(format!("{code} setting {name}")))?;
+                }
                 ("FL", "size_multiplier") if value.as_f64() == Some(1.0) => (),
                 ("FL", "combo_based_size") if value.as_bool() == Some(true) => (),
                 _ => return Err(unsupported(format!("{code} setting {name}"))),
@@ -373,7 +400,16 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
     if mode == 3 && result.settings.mania_key_mods.len() > 1 {
         return Err(unsupported("multiple Mania key mods"));
     }
+    if result.fade_in && (result.settings.hidden || result.settings.flashlight) {
+        return Err(unsupported(
+            "Mania: FI (Fade In) is incompatible with HD/FL",
+        ));
+    }
     let mut validation_settings = result.settings.clone();
+    // RX 只在回放路径实现，不向普通预览面板声明能力。
+    if matches!(mode, 1 | 2) {
+        validation_settings.relax = false;
+    }
     if mode == 3 {
         validation_settings.easy = false;
         validation_settings.hard_rock = false;
@@ -383,21 +419,36 @@ fn decode_nonstandard(document: &ReplayDocument, mode: i32) -> Result<ReplayMods
         return Err(unsupported(errors.join("; ")));
     }
     validate_fail_mods(&result)?;
+    if result.fade_in {
+        result.settings.tokens.push("FI".into());
+    }
     Ok(result)
 }
 
-// 这些 Mod 改变失败条件，不改变录制的输入或谱面；回放仍按输入帧推断结束位置。
-fn apply_fail_mod(result: &mut ReplayMods, modifier: &ReplayMod) -> Result<bool> {
+// ReplayPlayer 不执行失败后的自动重开；restart 仅验证类型，PF 的 Mania 设置参与失败判定。
+fn apply_fail_mod(result: &mut ReplayMods, modifier: &ReplayMod, mode: i32) -> Result<bool> {
     let code = modifier.acronym.as_str();
     if !matches!(code, "NF" | "SD" | "PF") {
         return Ok(false);
     }
-    if !modifier.extra.is_empty()
-        || modifier.settings.iter().any(|(key, value)| {
-            !((code == "SD" || code == "PF") && key == "restart" && value.is_boolean())
-        })
-    {
-        return Err(unsupported(format!("{code} settings")));
+    if !modifier.extra.is_empty() {
+        return Err(unsupported(format!("{code} extra settings")));
+    }
+    for (key, value) in &modifier.settings {
+        match (code, key.as_str()) {
+            ("SD" | "PF", "restart") if value.is_boolean() => (),
+            ("PF", "require_perfect_hits") if mode == 3 => {
+                result.require_perfect_hits = value
+                    .as_bool()
+                    .ok_or_else(|| unsupported(format!("Mania PF setting {key}")))?;
+            }
+            _ => {
+                return Err(unsupported(format!(
+                    "{} {code} setting {key}",
+                    mode_name(mode)
+                )))
+            }
+        }
     }
     match code {
         "NF" => result.no_fail = true,
@@ -419,6 +470,71 @@ fn number(value: &serde_json::Value, min: f64, max: f64) -> Option<f64> {
     value
         .as_f64()
         .filter(|v| v.is_finite() && (min..=max).contains(v))
+}
+
+fn mode_name(mode: i32) -> &'static str {
+    match mode {
+        0 => "Standard",
+        1 => "Taiko",
+        2 => "Catch",
+        3 => "Mania",
+        _ => "unknown ruleset",
+    }
+}
+
+fn unsupported_mod(mode: i32, code: &str) -> PreviewError {
+    unsupported(format!(
+        "{} replay does not support Mod {code}",
+        mode_name(mode)
+    ))
+}
+
+fn unsupported_legacy(mode: i32, bits: u32) -> PreviewError {
+    let names = [
+        "NF (No Fail)",
+        "EZ (Easy)",
+        "TD (Touch Device)",
+        "HD (Hidden)",
+        "HR (Hard Rock)",
+        "SD (Sudden Death)",
+        "DT (Double Time)",
+        "RX (Relax)",
+        "HT (Half Time)",
+        "NC (Nightcore)",
+        "FL (Flashlight)",
+        "AT (Autoplay)",
+        "SO (Spun Out)",
+        "AP (Autopilot)",
+        "PF (Perfect)",
+        "4K",
+        "5K",
+        "6K",
+        "7K",
+        "8K",
+        "FI (Fade In)",
+        "RD (Random)",
+        "CN (Cinema)",
+        "TP (Target Practice)",
+        "9K",
+        "DS (Dual Stages)",
+        "1K",
+        "3K",
+        "2K",
+        "SV2 (Score V2)",
+        "MR (Mirror)",
+        "unknown bit 31",
+    ];
+    let mods = names
+        .iter()
+        .enumerate()
+        .filter(|(bit, _)| bits & (1 << bit) != 0)
+        .map(|(_, name)| *name)
+        .collect::<Vec<_>>()
+        .join(", ");
+    unsupported(format!(
+        "{} replay does not support legacy Mods: {mods} (unsupported bits 0x{bits:08x})",
+        mode_name(mode)
+    ))
 }
 
 fn unsupported(reason: impl std::fmt::Display) -> PreviewError {
@@ -510,6 +626,65 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn nonstandard_replay_mods_decode_legacy_and_lazer_without_cross_ruleset_leaks() {
+        for (mode, bit, code) in [(1, 7, "RX"), (2, 7, "RX"), (3, 20, "FI")] {
+            for legacy in [true, false] {
+                let mut replay = document(json!([{ "acronym": code }]));
+                replay.header.ruleset_id = mode;
+                if legacy {
+                    replay.metadata = None;
+                    replay.header.mods_bits = 1 << bit;
+                }
+                let mods = decode(&replay).unwrap();
+                assert_eq!(mods.settings.relax, code == "RX");
+                assert_eq!(mods.fade_in, code == "FI");
+            }
+        }
+        for mode in 1..=3 {
+            let mut replay = document(json!([{ "acronym": "SV2" }]));
+            replay.header.ruleset_id = mode;
+            assert!(decode(&replay).is_ok());
+            replay.metadata = None;
+            replay.header.mods_bits = 1 << 29;
+            assert!(decode(&replay).is_ok());
+        }
+        let mut replay = document(json!([{ "acronym": "MR" }]));
+        replay.header.ruleset_id = 2;
+        assert!(decode(&replay).unwrap().settings.mirror);
+        for (mode, mods) in [
+            (1, json!([{"acronym":"FI"}])),
+            (3, json!([{"acronym":"RX"}])),
+            (3, json!([{"acronym":"FI"},{"acronym":"HD"}])),
+            (3, json!([{"acronym":"FI"},{"acronym":"FL"}])),
+            (3, json!([{"acronym":"FI","settings":{"unknown":true}}])),
+        ] {
+            replay.header.ruleset_id = mode;
+            replay.metadata = document(mods).metadata;
+            assert!(decode(&replay).is_err());
+        }
+        for mode in [2, 3] {
+            replay.header.ruleset_id = mode;
+            replay.metadata = document(json!([{"acronym":"EZ","settings":{"retries":5}}])).metadata;
+            assert_eq!(decode(&replay).unwrap().easy_retries, 5);
+        }
+    }
+
+    #[test]
+    fn legacy_mod_errors_name_the_ruleset_and_only_the_unsupported_bits() {
+        for mode in 0..=3 {
+            let mut replay = document(json!([]));
+            replay.header.ruleset_id = mode;
+            replay.metadata = None;
+            replay.header.mods_bits = (1 << 0) | (1 << 11) | (1 << 21);
+            let error = decode(&replay).unwrap_err().to_string();
+            assert!(error.contains(mode_name(i32::from(mode))), "{error}");
+            assert!(error.contains("AT (Autoplay), RD (Random)"), "{error}");
+            assert!(error.contains("0x00200800"), "{error}");
+            assert!(!error.contains("NF (No Fail)"), "{error}");
+        }
+    }
+
+    #[test]
     fn fail_condition_mods_support_legacy_and_extended_formats_in_every_ruleset() {
         for mode in 0..=3 {
             for (bits, code) in [(1, "NF"), (1 << 5, "SD"), ((1 << 5) | (1 << 14), "PF")] {
@@ -539,6 +714,38 @@ mod tests {
             ]));
             combined.header.ruleset_id = mode;
             assert!(decode(&combined).unwrap().sudden_death);
+        }
+    }
+
+    #[test]
+    fn mania_perfect_defaults_match_legacy_and_missing_lazer_settings() {
+        let mut replay = document(json!([]));
+        replay.header.ruleset_id = 3;
+        replay.header.mods_bits = (1 << 5) | (1 << 14);
+        replay.metadata = None;
+        let mods = decode(&replay).unwrap();
+        assert!(mods.perfect && !mods.require_perfect_hits);
+        for (settings, expected) in [
+            (json!({}), false),
+            (json!({"restart":true}), false),
+            (json!({"require_perfect_hits":false}), false),
+            (json!({"require_perfect_hits":true,"restart":false}), true),
+        ] {
+            replay.metadata = document(json!([{"acronym":"PF","settings":settings}])).metadata;
+            assert_eq!(decode(&replay).unwrap().require_perfect_hits, expected);
+        }
+        for (mode, code, settings) in [
+            (0, "PF", json!({"require_perfect_hits":true})),
+            (1, "PF", json!({"require_perfect_hits":false})),
+            (2, "PF", json!({"require_perfect_hits":false})),
+            (3, "SD", json!({"require_perfect_hits":true})),
+            (3, "PF", json!({"require_perfect_hits":null})),
+            (3, "PF", json!({"require_perfect_hits":1})),
+            (3, "PF", json!({"restart":"true"})),
+        ] {
+            replay.header.ruleset_id = mode;
+            replay.metadata = document(json!([{"acronym":code,"settings":settings}])).metadata;
+            assert!(decode(&replay).is_err());
         }
     }
 

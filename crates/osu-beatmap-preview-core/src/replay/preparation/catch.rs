@@ -97,6 +97,9 @@ pub fn prepare_replay(beatmap: &Beatmap, document: &ReplayDocument) -> Result<Pr
         hp = (hp * 1.4).min(10.0);
     }
     let mut multiplier = 1.0;
+    if mods.settings.relax {
+        multiplier *= 0.1;
+    }
     if mods.no_fail {
         multiplier *= 0.5;
     }

@@ -167,7 +167,8 @@ mod tests {
         ] {
             let mut document = fixture.clone();
             document.header.ruleset_id = 1;
-            document.header.mods_bits = mods;
+            document.header.mods_bits = mods | (1 << 5);
+            document.metadata = None;
             document.frames = [
                 (0, 0),
                 (980, 1),
@@ -206,7 +207,7 @@ mod tests {
             assert_eq!(gameplay.objects[0].head.unwrap().1, HitResult::Great);
             assert_eq!(gameplay.objects[1].head.unwrap().1, HitResult::Ok);
             assert_eq!(gameplay.objects[5].head.unwrap().1, HitResult::Miss);
-            assert_eq!(gameplay.failure_time, Some(5000.0));
+            assert_eq!(gameplay.failure_time, Some(5595.0));
             let mut runtime = crate::config::current().clone();
             runtime.render.taiko.gif.SCALE = scale;
             runtime.render.taiko.gif.structure.ROW_COUNT = rows;
@@ -220,7 +221,7 @@ mod tests {
                 skin: runtime.skin.clone(),
             });
             let mut plan = RenderPlan {
-                selected_times: Some(vec![900, 1500, 2700, 3600]),
+                selected_times: Some(vec![900, 1500, 2700, 5500]),
                 bid: "42".into(),
                 target_mode: 1,
                 convert_used: false,

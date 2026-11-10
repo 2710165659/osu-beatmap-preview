@@ -12,7 +12,7 @@ pub struct ReplayHeader {
     pub replay_hash: String,
     /// 依次为 300、100、50、Geki、Katu、Miss；不套用其他模式统计。
     pub counts: [u16; 6],
-    pub total_score: u32,
+    pub total_score: i32,
     pub max_combo: u16,
     pub perfect: bool,
     pub mods_bits: u32,

@@ -19,8 +19,8 @@ pub fn compile_mania(
     document: Arc<ReplayDocument>,
 ) -> Result<GameplayTimeline> {
     let last = document.frames.last().unwrap().time_ms as f64;
-    let failure_time = (last < prepared.last_end).then_some(last);
-    let settlement_time = failure_time.unwrap_or_else(|| {
+    let mut fail = super::failure::ReplayFailure::new(last, 3, &prepared.mods);
+    let mut settlement_time = {
         prepared
             .objects
             .iter()
@@ -33,7 +33,7 @@ pub fn compile_mania(
             })
             .fold(last, f64::max)
             .next_up()
-    });
+    };
     let mut engine = Compiler {
         prepared,
         objects: vec![ObjectState::default(); prepared.objects.len()],
@@ -99,8 +99,10 @@ pub fn compile_mania(
     let initial = score.state.clone();
     let mut checkpoints = Vec::new();
     let mut events = Vec::new();
-    for mut event in engine.events {
+    let event_count = engine.events.len();
+    for (index, mut event) in engine.events.into_iter().enumerate() {
         let breaks = score.apply(&event);
+        let failed = fail.apply(&event, &mut score.state, index + 1 == event_count);
         event.id = events.len();
         events.push(event.clone());
         if breaks {
@@ -109,9 +111,15 @@ pub fn compile_mania(
             events.push(event);
         }
         checkpoints.push((events.last().unwrap().time, score.state.clone()));
+        if failed {
+            break;
+        }
     }
+    let failure_time = fail.time;
+    settlement_time = failure_time.unwrap_or(settlement_time);
     if let Some(time) = failure_time {
         score.state.status = ReplayStatus::Failed;
+        score.state.rank = Some("F".into());
         events.push(GameplayEvent {
             id: events.len(),
             time,
@@ -124,11 +132,6 @@ pub fn compile_mania(
             position: None,
             sample_time: time,
         });
-        for object in &mut engine.objects {
-            if object.tracking_at(time) {
-                object.tracking.push((time, false));
-            }
-        }
     } else {
         score.state.status = ReplayStatus::Completed;
     }
@@ -146,7 +149,7 @@ pub fn compile_mania(
     } else {
         None
     };
-    Ok(GameplayTimeline {
+    let mut timeline = GameplayTimeline {
         document,
         policy: ReplayPolicy::Mania(prepared.policy),
         input: ReplayTimeline::new(frames),
@@ -158,7 +161,9 @@ pub fn compile_mania(
         failure_time,
         settlement_time,
         recorded_differences,
-    })
+    };
+    super::failure::truncate(&mut timeline);
+    Ok(timeline)
 }
 
 struct Compiler<'a> {
@@ -340,7 +345,62 @@ mod tests {
         }
     }
     #[test]
-    fn all_six_judgements_and_early_end_freeze_future_state() {
+    fn perfect_setting_controls_failure_at_last_recorded_hit() {
+        for (mods, failed) in [
+            (serde_json::json!([{"acronym":"PF"}]), false),
+            (
+                serde_json::json!([{"acronym":"PF","settings":{"require_perfect_hits":true}}]),
+                true,
+            ),
+        ] {
+            let (source, document) = fixture("64,192,1000,1,0", &[(0, 0), (1030, 1)]);
+            let mut document = (*document).clone();
+            document.metadata =
+                Some(serde_json::from_value(serde_json::json!({"mods":mods})).unwrap());
+            let prepared =
+                crate::replay::preparation::mania::prepare_replay(&source.beatmap, &document)
+                    .unwrap();
+            let timeline = compile_mania(&prepared, Arc::new(document)).unwrap();
+            assert_eq!(timeline.failure_time, failed.then_some(1030.0));
+            assert_eq!(timeline.state_at(f64::INFINITY).statistics["great"], 1);
+        }
+    }
+
+    #[test]
+    fn health_failure_consumes_easy_lives_and_no_fail_prevents_failure() {
+        let objects = (1..=100)
+            .map(|i| format!("64,192,{},1,0", i * 1000))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (source, document) = fixture(&objects, &[(0, 0)]);
+        for (mods, failed, misses) in [
+            (serde_json::json!([]), true, 23),
+            (serde_json::json!([{"acronym":"NF"}]), false, 100),
+            (serde_json::json!([{"acronym":"EZ"}]), false, 100),
+            (
+                serde_json::json!([{"acronym":"EZ","settings":{"retries":0}}]),
+                true,
+                39,
+            ),
+        ] {
+            let mut replay = (*document).clone();
+            replay.metadata =
+                Some(serde_json::from_value(serde_json::json!({"mods":mods})).unwrap());
+            let prepared =
+                crate::replay::preparation::mania::prepare_replay(&source.beatmap, &replay)
+                    .unwrap();
+            let timeline = compile_mania(&prepared, Arc::new(replay)).unwrap();
+            assert_eq!(timeline.failure_time.is_some(), failed);
+            assert_eq!(timeline.state_at(f64::INFINITY).statistics["miss"], misses);
+            if failed {
+                assert_eq!(timeline.state_at(f64::INFINITY).health, 0.0);
+                assert!(timeline.objects[misses as usize].head.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn all_six_judgements_and_sudden_death_after_input_end() {
         for (offset, result) in [
             (0, HitResult::Perfect),
             (30, HitResult::Great),
@@ -356,9 +416,22 @@ mod tests {
             "64,192,1000,1,0\n192,192,2000,1,0",
             &[(0, 0), (1000, 1), (1100, 0)],
         );
-        assert_eq!(timeline.failure_time, Some(1100.0));
-        assert!(timeline.objects[1].head.is_none());
-        assert_eq!(timeline.state_at(1200.0), timeline.state_at(5000.0));
+        assert_eq!(timeline.failure_time, None);
+        assert_eq!(timeline.state_at(1100.0).status, ReplayStatus::Playing);
+        assert_eq!(timeline.objects[1].head.unwrap().1, HitResult::Miss);
+        let (source, document) = fixture(
+            "64,192,1000,1,0\n192,192,2000,1,0\n320,192,3000,1,0",
+            &[(0, 0), (1000, 1), (1100, 0)],
+        );
+        let mut document = (*document).clone();
+        document.header.mods_bits = 1 << 5;
+        let prepared =
+            crate::replay::preparation::mania::prepare_replay(&source.beatmap, &document).unwrap();
+        let timeline = compile_mania(&prepared, Arc::new(document)).unwrap();
+        let failure_time = timeline.failure_time.unwrap();
+        assert!(failure_time > 2000.0 && failure_time < 2300.0);
+        assert!(timeline.objects[2].head.is_none());
+        assert_eq!(timeline.state_at(failure_time), timeline.state_at(5000.0));
         assert_eq!(timeline.state_at(5000.0).status, ReplayStatus::Failed);
     }
 }

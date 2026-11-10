@@ -1,76 +1,52 @@
-//! 帧文本按原顺序累计；历史小数间隔采用官方的逐帧舍入方式。
-
+//! 帧文本按 LegacyScoreDecoder 的宽容规则读取；原始位掩码与同刻帧顺序保持不变。
 use crate::replay::model::ReplayFrame;
 use crate::support::error::{PreviewError, Result};
 
-pub(super) fn parse(bytes: &[u8]) -> Result<(Vec<ReplayFrame>, Option<i64>)> {
-    let text = std::str::from_utf8(bytes).map_err(|_| invalid("non-UTF-8 frames"))?;
+pub(crate) const MAX_COORDINATE: f32 = 131072.0;
+pub(crate) const MAX_MANIA_MASK: f32 = ((1 << 20) - 1) as f32;
+
+pub(super) fn parse(bytes: &[u8], mode: u8) -> Result<(Vec<ReplayFrame>, Option<i64>)> {
+    // StreamReader 默认以替代字符处理无效 UTF-8，并识别 UTF-8 BOM。
+    let text = String::from_utf8_lossy(bytes);
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
     let mut frames = Vec::new();
     let mut time = 0_i64;
     let mut seed = None;
-    for (sequence, token) in text
-        .strip_suffix(',')
-        .unwrap_or(text)
-        .split(',')
-        .enumerate()
-    {
+    for (sequence, token) in text.split(',').enumerate() {
         let mut parts = token.split('|');
-        let delta = delta(parts.next())?;
-        let x: f32 = number(parts.next())?;
-        let y: f32 = number(parts.next())?;
-        let keys: i64 = number(parts.next())?;
-        if parts.next().is_some() || !x.is_finite() || !y.is_finite() {
-            return Err(invalid("invalid frame token"));
-        }
-        if delta == -12345 {
-            if seed.replace(keys).is_some() {
-                return Err(invalid("duplicate seed"));
-            }
+        let (Some(delta_text), Some(x), Some(y), Some(keys)) =
+            (parts.next(), parts.next(), parts.next(), parts.next()) else { continue; };
+        // 游戏先跳过 seed 行，不解析其坐标、按键或后续内容；seed 不限制出现位置或次数。
+        if delta_text == "-12345" {
+            seed = keys.trim().parse().ok();
             continue;
         }
-        if seed.is_some() {
-            return Err(invalid("input after seed"));
-        }
-        time = time
-            .checked_add(delta)
-            .ok_or_else(|| invalid("frame time overflow"))?;
-        // 首版最长接受一天的回放；负首帧仍在绝对时间域内保留。
+        let delta = delta(delta_text)?;
+        let x = coordinate(x, if mode == 3 { MAX_MANIA_MASK } else { MAX_COORDINATE })?;
+        let y = coordinate(y, MAX_COORDINATE)?;
+        let keys = keys.trim().parse::<i32>().map_err(|_| invalid("invalid frame buttons"))?;
+        if keys == i32::MIN { return Err(invalid("frame buttons outside Int32 parse limit")); }
+        time = time.checked_add(delta).ok_or_else(|| invalid("frame time overflow"))?;
+        // 预览的资源预算独立于游戏格式校验，保留明确限制以防无界编译。
         if time.unsigned_abs() > 86_400_000 || frames.len() >= 2_000_000 {
-            return Err(invalid("frame limit exceeded"));
+            return Err(invalid("preview frame resource limit exceeded"));
         }
-        frames.push(ReplayFrame {
-            delta_ms: delta,
-            time_ms: time,
-            cursor: [x, y],
-            keys: u32::try_from(keys).map_err(|_| invalid("invalid key mask"))?,
-            sequence,
-        });
-    }
-    if frames.is_empty() {
-        return Err(invalid("empty replay"));
+        frames.push(ReplayFrame { delta_ms: delta, time_ms: time, cursor: [x, y], keys: keys as u32, sequence });
     }
     Ok((crate::replay::normalize::frames(frames), seed))
 }
-fn delta(value: Option<&str>) -> Result<i64> {
-    let value = value.ok_or_else(|| invalid("truncated frame"))?;
-    if let Ok(integer) = value.parse::<i64>() {
-        return Ok(integer);
-    }
-    // 旧 lazer 曾输出 float 间隔；先解析整数，避免大整数经过 f32 后丢失精度。
-    let value = value
-        .parse::<f32>()
-        .map_err(|_| invalid("invalid frame number"))?;
-    if !value.is_finite() || value.abs() > 86_400_000.0 {
-        return Err(invalid("invalid frame delta"));
-    }
-    Ok(value.round_ties_even() as i64)
+fn delta(value: &str) -> Result<i64> {
+    let value = value.trim();
+    if let Ok(integer) = value.parse::<i32>() { return Ok(i64::from(integer)); }
+    // 旧 lazer 的 float 间隔逐帧以 ties-to-even 舍入，整数优先避免 f32 精度损失。
+    let value = coordinate(value, i32::MAX as f32)?;
+    // unchecked float -> int 越界在游戏运行时返回 Int32.MinValue。
+    let rounded = value.round_ties_even() as f64;
+    Ok(i64::from(if rounded < i32::MIN as f64 || rounded > i32::MAX as f64 { i32::MIN } else { rounded as i32 }))
 }
-fn number<T: std::str::FromStr>(value: Option<&str>) -> Result<T> {
-    value
-        .ok_or_else(|| invalid("truncated frame"))?
-        .parse()
-        .map_err(|_| invalid("invalid frame number"))
+fn coordinate(value: &str, limit: f32) -> Result<f32> {
+    let value = value.trim().replace(',', "").parse::<f32>().map_err(|_| invalid("invalid frame number"))?;
+    if !value.is_finite() || value.abs() > limit { return Err(invalid("frame coordinate or delta outside game parse limit")); }
+    Ok(value)
 }
-fn invalid(message: &str) -> PreviewError {
-    PreviewError::parse(format!("InvalidReplay: {message}"))
-}
+fn invalid(message: &str) -> PreviewError { PreviewError::parse(format!("InvalidReplay: {message}")) }

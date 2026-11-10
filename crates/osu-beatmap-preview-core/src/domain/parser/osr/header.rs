@@ -42,8 +42,7 @@ impl<'a> Reader<'a> {
     fn string(&mut self) -> Result<String> {
         match self.byte()? {
             0 => return Ok(String::new()),
-            0x0b => (),
-            _ => return Err(PreviewError::parse("InvalidReplay: invalid string marker")),
+            _ => (),
         }
         let mut length = 0_usize;
         for shift in (0..35).step_by(7) {
@@ -53,21 +52,22 @@ impl<'a> Reader<'a> {
                 if length > 1024 * 1024 {
                     return Err(invalid_length());
                 }
-                return String::from_utf8(self.take(length)?.to_vec())
-                    .map_err(|_| PreviewError::parse("InvalidReplay: non-UTF-8 string"));
+                return Ok(String::from_utf8_lossy(self.take(length)?).into_owned());
             }
         }
         Err(invalid_length())
     }
     pub fn byte_array(&mut self) -> Result<&'a [u8]> {
-        let length = usize::try_from(self.i32()?).map_err(|_| invalid_length())?;
+        let length = self.i32()?;
+        if length <= 0 { return Ok(&[]); }
+        let length = length as usize;
         if length > super::decode::MAX_COMPRESSED_BYTES {
             return Err(invalid_length());
         }
         self.take(length)
     }
-    pub fn is_finished(&self) -> bool {
-        self.position == self.bytes.len()
+    pub fn remaining(&self) -> usize {
+        self.bytes.len() - self.position
     }
     pub fn header(&mut self) -> Result<ReplayHeader> {
         let ruleset_id = self.byte()?;
@@ -86,16 +86,16 @@ impl<'a> Reader<'a> {
             self.u16()?,
             self.u16()?,
         ];
-        let total_score = u32::from_le_bytes(self.take(4)?.try_into().unwrap());
+        let total_score = self.i32()?;
         let max_combo = self.u16()?;
-        let perfect = match self.byte()? {
-            0 => false,
-            1 => true,
-            _ => return Err(PreviewError::parse("InvalidReplay: invalid boolean")),
-        };
+        let perfect = self.byte()? != 0;
         let mods_bits = u32::from_le_bytes(self.take(4)?.try_into().unwrap());
         let life_graph = self.string()?;
         let timestamp_ticks = self.i64()?;
+        if !(0..=3_155_378_975_999_999_999).contains(&timestamp_ticks) {
+            return Err(PreviewError::parse("InvalidReplay: timestamp ticks outside DateTime range"));
+        }
+        validate_health_graph(&life_graph)?;
         Ok(ReplayHeader {
             ruleset_id,
             version,

@@ -130,7 +130,7 @@ pub(super) fn validate(
         };
         compare!("statistics", normalized(&recorded), normalized(&calculated));
     }
-    compare!("score", u64::from(document.header.total_score), state.score);
+    compare!("score", i64::from(document.header.total_score), state.score as i64);
     compare!(
         "max_combo",
         u32::from(document.header.max_combo),
@@ -194,20 +194,20 @@ mod tests {
         assert_eq!(difference["score"]["calculated"], 991_262);
         assert_eq!(state.score, 991_262);
         let mut boundary = state.clone();
-        boundary.score = u64::from(document.header.total_score) + 5_000;
+        boundary.score = document.header.total_score as u64 + 5_000;
         assert!(validate(&document, &boundary, &maximums).unwrap().is_some());
         let mut reverse = document.clone();
-        reverse.header.total_score = state.score as u32;
+        reverse.header.total_score = state.score as i32;
         reverse.header.max_combo = state.max_combo as u16;
         reverse.metadata.as_mut().unwrap().statistics = state.statistics.clone();
         let mut recorded = state.clone();
-        recorded.score = u64::from(document.header.total_score);
+        recorded.score = document.header.total_score as u64;
         recorded.max_combo = u32::from(document.header.max_combo);
         recorded.statistics = document.metadata.as_ref().unwrap().statistics.clone();
         recorded.accuracy = accuracy(&recorded.statistics, &maximums, 0);
         assert!(validate(&reverse, &recorded, &maximums).unwrap().is_some());
         let mut document = document;
-        document.header.total_score = state.score as u32;
+        document.header.total_score = state.score as i32;
         document.header.max_combo = state.max_combo as u16;
         document.metadata.as_mut().unwrap().statistics = state.statistics.clone();
         assert_eq!(validate(&document, &state, &maximums).unwrap(), None);
@@ -219,7 +219,7 @@ mod tests {
         for change in 0..6 {
             let mut state = state.clone();
             match change {
-                0 => state.score = u64::from(document.header.total_score) + 5_001,
+                0 => state.score = document.header.total_score as u64 + 5_001,
                 1 => state.max_combo = u32::from(document.header.max_combo) + 2,
                 2 => state.rank = Some("A".into()),
                 3 => state.accuracy = Some(0.99),

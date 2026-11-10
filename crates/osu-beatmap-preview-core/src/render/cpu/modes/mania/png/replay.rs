@@ -532,7 +532,10 @@ mod tests {
                     "64,192,1000,128,0,6500:0:0:0:0:",
                     &[(500, 1), (1500, 3), (1500, 1), (1600, 1), (5500, 1)],
                 );
-                let gameplay = compile_mania(&prepared, document).unwrap();
+                let mut gameplay = compile_mania(&prepared, document).unwrap();
+                // 此处只验证绘制裁剪；输入结束本身不会产生失败。
+                gameplay.failure_time = Some(5500.0);
+                gameplay.settlement_time = 5500.0;
                 let layout = layout();
                 let mut image = blank(&layout);
                 draw_inputs(&mut image, &layout, &gameplay, 7000);

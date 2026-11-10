@@ -1,4 +1,6 @@
 //! Mania 动态成绩：305 分最高判定、长条头尾统计与独立于 FPS 的连击部分。
+mod health;
+
 use crate::{
     gameplay::{
         events::{GameplayEvent, HitResult},
@@ -15,6 +17,7 @@ pub(crate) struct Score {
     combo_portion: f64,
     maximum_combo_portion: f64,
     hp: f64,
+    health_multiplier: f64,
     multiplier: f64,
     holds: Vec<bool>,
 }
@@ -39,6 +42,11 @@ impl Score {
             combo_portion: 0.0,
             maximum_combo_portion: (1..=total).map(|c| 300.0 * weight(c)).sum(),
             hp: prepared.hp,
+            health_multiplier: health::recovery_multiplier(
+                &prepared.objects,
+                &prepared.beatmap.break_periods,
+                prepared.hp,
+            ),
             multiplier: prepared.score_multiplier,
             holds: prepared.objects.iter().map(|o| o.is_long_note).collect(),
         }
@@ -65,7 +73,7 @@ impl Score {
             self.state.combo = 0;
         }
         // Mania 不随时间扣血；长条头尾的 Miss 损失是普通单键的一半。
-        // 回血使用基础增量，暂不模拟 LegacyDrainingHealthProcessor 的谱面自适应倍率。
+        // 正向增量使用谱面校准的 HpMultiplierNormal，Miss/Meh 的扣血不乘倍率。
         let change = match event.result {
             HitResult::Perfect => 0.0055 - self.hp * 0.0005,
             HitResult::Great => 0.005 - self.hp * 0.0005,
@@ -80,6 +88,14 @@ impl Score {
                     }
             }
             _ => 0.0,
+        };
+        let change = if matches!(
+            event.result,
+            HitResult::Perfect | HitResult::Great | HitResult::Good
+        ) {
+            change * self.health_multiplier
+        } else {
+            change
         };
         self.state.health = (self.state.health + change).clamp(0.0, 1.0);
         self.state.max_combo = self.state.max_combo.max(self.state.combo);

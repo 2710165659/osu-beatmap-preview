@@ -137,6 +137,6 @@ fn render_with_config(
                 constants::gif::style::TIME_LABEL_NOTE_COLOR,
             ],
         ),
-        prepared.mods.settings.hidden || prepared.mods.settings.flashlight,
+        prepared.mods.fade_in || prepared.mods.settings.hidden || prepared.mods.settings.flashlight,
     )
 }

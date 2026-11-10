@@ -188,12 +188,13 @@ fn cl_can_keep_modern_slider_accuracy_through_its_recorded_settings() {
 
 #[test]
 fn failure_freezes_state_clears_keys_and_settles_same_time_input() {
-    let prepared =
+    let mut prepared =
         crate::replay::preparation::standard::prepare(&map("100,100,1000,1,0\n400,100,2000,1,0"))
             .unwrap();
-    let replay = document(&[(0, [0.0; 2], 0), (1000, [100.0; 2], 1)]);
+    prepared.mods.perfect = true;
+    let replay = document(&[(0, [0.0; 2], 0), (1100, [100.0; 2], 1)]);
     let timeline = compile_standard(&prepared, Arc::new(replay)).unwrap();
-    let failed = timeline.state_at(1000.0);
+    let failed = timeline.state_at(1100.0);
     assert_eq!(failed.status, ReplayStatus::Failed);
     assert_eq!(failed.combo, 1);
     assert_eq!(failed, timeline.state_at(9999.0));
@@ -206,8 +207,8 @@ fn failure_freezes_state_clears_keys_and_settles_same_time_input() {
             .count(),
         1
     );
-    assert!(timeline.events.iter().all(|e| e.time <= 1000.0));
-    assert_eq!(timeline.state_at(999.0).status, ReplayStatus::Playing);
+    assert!(timeline.events.iter().all(|e| e.time <= 1100.0));
+    assert_eq!(timeline.state_at(1099.0).status, ReplayStatus::Playing);
 }
 
 #[test]
@@ -308,10 +309,15 @@ fn spinner_sound_requires_motion_stops_after_damping_and_clears_at_failure() {
     assert!(!state.spinning_at(2600.0));
     assert!(!state.spinning_at(3000.0));
     frames.retain(|frame| frame.0 <= 1300);
+    let mut prepared =
+        crate::replay::preparation::standard::prepare(&map("256,192,1000,8,0,3000\n0,0,1300,1,0"))
+            .unwrap();
+    prepared.mods.sudden_death = true;
     let failed = compile_timeline(&prepared, Arc::new(document(&frames))).unwrap();
-    assert_eq!(failed.failure_time, Some(1300.0));
+    let failure_time = failed.failure_time.unwrap();
+    assert!(failure_time > 1300.0 && failure_time < 1600.0);
     assert!(failed.objects[0].spinning_at(1299.0));
-    assert!(!failed.objects[0].spinning_at(1300.0));
+    assert!(!failed.objects[0].spinning_at(failure_time));
 }
 
 #[test]

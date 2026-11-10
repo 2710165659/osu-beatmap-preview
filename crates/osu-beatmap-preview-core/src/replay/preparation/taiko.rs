@@ -155,6 +155,9 @@ pub fn prepare_replay(beatmap: &Beatmap, document: &ReplayDocument) -> Result<Pr
 
 fn score_multiplier(s: &ModSettings) -> f64 {
     let mut value = 1.0;
+    if s.relax {
+        value *= 0.1;
+    }
     if s.easy {
         value *= 0.5;
     }

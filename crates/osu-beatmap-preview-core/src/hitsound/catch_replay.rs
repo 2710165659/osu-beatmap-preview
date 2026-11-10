@@ -138,7 +138,7 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn only_caught_objects_play_samples_and_early_end_stops_player_sounds() {
+    fn only_caught_objects_play_samples_and_sudden_death_stops_player_sounds() {
         let map = crate::parse_beatmap_bytes(include_bytes!(
             "../../../osu-beatmap-preview-web/test/fixtures/replay-catch.osu"
         ))
@@ -159,6 +159,8 @@ mod tests {
             let mut document = original.clone();
             if fail {
                 document.frames.retain(|f| f.time_ms <= 1500);
+                document.header.mods_bits |= 1 << 5;
+                document.metadata = None;
             }
             let prepared = prepare_replay(&map, &document).unwrap();
             let gameplay = compile_catch(&prepared, Arc::new(document)).unwrap();

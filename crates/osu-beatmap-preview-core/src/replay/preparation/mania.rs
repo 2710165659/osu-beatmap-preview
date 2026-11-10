@@ -98,7 +98,7 @@ pub fn prepare_replay(beatmap: &Beatmap, document: &ReplayDocument) -> Result<Pr
         ));
     }
     let difficulty_multiplier = if mods.settings.easy {
-        0.5
+        1.0 / 1.4
     } else if mods.settings.hard_rock {
         1.4
     } else {
@@ -409,6 +409,30 @@ pub(crate) mod tests {
                     .1,
                 expected
             );
+        }
+    }
+
+    #[test]
+    fn easy_and_hard_rock_scale_hit_windows_for_legacy_and_lazer_replays() {
+        let (source, document) = fixture("64,192,1000,1,0", &[(0, 0), (1000, 1), (1400, 0)]);
+        for legacy in [false, true] {
+            for (code, bits, great_window, hp) in
+                [("EZ", 1 << 1, 68.5, 2.5), ("HR", 1 << 4, 35.5, 7.0)]
+            {
+                let mut replay = (*document).clone();
+                replay.header.mods_bits = bits;
+                replay.metadata = if legacy {
+                    None
+                } else {
+                    Some(
+                        serde_json::from_value(serde_json::json!({"mods":[{"acronym":code}]}))
+                            .unwrap(),
+                    )
+                };
+                let prepared = prepare_replay(&source.beatmap, &replay).unwrap();
+                assert_eq!(prepared.windows[1], great_window);
+                assert_eq!(prepared.hp, hp);
+            }
         }
     }
 

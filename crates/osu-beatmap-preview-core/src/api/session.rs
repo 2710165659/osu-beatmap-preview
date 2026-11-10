@@ -329,10 +329,11 @@ mod osr {
 
         #[test]
         fn failed_replay_freezes_result_while_scene_and_music_continue() {
-            let mut session = session(true);
+            let mut session =
+                session_with_hit_time(true, serde_json::json!([{ "acronym": "PF" }]), 1075);
             let gameplay = session.replay_timeline().unwrap();
-            assert_eq!(gameplay.state_at(1010.0).status, ReplayStatus::Failed);
-            assert_eq!(gameplay.state_at(1010.0), gameplay.state_at(2500.0));
+            assert_eq!(gameplay.state_at(1075.0).status, ReplayStatus::Failed);
+            assert_eq!(gameplay.state_at(1075.0), gameplay.state_at(2500.0));
             assert_eq!(gameplay.input_at(2500.0).unwrap().keys, 0);
             assert!(session.timeline.last_object_ms >= 2000);
             session.set_music(Some(SampleData::mono(vec![0.5; 5000], 1000)));

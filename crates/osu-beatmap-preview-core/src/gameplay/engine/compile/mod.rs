@@ -8,6 +8,7 @@ use crate::replay::{compatibility, timeline::standard_actions, ReplayDocument, R
 use crate::support::error::{PreviewError, Result};
 use std::sync::Arc;
 mod classic;
+mod failure;
 mod input_mods;
 mod objects;
 mod schedule;
@@ -38,18 +39,12 @@ fn compile_timeline(
     let policy = compatibility::select(&document)?;
     let input = input_mods::apply(prepared, &document);
     let last = input.last_time() as f64;
-    let failure = (last < prepared.last_end).then_some(last);
-    let deadline = if failure.is_some() {
-        last
-    } else {
-        prepared
-            .objects
-            .iter()
-            .map(|o| {
-                (o.source.start_time as f64 + circle::windows(prepared.od)[2] + 1.0).max(o.end)
-            })
-            .fold(last, f64::max)
-    };
+    let mut fail = failure::ReplayFailure::new(last, 0, &prepared.mods);
+    let mut deadline = prepared
+        .objects
+        .iter()
+        .map(|o| (o.source.start_time as f64 + circle::windows(prepared.od)[2] + 1.0).max(o.end))
+        .fold(last, f64::max);
     let mut engine = Compiler {
         policy,
         prepared,
@@ -135,8 +130,10 @@ fn compile_timeline(
     );
     let mut checkpoints = Vec::new();
     let mut events = Vec::new();
-    for mut event in engine.events {
+    let event_count = engine.events.len();
+    for (index, mut event) in engine.events.into_iter().enumerate() {
         let breaks = score.apply(&event);
+        let failed = fail.apply(&event, &mut score.state, index + 1 == event_count);
         event.id = events.len();
         events.push(event.clone());
         if breaks {
@@ -145,9 +142,15 @@ fn compile_timeline(
             events.push(event);
         }
         checkpoints.push((events.last().unwrap().time, score.state.clone()));
+        if failed {
+            break;
+        }
     }
+    let failure = fail.time;
     if let Some(time) = failure {
+        deadline = time;
         score.state.status = ReplayStatus::Failed;
+        score.state.rank = Some("F".into());
         events.push(GameplayEvent {
             id: events.len(),
             time,
@@ -160,14 +163,6 @@ fn compile_timeline(
             position: None,
             sample_time: time,
         });
-        for object in &mut engine.objects {
-            if object.tracking_at(time) {
-                object.tracking.push((time, false));
-            }
-            if object.spinning_at(time) {
-                object.spinning.push((time, false));
-            }
-        }
     } else {
         score.state.status = ReplayStatus::Completed;
     }
@@ -178,7 +173,7 @@ fn compile_timeline(
         input.clone()
     };
     let objects = engine.objects;
-    Ok(GameplayTimeline {
+    let mut timeline = GameplayTimeline {
         document,
         policy: policy.into(),
         input: effective_input,
@@ -190,7 +185,9 @@ fn compile_timeline(
         failure_time: failure,
         settlement_time: deadline,
         recorded_differences: None,
-    })
+    };
+    failure::truncate(&mut timeline);
+    Ok(timeline)
 }
 
 struct Compiler<'a> {

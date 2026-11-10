@@ -350,6 +350,7 @@ fn clamp_rect(rect: PixelRect, canvas_w: u32, canvas_h: u32) -> Option<(i64, i64
 pub struct ManiaHidden {
     fade_start: f64,
     covered_top: f64,
+    fade_in: bool,
     enabled: bool,
 }
 
@@ -373,17 +374,41 @@ impl ManiaHidden {
         Self {
             fade_start: covered_top - (hit_y - top) as f64 * 0.25,
             covered_top,
+            fade_in: false,
             enabled: true,
         }
     }
 
-    /// 返回该行音符保留的 alpha 倍率：完全覆盖带 `[covered_top, hit_y]` 为 0（淡出），
+    /// ManiaModFadeIn 沿滚动方向从顶部覆盖，覆盖量与 HD 相同。
+    pub fn new_fade_in(
+        timeline: &VisibilityTimeline,
+        time: i64,
+        top: i64,
+        hit_y: i64,
+        reference_scale: f64,
+    ) -> Self {
+        let mut cover = Self::new(timeline, time, top, hit_y, reference_scale);
+        let coverage = hit_y as f64 - cover.covered_top;
+        cover.covered_top = top as f64 + coverage;
+        cover.fade_start = cover.covered_top + (hit_y - top) as f64 * 0.25;
+        cover.fade_in = true;
+        cover
+    }
+
+    /// 返回该行音符保留的 alpha 倍率；FI 反向覆盖顶部，HD：完全覆盖带 `[covered_top, hit_y]` 为 0（淡出），
     /// 梯度带 `[fade_start, covered_top]` 由 255 递减到 0，`fade_start` 以上保持 255。
     /// lazer 的 `GradientVertical(0f -> 1f)` 描述的是遮盖不透明度（越靠下越盖住音符），
     /// 音符保留的 alpha 是它的补：`1 - t == (covered_top - y) / (covered_top - fade_start)`。
     pub fn alpha_at(&self, y: i64) -> u8 {
         if !self.enabled {
             return 255;
+        }
+        if self.fade_in {
+            return (((y as f64 + 0.5 - self.covered_top)
+                / (self.fade_start - self.covered_top).max(f64::EPSILON))
+            .clamp(0.0, 1.0)
+                * 255.0)
+                .round() as u8;
         }
         (((self.covered_top - (y as f64 + 0.5))
             / (self.covered_top - self.fade_start).max(f64::EPSILON))
@@ -411,6 +436,29 @@ impl ManiaHidden {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fade_in_covers_the_top_and_scales_with_combo_and_output_size() {
+        let timeline = VisibilityTimeline::new(
+            (1..=500).map(|n| n as f64),
+            &[BreakPeriod {
+                start_time: 1000,
+                end_time: 2000,
+            }],
+        );
+        for scale in [0.75, 1.25] {
+            let top = 20;
+            let hit_y = top + (658.0 * scale) as i64;
+            let early = ManiaHidden::new_fade_in(&timeline, 0, top, hit_y, scale);
+            assert_eq!(early.alpha_at(top), 0);
+            assert_eq!(early.alpha_at(hit_y), 255);
+            assert!((1..255).contains(&early.alpha_at(top + (200.0 * scale) as i64)));
+            let late = ManiaHidden::new_fade_in(&timeline, 500, top, hit_y, scale);
+            assert_eq!(late.alpha_at(top + (200.0 * scale) as i64), 0);
+            let rest = ManiaHidden::new_fade_in(&timeline, 1500, top, hit_y, scale);
+            assert_eq!(rest.alpha_at(top), 255);
+        }
+    }
 
     #[test]
     fn kiai_switches_at_effect_boundaries_without_waiting_for_beats() {

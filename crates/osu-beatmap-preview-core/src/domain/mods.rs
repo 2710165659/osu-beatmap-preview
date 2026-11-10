@@ -388,7 +388,11 @@ pub fn validate_mods(settings: &ModSettings, mode: Option<i32>, fmt: Option<&str
         (settings.relax, settings.single_tap, "RX and SG"),
         (settings.spun_out, settings.autopilot, "SO and AP"),
         (settings.alternate, settings.single_tap, "AL and SG"),
-        (settings.mirror, settings.hard_rock, "MR and HR"),
+        (
+            settings.mirror && mode != Some(2),
+            settings.hard_rock,
+            "MR and HR",
+        ),
     ] {
         if left && right {
             errors.push(format!("{label} cannot be used together"));
@@ -519,7 +523,7 @@ fn mod_support_steps(mode: i32) -> [&'static [&'static str]; 3] {
             &["CL"],
         ],
         2 => [
-            &["EZ", "HR"],
+            &["EZ", "HR", "MR"],
             &["HD", "FL", "DT", "HT", "NC", "DC"],
             &["CL"],
         ],
@@ -690,6 +694,7 @@ pub fn mods_for_mode(settings: &ModSettings, mode: i32) -> ModSettings {
             filtered.cs_override = settings.cs_override;
         }
         2 => {
+            filtered.mirror = settings.mirror;
             filtered.easy = settings.easy;
             filtered.hard_rock = settings.hard_rock;
         }
@@ -745,7 +750,7 @@ pub fn supported_mod_tokens_for_level(mode: i32, level: ModSupportLevel) -> Vec<
 #[cfg(test)]
 mod tests {
     #[test]
-    fn mirror_is_supported_for_standard_and_mania_in_all_formats() {
+    fn mirror_is_supported_for_standard_catch_and_mania_in_all_formats() {
         let settings = parse_mods(&["mr".into()]).unwrap();
         assert!(settings.mirror && settings.has_any_mod());
         for fmt in ["png", "gif", "mp4"] {
@@ -753,14 +758,20 @@ mod tests {
         }
         assert_eq!(settings.tokens, ["MR"]);
         for mode in 0..=3 {
-            assert_eq!(mods_for_mode(&settings, mode).mirror, matches!(mode, 0 | 3));
+            assert_eq!(
+                mods_for_mode(&settings, mode).mirror,
+                matches!(mode, 0 | 2 | 3)
+            );
             for fmt in ["png", "gif", "mp4"] {
                 assert_eq!(
                     validate_mods(&settings, Some(mode), Some(fmt)).is_empty(),
-                    matches!(mode, 0 | 3)
+                    matches!(mode, 0 | 2 | 3)
                 );
             }
         }
+        let catch_hr = parse_mods(&["MR".into(), "HR".into()]).unwrap();
+        assert!(validate_mods_for_level(&catch_hr, 2, ModSupportLevel::Png).is_empty());
+        assert!(supported_mod_tokens_for_level(2, ModSupportLevel::Png).contains(&"MR".into()));
         assert!(supported_mod_tokens(3).contains(&"MR".into()));
         assert!(validate_mods_for_level(&settings, 3, ModSupportLevel::Realtime).is_empty());
         for token in ["IN", "HO", "DS", "4K", "CS", "DT"] {
