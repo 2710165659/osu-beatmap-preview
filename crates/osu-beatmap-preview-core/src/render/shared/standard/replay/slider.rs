@@ -72,6 +72,70 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
+    fn replay_uses_preview_simplification_and_keeps_full_motion_at_each_scale() {
+        use crate::domain::shared::slider_path::{build_standard_slider_paths, path_position_at};
+        use crate::render::geometry::OutputFormat;
+
+        let dense = (0..2048)
+            .map(|index| format!("|{}:100", 200 + index % 2))
+            .collect::<String>();
+        for curve in [
+            "P|200:200|300:100".to_owned(),
+            format!("L|200:100{dense}|300:100"),
+        ] {
+            let (beatmap, prepared, _, _) = super::super::tests::object_mod_fixture(
+                serde_json::json!([]),
+                &format!("100,100,1000,2,0,{curve},1,150000"),
+            );
+            let object = &prepared.objects[0];
+            let (display, timing) = build_standard_slider_paths(
+                object.source.x,
+                object.source.y,
+                &object.source.slider_points,
+                object.source.slider_type.as_deref().unwrap(),
+                object.source.slider_pixel_length,
+            );
+            assert_eq!(object.path.as_ref().unwrap().points, timing.points);
+            assert_eq!(
+                object.path.as_ref().unwrap().cumulative_lengths,
+                timing.cumulative_lengths
+            );
+            if curve.starts_with('L') {
+                assert!(display.points.len() < timing.points.len() / 100);
+            }
+            for scale in [0.75, 1.0, 1.5] {
+                let mut config = crate::config::CoreConfig::default();
+                config.render.standard.gif.SCALE = scale;
+                crate::config::with_config(Arc::new(config), || {
+                    let context =
+                        crate::render::cpu::modes::standard::context::build_replay_context(
+                            &beatmap,
+                            &prepared,
+                            crate::processing::timeline::TimeAxis::new(1000),
+                            OutputFormat::Gif,
+                        );
+                    let actual = data(&context, &prepared, 0);
+                    let expected = display
+                        .points
+                        .iter()
+                        .map(|&(x, y)| to_frame_point(x, y, &context.frame_layout))
+                        .collect::<Vec<_>>();
+                    assert_eq!(actual.frame_path.points, expected);
+                    assert_eq!(actual.timing_path.points.len(), timing.points.len());
+                    for progress in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                        let position = path_position_at(&timing, progress);
+                        let expected =
+                            to_frame_point(position.0, position.1, &context.frame_layout);
+                        let actual = path_position_at(&actual.timing_path, progress);
+                        assert!((actual.0 - expected.0).abs() < 1e-6);
+                        assert!((actual.1 - expected.1).abs() < 1e-6);
+                    }
+                });
+            }
+        }
+    }
+
+    #[test]
     fn legacy_ticks_and_full_path_come_from_preparation_and_share_cache() {
         let (mut beatmap, _, gameplay, _) = super::super::tests::object_mod_fixture(
             serde_json::json!([]),

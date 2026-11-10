@@ -1,7 +1,9 @@
-//! Standard 回放逻辑准备：Lazer 几何和嵌套节点；Mod 在堆叠前应用，回放光标保持原始游戏坐标。
+//! Standard 回放逻辑准备：复用谱面预览的完整几何，生成判定节点；Mod 在堆叠前应用。
 pub use crate::domain::rulesets::standard as stacking;
 pub use crate::domain::rulesets::standard::apply_object_mods;
-use crate::domain::shared::slider_path::{build_lazer_slider_path, path_position_at, SliderPath};
+use crate::domain::shared::slider_path::{
+    build_standard_timing_path, path_position_at, SliderPath,
+};
 use crate::model::{Beatmap, StandardHitObject};
 use crate::support::error::{PreviewError, Result};
 
@@ -32,6 +34,9 @@ impl PreparedObject {
         let Some(path) = &self.path else {
             return self.position;
         };
+        if self.span == 0.0 {
+            return self.position;
+        }
         let spans = self.source.slider_repeats.max(1) as f64;
         let elapsed = ((time - self.source.start_time as f64) / self.span).clamp(0.0, spans);
         let span = (elapsed.floor() as usize).min(spans as usize - 1);
@@ -106,11 +111,11 @@ fn prepare_with_mods(
         beatmap.hit_objects.as_standard().unwrap().to_vec(),
         Some(&mods.settings),
     );
-    if beatmap
-        .timing_points
-        .iter()
-        .any(|p| !p.time.is_finite() || !p.beat_length.is_finite())
-    {
+    if beatmap.timing_points.iter().any(|p| {
+        !p.time.is_finite()
+            || p.beat_length.is_infinite()
+            || (p.uninherited && p.beat_length.is_nan())
+    }) {
         return Err(PreviewError::parse(
             "InvalidReplay: non-finite timing point",
         ));
@@ -150,13 +155,11 @@ fn prepare_with_mods(
         let mut path = None;
         let mut nodes = Vec::new();
         if source.hit_type & 2 != 0 {
-            if source.slider_points.len() > 1024
-                || source
-                    .slider_points
-                    .iter()
-                    .any(|&(x, y)| x.unsigned_abs() > 100_000 || y.unsigned_abs() > 100_000)
+            if source
+                .slider_points
+                .iter()
+                .any(|&(x, y)| x.unsigned_abs() > 100_000 || y.unsigned_abs() > 100_000)
                 || !source.slider_pixel_length.is_finite()
-                || !(0.0..=100_000.0).contains(&source.slider_pixel_length)
             {
                 return Err(PreviewError::parse(
                     "InvalidReplay: slider geometry limit exceeded",
@@ -166,11 +169,32 @@ fn prepare_with_mods(
                 source.start_time,
                 &beatmap.timing_points,
             );
+            // 旧谱的 NaN 绿线表示 SV=1 且不生成 tick；普通预览的处理保持不变。
+            let generate_ticks = beatmap
+                .timing_points
+                .iter()
+                .rev()
+                .find(|p| p.time <= source.start_time as f64)
+                .is_none_or(|p| !p.beat_length.is_nan());
+            let sv = if generate_ticks { sv } else { 1.0 };
+            let timing_path = build_standard_timing_path(
+                source.x,
+                source.y,
+                &source.slider_points,
+                source.slider_type.as_deref().unwrap_or("B"),
+                source.slider_pixel_length,
+            );
+            // 未指定长度的滑条沿用曲线实际长度；单点滑条允许零时长。
+            let length = if source.slider_pixel_length > 0.0 {
+                source.slider_pixel_length
+            } else {
+                timing_path.total_length
+            };
             // LegacyRulesetExtensions 在乘回 beat length 前把绿线倍率转为 f32，保留边界精度。
             let bpm_multiplier = ((100.0 / sv) as f32).clamp(10.0, 1000.0) as f64 / 100.0;
             let velocity = multiplier * 100.0 / (beat_length * bpm_multiplier);
-            span = source.slider_pixel_length / velocity;
-            if !span.is_finite() || span <= 0.0 || source.slider_repeats > 10_000 {
+            span = length / velocity;
+            if !span.is_finite() || span < 0.0 || source.slider_repeats > 10_000 {
                 return Err(PreviewError::parse(
                     "InvalidReplay: invalid slider duration",
                 ));
@@ -181,14 +205,7 @@ fn prepare_with_mods(
                     "InvalidReplay: slider time limit exceeded",
                 ));
             }
-            // 回放采用 lazer 逻辑路径；Preview 的曲线拟合只用于原有纯预览绘制。
-            path = Some(build_lazer_slider_path(
-                source.x,
-                source.y,
-                &source.slider_points,
-                source.slider_type.as_deref().unwrap_or("B"),
-                source.slider_pixel_length,
-            ));
+            path = Some(timing_path);
             let tick_distance = velocity * beat_length
                 / tick_rate
                 / if beatmap.format_version() < 8 {
@@ -199,9 +216,9 @@ fn prepare_with_mods(
             for index in 0..source.slider_repeats.max(1) as usize {
                 let start = source.start_time as f64 + index as f64 * span;
                 let mut distance = tick_distance;
-                while distance < source.slider_pixel_length - velocity * 10.0 {
+                while generate_ticks && distance < length - velocity * 10.0 {
                     // 反向 span 的 tick 固定在同一几何位置，时间需要从终点反算并恢复升序。
-                    let progress = distance / source.slider_pixel_length;
+                    let progress = distance / length;
                     let time = start
                         + if index.is_multiple_of(2) {
                             progress
@@ -311,6 +328,44 @@ fn prepare_with_mods(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inherited_nan_disables_ticks_until_the_next_control_point() {
+        let beatmap = crate::parse_beatmap_bytes(b"osu file format v14\n[General]\nMode:0\n[Difficulty]\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n500,-50,4,1,0,100,0,0\n1000,NaN,4,1,0,100,0,0\n3000,-100,4,1,0,100,0,0\n[HitObjects]\n100,100,1000,2,0,L|400:100,2,300\n100,100,5000,2,0,L|400:100,1,300\n").unwrap();
+        let prepared = prepare(&beatmap).unwrap();
+        let first = &prepared.objects[0];
+        assert_eq!(first.span, 1500.0);
+        assert_eq!(first.end, 4000.0);
+        assert_eq!(
+            first.nodes.iter().map(|node| node.kind).collect::<Vec<_>>(),
+            [NodeKind::Repeat, NodeKind::Tail]
+        );
+        assert!(prepared.objects[1]
+            .nodes
+            .iter()
+            .any(|node| node.kind == NodeKind::Tick));
+
+        for (uninherited, beat_length) in [(true, f64::NAN), (false, f64::INFINITY)] {
+            let mut invalid = beatmap.clone();
+            invalid.timing_points[2].uninherited = uninherited;
+            invalid.timing_points[2].beat_length = beat_length;
+            assert!(prepare(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn unspecified_and_single_point_sliders_keep_finite_positions() {
+        let beatmap = crate::parse_beatmap_bytes(b"osu file format v14\n[General]\nMode:0\n[Difficulty]\nSliderMultiplier:1\nSliderTickRate:1\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n100,100,1000,2,0,L|300:100,1,0\n200,200,3000,2,0,C,1,-1\n").unwrap();
+        let prepared = prepare(&beatmap).unwrap();
+        assert_eq!(prepared.objects[0].end, 2000.0);
+        assert_eq!(prepared.objects[0].position_at(1500.0), [200.0, 100.0]);
+        let single = &prepared.objects[1];
+        assert_eq!(single.end, 3000.0);
+        assert_eq!(single.position_at(3000.0), [200.0, 200.0]);
+        assert_eq!(single.nodes.len(), 1);
+        assert_eq!(single.nodes[0].kind, NodeKind::Tail);
+        assert_eq!(single.nodes[0].time, 3000.0);
+    }
 
     #[test]
     fn reverse_span_ticks_keep_the_same_geometric_positions() {

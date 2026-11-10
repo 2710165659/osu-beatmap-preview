@@ -142,10 +142,26 @@ pub fn build_standard_slider_paths(
     slider_type: &str,
     pixel_length: f64,
 ) -> (SliderPath, SliderPath) {
-    let fitted = build_standard_fitted_path(x, y, slider_points, slider_type, pixel_length);
-    let timing = build_path(&fitted);
+    let timing = build_standard_timing_path(x, y, slider_points, slider_type, pixel_length);
     let display = simplify_timed_path(&timing, 1.0);
     (display, timing)
+}
+
+/// Standard 预览与回放共用完整计时路径；显示简化不参与球位置和判定计算。
+pub fn build_standard_timing_path(
+    x: i32,
+    y: i32,
+    slider_points: &[(i32, i32)],
+    slider_type: &str,
+    pixel_length: f64,
+) -> SliderPath {
+    build_path(&build_standard_fitted_path(
+        x,
+        y,
+        slider_points,
+        slider_type,
+        pixel_length,
+    ))
 }
 
 pub fn build_standard_slider_path(
@@ -171,7 +187,7 @@ pub fn build_catch_slider_path(
     build_lazer_slider_path(x, y, slider_points, slider_type, pixel_length)
 }
 
-/// Catch 与 Standard 回放共享 lazer 的完整逻辑路径，普通 Standard 预览继续使用原拟合。
+/// 使用 lazer 的完整路径拟合；Standard 预览与回放另用共同的普通拟合入口。
 pub fn build_lazer_slider_path(
     x: i32,
     y: i32,
