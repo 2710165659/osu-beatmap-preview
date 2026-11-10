@@ -4,6 +4,7 @@ pub(crate) mod artifact;
 mod execute;
 pub(crate) mod legacy;
 mod osr;
+mod osr_result;
 pub(crate) mod output_plan;
 pub mod request;
 mod selection;

@@ -316,6 +316,8 @@ timeout:
 
 `preview-img` 始终为绝对路径，扩展名与实际格式一致。
 
+回放结果另含 `replay-info`，其中 `state` 为完整回放的最终成绩。`statistics` 中的判定数量，以及 `score`、`accuracy`、`combo`、`max_combo`、`rank` 使用字符串 `重算值/原记录值`，例如 `"perfect": "123/125"`、`"accuracy": "0.9876/-"`；准确率仍为 0～1 的小数。原记录只取自 `.osr`，缺失或无法对应到同一判定时显示 `-`，`recorded-score` 保留原始总分，`recorded-result-differences` 为已有核对规则发现的差异；后者为 `null` 也可能表示失败回放未执行核对。
+
 | 退出码 | 含义 |
 | --- | --- |
 | `0` | 渲染成功，或执行帮助/版本命令 |

@@ -321,7 +321,7 @@ fn execute_inner(
     Ok(serde_json::json!({
         "status": "success", "preview-img": cache::clean_windows_path(&abs.to_string_lossy()),
             "replay-info": {"player": source.document.header.player, "identity": source.identity, "rulesetId": source.document.header.ruleset_id,
-            "state": gameplay.state_at(f64::INFINITY), "recorded-score": source.document.header.total_score,
+            "state": super::osr_result::state(gameplay.state_at(f64::INFINITY), &source.document), "recorded-score": source.document.header.total_score,
             "failure-time": gameplay.failure_time, "cache-hit": cached,
             "recorded-result-differences": gameplay.recorded_differences},
         "beatmap-info": {"meta-data": cache::format_section_keys(&source.beatmap.metadata),
