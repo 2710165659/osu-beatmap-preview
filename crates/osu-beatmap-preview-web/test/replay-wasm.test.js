@@ -33,20 +33,20 @@ test('WASM 格式成功解析后仍拒绝未实现的旧 Mod 声明', async (t) 
   const wasm = await moduleOrSkip(t);
   if (!wasm) return;
   const replay = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-classic.osr')));
-  new DataView(replay.buffer).setUint32(modOffset(replay), 1, true);
-  assert.throws(() => wasm.replayInfo(replay), /UnsupportedReplayVariant/);
+  new DataView(replay.buffer).setUint32(modOffset(replay), 1 << 11, true);
+  assert.throws(() => wasm.replayInfo(replay), /UnsupportedReplayVariant:.*AT \(Autoplay\)/);
 });
 
-test('真实 WASM 接受旧 HR/HD/NC 组合，并以 lazer 扩展覆盖旧位掩码', async (t) => {
+test('真实 WASM 接受旧 NF/SD/PF 与 HR/HD/NC 组合，并以 lazer 扩展覆盖旧位掩码', async (t) => {
   const wasm = await moduleOrSkip(t);
   if (!wasm) return;
   const legacy = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-classic.osr')));
-  for (const bits of [1 << 4, (1 << 4) | (1 << 3), (1 << 6) | (1 << 9)]) {
+  for (const bits of [1, 1 << 5, (1 << 5) | (1 << 14), 1 << 4, (1 << 4) | (1 << 3), (1 << 6) | (1 << 9)]) {
     new DataView(legacy.buffer).setUint32(modOffset(legacy), bits, true);
     assert.equal(wasm.replayInfo(legacy).version, 20200101);
   }
   const lazer = new Uint8Array(await fsp.readFile(path.join(here, 'fixtures/replay-standard.osr')));
-  new DataView(lazer.buffer).setUint32(modOffset(lazer), 1, true);
+  new DataView(lazer.buffer).setUint32(modOffset(lazer), 1 << 11, true);
   assert.ok(wasm.replayInfo(lazer).checksum);
 });
 
