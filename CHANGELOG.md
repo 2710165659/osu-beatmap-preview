@@ -4,6 +4,35 @@
 
 ---
 
+## [1.6.0] - 2026.11.11
+
+回放预览基本完成。
+
+### Added
+
+- Standard 回放预览新增 Smoke 烟雾效果，并支持 Aspire 谱面的回放绘制。
+- 扩展 Taiko、Catch、Mania 回放的 Mod 支持，新增 Catch Mirror、Taiko 与 Catch Relax，以及三模式的 No-Fail、Sudden-Death、Perfect 和 Mania Easy、Hard-Rock 支持。
+- Mania GIF、MP4 与实时预览新增 Fade-In（FI）支持。
+
+### Changed
+
+- Taiko PNG 物件间距支持 `auto`、`most` 与固定 BPM 三种策略，默认使用 `most`，按谱面物件范围内持续时间最长的 BPM 排版。
+- Catch PNG 回放预览区分普通移动与 Dash 轨迹颜色，并将轨迹绘制在接盘上方。
+- CLI 回放结果 JSON 的成绩与判定统计并列显示重算值和原记录值，缺失的原记录以 `-` 表示。
+- 回放文件字段校验与 lazer 对齐，改善旧版回放及扩展元数据的兼容性；失败判定遵循 lazer 回放规则。
+
+### Fixed
+
+- 修复旧谱面非正滑条长度的解析与 Taiko 转换兼容问题（#10）。
+- 修复 Taiko 滚奏重叠时遗漏正常击打判定的问题（#10）。
+- 修复 Standard 回放预览将同侧键盘与鼠标输入拆分显示的问题。
+
+### Contributors
+
+- `yaowan233`（#10）。
+
+---
+
 ## [1.5.7] - 2026.11.07
 
 ### Added
