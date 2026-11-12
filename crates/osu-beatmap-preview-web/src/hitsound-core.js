@@ -1,4 +1,4 @@
-// 纯逻辑部分：环形缓冲区的配置与写入换算。
+// 纯逻辑部分：环形缓冲区的配置、写入与倍速读取，供各音频输出路径共用。
 //
 // 拆出来是为了能在 Node 里直接单测——环形读写是「声音和画面对不齐」最容易出错的地方，
 // 而浏览器里的 AudioWorklet 没法在 Node 里跑。混音与时间轴已经全部在 WASM 里，
@@ -40,4 +40,28 @@ export function writeChunk(ring, mask, startFrame, samples) {
     ring[slot + 1] = samples[index * 2 + 1];
   }
   return frames;
+}
+
+/** 按相对帧号读取立体声 PCM；数据被覆盖或尚未写入时输出静音并继续推进。 */
+export function readChunk(ring, mask, readPosition, writtenFrames, rate, left, right) {
+  const oldestReadable = Math.max(0, writtenFrames - ring.length / 2);
+  let cursor = readPosition;
+  let underrunFrames = 0;
+  for (let index = 0; index < left.length; index++) {
+    const base = Math.floor(cursor);
+    const fraction = cursor - base;
+    if (base < oldestReadable || base >= writtenFrames) {
+      left[index] = 0;
+      if (right) right[index] = 0;
+      underrunFrames++;
+    } else {
+      const first = (base & mask) * 2;
+      // 写入前沿没有下一个采样时保持末值，不能插值到旧纪元或尚未写入的数据。
+      const second = base + 1 < writtenFrames ? ((base + 1) & mask) * 2 : first;
+      left[index] = ring[first] + (ring[second] - ring[first]) * fraction;
+      if (right) right[index] = ring[first + 1] + (ring[second + 1] - ring[first + 1]) * fraction;
+    }
+    cursor += rate;
+  }
+  return { readPosition: cursor, underrunFrames };
 }

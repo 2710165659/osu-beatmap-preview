@@ -81,7 +81,7 @@ WASM 会话的背景视频和故事板默认关闭，Web 页面自行启用。�
 
 ## 音频接入
 
-WASM 输出音乐与打击音的混音 PCM，宿主只负责搬运到音频设备，不能再用独立播放器推进第二条音轨。完整实现可参考 [AudioOutput](../osu-beatmap-preview-web/src/hitsound.js) 和 [AudioWorklet](../osu-beatmap-preview-web/public/hitsound-worklet.js)。
+WASM 输出音乐与打击音的混音 PCM，宿主只负责搬运到音频设备，不能再用独立播放器推进第二条音轨。完整实现可参考 [AudioOutput](../osu-beatmap-preview-web/src/hitsound.js) 和 [AudioWorklet](../osu-beatmap-preview-web/src/hitsound-worklet.js)。
 
 1. 用户交互后创建或恢复 `AudioContext`，以实际设备采样率创建会话。
 2. 建立 AudioWorklet 与交错立体声环形缓冲，定期调用 `pullAudio(maxFrames)` 填充。
@@ -95,14 +95,14 @@ WASM 输出音乐与打击音的混音 PCM，宿主只负责搬运到音频设�
 
 有设备输出时画面跟随消费时钟，无音频输出时按墙钟推进。
 
-使用现有音频实现需要 `SharedArrayBuffer`、AudioWorklet 与跨源隔离。静态服务器和反向代理应保留：
+现有音频实现优先使用 `SharedArrayBuffer` 与 AudioWorklet；无共享内存时通过消息传输 PCM，AudioWorklet 不可用时尝试 ScriptProcessor。为使用共享缓冲，静态服务器和反向代理应保留：
 
 ```http
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-这些音频条件不满足时，宿主可只播放画面。
+ScriptProcessor 兼容输出的延迟与抗卡顿能力弱于音频线程；所有音频节点均不可用时只播放画面。
 
 ## 回放
 

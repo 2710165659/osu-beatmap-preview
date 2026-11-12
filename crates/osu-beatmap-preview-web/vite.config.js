@@ -17,7 +17,7 @@ export default defineConfig({
     },
     // 打击音通过 SharedArrayBuffer 把 WASM 的混音结果共享给音频线程，浏览器只在
     // 跨源隔离下允许使用它。生产环境的响应头由 backend/server.js 提供，这里让
-    // `npm run dev` 的开发服务器保持一致，否则开发时打击音会静音。
+    // `npm run dev` 的开发服务器保持一致，优先使用共享缓冲而非消息传输。
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',

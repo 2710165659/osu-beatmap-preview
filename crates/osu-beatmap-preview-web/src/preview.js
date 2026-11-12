@@ -13,6 +13,7 @@ import { computed, nextTick, reactive } from 'vue';
 import { onlineReplayQuery, fetchOnlineReplay } from './replay/remote.js';
 import { createReplayInput, resolveReplaySource, lookupReplayBeatmap } from './replay/load.js';
 import { createAudioContext, createAudioOutput } from './hitsound.js';
+import AUDIO_WORKLET_URL from './hitsound-worklet.js?worker&url';
 import { createLocalInputs, resolveBeatmapSource } from './beatmap/load.js';
 import { readPreviewLink, previewPath } from './navigation.js';
 import { backendLabel, readRenderBackend, saveRenderBackend, withRenderBackend, RENDER_BACKENDS } from './webgpu.js';
@@ -102,14 +103,6 @@ const REWIND_STEP = 500;
 
 /** wasm 胶水代码必须和 .wasm 同目录加载，所以按运行时 URL 请求而不是打进 bundle。 */
 const WASM_URL = `${import.meta.env.BASE_URL}pkg/osu_beatmap_preview_wasm.js`;
-
-/**
- * 音频播放内核（AudioWorklet）。
- *
- * 放在 `public/` 下按运行时 URL 加载：worklet 必须在音频线程里独立加载。
- * 音乐与音效的混音结果由 WASM 产出，这里只做按硬件时钟消费。
- */
-const AUDIO_WORKLET_URL = `${import.meta.env.BASE_URL}hitsound-worklet.js`;
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -320,10 +313,7 @@ let targetFps = 60;
 let lastRenderTime = 0;
 let hasRenderedFrame = false;
 /**
- * 音频输出（AudioContext + Worklet + 环形缓冲）。
- *
- * 只有「AudioWorklet + SharedArrayBuffer」都可用时才会建立；不可用时退化成
- * 「只有画面」，并把这个原因写进状态文案与播放日志。
+ * 音频输出：优先共享缓冲，其次消息传输和主线程兼容输出；均不可用时只播放画面。
  */
 let audioOutput = null;
 /** 音频被自动播放策略拦下时的提示只写一次日志，避免 tick 里的重试刷屏。 */
@@ -1132,14 +1122,16 @@ export async function loadPreview() {
     pendingAudioContext = null;
     if (audioContext && !audioOutput) {
       await audioContext.close().catch(() => {});
-      state.hitsoundStatus = '音频输出不可用（AudioWorklet 节点创建失败）';
+      state.hitsoundStatus = '音频输出不可用（所有音频节点均创建失败）';
       logPlay('音频输出不可用，将继续只播放画面');
     } else if (!audioContext) {
-      state.hitsoundStatus = '当前浏览器不支持音频输出（需要 AudioWorklet 与 SharedArrayBuffer）';
-      logPlay('音频输出不可用：AudioWorklet 或 SharedArrayBuffer 缺失，将继续只播放画面');
+      state.hitsoundStatus = '当前浏览器无法创建音频上下文';
+      logPlay('无法创建 AudioContext，将继续只播放画面');
     } else {
       audioOutput.setRate(session.rate());
       state.hitsoundStatus = state.hitsoundVolume > 0 ? '已启用' : '已关闭（音量 0）';
+      if (audioOutput.mode === 'message') logPlay('音频输出：AudioWorklet 消息传输（无共享缓冲）');
+      if (audioOutput.mode === 'script') logPlay('音频输出：ScriptProcessor 兼容模式，延迟可能较高，页面卡顿时声音可能断续');
     }
 
     canvasEl.width = session.width();

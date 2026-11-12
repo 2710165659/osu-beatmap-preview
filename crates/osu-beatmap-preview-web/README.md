@@ -13,7 +13,7 @@ node backend/server.js
 # 或 npm start
 ```
 
-访问 [http://127.0.0.1:8787](http://127.0.0.1:8787)。WebGPU 需要安全上下文：本机可用 localhost 或回环地址，其他设备使用 WebGPU 时需要 HTTPS；WebGL 2 可用于没有 WebGPU 的环境。音频输出仍需要 HTTPS 或 localhost 安全上下文及跨源隔离。
+访问 [http://127.0.0.1:8787](http://127.0.0.1:8787)。WebGPU 需要安全上下文：本机可用 localhost 或回环地址，其他设备使用 WebGPU 时需要 HTTPS；WebGL 2 可用于没有 WebGPU 的环境。音频优先使用 AudioWorklet 与共享缓冲；没有跨源隔离时改用消息传输，AudioWorklet 不可用时尝试 ScriptProcessor 兼容输出。兼容输出可能有更高延迟，页面卡顿时声音可能断续；建议使用 HTTPS 或 localhost 并保留跨源隔离响应头。
 
 | 启动参数 | 说明 |
 | --- | --- |

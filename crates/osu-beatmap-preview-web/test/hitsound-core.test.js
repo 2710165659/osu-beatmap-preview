@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createRingConfig, writeChunk } from '../src/hitsound-core.js';
+import { createRingConfig, readChunk, writeChunk } from '../src/hitsound-core.js';
 
 test('环形配置：长度为 2 的幂、掩码配套、坏采样率回退 48kHz', () => {
   const config = createRingConfig(48000, 2);
@@ -44,4 +44,16 @@ test('写入：绕回时用掩码取模，帧数被环形容量截断', () => {
   // 数据比环还大：只写得下一圈，且不越界。
   const huge = new Float32Array((config.length + 10) * 2);
   assert.equal(writeChunk(ring, config.mask, 0, huge), config.length);
+});
+
+test('读取：小数倍速跨环插值，写入前沿保持末值，欠载与覆盖输出静音', () => {
+  const ring = new Float32Array(8);
+  writeChunk(ring, 3, 3, Float32Array.from([1, -1, 3, -3]));
+  const left = new Float32Array(5);
+  const right = new Float32Array(5);
+  assert.deepEqual(readChunk(ring, 3, 3, 5, 0.5, left, right), { readPosition: 5.5, underrunFrames: 1 });
+  assert.deepEqual([...left], [1, 2, 3, 3, 0]);
+  assert.deepEqual([...right], [-1, -2, -3, -3, 0]);
+  assert.equal(readChunk(ring, 3, 0, 5, 1, left, null).underrunFrames, 1);
+  assert.equal(left[0], 0);
 });

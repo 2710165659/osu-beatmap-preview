@@ -95,8 +95,8 @@ async function handle(request, response) {
  *
  * 打击音需要 `SharedArrayBuffer` 把 WASM 的混音结果共享给音频线程，而浏览器只在
  * 跨源隔离（COOP + COEP）下才允许使用它。所有资源都是同源的（字体、wasm、
- * 音效都由本进程托管），因此开启隔离不影响页面加载；缺少这两个头时打击音会
- * 自动退化成静音，页面其余部分照常工作。
+ * 音效都由本进程托管），因此开启隔离不影响页面加载；缺少这两个头时音频改用
+ * 消息传输，不再依赖共享内存。
  */
 function isolationHeaders() {
   return {
