@@ -1,4 +1,24 @@
-// 在下载谱面前验证浏览器的 WebGPU 适配器、设备与画布能力。
+// 浏览器渲染后端的能力探测与自动回退；每次实际创建使用独立 Canvas。
+export const RENDER_BACKENDS = Object.freeze([
+  { value: 'webgpu', label: 'WebGPU' },
+  { value: 'webgl2', label: 'WebGL 2' },
+]);
+
+export const backendLabel = (backend) => RENDER_BACKENDS.find(({ value }) => value === backend)?.label ?? '';
+
+export function readRenderBackend() {
+  try {
+    const value = globalThis.localStorage?.getItem('preview.renderBackend');
+    if (RENDER_BACKENDS.some((option) => option.value === value)) return value;
+  } catch { /* 浏览器可能禁止本地存储，继续使用默认值。 */ }
+  return 'webgpu';
+}
+
+export function saveRenderBackend(value) {
+  try { globalThis.localStorage?.setItem('preview.renderBackend', value); }
+  catch { /* 设置在当前页面仍然生效。 */ }
+}
+
 export async function checkWebGpuAvailability() {
   if (!globalThis.isSecureContext) {
     return '当前页面不是安全上下文，WebGPU 需要 HTTPS 或 localhost。请改用 HTTPS 访问本站。';
@@ -29,4 +49,35 @@ export async function checkWebGpuAvailability() {
   } catch (error) {
     return `WebGPU 检测失败：${error?.message ?? error}`;
   }
+}
+
+export function checkWebGl2Availability() {
+  try {
+    const context = document.createElement('canvas').getContext('webgl2');
+    if (!context || context.isContextLost()) return '当前浏览器无法创建 WebGL 2 画布，请检查图形加速设置。';
+    // 探测上下文不参与绘制，及时释放，避免反复检测耗尽浏览器的上下文数量。
+    context.getExtension('WEBGL_lose_context')?.loseContext();
+    return '';
+  } catch (error) {
+    return `WebGL 2 检测失败：${error?.message ?? error}`;
+  }
+}
+
+/** WebGPU 优先模式也捕获实际创建失败；手动选择 WebGL 2 时不探测 WebGPU。 */
+export async function withRenderBackend(preference, create, onFallback = () => {}) {
+  if (!RENDER_BACKENDS.some(({ value }) => value === preference)) throw new Error('无效的渲染后端');
+  const candidates = preference === 'webgpu' ? ['webgpu', 'webgl2'] : ['webgl2'];
+  const errors = [];
+  for (const backend of candidates) {
+    try {
+      const error = backend === 'webgpu' ? await checkWebGpuAvailability() : checkWebGl2Availability();
+      if (error) throw new Error(error);
+      return await create(backend);
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      errors.push(`${backendLabel(backend)}：${error?.message ?? error}`);
+      if (preference === 'webgpu' && backend === 'webgpu') onFallback(errors[0]);
+    }
+  }
+  throw new Error(errors.join('；'));
 }

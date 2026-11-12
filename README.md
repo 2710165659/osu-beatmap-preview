@@ -48,7 +48,7 @@ osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osu-file=map.osu
 
 ### Web 实时预览
 
-Web 包需要 Node.js 18+ 和支持 WebGPU 的浏览器。解压后在包目录运行：
+Web 包需要 Node.js 18+ 和支持 WebGPU 或 WebGL 2 的浏览器。解压后在包目录运行：
 
 ```bash
 node backend/server.js

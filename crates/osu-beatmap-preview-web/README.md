@@ -2,18 +2,18 @@
 
 [项目首页](../../README.md) | [CLI 使用说明](../osu-beatmap-preview-cli/README.md) | [WASM 使用说明](../osu-beatmap-preview-wasm/README.md)
 
-Web 包提供四模式谱面实时预览和回放预览。Vue 页面通过 WASM 完成解包、解码、判定、混音与 WebGPU 绘制；Node.js 后端负责资源下载、官方成绩查询和缓存。
+Web 包提供四模式谱面实时预览和回放预览。Vue 页面通过 WASM 完成解包、解码、判定、混音与 GPU 绘制；Node.js 后端负责资源下载、官方成绩查询和缓存。
 
 ## 启动
 
-运行发布包需要 Node.js 18+ 和支持 WebGPU 的浏览器。包内包含构建好的前端与 WASM，解压后运行：
+运行发布包需要 Node.js 18+ 和支持 WebGPU 或 WebGL 2 的浏览器。包内包含构建好的前端与 WASM，解压后运行：
 
 ```bash
 node backend/server.js
 # 或 npm start
 ```
 
-访问 [http://127.0.0.1:8787](http://127.0.0.1:8787)。WebGPU 需要安全上下文：本机可用 localhost 或回环地址，其他设备访问时需要 HTTPS 和浏览器可用的 WebGPU。
+访问 [http://127.0.0.1:8787](http://127.0.0.1:8787)。WebGPU 需要安全上下文：本机可用 localhost 或回环地址，其他设备使用 WebGPU 时需要 HTTPS；WebGL 2 可用于没有 WebGPU 的环境。音频输出仍需要 HTTPS 或 localhost 安全上下文及跨源隔离。
 
 | 启动参数 | 说明 |
 | --- | --- |
@@ -39,7 +39,9 @@ node backend/server.js
 | `.osz` | 使用包内难度，可在难度列表中切换；填写谱面 ID 时按 ID 匹配 |
 | `.osu` + `.osz` | 使用外部谱面，媒体取自包内；两者必须通过有效 `BeatmapID` 绑定 |
 
-支持四模式原生谱面，以及 Standard 转 Taiko、Catch、Mania。播放页可切换 Mod、跳转进度，调整倍速（0.1–3 倍）、音乐与打击音音量、480P/720P/1080P 分辨率和 30/60/120 FPS。
+支持四模式原生谱面，以及 Standard 转 Taiko、Catch、Mania。加载页和播放设置提供 WebGPU、WebGL 2 两种渲染后端，选择会在浏览器保存。默认优先 WebGPU，不可用或初始化失败时回退 WebGL 2；手动选择 WebGL 2 时直接使用该后端。播放中切换保留进度、Mod 与音频，按钮选中状态表示实际后端。
+
+播放页可切换 Mod、跳转进度，调整倍速（0.1–3 倍）、音乐与打击音音量、480P/720P/1080P 分辨率和 30/60/120 FPS。
 
 音乐音量默认 50%，打击音默认开启、音量 100%，背景默认暗化 70%；背景视频、故事板、谱面打击音和帧率显示在页面中默认开启。「画面 → 其他」可切换 Standard 的光标和 Catch 的自动接盘，均默认关闭。普通谱面预览的 Mod 选项采用 [CLI 文档](../osu-beatmap-preview-cli/README.md#mod-支持)中 PNG 与 GIF/MP4 的累积支持范围。
 

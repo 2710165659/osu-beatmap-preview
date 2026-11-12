@@ -16,7 +16,7 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
-wgpu = { version = "29", features = ["webgpu"] }
+wgpu = { version = "29", features = ["webgpu", "webgl"] }
 # 背景视频管线（`src/video.rs`）用到的浏览器媒体/画布接口：解码走浏览器硬解，
 # wasm 只驱动 <video>、同步时钟并抓帧。
 web-sys = { version = "0.3", features = [

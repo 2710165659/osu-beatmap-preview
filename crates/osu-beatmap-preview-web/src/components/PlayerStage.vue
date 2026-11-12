@@ -6,9 +6,9 @@ import { onMounted, ref } from 'vue';
 import { attachStage, state, togglePlay } from '../preview.js';
 
 const viewport = ref(null);
-const canvas = ref(null);
+const canvasHost = ref(null);
 
-onMounted(() => attachStage({ viewport: viewport.value, canvas: canvas.value }));
+onMounted(() => attachStage({ viewport: viewport.value, canvasHost: canvasHost.value }));
 </script>
 
 <template>
@@ -17,7 +17,8 @@ onMounted(() => attachStage({ viewport: viewport.value, canvas: canvas.value }))
     class="relative grid min-h-0 flex-1 cursor-pointer place-items-center overflow-hidden bg-black p-1 sm:p-3"
     @click="togglePlay()"
   >
-    <canvas ref="canvas" class="block bg-[#12151b]" />
+    <!-- Canvas 由会话接入层持有：不同类型的上下文必须使用不同元素。 -->
+    <div ref="canvasHost" class="contents" />
     <div
       v-if="state.audioBlocked"
       class="pointer-events-none absolute inset-0 grid place-items-center px-4 text-center"

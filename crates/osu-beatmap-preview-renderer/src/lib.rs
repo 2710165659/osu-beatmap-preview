@@ -78,6 +78,8 @@ impl SurfaceRenderer {
     /// 最多保留三帧在途，为浏览器合成与异步完成通知留出余量；GPU 忙时直接跳到最新时刻。
     #[cfg(target_arch = "wasm32")]
     pub fn frame_pending(&self) -> bool {
+        // WebGL 通过 wgpu-core 执行，完成回调需要主动轮询；WebGPU 上此调用为空操作。
+        let _ = self.device.poll(wgpu::PollType::Poll);
         self.frame_pending.load(Ordering::Acquire) >= 3
     }
     /// 把外部图像源（如浏览器视频帧）拷进槽位纹理，供场景的

@@ -2,7 +2,7 @@
 
 [项目首页](../../README.md) | [Web 站点说明](../osu-beatmap-preview-web/README.md) | [CLI 使用说明](../osu-beatmap-preview-cli/README.md)
 
-`osu-beatmap-preview-wasm` 将谱面与回放接入浏览器 WebGPU Canvas，负责解包、媒体解码、判定、绘制、混音与播放时钟。宿主负责获取文件、提供 Canvas、输出 PCM 和实现界面；PNG/GIF/MP4 导出使用 CLI。
+`osu-beatmap-preview-wasm` 将谱面与回放接入浏览器 WebGPU 或 WebGL 2 Canvas，负责解包、媒体解码、判定、绘制、混音与播放时钟。宿主负责获取文件、提供 Canvas、输出 PCM 和实现界面；PNG/GIF/MP4 导出使用 CLI。
 
 ## 构建
 
@@ -27,7 +27,7 @@ Web 页面构建必须在 WASM 生成后执行，才能将 `public/pkg/` 复制�
 
 ## 最小画面示例
 
-通过静态服务器托管页面、`pkg/` 和谱面包。浏览器需要支持 WebGPU，并处于 HTTPS 或 localhost 安全上下文。以下示例仅播放画面；音频输出见下一节。
+通过静态服务器托管页面、`pkg/` 和谱面包。浏览器需要支持所选 GPU 后端，WebGPU 还要求 HTTPS 或 localhost 安全上下文。以下示例仅播放画面；音频输出见下一节。
 
 ```html
 <canvas id="stage"></canvas>
@@ -52,7 +52,7 @@ Web 页面构建必须在 WASM 生成后执行，才能将 `public/pkg/` 复制�
 </script>
 ```
 
-会话使用 WASM 内部时钟推进；`renderFrame()` 返回 `false` 时继续调度即可。销毁页面或替换会话时应停止动画循环并调用 wasm-bindgen 生成的 `session.free()`。
+会话使用 WASM 内部时钟推进；`renderFrame()` 返回 `false` 时继续调度即可。销毁页面或替换会话时应停止动画循环并调用 wasm-bindgen 生成的 `session.free()`。切换后端时应使用新的 Canvas 创建 `WebRenderer`（从同一 JS 模块导入），再调用 `session.replaceRenderer(renderer)` 并把新 Canvas 挂入页面；创建失败时保留旧渲染器，未交接的 renderer 应调用 `free()` 释放。
 
 ## 输入与创建选项
 
@@ -68,6 +68,7 @@ Web 页面构建必须在 WASM 生成后执行，才能将 `public/pkg/` 复制�
 | `convert` | `standard`、`taiko`、`ctb`、`mania` 等目标模式 |
 | `mods` | Mod token 数组，语法与 [CLI Mod](../osu-beatmap-preview-cli/README.md#mod-支持) 相同，支持实时预览列 |
 | `width`、`height` | 输出像素尺寸 |
+| `backend` | `webgpu`（默认）或 `webgl2`，创建失败时返回错误；Web 页面的自动回退由宿主负责 |
 | `sampleRate` | 音频输出采样率，应传 `AudioContext.sampleRate` |
 | `musicVolume` | 音乐音量百分比，默认 50 |
 | `hitsoundEnabled`、`hitsoundVolume` | 打击音开关与音量，默认 true、100 |
@@ -157,6 +158,8 @@ const state = session.replayState();
 | `renderFrame()` | 按内部时钟绘制；返回 false 表示未取得可用帧，连续约 1 秒不可用才报错 |
 | `resize(width, height)` | 同步调整 surface 和合成尺寸，仅修改 Canvas 不够 |
 | `width()`、`height()`、`mode()` | 输出尺寸与目标模式 |
+| `backend()` | 当前实际渲染后端：`webgpu` 或 `webgl2` |
+| `replaceRenderer(renderer)` | 接收 `await WebRenderer.create(newCanvas, width, height, backend)` 的结果并接管其所有权；尺寸须与会话一致，保留播放状态、音频和回放 |
 | `replayState()` | 回放快照，普通预览为 null |
 
 ### 音频
@@ -210,7 +213,7 @@ const state = session.replayState();
 
 ## 使用边界
 
-- 仅使用 WebGPU；设备或浏览器不可用时创建会话报错。
+- 支持 WebGPU 和 WebGL 2；设备不可用或输出尺寸超出限制时返回错误。
 - 文件获取与在线成绩认证由宿主或后端完成，WASM 不持有下载凭据。
 - 解码后的媒体驻留内存，宿主应限制输入大小并释放旧会话。
 - 每个动画帧调用一次 `renderFrame()`，音频填充按缓冲余量调度。

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkWebGpuAvailability } from '../src/webgpu.js';
+import { checkWebGpuAvailability, readRenderBackend, saveRenderBackend, withRenderBackend } from '../src/webgpu.js';
 
 test('WebGPU 预检区分安全上下文、API、适配器与设备失败，并释放探测设备', async (t) => {
   const cases = [
@@ -51,4 +51,79 @@ test('WebGPU 预检区分安全上下文、API、适配器与设备失败，并�
       assert.equal(destroyed, Boolean(entry.destroyed));
     });
   }
+});
+
+test('后端选择优先 WebGPU，能力或实际创建失败时回退，选择 WebGL 2 时直接使用', async (t) => {
+  const cases = [
+    { name: '自动优先 WebGPU', preference: 'webgpu', expected: 'webgpu' },
+    { name: '没有 WebGPU API', preference: 'webgpu', noGpu: true, expected: 'webgl2' },
+    { name: 'HTTP 仍可使用 WebGL 2', preference: 'webgpu', insecure: true, expected: 'webgl2' },
+    { name: '实际 WebGPU 管线失败', preference: 'webgpu', createError: true, expected: 'webgl2' },
+    { name: '强制 WebGL 2', preference: 'webgl2', expected: 'webgl2' },
+    { name: '强制 WebGL 2 失败', preference: 'webgl2', noGl: true, error: /WebGL 2/ },
+    { name: '两种后端都不可用', preference: 'webgpu', noGpu: true, noGl: true, error: /WebGPU.*WebGL 2/ },
+    { name: '取消创建不再回退', preference: 'webgpu', aborted: true, error: /cancelled/ },
+  ];
+  for (const entry of cases) {
+    await t.test(entry.name, async (t) => {
+      let lost = 0;
+      let gpuRequests = 0;
+      const created = [];
+      const fallbacks = [];
+      const globals = {
+        isSecureContext: !entry.insecure,
+        navigator: { gpu: entry.noGpu ? undefined : {
+          async requestAdapter() {
+            gpuRequests++;
+            return { async requestDevice() { return { destroy() {} }; } };
+          },
+        } },
+        document: { createElement: () => ({ getContext: (type) => type === 'webgpu' ? {} : entry.noGl ? null : {
+          isContextLost: () => false,
+          getExtension: () => ({ loseContext() { lost++; } }),
+        } }) },
+      };
+      for (const [name, value] of Object.entries(globals)) {
+        const original = Object.getOwnPropertyDescriptor(globalThis, name);
+        Object.defineProperty(globalThis, name, { configurable: true, value });
+        t.after(() => {
+          if (original) Object.defineProperty(globalThis, name, original);
+          else delete globalThis[name];
+        });
+      }
+      const result = withRenderBackend(entry.preference, async (backend) => {
+        created.push(backend);
+        if (entry.aborted) throw new DOMException('cancelled', 'AbortError');
+        if (entry.createError && backend === 'webgpu') throw new Error('pipeline failed');
+        return backend;
+      }, (error) => fallbacks.push(error));
+      if (entry.error) await assert.rejects(result, entry.error);
+      else assert.equal(await result, entry.expected);
+      if (entry.preference === 'webgl2') assert.equal(gpuRequests, 0);
+      if (entry.expected === 'webgpu' || entry.aborted) assert.deepEqual(created, ['webgpu']);
+      if (entry.expected === 'webgl2') assert.equal(lost, 1);
+      assert.equal(fallbacks.length, entry.preference === 'webgpu' && !entry.aborted && entry.expected !== 'webgpu' ? 1 : 0);
+    });
+  }
+});
+
+test('后端偏好保存与读取校验，存储不可用时默认 WebGPU', (t) => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original);
+    else delete globalThis.localStorage;
+  });
+  let stored = null;
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: () => stored,
+    setItem: (key, value) => { assert.equal(key, 'preview.renderBackend'); stored = value; },
+  } });
+  assert.equal(readRenderBackend(), 'webgpu');
+  saveRenderBackend('webgl2');
+  assert.equal(readRenderBackend(), 'webgl2');
+  stored = 'unsupported';
+  assert.equal(readRenderBackend(), 'webgpu');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('denied'); } });
+  assert.equal(readRenderBackend(), 'webgpu');
+  assert.doesNotThrow(() => saveRenderBackend('webgpu'));
 });

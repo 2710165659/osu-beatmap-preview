@@ -14,6 +14,10 @@ use wasm_bindgen::prelude::*;
 
 pub mod archive;
 pub mod decode;
+#[cfg(target_arch = "wasm32")]
+mod gpu;
+#[cfg(target_arch = "wasm32")]
+pub use gpu::WebRenderer;
 pub mod osr;
 mod remux;
 pub mod video;
@@ -23,8 +27,6 @@ use osu_beatmap_preview_core::{
     hitsound, parse_beatmap_bytes, BeatmapInfo, ImageData, RealtimeOptions, RealtimeSession,
     ResourceBundle, StoryboardBundle,
 };
-#[cfg(target_arch = "wasm32")]
-use osu_beatmap_preview_renderer::{SurfaceConfig, SurfaceRenderer};
 
 /// 墙钟读数（毫秒）：时钟推进与音频位置锚定共用。
 #[cfg(target_arch = "wasm32")]
@@ -46,7 +48,7 @@ const SURFACE_FAILURE_LIMIT_MS: f64 = 1000.0;
 #[cfg(target_arch = "wasm32")]
 const VIDEO_TEXTURE_SLOT: u32 = 0;
 
-/// 直接渲染到浏览器 WebGPU Canvas 的会话。
+/// 直接渲染到浏览器 WebGPU 或 WebGL 2 Canvas 的会话。
 ///
 /// 创建时一次性收下整份文件；音乐与打击音在 WASM 内统一混音，画面与声音共用同一条
 /// 时间轴（会话时钟），倍速、seek、暂停都只有一处位置计算。
@@ -54,9 +56,7 @@ const VIDEO_TEXTURE_SLOT: u32 = 0;
 #[wasm_bindgen]
 pub struct WebGpuSession {
     inner: RealtimeSession,
-    surface: wgpu::Surface<'static>,
-    surface_config: wgpu::SurfaceConfiguration,
-    renderer: SurfaceRenderer,
+    gpu: WebRenderer,
     /// `.osz` 里的自带音效条目（条目名 + 字节）；切 Mod 后按新候选名重新匹配装载。
     custom_samples: Vec<(String, Vec<u8>)>,
     /// 是否采用谱面自带音效（`ENABLE_BEATMAP_HITSOUND`）；运行时可切（`setBeatmapHitsound`）。
@@ -82,7 +82,7 @@ impl WebGpuSession {
     /// （音乐、背景、自带音效全部在 WASM 内解出）。
     ///
     /// `options`：`{ bid?, difficulty?, convert?, mods?, width, height, sampleRate?,
-    /// hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard?, showCursor?, showCatcher?, replayBytes?, osuBytes? }`。
+    /// backend?, hitsoundEnabled?, hitsoundVolume?, musicVolume?, beatmapHitsound?, storyboard?, showCursor?, showCatcher?, replayBytes?, osuBytes? }`。
     /// `osuBytes` 为可选外部谱面，提供时 `bytes` 必须为包含对应难度的 `.osz`。
     /// 有 `replayBytes` 时按回放 MD5 选谱并拒绝转谱和用户 Mod，输入需为完整谱面包。
     /// 难度选择优先 `difficulty`（压缩包条目名），其次 `bid`（`BeatmapID`），都没有时
@@ -212,62 +212,11 @@ impl WebGpuSession {
         load_samples(&mut session, &content.samples, use_beatmap_samples);
 
         let (width, height) = session.options().render.dimensions();
-        canvas.set_width(width);
-        canvas.set_height(height);
-
-        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-        descriptor.backends = wgpu::Backends::BROWSER_WEBGPU;
-        let instance = wgpu::Instance::new(descriptor);
-        let surface = instance
-            .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
-            .map_err(js_error)?;
-        // 先要硬件适配器。部分移动设备的 GPU 在浏览器黑名单里，只有 CPU 回退适配器，
-        // 而 force_fallback_adapter 为 false 时浏览器会直接返回 null；因此失败后允许
-        // 一次回退请求，让这类设备至少能以软件光栅化运行，而不是整页无法渲染。
-        let mut adapter_options = wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: Some(&surface),
-        };
-        let adapter = match instance.request_adapter(&adapter_options).await {
-            Ok(adapter) => adapter,
-            Err(hardware_error) => {
-                adapter_options.force_fallback_adapter = true;
-                instance
-                    .request_adapter(&adapter_options)
-                    .await
-                    .map_err(|fallback_error| {
-                        JsValue::from_str(&format!(
-                            "没有可用的 WebGPU 适配器（硬件：{hardware_error}；回退：{fallback_error}）。\
-                             请检查浏览器图形加速、显卡驱动及 WebGPU 支持，\
-                             并打开 /gpu-check.html 查看具体原因。"
-                        ))
-                    })?
-            }
-        };
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("osu beatmap preview webgpu device"),
-                ..Default::default()
-            })
-            .await
-            .map_err(js_error)?;
-        let surface_config = surface
-            .get_default_config(&adapter, width, height)
-            .ok_or_else(|| JsValue::from_str("浏览器 WebGPU Canvas 不支持所选适配器"))?;
-        let device = std::sync::Arc::new(device);
-        let queue = std::sync::Arc::new(queue);
-        surface.configure(&device, &surface_config);
-        let renderer = SurfaceRenderer::new(
-            std::sync::Arc::clone(&device),
-            queue,
-            SurfaceConfig {
-                width,
-                height,
-                format: surface_config.format,
-            },
-        )
-        .map_err(js_error)?;
+        let backend = js_sys::Reflect::get(&options, &JsValue::from_str("backend"))
+            .ok()
+            .and_then(|value| value.as_string())
+            .unwrap_or_else(|| "webgpu".to_owned());
+        let gpu = WebRenderer::create(canvas, width, height, &backend).await?;
         // 背景视频在 WASM 内驱动浏览器硬解（`video.rs`）；容器/编码不受支持时
         // 静默回退背景图，与 osu! 的降级一致。抓帧分辨率跟随后端画布并封顶 720p。
         let mut video = content
@@ -279,9 +228,7 @@ impl WebGpuSession {
         }
         Ok(Self {
             inner: session,
-            surface,
-            surface_config,
-            renderer,
+            gpu,
             custom_samples: content.samples,
             use_beatmap_samples,
             background_source,
@@ -351,7 +298,7 @@ impl WebGpuSession {
     #[wasm_bindgen(js_name = renderFrame)]
     pub fn render_frame(&mut self) -> Result<bool, JsValue> {
         // 不积压旧时间戳的场景；seek 和播放都在下一次空闲时读取最新会话时间。
-        if self.renderer.frame_pending() {
+        if self.gpu.renderer.frame_pending() {
             return Ok(false);
         }
         let chart_ms = self.inner.clock_ms(wall_ms()).round() as i64;
@@ -361,7 +308,8 @@ impl WebGpuSession {
             return Ok(false);
         };
         let view = frame.texture.create_view(&Default::default());
-        self.renderer
+        self.gpu
+            .renderer
             .render_to_view(&scene, &view)
             .map_err(js_error)?;
         frame.present();
@@ -377,7 +325,7 @@ impl WebGpuSession {
     fn acquire_surface(&mut self) -> Result<Option<wgpu::SurfaceTexture>, JsValue> {
         let mut last_reason = "surface 不可用";
         for attempt in 0..2 {
-            match self.surface.get_current_texture() {
+            match self.gpu.surface.get_current_texture() {
                 wgpu::CurrentSurfaceTexture::Success(frame)
                 | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
                     self.surface_failure_since = None;
@@ -385,8 +333,9 @@ impl WebGpuSession {
                 }
                 wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                     last_reason = "surface 过期或丢失";
-                    self.surface
-                        .configure(self.renderer.device(), &self.surface_config);
+                    self.gpu
+                        .surface
+                        .configure(self.gpu.renderer.device(), &self.gpu.config);
                     if attempt == 1 {
                         break;
                     }
@@ -404,7 +353,7 @@ impl WebGpuSession {
                     return Ok(None);
                 }
                 wgpu::CurrentSurfaceTexture::Validation => {
-                    return Err(JsValue::from_str("WebGPU surface 获取当前帧时发生验证错误"));
+                    return Err(JsValue::from_str("GPU surface 获取当前帧时发生验证错误"));
                 }
             }
         }
@@ -416,7 +365,7 @@ impl WebGpuSession {
         if now - since >= SURFACE_FAILURE_LIMIT_MS {
             self.surface_failure_since = None;
             return Err(JsValue::from_str(&format!(
-                "WebGPU 画布已连续 {:.1} 秒无法出帧（{last_reason}），画面已停止；\
+                "GPU 画布已连续 {:.1} 秒无法出帧（{last_reason}），画面已停止；\
                  请刷新页面重新加载预览",
                 (now - since) / 1000.0
             )));
@@ -533,15 +482,39 @@ impl WebGpuSession {
         Ok(())
     }
 
+    /// 只替换已准备好的 GPU 资源，保留谱面、回放、音频与播放时钟。
+    #[wasm_bindgen(js_name = replaceRenderer)]
+    pub fn replace_renderer(&mut self, gpu: WebRenderer) -> Result<(), JsValue> {
+        if gpu.config.width != self.gpu.config.width || gpu.config.height != self.gpu.config.height
+        {
+            return Err(JsValue::from_str("新渲染器尺寸与会话不一致"));
+        }
+        self.gpu = gpu;
+        self.surface_failure_since = None;
+        if let Some(video) = self.video.as_mut() {
+            video.invalidate_capture();
+        }
+        Ok(())
+    }
+
+    pub fn backend(&self) -> String {
+        self.gpu.backend()
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(), JsValue> {
         if width == 0 || height == 0 {
             return Err(JsValue::from_str("Canvas 尺寸必须为正数"));
         }
-        self.surface_config.width = width;
-        self.surface_config.height = height;
-        self.surface
-            .configure(self.renderer.device(), &self.surface_config);
-        self.renderer.resize(width, height).map_err(js_error)?;
+        let limits = self.gpu.renderer.device().limits();
+        if width > limits.max_texture_dimension_2d || height > limits.max_texture_dimension_2d {
+            return Err(JsValue::from_str("输出尺寸超出当前 GPU 后端的纹理尺寸限制"));
+        }
+        self.gpu.config.width = width;
+        self.gpu.config.height = height;
+        self.gpu
+            .surface
+            .configure(self.gpu.renderer.device(), &self.gpu.config);
+        self.gpu.renderer.resize(width, height).map_err(js_error)?;
         // 抓帧分辨率跟随后端画布（再被 720p 上限截断）；渲染器重建会丢掉
         // 外部纹理，强制重新取帧重拷纹理，否则视频层在重建后是空的。
         if let Some(video) = self.video.as_mut() {
@@ -614,6 +587,7 @@ impl WebGpuSession {
                 // 主路径：画布直接拷进外部纹理槽位（GPU→GPU），帧像素不进 CPU。
                 let source = wgpu::ExternalImageSource::HTMLCanvasElement(canvas);
                 if self
+                    .gpu
                     .renderer
                     .copy_external_frame(VIDEO_TEXTURE_SLOT, &source)
                     .is_err()
@@ -679,11 +653,11 @@ impl WebGpuSession {
     }
 
     pub fn width(&self) -> u32 {
-        self.surface_config.width
+        self.gpu.config.width
     }
 
     pub fn height(&self) -> u32 {
-        self.surface_config.height
+        self.gpu.config.height
     }
 
     pub fn mode(&self) -> String {

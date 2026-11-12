@@ -15,7 +15,7 @@ import { createReplayInput, resolveReplaySource, lookupReplayBeatmap } from './r
 import { createAudioContext, createAudioOutput } from './hitsound.js';
 import { createLocalInputs, resolveBeatmapSource } from './beatmap/load.js';
 import { readPreviewLink, previewPath } from './navigation.js';
-import { checkWebGpuAvailability } from './webgpu.js';
+import { backendLabel, readRenderBackend, saveRenderBackend, withRenderBackend, RENDER_BACKENDS } from './webgpu.js';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -154,6 +154,10 @@ export const state = reactive({
   // 默认 60 FPS：120 FPS 只在高刷新率屏幕上才有实际区别，留给用户手动开。
   fps: 60,
   resolution: '720',
+  renderBackend: readRenderBackend(),
+  activeBackend: '',
+  rendererSwitching: false,
+  rendererError: '',
   speed: 1,
   /** 音乐音量（0–1）；0 即静音，与「静音播放中」角标无关。 */
   volume: DEFAULT_VOLUME,
@@ -253,18 +257,23 @@ export const state = reactive({
 });
 
 export const GPU_CHECK_URL = `${import.meta.env.BASE_URL}gpu-check.html`;
-let gpuCheckPromise = null;
+let gpuCheck = null;
 
-/** 首次挂载与加载入口共享探测；失败后可由用户手动重试。 */
-export function checkWebGpu() {
-  if (gpuCheckPromise) return gpuCheckPromise;
+/** 首次挂载与加载入口共享探测，过期结果不能覆盖后来选择的后端。 */
+export function checkRenderer() {
+  const preference = state.renderBackend;
+  if (gpuCheck?.preference === preference) return gpuCheck.promise;
   state.gpuStatus = 'checking';
-  gpuCheckPromise = checkWebGpuAvailability().then((error) => {
-    state.gpuError = error;
-    state.gpuStatus = error ? 'unavailable' : 'ready';
+  const check = { preference };
+  check.promise = withRenderBackend(preference, () => true).then(() => '', errorText).then((error) => {
+    if (gpuCheck === check) {
+      state.gpuError = error;
+      state.gpuStatus = error ? 'unavailable' : 'ready';
+    }
     return !error;
-  }).finally(() => { gpuCheckPromise = null; });
-  return gpuCheckPromise;
+  }).finally(() => { if (gpuCheck === check) gpuCheck = null; });
+  gpuCheck = check;
+  return check.promise;
 }
 
 /** 加载阶段的文案；未知阶段一律显示「正在加载」。 */
@@ -720,6 +729,9 @@ function teardownSession() {
   releaseAudioOutput();
   session?.free?.();
   session = null;
+  state.activeBackend = '';
+  state.rendererSwitching = false;
+  state.rendererError = '';
   state.replayActive = false;
   state.rendered = false;
   state.renderError = '';
@@ -756,10 +768,24 @@ export function fitCanvasToViewport() {
   canvasEl.style.height = `${Math.max(1, Math.floor(sourceHeight * scale))}px`;
 }
 
-/** 播放页挂载时登记画布与容器；窗口尺寸、侧栏变化都靠观察容器重新 contain。 */
-export function attachStage({ viewport, canvas }) {
-  viewportEl = viewport;
+function createPreviewCanvas() {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'block bg-[#12151b]';
+  return canvas;
+}
+
+/** 新后端创建成功后才替换画布，失败时仍保留原来的上下文和画面。 */
+function commitCanvas(canvas) {
+  canvasEl.replaceWith(canvas);
   canvasEl = canvas;
+  fitCanvasToViewport();
+}
+
+/** 播放页挂载时登记画布与容器；窗口尺寸、侧栏变化都靠观察容器重新 contain。 */
+export function attachStage({ viewport, canvasHost }) {
+  viewportEl = viewport;
+  canvasEl = createPreviewCanvas();
+  canvasHost.replaceChildren(canvasEl);
   if (window.ResizeObserver) {
     viewportObserver?.disconnect();
     viewportObserver = new ResizeObserver(() => fitCanvasToViewport());
@@ -990,7 +1016,7 @@ export async function loadPreview() {
   let pendingAudioContext = null;
   try {
     if (state.gpuStatus !== 'ready') {
-      const available = await checkWebGpu();
+      const available = await checkRenderer();
       if (token !== loadToken || !available) return;
     }
     const wasm = await loadWasm();
@@ -1029,7 +1055,7 @@ export async function loadPreview() {
     // 5. 文件进 WASM：解包、解码、混音、时钟都在里面。
     state.status = '准备会话...';
     const { width, height } = RESOLUTIONS[state.resolution];
-    const createdSession = await wasm.WebGpuSession.create(bytes, canvasEl, {
+    const options = {
       ...selector,
       convert: replay ? undefined : state.convert || undefined,
       replayBytes: replay?.bytes,
@@ -1044,13 +1070,23 @@ export async function loadPreview() {
       storyboard: state.storyboard,
       showCursor: state.showCursor,
       showCatcher: state.showCatcher,
-    });
+    };
+    const { createdSession, canvas } = await withRenderBackend(state.renderBackend, async (backend) => {
+      if (token !== loadToken) throw new DOMException('加载已取消', 'AbortError');
+      const canvas = createPreviewCanvas();
+      const createdSession = await wasm.WebGpuSession.create(bytes, canvas, { ...options, backend });
+      return { createdSession, canvas };
+    }, (error) => { if (token === loadToken) logLoad(`${error}；正在尝试 WebGL 2`); });
     if (token !== loadToken) {
       createdSession.free();
       await audioContext?.close().catch(() => {});
       return;
     }
     session = createdSession;
+    commitCanvas(canvas);
+    state.activeBackend = session.backend();
+    state.renderBackend = state.activeBackend;
+    logPlay(`渲染后端：${backendLabel(state.activeBackend)}`);
     state.replayActive = Boolean(replay);
     appliedMods = [];
     state.mods = [];
@@ -1375,6 +1411,59 @@ export function setFps(value) {
     hasRenderedFrame = false;
     render();
   });
+}
+
+/** GPU 资源在独立 Canvas 上准备，成功后同步交接，不重建谱面或音频。 */
+export async function setRenderBackend(preference) {
+  if (!RENDER_BACKENDS.some(({ value }) => value === preference)
+      || state.loading || state.rendererSwitching || preference === state.renderBackend) return;
+  const previous = state.renderBackend;
+  state.renderBackend = preference;
+  state.rendererError = '';
+  if (!session) {
+    saveRenderBackend(preference);
+    await checkRenderer();
+    return;
+  }
+  const current = session;
+  const token = loadToken;
+  state.rendererSwitching = true;
+  try {
+    const wasm = await loadWasm();
+    if (token !== loadToken) return;
+    const prepared = await withRenderBackend(preference, async (backend) => {
+      if (token !== loadToken) throw new DOMException('切换已取消', 'AbortError');
+      const canvas = createPreviewCanvas();
+      const renderer = await wasm.WebRenderer.create(canvas, current.width(), current.height(), backend);
+      return { renderer, canvas, backend };
+    }, (error) => { if (token === loadToken) logPlay(`${error}；正在尝试 WebGL 2`); });
+    if (token !== loadToken || session !== current) {
+      prepared.renderer.free();
+      return;
+    }
+    withFrozenClock(() => {
+      current.replaceRenderer(prepared.renderer);
+      commitCanvas(prepared.canvas);
+      state.activeBackend = prepared.backend;
+      state.rendered = false;
+      state.renderError = '';
+      fpsSamples = [];
+      state.renderFps = 0;
+      render();
+    });
+    state.renderBackend = prepared.backend;
+    saveRenderBackend(prepared.backend);
+    state.gpuStatus = 'ready';
+    state.gpuError = '';
+    logPlay(`渲染后端已切换为 ${backendLabel(prepared.backend)}`);
+  } catch (error) {
+    if (token !== loadToken) return;
+    state.renderBackend = previous;
+    state.rendererError = `后端切换失败：${errorText(error)}`;
+    logPlay(state.rendererError);
+  } finally {
+    if (token === loadToken) state.rendererSwitching = false;
+  }
 }
 
 export function setResolution(key) {

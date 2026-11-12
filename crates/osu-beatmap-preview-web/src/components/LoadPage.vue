@@ -5,7 +5,7 @@ import ReplayInput from './ReplayInput.vue';
 import {
   CONVERT_MODES, clearLocalFile, loadPreview, progressDetail, progressLabel,
   progressPercent, selectLocalFile, setPreviewType, state, replayRequested,
-  checkWebGpu, GPU_CHECK_URL,
+  checkRenderer, GPU_CHECK_URL,
 } from '../preview.js';
 
 const errors = reactive({ osu: '', osz: '' });
@@ -61,7 +61,7 @@ function removeFile(kind) {
         <p class="m-0">{{ state.gpuError }}</p>
         <div class="mt-2 flex flex-wrap items-center gap-4">
           <a class="underline" :href="GPU_CHECK_URL" target="_blank" rel="noreferrer">打开 WebGPU 自检</a>
-          <button type="button" class="underline" @click="checkWebGpu()">重新检测</button>
+          <button type="button" class="underline" @click="checkRenderer()">重新检测</button>
         </div>
       </div>
 

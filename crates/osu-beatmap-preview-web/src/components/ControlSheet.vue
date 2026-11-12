@@ -6,6 +6,7 @@
 // Mod 与运行日志。
 import { computed } from 'vue';
 import ChipGroup from './ChipGroup.vue';
+import RendererSettings from './RendererSettings.vue';
 import {
   activeDaToken,
   commitDa,
@@ -50,13 +51,14 @@ const chipClass = (active) => (active
     <div class="absolute inset-0 bg-black/60" @click="setSheetOpen(false)" />
 
     <div
-      class="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-2xl border-t border-neutral-800 bg-[#111419] px-4 pt-3 pb-6 shadow-2xl
+      class="settings-scroll absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-2xl border-t border-neutral-800 bg-[#111419] px-4 pt-3 pb-6 shadow-2xl
              lg:inset-x-auto lg:right-4 lg:bottom-4 lg:max-h-[72dvh] lg:w-[380px] lg:rounded-2xl lg:border"
     >
       <div class="mx-auto mb-4 h-1 w-10 rounded-full bg-neutral-700 lg:hidden" />
 
       <section class="mb-5 grid gap-3">
         <h2 class="text-[11px] tracking-[.14em] text-neutral-500 uppercase">画面</h2>
+        <RendererSettings />
         <div class="grid grid-cols-[52px_1fr] items-center gap-2">
           <span class="text-xs text-neutral-400">帧率</span>
           <ChipGroup :model-value="state.fps" :options="fpsOptions" @update:model-value="setFps" />
@@ -233,3 +235,43 @@ const chipClass = (active) => (active
     </div>
   </div>
 </template>
+
+<style scoped>
+.settings-scroll {
+  color-scheme: dark;
+}
+
+.settings-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-scroll::-webkit-scrollbar-track {
+  margin-block: 14px;
+  background: transparent;
+}
+
+.settings-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid #111419;
+  border-radius: 999px;
+  background: #4b515b;
+}
+
+.settings-scroll::-webkit-scrollbar-thumb:hover {
+  background: #737b88;
+}
+
+.settings-scroll::-webkit-scrollbar-thumb:active {
+  background: #ff5f45;
+}
+
+.settings-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .settings-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #4b515b transparent;
+  }
+}
+</style>

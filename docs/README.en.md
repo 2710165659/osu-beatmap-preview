@@ -45,7 +45,7 @@ See the [CLI guide](../crates/osu-beatmap-preview-cli/README.md) for parameters,
 
 ### Web playback
 
-The release web package requires Node.js 18+ and a WebGPU-capable browser. Unzip it and run:
+The release web package requires Node.js 18+ and a browser supporting WebGPU or WebGL 2. Unzip it and run:
 
 ```bash
 node backend/server.js
