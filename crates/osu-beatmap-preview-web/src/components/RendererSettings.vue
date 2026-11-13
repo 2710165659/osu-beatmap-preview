@@ -1,8 +1,14 @@
 <script setup>
-// 加载页和播放设置共用后端选择，可直接指定 WebGL 2 进行调试。
+// 后端选择显示各自的检测结果，不可用项保持可见并禁止切换。
+import { computed } from 'vue';
 import ChipGroup from './ChipGroup.vue';
 import { state, setRenderBackend } from '../preview.js';
 import { RENDER_BACKENDS } from '../webgpu.js';
+
+const backendOptions = computed(() => RENDER_BACKENDS.map((option) => ({
+  ...option,
+  disabled: state.rendererAvailability[option.value] !== '',
+})));
 </script>
 
 <template>
@@ -10,7 +16,7 @@ import { RENDER_BACKENDS } from '../webgpu.js';
     <legend class="sr-only">渲染后端</legend>
     <div class="grid grid-cols-[52px_1fr] items-center gap-2">
       <span class="text-xs text-neutral-400">渲染后端</span>
-      <ChipGroup :model-value="state.renderBackend" :options="RENDER_BACKENDS" @update:model-value="setRenderBackend" />
+      <ChipGroup :model-value="state.renderBackend" :options="backendOptions" @update:model-value="setRenderBackend" />
     </div>
     <p v-if="state.rendererSwitching" class="m-0 pl-[60px] text-[11px] text-neutral-500" role="status">正在切换…</p>
     <p v-if="state.rendererError" role="alert" class="m-0 pl-[60px] text-[11px] text-amber-300">{{ state.rendererError }}</p>

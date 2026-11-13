@@ -13,8 +13,12 @@ const emit = defineEmits(['update:modelValue']);
       v-for="option in options"
       :key="option.value"
       type="button"
-      class="rounded-md border px-2.5 py-1 text-xs transition"
-      :class="option.value === modelValue
+      :disabled="option.disabled"
+      :aria-pressed="option.value === modelValue"
+      class="rounded-md border px-2.5 py-1 text-xs transition disabled:cursor-not-allowed"
+      :class="option.disabled
+        ? 'border-neutral-800 bg-neutral-950 text-neutral-600'
+        : option.value === modelValue
         ? 'border-[#ff5f45] bg-[#ff5f45]/15 text-white'
         : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-500'"
       @click="emit('update:modelValue', option.value)"

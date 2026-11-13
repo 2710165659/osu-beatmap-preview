@@ -16,7 +16,7 @@ import { createAudioContext, createAudioOutput } from './hitsound.js';
 import AUDIO_WORKLET_URL from './hitsound-worklet.js?worker&url';
 import { createLocalInputs, resolveBeatmapSource } from './beatmap/load.js';
 import { readPreviewLink, previewPath } from './navigation.js';
-import { backendLabel, readRenderBackend, saveRenderBackend, withRenderBackend, RENDER_BACKENDS } from './webgpu.js';
+import { backendLabel, checkRenderBackendAvailability, withRenderBackend, RENDER_BACKENDS } from './webgpu.js';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -147,8 +147,10 @@ export const state = reactive({
   // 默认 60 FPS：120 FPS 只在高刷新率屏幕上才有实际区别，留给用户手动开。
   fps: 60,
   resolution: '720',
-  renderBackend: readRenderBackend(),
+  renderBackend: 'webgpu',
   activeBackend: '',
+  /** null 表示尚未完成检测，空字符串表示可用，非空字符串是不可用原因。 */
+  rendererAvailability: { webgpu: null, webgl2: null },
   rendererSwitching: false,
   rendererError: '',
   speed: 1,
@@ -252,21 +254,20 @@ export const state = reactive({
 export const GPU_CHECK_URL = `${import.meta.env.BASE_URL}gpu-check.html`;
 let gpuCheck = null;
 
-/** 首次挂载与加载入口共享探测，过期结果不能覆盖后来选择的后端。 */
+/** 首次挂载与加载入口共享探测；当前选择不可用时，按 WebGPU、WebGL 2 的顺序回退。 */
 export function checkRenderer() {
-  const preference = state.renderBackend;
-  if (gpuCheck?.preference === preference) return gpuCheck.promise;
+  if (gpuCheck) return gpuCheck;
   state.gpuStatus = 'checking';
-  const check = { preference };
-  check.promise = withRenderBackend(preference, () => true).then(() => '', errorText).then((error) => {
-    if (gpuCheck === check) {
-      state.gpuError = error;
-      state.gpuStatus = error ? 'unavailable' : 'ready';
-    }
-    return !error;
-  }).finally(() => { if (gpuCheck === check) gpuCheck = null; });
-  gpuCheck = check;
-  return check.promise;
+  state.rendererAvailability = { webgpu: null, webgl2: null };
+  gpuCheck = checkRenderBackendAvailability().then((availability) => {
+    state.rendererAvailability = availability;
+    const available = RENDER_BACKENDS.find(({ value }) => availability[value] === '');
+    if (available && availability[state.renderBackend] !== '') state.renderBackend = available.value;
+    state.gpuError = available ? '' : RENDER_BACKENDS.map(({ value, label }) => `${label}：${availability[value]}`).join('；');
+    state.gpuStatus = available ? 'ready' : 'unavailable';
+    return Boolean(available);
+  }).finally(() => { gpuCheck = null; });
+  return gpuCheck;
 }
 
 /** 加载阶段的文案；未知阶段一律显示「正在加载」。 */
@@ -1061,12 +1062,16 @@ export async function loadPreview() {
       showCursor: state.showCursor,
       showCatcher: state.showCatcher,
     };
+    let webGpuFailure = '';
     const { createdSession, canvas } = await withRenderBackend(state.renderBackend, async (backend) => {
       if (token !== loadToken) throw new DOMException('加载已取消', 'AbortError');
       const canvas = createPreviewCanvas();
       const createdSession = await wasm.WebGpuSession.create(bytes, canvas, { ...options, backend });
       return { createdSession, canvas };
-    }, (error) => { if (token === loadToken) logLoad(`${error}；正在尝试 WebGL 2`); });
+    }, (error) => {
+      webGpuFailure = error;
+      if (token === loadToken) logLoad(`${error}；正在尝试 WebGL 2`);
+    });
     if (token !== loadToken) {
       createdSession.free();
       await audioContext?.close().catch(() => {});
@@ -1076,6 +1081,8 @@ export async function loadPreview() {
     commitCanvas(canvas);
     state.activeBackend = session.backend();
     state.renderBackend = state.activeBackend;
+    // 替代后端确实成功后再标记失败项，避免把谱面内容错误误判成后端不可用。
+    if (webGpuFailure) state.rendererAvailability.webgpu = webGpuFailure;
     logPlay(`渲染后端：${backendLabel(state.activeBackend)}`);
     state.replayActive = Boolean(replay);
     appliedMods = [];
@@ -1408,18 +1415,16 @@ export function setFps(value) {
 /** GPU 资源在独立 Canvas 上准备，成功后同步交接，不重建谱面或音频。 */
 export async function setRenderBackend(preference) {
   if (!RENDER_BACKENDS.some(({ value }) => value === preference)
+      || state.rendererAvailability[preference] !== ''
       || state.loading || state.rendererSwitching || preference === state.renderBackend) return;
   const previous = state.renderBackend;
   state.renderBackend = preference;
   state.rendererError = '';
-  if (!session) {
-    saveRenderBackend(preference);
-    await checkRenderer();
-    return;
-  }
+  if (!session) return;
   const current = session;
   const token = loadToken;
   state.rendererSwitching = true;
+  let webGpuFailure = '';
   try {
     const wasm = await loadWasm();
     if (token !== loadToken) return;
@@ -1428,7 +1433,10 @@ export async function setRenderBackend(preference) {
       const canvas = createPreviewCanvas();
       const renderer = await wasm.WebRenderer.create(canvas, current.width(), current.height(), backend);
       return { renderer, canvas, backend };
-    }, (error) => { if (token === loadToken) logPlay(`${error}；正在尝试 WebGL 2`); });
+    }, (error) => {
+      webGpuFailure = error;
+      if (token === loadToken) logPlay(`${error}；正在尝试 WebGL 2`);
+    });
     if (token !== loadToken || session !== current) {
       prepared.renderer.free();
       return;
@@ -1444,12 +1452,13 @@ export async function setRenderBackend(preference) {
       render();
     });
     state.renderBackend = prepared.backend;
-    saveRenderBackend(prepared.backend);
+    if (webGpuFailure) state.rendererAvailability.webgpu = webGpuFailure;
     state.gpuStatus = 'ready';
     state.gpuError = '';
     logPlay(`渲染后端已切换为 ${backendLabel(prepared.backend)}`);
   } catch (error) {
     if (token !== loadToken) return;
+    state.rendererAvailability[preference] = webGpuFailure || errorText(error);
     state.renderBackend = previous;
     state.rendererError = `后端切换失败：${errorText(error)}`;
     logPlay(state.rendererError);

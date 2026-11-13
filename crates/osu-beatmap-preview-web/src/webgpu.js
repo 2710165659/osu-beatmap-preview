@@ -6,19 +6,6 @@ export const RENDER_BACKENDS = Object.freeze([
 
 export const backendLabel = (backend) => RENDER_BACKENDS.find(({ value }) => value === backend)?.label ?? '';
 
-export function readRenderBackend() {
-  try {
-    const value = globalThis.localStorage?.getItem('preview.renderBackend');
-    if (RENDER_BACKENDS.some((option) => option.value === value)) return value;
-  } catch { /* 浏览器可能禁止本地存储，继续使用默认值。 */ }
-  return 'webgpu';
-}
-
-export function saveRenderBackend(value) {
-  try { globalThis.localStorage?.setItem('preview.renderBackend', value); }
-  catch { /* 设置在当前页面仍然生效。 */ }
-}
-
 export async function checkWebGpuAvailability() {
   if (!globalThis.isSecureContext) {
     return '当前页面不是安全上下文，WebGPU 需要 HTTPS 或 localhost。请改用 HTTPS 访问本站。';
@@ -61,6 +48,12 @@ export function checkWebGl2Availability() {
   } catch (error) {
     return `WebGL 2 检测失败：${error?.message ?? error}`;
   }
+}
+
+/** 分别保留两个后端的检测结果；空字符串表示可用，非空字符串是不可用原因。 */
+export async function checkRenderBackendAvailability() {
+  const [webgpu, webgl2] = await Promise.all([checkWebGpuAvailability(), checkWebGl2Availability()]);
+  return { webgpu, webgl2 };
 }
 
 /** WebGPU 优先模式也捕获实际创建失败；手动选择 WebGL 2 时不探测 WebGPU。 */
