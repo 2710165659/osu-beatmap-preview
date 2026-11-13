@@ -20,8 +20,9 @@ import { formatTime, pinTimeline, seekTo, showTimeline, state } from '../preview
         {{ formatTime(state.position) }}
       </span>
       <input
-        class="h-8 min-w-0 flex-1 cursor-pointer"
+        class="h-8 min-w-0 flex-1 cursor-pointer outline-none select-none"
         type="range"
+        tabindex="-1"
         min="0"
         :max="state.duration"
         step="100"
