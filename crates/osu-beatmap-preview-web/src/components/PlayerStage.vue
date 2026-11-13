@@ -7,6 +7,9 @@ import { attachStage, state, togglePlay } from '../preview.js';
 
 const viewport = ref(null);
 const canvasHost = ref(null);
+defineProps({ rotatedFullscreen: Boolean });
+
+defineExpose({ viewport });
 
 onMounted(() => attachStage({ viewport: viewport.value, canvasHost: canvasHost.value }));
 </script>
@@ -14,7 +17,8 @@ onMounted(() => attachStage({ viewport: viewport.value, canvasHost: canvasHost.v
 <template>
   <div
     ref="viewport"
-    class="relative grid min-h-0 flex-1 cursor-pointer place-items-center overflow-hidden bg-black p-1 sm:p-3"
+    class="player-stage relative grid min-h-0 flex-1 cursor-pointer place-items-center overflow-hidden bg-black p-1 sm:p-3"
+    :class="{ 'rotated-fullscreen': rotatedFullscreen }"
     @click="togglePlay()"
   >
     <!-- Canvas 由会话接入层持有：不同类型的上下文必须使用不同元素。 -->
@@ -36,7 +40,7 @@ onMounted(() => attachStage({ viewport: viewport.value, canvasHost: canvasHost.v
     <!-- 帧率角标：实时渲染 FPS（抽屉「画面」里的「帧率显示」可关）。 -->
     <div
       v-if="state.showFps && state.playing"
-      class="pointer-events-none absolute top-3 right-3 rounded-full bg-black/70 px-3 py-1 text-[11px] text-white"
+      class="fps-indicator pointer-events-none absolute top-3 right-3 rounded-full bg-black/70 px-3 py-1 text-[11px] text-white"
     >
       {{ state.renderFps }} FPS
     </div>

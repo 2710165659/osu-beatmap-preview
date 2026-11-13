@@ -5,7 +5,59 @@ import ControlSheet from './ControlSheet.vue';
 import InfoBar from './InfoBar.vue';
 import PlayerStage from './PlayerStage.vue';
 import TimelineBar from './TimelineBar.vue';
+import { onBeforeUnmount, ref } from 'vue';
 import { backToLoad, setSheetOpen, showTimeline, state } from '../preview.js';
+
+const playerStage = ref(null);
+const fullscreen = ref(false);
+const mobileFullscreen = ref(false);
+const rotatedFullscreen = ref(false);
+
+function syncFullscreenLayout() {
+  rotatedFullscreen.value = fullscreen.value
+    && mobileFullscreen.value
+    && window.innerHeight > window.innerWidth;
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      screen.orientation?.unlock?.();
+      return;
+    }
+    await playerStage.value?.viewport?.requestFullscreen?.();
+    mobileFullscreen.value = matchMedia('(pointer: coarse)').matches;
+    syncFullscreenLayout();
+    if (mobileFullscreen.value && screen.orientation?.lock) {
+      try {
+        await screen.orientation.lock('landscape');
+        syncFullscreenLayout();
+      } catch {
+        // 不支持方向锁定的浏览器由预览区域的竖屏样式回退处理。
+      }
+    }
+  } catch {
+    // Fullscreen and orientation locking are restricted on some browsers/devices.
+  }
+}
+
+const exitFullscreen = () => {
+  fullscreen.value = Boolean(document.fullscreenElement);
+  if (!fullscreen.value) {
+    mobileFullscreen.value = false;
+    rotatedFullscreen.value = false;
+    screen.orientation?.unlock?.();
+  } else {
+    syncFullscreenLayout();
+  }
+};
+document.addEventListener('fullscreenchange', exitFullscreen);
+window.addEventListener('resize', syncFullscreenLayout);
+window.addEventListener('orientationchange', syncFullscreenLayout);
+onBeforeUnmount(() => document.removeEventListener('fullscreenchange', exitFullscreen));
+onBeforeUnmount(() => window.removeEventListener('resize', syncFullscreenLayout));
+onBeforeUnmount(() => window.removeEventListener('orientationchange', syncFullscreenLayout));
 </script>
 
 <template>
@@ -41,8 +93,8 @@ import { backToLoad, setSheetOpen, showTimeline, state } from '../preview.js';
     </header>
 
     <InfoBar />
-    <PlayerStage />
-    <TimelineBar />
+    <PlayerStage ref="playerStage" :rotated-fullscreen="rotatedFullscreen" />
+    <TimelineBar :fullscreen="fullscreen" @toggle-fullscreen="toggleFullscreen" />
     <ControlSheet />
   </section>
 </template>

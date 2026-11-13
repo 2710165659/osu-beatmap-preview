@@ -28,3 +28,30 @@ body {
 input[type="range"] {
   accent-color: #ff5f45;
 }
+
+.player-stage:fullscreen {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  flex: none;
+  padding: 0;
+  background: #0b0d10;
+}
+
+.player-stage:fullscreen .fps-indicator {
+  top: auto;
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.player-stage.rotated-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 100vw;
+  width: 100dvh;
+  height: 100vw;
+  transform: rotate(90deg);
+  transform-origin: top left;
+}
