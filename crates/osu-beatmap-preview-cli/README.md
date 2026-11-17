@@ -73,7 +73,7 @@ osu-beatmap-preview-cli --type=osr --osr-file=play.osr --osu-file=map.osu
 
 | 输入 | 难度选择与绑定 | 输出 |
 | --- | --- | --- |
-| 仅 `--osu-file` | 可省略 `--bid`；提供时必须匹配有效的 `BeatmapID` | PNG、GIF，无媒体 |
+| 仅 `--osu-file` | 可省略 `--bid`；谱面有有效 `BeatmapID` 时，提供的 `--bid` 必须与之匹配。没有有效 ID 时无法验证谱面与 `--bid` 是否一致 | PNG、GIF，无媒体 |
 | 仅 `--osz-file` | 只有一个顶层 `.osu` 时可自动选择；多个时必须用 `--bid` 匹配 | PNG、GIF、MP4 |
 | 两个文件 | 使用外部 `.osu`，从 `.osz` 读取媒体；外部有效正数 `BeatmapID` 必须存在于包内，提供的 `--bid` 也必须一致 | PNG、GIF、MP4 |
 
