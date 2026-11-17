@@ -20,7 +20,7 @@ pub const USAGE: &str = "usage: osu-beatmap-preview-cli [--type=osu|osr] [--osr-
     \x20 --time-points 可填秒数或 preview；MP4 和 Taiko/Catch/Mania PNG 最多一个时间点，GIF 和 Standard PNG 可重复指定\n\
     \x20 --duration-time 为有限正数，用于 GIF/MP4 或 Taiko/Catch/Mania PNG；后者须与 --time-points 成对使用\n\
     \x20 以下谱面来源规则用于默认 --type=osu：\n\
-    \x20 --osu-file=<FILE.osu>  本地谱面；--bid 可省略，提供时必须与 BeatmapID 相同；单独使用只支持 PNG/GIF\n\
+    \x20 --osu-file=<FILE.osu>  本地谱面；有有效 BeatmapID 时 --bid 必须与其相同；单独使用只支持 PNG/GIF\n\
     \x20 --osz-file=<FILE.osz>  本地谱面包；只有一个顶层 .osu 时可省略 --bid；支持 PNG/GIF/MP4\n\
     \x20 同时提供两个文件时，以外部 .osu 渲染，.osz 提供媒体资源，包内必须存在相同 BeatmapID\n\
     \x20 未提供本地文件时必须提供 --bid，并按 ID 下载谱面";

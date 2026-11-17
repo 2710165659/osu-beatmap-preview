@@ -54,25 +54,28 @@ pub(crate) fn load_local_source(
     if let Some(osu_file) = osu_file {
         let path = PathBuf::from(osu_file);
         let bytes = read_file_bytes(&path)?;
-        // 单独提供 .osu 且无 bid 时允许无 ID 谱面，沿用文件名作为产物 ID 的回退。
+        // 旧版官方谱面可能不含 BeatmapID；仅在有可用 ID 时校验 bid。
         if !bid.is_empty() || osz_path.is_some() {
             let beatmap =
                 osu_beatmap_preview_core::parse_beatmap_bytes(&bytes).map_err(|error| {
                     PreviewError::parse(format!("failed to parse {}: {error}", path.display()))
                 })?;
-            let id = beatmap_id(&beatmap).ok_or_else(|| {
-                PreviewError::new(format!(
-                    "--osu-file {} must have a valid positive BeatmapID when --bid or --osz-file is provided",
-                    path.display()
-                ))
-            })?;
-            if !bid.is_empty() && bid.parse::<u64>().ok() != Some(id) {
-                return Err(PreviewError::new(format!(
-                    "--bid {bid} does not match --osu-file {} (BeatmapID={id})",
-                    path.display()
-                )));
+            let id = beatmap_id(&beatmap);
+            if let Some(id) = id {
+                if !bid.is_empty() && bid.parse::<u64>().ok() != Some(id) {
+                    return Err(PreviewError::new(format!(
+                        "--bid {bid} does not match --osu-file {} (BeatmapID={id})",
+                        path.display()
+                    )));
+                }
             }
             if let Some(archive_path) = osz_path.as_deref() {
+                let id = id.ok_or_else(|| {
+                    PreviewError::new(format!(
+                        "--osu-file {} must have a valid positive BeatmapID when --osz-file is provided",
+                        path.display()
+                    ))
+                })?;
                 // 只校验包内存在相同 ID，实际渲染字节始终来自外部 .osu。
                 load_local_osz(archive_path, &id.to_string())?;
             }
@@ -171,7 +174,7 @@ pub(crate) fn load_local_osz(path: &Path, bid: &str) -> Result<Vec<u8>> {
 
 /// 请求、产物与日志使用的谱面 ID。
 ///
-/// 优先已通过一致性校验的 `bid`；省略时用谱面的 `BeatmapID`，无有效 ID 则回退
+/// 优先使用 `bid`；省略时用谱面的 `BeatmapID`，无有效 ID 则回退
 /// 到输入文件名主干（只保留文件名安全字符），避免不同本地文件共用产物名。
 pub(crate) fn effective_id(bid: &str, beatmap: &Beatmap, path: &Path) -> String {
     if !bid.is_empty() {
@@ -411,9 +414,9 @@ mod tests {
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
-    /// 无有效 ID 的谱面可以单独预览，但不能结合 bid 或媒体包。
+    /// 旧版官方谱面可能没有 ID，仍可与 bid 一起预览，但不能与媒体包绑定。
     #[test]
-    fn local_osu_without_valid_id_rejects_bid_or_archive() {
+    fn local_osu_without_valid_id_accepts_bid_but_rejects_archive() {
         for id in [None, Some(0)] {
             let source = osu_text(id, "Local");
             assert_missing_id_rules(&source);
@@ -427,11 +430,8 @@ mod tests {
         let path = write_temp("plain.osu", source.as_bytes());
         let input = Some(path.to_str().unwrap());
         assert!(load_local_source(input, None, "").is_ok());
-        for (osz, bid) in [
-            (None, "300"),
-            (Some("pack.osz"), ""),
-            (Some("pack.osz"), "300"),
-        ] {
+        assert!(load_local_source(input, None, "300").is_ok());
+        for (osz, bid) in [(Some("pack.osz"), ""), (Some("pack.osz"), "300")] {
             let error = load_local_source(input, osz, bid)
                 .err()
                 .unwrap()
