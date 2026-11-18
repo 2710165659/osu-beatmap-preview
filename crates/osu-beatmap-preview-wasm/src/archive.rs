@@ -101,9 +101,9 @@ pub fn read_input_with_osu(
         validate_plain_selection(osu, &beatmap, selector)?;
         let archive_selector = match selector {
             DifficultySelector::ByChecksum(_) => selector.clone(),
-            _ => DifficultySelector::ById(
-                beatmap_id(&beatmap).ok_or("外部 .osu 需要有效 BeatmapID 才能绑定 .osz")?,
-            ),
+            _ => beatmap_id(&beatmap)
+                .map(DifficultySelector::ById)
+                .unwrap_or_else(|| selector.clone()),
         };
         return read_archive(bytes, &archive_selector, want_media, Some((osu, &beatmap)));
     }
@@ -127,7 +127,7 @@ fn validate_plain_selection(
         {
             Err("BeatmapMismatch: .osu MD5 与回放不符".into())
         }
-        DifficultySelector::ById(id) if beatmap_id(beatmap) != Some(*id) => {
+        DifficultySelector::ById(id) if beatmap_id(beatmap).is_some_and(|actual| actual != *id) => {
             Err("提供的 bid 与外部 .osu 的 BeatmapID 不符".into())
         }
         _ => Ok(()),
@@ -393,6 +393,9 @@ fn select_difficulty(
         DifficultySelector::ById(wanted) => parsed
             .iter()
             .position(|(_, _, _, beatmap)| beatmap_id(beatmap) == Some(*wanted))
+            .or_else(|| {
+                (parsed.len() == 1 && beatmap_id(&parsed[0].3).is_none()).then_some(0)
+            })
             .ok_or_else(|| {
                 let seen = parsed
                     .iter()
@@ -556,7 +559,26 @@ mod tests {
             &DifficultySelector::First,
             false
         )
-        .is_err());
+        .is_ok());
+    }
+
+    #[test]
+    fn legacy_external_osu_without_id_uses_single_archive_difficulty() {
+        let legacy = osu_text(None, "Legacy", "new.mp3", "new.jpg");
+        let archive = osz_bytes(&[
+            ("map.osu", legacy.as_bytes()),
+            ("new.mp3", b"new music"),
+            ("new.jpg", b"new background"),
+        ]);
+        let content = read_input_with_osu(
+            &archive,
+            Some(legacy.as_bytes()),
+            &DifficultySelector::ById(131564),
+            true,
+        )
+        .unwrap();
+        assert_eq!(content.beatmap, legacy.as_bytes());
+        assert_eq!(content.audio.unwrap(), b"new music");
     }
 
     #[test]

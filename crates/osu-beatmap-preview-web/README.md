@@ -33,6 +33,8 @@ node backend/server.js
 
 加载页默认选择「谱面预览」，可填写单张难度的谱面 ID，或分别选择本地 `.osu` 与 `.osz`：
 
+按谱面 ID 加载时先获取 `.osu` 并开始无音频预览，完整 `.osz` 在后台下载；资源就绪后按当前播放进度接入音乐与背景等媒体，下载失败仍可继续预览画面。
+
 | 本地输入 | 行为 |
 | --- | --- |
 | `.osu` | 使用该谱面，无音乐和背景媒体 |
@@ -89,6 +91,7 @@ node backend/server.js
 | GET 接口 | 用途 |
 | --- | --- |
 | `/resource/file?bid=<ID>` | 返回完整 OSZ 字节，支持 Range |
+| `/resource/beatmap?bid=<ID>` | 返回单张难度的 OSU 字节，支持 Range |
 | `/resource/progress?bid=<ID>` | 查询下载与传输进度 |
 | `/resource/replay-lookup?checksum=<MD5>` | 官方查谱，返回谱面 ID、谱面集 ID 和 checksum |
 | `/resource/replay?scoreId=<ID>` | 下载指定成绩的 OSR |

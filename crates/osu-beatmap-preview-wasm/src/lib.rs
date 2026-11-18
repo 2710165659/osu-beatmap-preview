@@ -1,9 +1,10 @@
 //! WebAssembly 适配层：谱面包与可选 OSR → 实时预览。
 //!
-//! 数据流只有一条：宿主把一份文件的字节（`.osu` 或 `.osz` 整包）连同 Canvas 交给
+//! 宿主把一份文件的字节（`.osu` 或 `.osz` 整包）连同 Canvas 交给
 //! [`WebGpuSession::create`]，回放经 `replayBytes` 附带；其余全部在 WASM 内完成——`.osz` 解包（音乐、背景、
 //! 自带音效）、音频解码、音乐与音效统一混音、时钟推进。宿主只做四件事：
 //! 取字节、给 Canvas、把混音结果送进音频设备、把音频线程的消费位置转发回来。
+//! 在线谱面可先用 `.osu` 建立会话，再经 `loadResources` 补入完整媒体包。
 //!
 //! 时间权威是会话时钟（[`osu_beatmap_preview_core::PreviewClock`]）：`play` / `pause` /
 //! `seek` / `setRate` / `clockMs` 全部在 WASM 里，宿主不再计算时间，也没有
@@ -16,6 +17,8 @@ pub mod archive;
 pub mod decode;
 #[cfg(target_arch = "wasm32")]
 mod gpu;
+#[cfg(target_arch = "wasm32")]
+mod resources;
 #[cfg(target_arch = "wasm32")]
 pub use gpu::WebRenderer;
 pub mod osr;
@@ -50,13 +53,15 @@ const VIDEO_TEXTURE_SLOT: u32 = 0;
 
 /// 直接渲染到浏览器 WebGPU 或 WebGL 2 Canvas 的会话。
 ///
-/// 创建时一次性收下整份文件；音乐与打击音在 WASM 内统一混音，画面与声音共用同一条
+/// 创建时收下谱面文件，允许后台补入媒体；音乐与打击音在 WASM 内统一混音，画面与声音共用同一条
 /// 时间轴（会话时钟），倍速、seek、暂停都只有一处位置计算。
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub struct WebGpuSession {
     inner: RealtimeSession,
     gpu: WebRenderer,
+    /// 保留原始谱面，后台媒体包按同一难度绑定，资源更新不替换谱面。
+    beatmap_bytes: Vec<u8>,
     /// `.osz` 里的自带音效条目（条目名 + 字节）；切 Mod 后按新候选名重新匹配装载。
     custom_samples: Vec<(String, Vec<u8>)>,
     /// 是否采用谱面自带音效（`ENABLE_BEATMAP_HITSOUND`）；运行时可切（`setBeatmapHitsound`）。
@@ -229,6 +234,7 @@ impl WebGpuSession {
         Ok(Self {
             inner: session,
             gpu,
+            beatmap_bytes: content.beatmap,
             custom_samples: content.samples,
             use_beatmap_samples,
             background_source,
@@ -733,6 +739,10 @@ fn build_storyboard(
     content: &archive::ArchiveContent,
     bytes: &[u8],
 ) -> Result<Option<StoryboardBundle>, String> {
+    // 单独的 `.osu` 没有可解包的媒体，故事板随后台 `.osz` 一起装载。
+    if is_plain_osu(bytes) {
+        return Ok(None);
+    }
     let osu_text = String::from_utf8_lossy(&content.beatmap);
     let osb_text = content
         .osb

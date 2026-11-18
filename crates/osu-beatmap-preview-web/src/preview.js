@@ -134,6 +134,7 @@ export const state = reactive({
   localDifficulty: '',
   convert: '',
   loading: false,
+  preparingMedia: false,
   loadLogs: [],
   playLogs: [],
   mode: 'READY',
@@ -244,7 +245,7 @@ export const state = reactive({
    * `received/total` 是当前阶段的字节数，`total` 为 0 表示还不知道总量（不确定态）；
    * `speed/eta` 由前端对两次轮询采样算出来，服务端不必关心。阶段语义：
    * osu 服务端定位谱面 → osz 服务端下载谱面包 → transfer 传输到客户端 →
-   * ready 进播放页（`.osz` 的解包与解码在 WASM 内完成）。
+   * ready 当前资源就绪（在线谱面可先进入播放页，`.osz` 的解包与解码在 WASM 内完成）。
    */
   progress: { phase: 'idle', received: 0, total: 0, message: '', speed: 0, eta: null },
   gpuStatus: 'checking',
@@ -580,10 +581,16 @@ async function loadWasm() {
 async function fetchFile(value, { signal } = {}) {
   return fetchWithProgress(`/resource/file?bid=${encodeURIComponent(value)}`, {
     signal,
-    onProgress: ({ received, total }) => reportProgress({
+    onProgress: ({ received, total }) => !signal?.aborted && reportProgress({
       phase: 'transfer', received, total, message: '传输到客户端', source: 'local',
     }),
   });
+}
+
+async function fetchBeatmap(value, { signal } = {}) {
+  const response = await fetch(`/resource/beatmap?bid=${encodeURIComponent(value)}`, { signal });
+  if (!response.ok) throw new Error(await response.text());
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 // 本地谱面与媒体包独立读取，回放模式由入口显式选择。
@@ -864,6 +871,11 @@ function syncPositionFromClock() {
  */
 function syncAudioOutput() {
   if (!audioOutput) return;
+  if (state.preparingMedia) {
+    audioOutput.setPlaying(false);
+    state.audioBlocked = false;
+    return;
+  }
   const context = audioOutput.context;
   const running = context.state === 'running';
   const shouldPlay = state.playing && running;
@@ -887,7 +899,7 @@ function syncAudioOutput() {
  * WASM 内部决定「混到哪、混多少」并把结果直接给出，宿主只负责写进环形缓冲。
  */
 function updateAudio() {
-  if (!audioOutput || !state.playing) return;
+  if (!audioOutput || !state.playing || state.preparingMedia) return;
   audioOutput.ensureBuffered();
   // 音频线程读到静音说明主线程没跟上混音，声音会断续。只提示一次：这条日志是排查
   // 「音效时有时无」最直接的线索，但持续刷屏没有意义。
@@ -970,9 +982,8 @@ function tick(now) {
 /**
  * 加载一份谱面并进入播放页。
  *
- * 本地 `.osu/.osz` 直接读字节，BID 由后端下载整包；OSR 附带回放并按 MD5 定位资源。文件进了
- * WASM 之后，解包、解码、会话建立都在里面完成，因此这里没有「先出画面再补音频」的
- * 并行阶段。每个 await 之后都用 loadToken 确认自己还是当前这次加载。
+ * 在线谱面先用 `.osu` 播放画面，再后台补入 `.osz` 媒体；本地文件直接读取，
+ * OSR 仍按 MD5 等待完整资源。每个 await 之后都用 loadToken 确认当前加载。
  */
 export async function loadPreview() {
   if (state.loading || state.replaySelecting || state.localOsuSelecting || state.localOszSelecting) return;
@@ -1002,6 +1013,7 @@ export async function loadPreview() {
   loadAbort = new AbortController();
   const token = ++loadToken;
   resetProgress(hasLocal ? 'transfer' : 'osu');
+  state.preparingMedia = false;
   teardownSession();
   state.hitsoundStatus = '';
   let pendingAudioContext = null;
@@ -1027,7 +1039,7 @@ export async function loadPreview() {
     };
     const source = replay
       ? await resolveReplaySource({ wasm, replay, osuBytes, oszBytes, download, lookup: lookupReplayBeatmap, signal: loadAbort.signal })
-      : await resolveBeatmapSource({ wasm, osuBytes, oszBytes, bid, difficulty: state.localDifficulty, download, signal: loadAbort.signal });
+      : await resolveBeatmapSource({ wasm, osuBytes, oszBytes, bid, difficulty: state.localDifficulty, download: fetchBeatmap, signal: loadAbort.signal });
     if (token !== loadToken) return;
     const { bytes, selector } = source;
     sourceHasMusic = source.hasMusic;
@@ -1102,26 +1114,7 @@ export async function loadPreview() {
     // 背景视频在 WASM 内驱动浏览器硬解；「画面 · 其他」默认全开，用户上次关过
     // 就沿用（与音量等设置一致）。可用性 = WASM 会话里真的打开了视频：容器要么
     // 浏览器直接放得了，要么 WASM 能重封装（.avi）。
-    const videoName = state.info?.videoFilename ?? '';
-    const opened = Boolean(session.hasBackgroundVideo?.());
-    const playable = canPlayVideoExtension(videoName);
-    state.videoAvailable = opened && playable;
-    state.videoStatus = !videoName
-      ? '当前谱面没有背景视频'
-      : !playable
-        ? `背景视频容器（.${videoName.split('.').pop().toLowerCase()}）网页端不支持，无法播放`
-        : opened
-          ? ''
-          : `包内背景视频不可用（${videoName} 缺失或编码不受支持），可本地上传完整 .osz`;
-    state.backgroundVideo = state.videoAvailable && state.backgroundVideo;
-    session.setBackgroundVideo?.(state.backgroundVideo);
-    // 故事板默认关闭，用户上次打开过就沿用（与背景视频一致）；可用性看会话里
-    // 是否真的解析出了可绘制元素（无命令的精灵不算）。
-    const hasStoryboard = Boolean(session.hasStoryboard?.());
-    state.storyboardAvailable = hasStoryboard;
-    state.storyboardStatus = hasStoryboard ? '' : '当前谱面没有故事板';
-    state.storyboard = hasStoryboard && state.storyboard;
-    session.setStoryboard?.(state.storyboard);
+    syncMediaAvailability(!replay && !hasLocal);
     state.status = hasMusic() ? '就绪' : '无音乐（.osu 单文件）';
 
     // 6. 接上音频输出；不可用就退化成只有画面。
@@ -1147,6 +1140,7 @@ export async function loadPreview() {
     state.sheetOpen = false;
     // 等播放页真正显示出来再量尺寸，否则 clientWidth/Height 还是 0。
     await nextTick();
+    if (token !== loadToken) return;
     fitCanvasToViewport();
     showTimeline();
     render();
@@ -1155,8 +1149,13 @@ export async function loadPreview() {
     // 加载完成后直接进入播放状态：已经在页面上点过「加载预览」时这次激活允许出声，
     // 浏览器若仍按自动播放策略拦下 AudioContext，画面时钟照常推进，并由手势监听
     // 等待用户激活（首次点击 / 触摸 / 按键）后恢复声音。
+    state.preparingMedia = !replay && !hasLocal;
     playState(true);
     addGestureHints();
+    if (state.preparingMedia) {
+      state.status = '无音乐预览，资源后台加载中';
+      void loadMediaInBackground(bid, token, session, loadAbort.signal);
+    }
     // 本地资源无法通过链接还原；在线成绩统一分享最终选中的成绩 ID。
     const path = hasLocal ? '/' : replay
       ? previewPath({ type: 'osr', scoreId: replay.scoreId, convert: state.replayConvert })
@@ -1171,23 +1170,80 @@ export async function loadPreview() {
     await pendingAudioContext?.close().catch(() => {});
     // 被新加载取代或退回了加载页时不能碰 state：那两个入口自己会收拾。
     if (token === loadToken) {
-      stopProgressPolling();
+      if (!state.preparingMedia) stopProgressPolling();
       state.loading = false;
     }
   }
 }
 
-/** 当前来源有没有音乐：`.osz` 与 BID 的整包里都有，单独的 `.osu` 没有。 */
+/** 资源失败不销毁已经可看的谱面；旧加载只能释放自己的请求。 */
+async function loadMediaInBackground(bid, token, currentSession, signal) {
+  const current = () => token === loadToken && session === currentSession && !signal.aborted;
+  resetProgress('osz');
+  lastProgressSource = 'server';
+  startProgressPolling(bid);
+  try {
+    const bytes = await fetchFile(bid, { signal });
+    if (!current()) return;
+    withFrozenClock(() => currentSession.loadResources(bytes, bid));
+    sourceHasMusic = true;
+    syncMediaAvailability();
+    state.status = '就绪';
+    render();
+    reportProgress({ phase: 'ready', source: 'local' });
+    logPlay('谱面资源已就绪，已按当前进度接入音乐与背景');
+  } catch (error) {
+    if (!current() || error?.name === 'AbortError') return;
+    state.status = '无音乐（资源加载失败）';
+    syncMediaAvailability();
+    logPlay(`资源加载失败，继续播放画面：${errorText(error)}`);
+  } finally {
+    if (current()) {
+      stopProgressPolling();
+      state.preparingMedia = false;
+      syncAudioOutput();
+      updateAudio();
+      logStageBreakdown();
+    }
+  }
+}
+
+/** 刷新媒体开关可用性；分阶段加载期间保留用户偏好。 */
+function syncMediaAvailability(pending = false) {
+  const videoName = state.info?.videoFilename ?? '';
+  const opened = Boolean(session.hasBackgroundVideo?.());
+  const playable = canPlayVideoExtension(videoName);
+  state.videoAvailable = opened && playable;
+  state.videoStatus = pending ? '正在后台加载背景视频资源' : !videoName
+    ? '当前谱面没有背景视频'
+    : !playable
+      ? `背景视频容器（.${videoName.split('.').pop().toLowerCase()}）网页端不支持，无法播放`
+      : opened
+        ? ''
+        : `包内背景视频不可用（${videoName} 缺失或编码不受支持），可本地上传完整 .osz`;
+  if (!pending) state.backgroundVideo = state.videoAvailable && state.backgroundVideo;
+  session.setBackgroundVideo?.(state.backgroundVideo);
+  // 可用性以会话解析结果为准，资源到达前不覆盖用户偏好。
+  const hasStoryboard = Boolean(session.hasStoryboard?.());
+  state.storyboardAvailable = hasStoryboard;
+  state.storyboardStatus = pending ? '正在后台加载故事板资源' : hasStoryboard ? '' : '当前谱面没有故事板';
+  if (!pending) state.storyboard = hasStoryboard && state.storyboard;
+  session.setStoryboard?.(state.storyboard);
+}
+
+/** 当前会话是否已经装载完整媒体包中的音乐。 */
 function hasMusic() {
   return sourceHasMusic;
 }
 
 function startProgressPolling(bid) {
   stopProgressPolling();
+  const token = loadToken;
+  const signal = loadAbort?.signal;
   const poll = () => {
-    fetch(`/resource/progress?bid=${encodeURIComponent(bid)}`)
+    fetch(`/resource/progress?bid=${encodeURIComponent(bid)}`, { signal })
       .then((response) => (response.ok ? response.json() : null))
-      .then((payload) => { if (payload) applyProgress(payload); })
+      .then((payload) => { if (payload && token === loadToken && !signal?.aborted) applyProgress(payload); })
       // 轮询只是锦上添花，失败不能影响真正的加载流程。
       .catch(() => {});
   };
@@ -1691,6 +1747,7 @@ export function backToLoad(clearUrl = true) {
   stopProgressPolling();
   resetProgress();
   state.loading = false;
+  state.preparingMedia = false;
   audioResumedAt = 0;
   state.audioBlocked = false;
   audioBlockLogged = false;

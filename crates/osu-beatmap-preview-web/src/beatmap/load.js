@@ -40,11 +40,12 @@ export function createLocalInputs(state, loadWasm) {
   };
 }
 
+/** 在线来源先取谱面文本，媒体包由播放入口在首帧后补入。 */
 export async function resolveBeatmapSource({ wasm, osuBytes, oszBytes, bid, difficulty, download, signal }) {
   if (bid && !/^[1-9]\d*$/.test(bid)) throw new Error('BID 必须为正整数');
   // 外部 .osu 决定实际画面；BID 优先校验，只有单独的包才使用难度下拉选择。
   const selector = bid ? { bid } : !osuBytes && difficulty ? { difficulty } : {};
   if (osuBytes && oszBytes) selector.osuBytes = osuBytes;
   const bytes = oszBytes ?? osuBytes ?? await download(bid, { signal });
-  return { bytes, selector, info: wasm.beatmapInfo(bytes, selector), hasMusic: Boolean(oszBytes || !osuBytes) };
+  return { bytes, selector, info: wasm.beatmapInfo(bytes, selector), hasMusic: Boolean(oszBytes) };
 }

@@ -6,7 +6,7 @@ import InfoBar from './InfoBar.vue';
 import PlayerStage from './PlayerStage.vue';
 import TimelineBar from './TimelineBar.vue';
 import { onBeforeUnmount, ref } from 'vue';
-import { backToLoad, setSheetOpen, showTimeline, state } from '../preview.js';
+import { backToLoad, progressDetail, progressLabel, progressPercent, setSheetOpen, showTimeline, state } from '../preview.js';
 
 const playerStage = ref(null);
 const fullscreen = ref(false);
@@ -78,7 +78,10 @@ onBeforeUnmount(() => window.removeEventListener('orientationchange', syncFullsc
       <span v-if="state.audioBlocked" class="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
         静音播放中
       </span>
-      <span class="ml-auto truncate text-[11px] text-neutral-400">{{ state.status }}</span>
+      <span class="ml-auto truncate text-[11px] text-neutral-400"
+        :title="state.preparingMedia ? progressDetail : state.status" aria-live="polite">
+        {{ state.preparingMedia ? `资源后台加载 · ${progressLabel}${progressPercent === null ? '' : ` ${progressPercent}%`}` : state.status }}
+      </span>
       <button
         type="button"
         class="grid h-8 w-8 shrink-0 place-items-center rounded-md border text-base transition"

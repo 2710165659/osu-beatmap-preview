@@ -154,6 +154,12 @@ async function sendResource(request, response, route, url) {
     return;
   }
 
+  if (route === '/resource/beatmap') {
+    const beatmapPath = await resources.beatmapPath(bid, { fresh: options.noCache });
+    sendBuffer(response, 'text/plain; charset=utf-8', await fsp.readFile(beatmapPath), request.headers.range);
+    return;
+  }
+
   // 一份文件的字节：完整的 .osz 谱面包。解包、音乐/背景/音效的解码与混音全部在
   // 浏览器的 WASM 里完成，后端不看压缩包内部。
   if (route === '/resource/file') {

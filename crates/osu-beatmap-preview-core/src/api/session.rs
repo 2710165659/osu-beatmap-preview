@@ -584,7 +584,7 @@ mod osr {
 use std::sync::Arc;
 
 use super::clock::PreviewClock;
-use super::input::{ImageData, RealtimeOptions, ResourceBundle};
+use super::input::{ImageData, RealtimeOptions, ResourceBundle, StoryboardBundle};
 use super::output::{RealtimeMode, TimelineInfo};
 use super::stream::{AudioStream, RESEEK_TOLERANCE_MS};
 use crate::config;
@@ -681,16 +681,7 @@ impl RealtimeSession {
             &options.core_config,
         )?;
         // 故事板贴图同样转成 Arc<Img>，单张贴图损坏按缺失处理（缺图静默跳过）。
-        // 放在 `background_image` 绑定之前，避免遮蔽同名转换函数。
-        let storyboard = bundle.storyboard.take().map(|bundle| {
-            let mut textures = Textures::new();
-            for (path, image) in bundle.textures {
-                if let Ok(image) = background_image(&image) {
-                    textures.insert(path, image);
-                }
-            }
-            (bundle.storyboard, textures)
-        });
+        let storyboard = bundle.storyboard.take().map(prepare_storyboard);
         let background_image = bundle
             .background
             .as_ref()
@@ -947,6 +938,12 @@ impl RealtimeSession {
         self.storyboard.as_ref().is_some_and(|(storyboard, _)| {
             storyboard.has_drawable_elements() || !storyboard.samples.is_empty()
         })
+    }
+
+    /// 补入后台加载的故事板资源，保留当前开关、谱面与播放时钟。
+    pub fn set_storyboard(&mut self, bundle: Option<StoryboardBundle>) {
+        self.storyboard = bundle.map(prepare_storyboard);
+        self.rebuild_hitsound_timeline();
     }
 
     /// 开关故事板绘制（默认关闭）；无故事板素材时切换无效果。
@@ -1279,6 +1276,15 @@ fn object_time_bounds(objects: &HitObjects) -> Option<(i64, i64)> {
     bounds
 }
 
+fn prepare_storyboard(bundle: StoryboardBundle) -> (Storyboard, Textures) {
+    let textures = bundle
+        .textures
+        .into_iter()
+        .filter_map(|(path, image)| background_image(&image).ok().map(|image| (path, image)))
+        .collect();
+    (bundle.storyboard, textures)
+}
+
 fn background_image(background: &ImageData) -> Result<Arc<Img>> {
     let expected = background.width as usize * background.height as usize * 4;
     if background.width == 0 || background.height == 0 || background.rgba.len() != expected {
@@ -1433,19 +1439,26 @@ mod tests {
         for (first, start) in [(5_000, 6_000), (-45_614, -47_000)] {
             let mut session = session_with_lead_in(first, 0);
             session.storyboard_enabled = true;
-            let texture = Arc::new(Img {
-                w: 1,
-                h: 1,
-                data: vec![255; 4],
-            });
+            let texture = ImageData {
+                width: 1,
+                height: 1,
+                rgba: vec![255; 4],
+            };
             let events = format!(
                 "[Events]\nSprite,Overlay,Centre,\"ring.png\",320,240\n F,0,{start},{},1\n",
                 start + 1_000,
             );
-            session.storyboard = Some((
-                crate::storyboard::parse_storyboard(&events, None),
-                [("ring.png".to_string(), texture)].into_iter().collect(),
-            ));
+            session.seek(0.0, (start + 250) as f64);
+            session.set_rate(0.0, 1.5);
+            session.play(0.0);
+            session.set_storyboard(Some(StoryboardBundle {
+                storyboard: crate::storyboard::parse_storyboard(&events, None),
+                textures: vec![("ring.png".to_string(), texture)],
+            }));
+            assert!(session.playing());
+            assert!(session.storyboard_enabled());
+            assert_eq!(session.rate(), 1.5);
+            assert_eq!(session.clock_ms(100.0), (start + 400) as f64);
             for time in [start + 500, start + 6_000, start + 250] {
                 session.seek(0.0, time as f64);
                 let scene = session.scene_at_absolute(time).unwrap();

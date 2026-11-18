@@ -16,8 +16,15 @@ test('普通预览支持 OSU、OSZ、双文件与在线下载，BID 优先于难
   assert.equal(combined.bytes, osz);
   assert.deepEqual(combined.selector, { osuBytes: osu });
   assert.equal(combined.hasMusic, true);
-  const online = await resolveBeatmapSource({ wasm, bid: '42', download: async (bid) => { assert.equal(bid, '42'); return osz; } });
-  assert.equal(online.bytes, osz);
+  const signal = new AbortController().signal;
+  const online = await resolveBeatmapSource({ wasm, bid: '42', signal, download: async (bid, options) => {
+    assert.equal(bid, '42');
+    assert.equal(options.signal, signal);
+    return osu;
+  } });
+  assert.equal(online.bytes, osu);
+  assert.equal(online.hasMusic, false);
+  assert.deepEqual(online.selector, { bid: '42' });
   await assert.rejects(resolveBeatmapSource({ wasm, bid: '0', download: noDownload }), /正整数/);
 });
 

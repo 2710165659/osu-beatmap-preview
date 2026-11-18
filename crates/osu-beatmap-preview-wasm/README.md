@@ -79,6 +79,8 @@ Web 页面构建必须在 WASM 生成后执行，才能将 `public/pkg/` 复制�
 
 WASM 会话的背景视频和故事板默认关闭，Web 页面自行启用。音乐、背景和样本在创建阶段解码，背景视频按需解码；大包会增加初始化时间和内存占用。
 
+需要分阶段加载时，可先用 `.osu` 创建会话，再调用 `session.loadResources(oszBytes, bid?)` 补入媒体。提供 `bid` 时按该 ID 选择包内难度；老谱面缺失 ID 时，仅在谱面包只有一个无 ID 难度时回退到该唯一项。此操作保留时钟、Mod、尺寸与音量，重置音频输出纪元。宿主应在补入资源期间暂停会话，完成后恢复原播放状态，并重新查询视频和故事板可用性。
+
 ## 音频接入
 
 WASM 输出音乐与打击音的混音 PCM，宿主只负责搬运到音频设备，不能再用独立播放器推进第二条音轨。完整实现可参考 [AudioOutput](../osu-beatmap-preview-web/src/hitsound.js) 和 [AudioWorklet](../osu-beatmap-preview-web/src/hitsound-worklet.js)。
