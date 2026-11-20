@@ -141,6 +141,7 @@ fn canonical_mod_token(raw: &str) -> String {
         ("CLASSIC", "CL"),
         ("RELAX", "RX"),
         ("SPUN-OUT", "SO"),
+        ("SUDDEN-DEATH", "SD"),
         ("AUTOPILOT", "AP"),
         ("ALTERNATE", "AL"),
         ("SINGLE-TAP", "SG"),
@@ -254,6 +255,8 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         "DS" => s.dual_stage = true,
         "IN" => s.inverse = true,
         "HO" => s.hold_off = true,
+        // SD 只影响游玩的失败判定，预览保留 token，但无需修改渲染设置。
+        "SD" => {}
         _ => {
             return Err(PreviewError::new(format!(
                 "unknown or unsupported mod token: '{token}'"
@@ -1062,6 +1065,19 @@ mod tests {
         let settings = parse_mods(&tokens).unwrap();
         assert_eq!(settings.tokens, vec!["HD", "DT1.25"]);
         assert!((settings.speed_multiplier - 1.25).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sudden_death_is_accepted_without_changing_preview_settings() {
+        for token in ["sd", "sudden-death"] {
+            let settings = parse_mods(&["dt".into(), token.into()]).unwrap();
+            assert_eq!(settings.tokens, ["DT", "SD"]);
+            assert_eq!(settings.speed_multiplier, 1.5);
+            assert!(validate_mods(&settings, Some(0), Some("gif")).is_empty());
+        }
+        let settings = parse_mods(&["SD".into()]).unwrap();
+        assert!(!settings.has_any_mod());
+        assert!(parse_mods(&["SD".into(), "sudden-death".into()]).is_err());
     }
 
     /// NC/DC 与 DT/HT 共用语法：默认倍速、可带自定义倍速、区间按加速/减速两类。
