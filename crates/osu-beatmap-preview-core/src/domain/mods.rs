@@ -141,6 +141,9 @@ fn canonical_mod_token(raw: &str) -> String {
         ("CLASSIC", "CL"),
         ("RELAX", "RX"),
         ("SPUN-OUT", "SO"),
+        ("NO-FAIL", "NF"),
+        ("SUDDEN-DEATH", "SD"),
+        ("PERFECT", "PF"),
         ("AUTOPILOT", "AP"),
         ("ALTERNATE", "AL"),
         ("SINGLE-TAP", "SG"),
@@ -254,6 +257,8 @@ fn parse_one_token(token: &str, s: &mut ModSettings) -> Result<()> {
         "DS" => s.dual_stage = true,
         "IN" => s.inverse = true,
         "HO" => s.hold_off = true,
+        // 失败条件只影响游玩，谱面预览仅保留对应 token。
+        "NF" | "SD" | "PF" => {}
         _ => {
             return Err(PreviewError::new(format!(
                 "unknown or unsupported mod token: '{token}'"
@@ -1062,6 +1067,21 @@ mod tests {
         let settings = parse_mods(&tokens).unwrap();
         assert_eq!(settings.tokens, vec!["HD", "DT1.25"]);
         assert!((settings.speed_multiplier - 1.25).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn fail_condition_mods_are_accepted_without_changing_preview_settings() {
+        for (code, name) in [("NF", "no-fail"), ("SD", "sudden-death"), ("PF", "perfect")] {
+            for token in [code.to_ascii_lowercase(), name.to_owned()] {
+                let settings = parse_mods(&["dt".into(), token]).unwrap();
+                assert_eq!(settings.tokens, ["DT", code]);
+                assert_eq!(settings.speed_multiplier, 1.5);
+                assert!(validate_mods(&settings, Some(0), Some("gif")).is_empty());
+            }
+            let settings = parse_mods(&[code.into()]).unwrap();
+            assert!(!settings.has_any_mod());
+            assert!(parse_mods(&[code.into(), name.into()]).is_err());
+        }
     }
 
     /// NC/DC 与 DT/HT 共用语法：默认倍速、可带自定义倍速、区间按加速/减速两类。
